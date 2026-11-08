@@ -87,7 +87,12 @@ function prune(dir) {
       // Only real folders: a link's own mtime doesn't change when a run refreshes its target.
       const stat = lstatSync(path);
       const days = name.includes(".partial-") ? 1 : UNUSED_DAYS;
-      if (stat.isDirectory() && now - stat.mtimeMs >= days * DAY) rmSync(path, { recursive: true, force: true });
+      if (!stat.isDirectory() || now - stat.mtimeMs < days * DAY) continue;
+      // Moved aside first, so a removal that stops partway never leaves a half-deleted cache
+      // at a name a run trusts; a stopped one is a stale partial the next install removes.
+      const doomed = name.includes(".partial-") ? path : mkdtempSync(`${path}.partial-`);
+      if (doomed !== path) renameSync(path, join(doomed, "old"));
+      rmSync(doomed, { recursive: true, force: true });
     } catch {}
   }
 }

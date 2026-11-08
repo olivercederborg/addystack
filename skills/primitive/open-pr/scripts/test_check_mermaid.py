@@ -79,9 +79,9 @@ class CheckMermaid(unittest.TestCase):
 
     def test_install_prunes_unused_folders_and_stale_partials(self):
         self.entry("0.0.1-jsdom1.0.0", 31)
-        self.entry("0.0.2-jsdom1.0.0", 2)
+        self.entry("0.0.2-jsdom1.0.0", 29)
         self.entry("0.0.3-jsdom1.0.0.partial-old", 2)
-        self.entry("0.0.3-jsdom1.0.0.partial-new", 0)
+        self.entry("0.0.3-jsdom1.0.0.partial-new", 0.8)
         target = self.entry("0.0.4-jsdom1.0.0", 31)
         (self.cache / "notes.txt").write_text("")
         os.symlink(target, self.cache / "0.0.5-jsdom1.0.0")
@@ -117,14 +117,17 @@ class CheckMermaid(unittest.TestCase):
         stuck.mkdir()
         (stuck / "file").write_text("")
         stuck.chmod(0o500)
-        self.addCleanup(stuck.chmod, 0o700)
         # Age the folder last: adding to it refreshed its mtime.
         when = time.time() - 31 * DAY
         os.utime(old, (when, when))
         run = self.run_check()
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("✅ fake", run.stdout)
-        self.assertTrue((stuck / "file").exists())
+        # Moved aside before removal, so no run finds a half-deleted cache at its name; what
+        # the removal couldn't delete waits in a partial for a later install.
+        self.assertFalse(old.exists())
+        [left] = self.cache.glob("0.0.1-jsdom1.0.0.partial-*/old/locked/file")
+        self.addCleanup(left.parent.chmod, 0o700)
 
 
 if __name__ == "__main__":
