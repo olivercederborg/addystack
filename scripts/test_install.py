@@ -5,9 +5,12 @@ the first build, and --dry-run writes nothing; and plan check 9's local part, a 
 user's install, init --yes, build, and doctor."""
 from __future__ import annotations
 
-import json, os, pathlib, shutil, stat, unittest
+import json, os, pathlib, shutil, stat, sys, unittest
 
 from addystack_home import KIT, SKILLS, Home
+
+sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
+import reconcile  # noqa: E402
 
 UNRELATED = {"matcher": "Bash", "hooks": [{"type": "command", "command": "~/bin/my-guard.sh", "timeout": 5}]}
 
@@ -265,6 +268,16 @@ class Agent(Home):
         self.assertEqual(os.readlink(self.link), str(self.source))
         self.assertEqual([path.read_text() for path in kept], ["mine\n", "mine\n"])
         self.assertEqual(sorted(p.name for p in self.link.parent.iterdir()), sorted([self.link.name, kept[0].name]))
+
+    def test_a_failed_write_or_link_leaves_no_temporary_file(self):
+        # Renaming a file or link over a non-empty folder fails after the partial exists.
+        folder = pathlib.Path(self.home, "target")
+        self.write(folder / "kept", "mine\n")
+        for replace in (lambda: reconcile._replace(folder, "text\n"), lambda: reconcile._link(folder, self.source)):
+            with self.assertRaises(OSError):
+                replace()
+            self.assertEqual(sorted(p.name for p in self.home.iterdir() if "addystack-tmp" in p.name), [])
+        self.assertEqual((folder / "kept").read_text(), "mine\n")
 
     def test_leaves_a_regular_file_and_reports_it(self):
         self.write(self.link, "my own agent\n")

@@ -131,14 +131,27 @@ def _link(path: Path, source: Path) -> None:
     missing."""
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = _beside(path)
+    # Made outside the try: when the name is taken, the file there isn't ours to remove.
     partial.symlink_to(source)
-    os.replace(partial, path)
+    try:
+        os.replace(partial, path)
+    finally:
+        _remove(partial)
 
 
 def _beside(path: Path) -> Path:
     """A new name beside path for a file or link to rename over it. Random, so it never
     names a file someone else keeps there, and created exclusively by the caller."""
     return path.with_name(f".{path.name}.{secrets.token_hex(6)}.addystack-tmp")
+
+
+def _remove(partial: Path) -> None:
+    """Removes a partial from _beside that a failed write or link left; after a rename,
+    nothing is there."""
+    try:
+        os.unlink(partial)
+    except FileNotFoundError:
+        pass
 
 
 def _write(path: Path, text: str) -> None:
@@ -161,11 +174,14 @@ def _replace(path: Path, text: str) -> None:
     # Created private when it replaces a file, so its text is never readable by more than
     # the old file's was, then given that file's mode.
     descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if mode is not None else 0o666)
-    with os.fdopen(descriptor, "w") as file:
-        file.write(text)
-        if mode is not None:
-            os.fchmod(file.fileno(), mode)
-    os.replace(partial, path)
+    try:
+        with os.fdopen(descriptor, "w") as file:
+            file.write(text)
+            if mode is not None:
+                os.fchmod(file.fileno(), mode)
+        os.replace(partial, path)
+    finally:
+        _remove(partial)
 
 
 def _read_json(path: Path) -> Any:
