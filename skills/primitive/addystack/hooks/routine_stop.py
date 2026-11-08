@@ -180,9 +180,16 @@ def project_feedback(reply, project):
 
 
 def rules_file():
-    """The user's reply rules file, which holds the Turn block section, or the kit's own
-    spec, references/turn-block.md, when they keep none, as ~/… under $HOME."""
-    path = resolved.replies().rules or resolved.kit() / "references" / "turn-block.md"
+    """The user's reply rules file when it has a Turn block section, else the kit's own
+    spec, references/turn-block.md, as ~/… under $HOME, so a send-back never cites a section
+    that isn't there."""
+    path = resolved.replies().rules
+    try:
+        if not (path and re.search(r"(?m)^#{1,6} Turn block\s*$", Path(path).read_text())):
+            path = None
+    except (OSError, UnicodeDecodeError):
+        path = None
+    path = path or resolved.kit() / "references" / "turn-block.md"
     try:
         return "~/" + str(Path(path).relative_to(Path.home()))
     except ValueError:

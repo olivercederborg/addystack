@@ -5574,19 +5574,24 @@ class RoutineStop(unittest.TestCase):
         self.assertIn("isn't a stop", self.feedback(routine))
 
     def test_send_backs_cite_a_turn_block_spec_that_exists(self):
-        """With no reply rules file, the kit's own spec; with one, the user's file."""
+        """With a reply rules file that has a Turn block section, that file; with none, or
+        one without the section, the kit's own spec."""
         need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
         three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
                                                     for key in "abc"])
-        for rules in [None, str(RULES)]:
-            with self.subTest(rules=rules), tempfile.TemporaryDirectory() as folder:
-                env = resolved_state(folder, json.dumps({"replies": {"style": "reply-shape", "rules": rules,
+        for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
+                rules = pathlib.Path(folder, "replies.md")
+                if text:
+                    rules.write_text(text)
+                env = resolved_state(folder, json.dumps({"replies": {"style": "reply-shape",
+                                                                     "rules": str(rules) if text else None,
                                                                      "turnBlock": True}}))
                 with unittest.mock.patch.object(resolved, "STATE", pathlib.Path(folder, "resolved.json")):
                     cited = routine_stop.rules_file()
                 spec = pathlib.Path(cited).expanduser()
-                if rules:
-                    self.assertEqual(spec.resolve(), RULES.resolve())
+                if text and "Turn block" in text:
+                    self.assertEqual(spec.resolve(), rules.resolve())
                 else:
                     self.assertEqual(spec, HOOKS.parent / "references" / "turn-block.md")
                     self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
