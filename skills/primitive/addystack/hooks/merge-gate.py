@@ -4,7 +4,8 @@ command would merge, and deny it unless
 - the PR's own checks ran and passed, or, in a repo with no workflows in
   `.github/workflows`, or whose workflows' path and branch filters skip the PR
   (workflow_triggers.py), the user's latest prompt asks for the merge (`merge on go` in
-  shared/workflow.md),
+  shared/workflow.md), unless the checkout's trust is `gate` (resolved.py), where the
+  fresh Done below is enough,
 - the repo's default branch is green: its latest checks passed, or it has none,
 - a fresh work-verifier's latest verdict for that exact diff is Done (verdicts.py),
 - the PR's base branch gained no commits since the PR branched that touch files the PR
@@ -263,7 +264,9 @@ try:
              f"{prs} }} }}")
     data = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]
 
-    import verdicts  # here, so a broken verdicts.py blocks only merges
+    import resolved, verdicts  # here, so a broken module blocks only merges
+    # A checkout whose policy can't be read gets the strictest trust, so this never fails open.
+    gate = resolved.policy(cwd).trust == "gate"
     # Diff locally, as the recorder does: `gh pr diff` shortens blob ids its own way and fails
     # past 300 files or 20,000 lines.
     pulls = [data[f"p{n}"] for n in numbers]
@@ -300,7 +303,7 @@ for n in numbers:
     state = (commit.get("statusCheckRollup") or {}).get("state")
     if state is None and has_ci[n] and not skipped[n]:
         reasons.append(f"#{n} has no checks yet at {commit['oid'][:8]}: wait for CI to register")
-    elif state is None:
+    elif state is None and not gate:  # a gate repo needs only the Done checked below
         if go is None:
             go, note = user_go(numbers[-1], owner, name)
         if not go:
@@ -308,7 +311,7 @@ for n in numbers:
                    else "this repo runs no CI on PRs")
             reasons.append(f"#{n} has no checks: {why}, so it merges only when the user's latest prompt "
                            "asks for the merge")
-    elif state != "SUCCESS":
+    elif state not in (None, "SUCCESS"):
         reasons.append(f"#{n} checks are {state.lower()} at {commit['oid'][:8]}")
     if not done[n]:
         reasons.append(f"#{n} has no Done verdict from a fresh work-verifier for its current "

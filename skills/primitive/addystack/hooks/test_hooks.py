@@ -2038,7 +2038,9 @@ class MergeGate(unittest.TestCase):
         os.chmod(gh, 0o755)
         outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}",
-                        FAKE_GH=os.path.join(self.dir, "scenario.json"), T3_STATE_DB="/nonexistent", GIT_AUTHOR_NAME="t",
+                        FAKE_GH=os.path.join(self.dir, "scenario.json"), T3_STATE_DB="/nonexistent",
+                        # Nothing built here, so the kit's defaults (trust draft) until a test calls trust().
+                        ADDYSTACK_STATE=os.path.join(self.dir, "state"), GIT_AUTHOR_NAME="t",
                         GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
         # PR heads are made in a writer clone, so the gate's own clone must fetch them.
         origin, self.writer = os.path.join(self.dir, "origin"), os.path.join(self.dir, "writer")
@@ -2441,6 +2443,54 @@ class MergeGate(unittest.TestCase):
         self.scenario(prs={31: None})
         self.verify(31)
         self.assertIsNone(self.reason("gh pr merge 31", said=("merge it",)))
+
+    def trust(self, value, remote=None):
+        """Builds the policy the hook reads: trust value everywhere, or only in repos whose
+        origin matches remote."""
+        policy = {"repos": [{"match": {"remote": remote}, "trust": value}]} if remote else {"defaults": {"trust": value}}
+        os.makedirs(self.env["ADDYSTACK_STATE"], exist_ok=True)
+        resolved_state(self.env["ADDYSTACK_STATE"], json.dumps({"policy": policy}))
+
+    def test_a_gate_repo_merges_a_pr_without_checks_on_a_fresh_done_alone(self):
+        # Nov 8, 2026: the user asked twice for prefrontal, a repo with no CI, to merge on
+        # its own, then still answered 56 merge cards that week.
+        self.trust("gate")
+        self.scenario(prs={12: None, 13: None})
+        self.verify(12)
+        self.verify(13)
+        for command in ["gh pr merge 12", "gh stack merge --yes"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command))
+        self.workflow(WorkflowTriggers.CI_YML)  # a PR its workflows skip has no checks either
+        self.pr(30, ["docs/x.md"])
+        self.scenario(prs={30: None})
+        self.verify(30)
+        self.assertIsNone(self.reason("gh pr merge 30"))
+
+    def test_a_gate_repo_still_needs_a_fresh_done_and_passing_checks(self):
+        self.trust("gate")
+        self.scenario(prs={12: None})
+        for verdict in [None, 13, "legacy"]:  # none, a Done for another diff, a pre-verifier row
+            with self.subTest(verdict=verdict):
+                if verdict:
+                    self.verify(12, legacy=True) if verdict == "legacy" else self.verify(verdict)
+                reason = self.reason("gh pr merge 12", said=("merge it",))
+                self.assertIn("#12 has no Done verdict", reason)
+                self.assertNotIn("asks for the merge", reason)  # no go to ask for: it wouldn't help
+        self.verify(12)
+        self.scenario(prs={12: "FAILURE"})
+        self.assertIn("#12 checks are failure", self.reason("gh pr merge 12"))
+
+    def test_only_a_gate_repo_merges_without_the_go(self):
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for trust, remote in [("merge-on-go", None), ("draft", None), ("gate", "/elsewhere$")]:
+            with self.subTest(trust=trust, remote=remote):
+                self.trust(trust, remote)
+                self.assertIn("no CI on PRs", self.reason("gh pr merge 12"))
+                self.assertIsNone(self.reason("gh pr merge 12", said=("merge it",)))
+        self.trust("gate", "/origin$")  # this checkout's origin
+        self.assertIsNone(self.reason("gh pr merge 12"))
 
     def test_waits_for_ci_a_pr_its_workflows_run_for_or_cant_be_read(self):
         self.workflow(WorkflowTriggers.CI_YML)
