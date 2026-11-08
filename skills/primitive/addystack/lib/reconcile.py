@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -129,10 +130,15 @@ def _link(path: Path, source: Path) -> None:
     """Points path at source by renaming a link made beside it, so path never goes
     missing."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.addystack-tmp")
-    partial.unlink(missing_ok=True)
+    partial = _beside(path)
     partial.symlink_to(source)
     os.replace(partial, path)
+
+
+def _beside(path: Path) -> Path:
+    """A new name beside path for a file or link to rename over it. Random, so it never
+    names a file someone else keeps there, and created exclusively by the caller."""
+    return path.with_name(f".{path.name}.{secrets.token_hex(6)}.addystack-tmp")
 
 
 def _write(path: Path, text: str) -> None:
@@ -151,8 +157,7 @@ def _replace(path: Path, text: str) -> None:
     except OSError:
         mode = None
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.addystack-tmp")
-    partial.unlink(missing_ok=True)
+    partial = _beside(path)
     # Created private when it replaces a file, so its text is never readable by more than
     # the old file's was, then given that file's mode.
     descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if mode is not None else 0o666)

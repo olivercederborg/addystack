@@ -253,6 +253,19 @@ class Agent(Home):
                       "/old/kit/agents/work-verifier.md", out)
         self.assertEqual(os.readlink(self.link), str(self.source))
 
+    def test_keeps_files_at_the_old_fixed_temporary_names(self):
+        # Install once renamed through `.<name>.addystack-tmp`, deleting whatever was there.
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.write(self.settings, "{}")
+        kept = [self.link.with_name(".work-verifier.md.addystack-tmp"),
+                self.settings.with_name(f".{self.settings.name}.addystack-tmp")]
+        for path in kept:
+            self.write(path, "mine\n")
+        self.ok("install")
+        self.assertEqual(os.readlink(self.link), str(self.source))
+        self.assertEqual([path.read_text() for path in kept], ["mine\n", "mine\n"])
+        self.assertEqual(sorted(p.name for p in self.link.parent.iterdir()), sorted([self.link.name, kept[0].name]))
+
     def test_leaves_a_regular_file_and_reports_it(self):
         self.write(self.link, "my own agent\n")
         result = self.cli("install")
