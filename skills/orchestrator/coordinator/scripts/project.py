@@ -72,8 +72,7 @@ def _section(lines: list[str], name: str) -> tuple[int, int]:
         start = lines.index(f"## {name}")
     except ValueError:
         raise ProjectError(f"no `## {name}` section")
-    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-    return start, end
+    return start, _end(lines, start)
 
 
 def _insert(lines: list[str], name: str, line: str) -> None:
@@ -168,20 +167,104 @@ def phase(lines: list[str], archive: str, result: str, *,
     Decisions and Learnings; removes each Result section; drops Workers rows in a FINAL
     state; then writes Goal as GOAL and `Proof: PROOF`, or as `Parked <date>: PARK`, keeping
     its Follow-ups. Refuses a parked project, and needs goal and proof, or park alone."""
-    raise NotImplementedError
+    if _parked(lines):
+        raise ProjectError("the project is parked: start its next phase with start")
+    if (goal is None or proof is None) == (park is None):
+        raise ProjectError("a phase ends with a goal and a proof, or with park alone")
+    today = date.today().isoformat()
+    body = [f"{PARKED}{today}: {_line('park', park)}"] if park is not None else _next(goal, proof)
+    line = f"- {today} · {Path(archive).stem}: {_line('result', result)} · {archive}"
+    while (heading := next((i for i, text in enumerate(lines)
+                            if text == "## Result" or text.startswith("## Result (")), None)) is not None:
+        del lines[heading:_end(lines, heading)]
+    for name in ("Decisions", "Learnings"):
+        if f"## {name}" in lines:
+            start_at, end = _section(lines, name)
+            lines[start_at + 1:end] = [""]
+    _drop_final(lines)
+    _goal(lines, body)
+    if "## Phases" in lines:
+        _insert(lines, "Phases", line)
+    else:
+        at = _section(lines, "Goal")[1]
+        lines[at:at] = ["## Phases", "", line, ""]
 
 
 def start(lines: list[str], goal: str, proof: str) -> None:
     """Starts the next phase on a parked project: Goal becomes GOAL and `Proof: PROOF`,
     keeping its Follow-ups. Refuses a project whose phase is running."""
-    raise NotImplementedError
+    if not _parked(lines):
+        raise ProjectError("the project's phase is running: end it with phase")
+    _goal(lines, _next(goal, proof))
+
+
+def _end(lines: list[str], start: int) -> int:
+    return next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+
+
+def _line(name: str, value: str) -> str:
+    if not value.strip() or "\n" in value.strip():
+        raise ProjectError(f"--{name} takes one non-empty line")
+    return value.strip()
+
+
+def _next(goal: str, proof: str) -> list[str]:
+    return [_line("goal", goal), f"Proof: {_line('proof', proof)}"]
+
+
+def _parked(lines: list[str]) -> bool:
+    start_at, end = _section(lines, "Goal")
+    return next((text for text in lines[start_at + 1:end] if text.strip()), "").startswith(PARKED)
+
+
+def _goal(lines: list[str], body: list[str]) -> None:
+    """Replaces Goal's body with `body` and its Follow-ups: the `Follow-ups:` line and the
+    `- ` or indented lines right after it, or `Follow-ups: none`."""
+    start_at, end = _section(lines, "Goal")
+    at = next((i for i in range(start_at + 1, end) if lines[i].startswith("Follow-ups:")), None)
+    follow_ups = ["Follow-ups: none"]
+    if at is not None:
+        stop = next((i for i in range(at + 1, end) if not lines[i].startswith(("- ", " ", "\t")) or not lines[i].strip()), end)
+        follow_ups = lines[at:stop]
+    lines[start_at + 1:end] = ["", *body, *follow_ups, ""]
+
+
+def _drop_final(lines: list[str]) -> None:
+    """Drops Workers rows whose State is FINAL; a row it can't read stays."""
+    if "## Workers" not in lines:
+        return
+    start_at, end = _section(lines, "Workers")
+    table = [i for i in range(start_at + 1, end) if lines[i].startswith("|")]
+    header = _cells(lines[table[0]]) if table else []
+    if len(table) < 2 or COLUMNS["state"] not in header:
+        return
+    state = header.index(COLUMNS["state"])
+    for i in reversed(table[2:]):
+        cells = _cells(lines[i])
+        if len(cells) == len(header) and FINAL.match(cells[state]):
+            del lines[i]
 
 
 def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
     """Writes `snapshot` to `phases/<NN>-<slug>.md` under `folder`, NN one past the highest
     there, from 01, never overwriting. A file there that already holds these bytes, left
     by a run whose project.md write failed, is reused. Returns the path from `folder`."""
-    raise NotImplementedError
+    phases = folder / "phases"
+    phases.mkdir(exist_ok=True)
+    numbered = [(m, p) for p in phases.iterdir() if (m := re.match(r"(\d+)-(.+)\.md\Z", p.name))]
+    for match, path in numbered:
+        if match.group(2) == slug and path.read_bytes() == snapshot:
+            return f"phases/{path.name}"
+    name = f"{max((int(m.group(1)) for m, _ in numbered), default=0) + 1:02d}-{slug}.md"
+    handle, tmp = tempfile.mkstemp(dir=phases, prefix=".phase.")
+    try:
+        with os.fdopen(handle, "wb") as f:
+            f.write(snapshot)
+        os.chmod(tmp, 0o644)
+        os.link(tmp, phases / name)  # fails if the name exists, where os.replace would overwrite it
+    finally:
+        os.unlink(tmp)
+    return f"phases/{name}"
 
 
 def _write(path: Path, text: str) -> None:
@@ -209,7 +292,19 @@ def main(argv: list[str]) -> int:
     listening = commands.add_parser("listen")
     listening.add_argument("key")
     listening.add_argument("value")
+    ending = commands.add_parser("phase", allow_abbrev=False)
+    ending.add_argument("slug")
+    ending.add_argument("--result", required=True)
+    ending.add_argument("--proof")
+    next_or_park = ending.add_mutually_exclusive_group(required=True)
+    next_or_park.add_argument("--goal")
+    next_or_park.add_argument("--park")
+    starting = commands.add_parser("start", allow_abbrev=False)
+    starting.add_argument("--goal", required=True)
+    starting.add_argument("--proof", required=True)
     args = parser.parse_args(argv)
+    if args.command == "phase" and (args.goal is None) != (args.proof is None):
+        ending.error("--goal needs --proof, and --park takes neither")
     path = args.dir / "project.md"
     try:
         if args.command == "init":
@@ -221,11 +316,25 @@ def main(argv: list[str]) -> int:
             return 0
         if not path.is_file():
             raise ProjectError(f"no {path}: run init first")
-        text = path.read_text()
-        lines = text.split("\n")
+        if args.command == "phase":
+            snapshot = path.read_bytes()
+            lines = snapshot.decode().replace("\r\n", "\n").replace("\r", "\n").split("\n")  # as read_text does
+            if not SLUG.match(args.slug):
+                raise ProjectError(f"slug {args.slug!r} isn't lowercase words joined by hyphens")
+            ends = {"goal": args.goal, "proof": args.proof, "park": args.park}
+            phase(lines[:], f"phases/00-{args.slug}.md", args.result, **ends)  # every refusal, before any write
+            archive = _archive(args.dir, snapshot, args.slug)
+            phase(lines, archive, args.result, **ends)
+            _write(path, "\n".join(lines))
+            print(args.dir / archive)
+            print(path)
+            return 0
+        lines = path.read_text().split("\n")
         if args.command in ("decide", "learn"):
             body = sys.stdin.read() if args.text == "-" else args.text
             (decide if args.command == "decide" else learn)(lines, body)
+        elif args.command == "start":
+            start(lines, args.goal, args.proof)
         elif args.command == "worker":
             worker(lines, args.slug, **{key: getattr(args, key) for key in COLUMNS})
         else:

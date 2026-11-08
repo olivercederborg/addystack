@@ -51,7 +51,7 @@ Follow-ups from r3: delete the transition hooks.
 """
 
 
-class Project(unittest.TestCase):
+class Fixture:
     def setUp(self):
         self.dir = pathlib.Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ["rm", "-rf", str(self.dir)])
@@ -66,6 +66,8 @@ class Project(unittest.TestCase):
     def text(self):
         return (self.dir / "project.md").read_text()
 
+
+class Project(Fixture, unittest.TestCase):
     def test_a_decision_goes_after_the_last_one(self):
         self.project("decide", "R5 asked: may a verifier record without a checkout? → a · source: the user: \"a\"")
         self.assertEqual(self.text(), PROJECT.replace(
@@ -139,6 +141,91 @@ class Project(unittest.TestCase):
         self.assertIn(f"## Decisions\n\n- {TODAY} · first\n\n## Workers", text)
         self.assertIn("|---|---|---|---|---|---|\n| a | — | — | running | — | — |\n\n## Learnings", text)
         self.assertIn(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Heartbeat: none\n", text)
+
+
+LISTENING = PROJECT[PROJECT.index("## Listening"):]
+NEXT = ["--goal", "Fix what the audit found.", "--proof", "each finding merged"]
+
+
+class Phase(Fixture, unittest.TestCase):
+    def files(self):
+        return sorted(p.name for p in self.dir.rglob("*") if p.is_file())
+
+    def test_a_phase_archives_the_file_and_resets_only_the_phase(self):
+        result = self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertEqual(result.stdout, f"{self.dir}/phases/01-audit.md\n{self.dir}/project.md\n")
+        self.assertEqual((self.dir / "phases/01-audit.md").read_bytes(), PROJECT.encode())
+        self.assertEqual(self.text(), PROJECT[:PROJECT.index("## Goal")] + f"""## Goal
+
+Fix what the audit found.
+Proof: each finding merged
+Follow-ups: none
+
+## Phases
+
+- {TODAY} · 01-audit: five reports · phases/01-audit.md
+
+## Decisions
+
+## Workers
+
+| Worker | Thread | Branch or PR | State | Waits on | Last side effect |
+|---|---|---|---|---|---|
+| review-quality | <t3-thread://v2/e/q> · task t2 | — | running (slot 1) | — | launched |
+
+Proofs:
+- review: a ranked report.
+
+## Learnings
+
+""" + LISTENING)
+
+    def test_a_parked_project_starts_again_and_numbers_the_next_archive(self):
+        self.project("start", *NEXT, code=1)  # its phase is running
+        self.project("phase", "audit", "--result", "five reports", "--park", "until the user asks")
+        parked = self.text()
+        self.assertIn(f"## Goal\n\nParked {TODAY}: until the user asks\nFollow-ups: none\n\n## Phases\n", parked)
+        self.assertEqual(self.project("phase", "fixes", "--result", "r", *NEXT, code=1).stderr,
+                         "the project is parked: start its next phase with start\n")
+        self.assertEqual((self.text(), self.files()), (parked, ["01-audit.md", "project.md"]))
+        self.project("start", *NEXT)
+        self.assertIn("## Goal\n\nFix what the audit found.\nProof: each finding merged\nFollow-ups: none\n\n",
+                      self.text())
+        started = self.text().encode()
+        self.project("phase", "fixes", "--result", "all merged", "--park", "done for now")
+        self.assertEqual((self.dir / "phases/02-fixes.md").read_bytes(), started)
+        self.assertIn(f"## Phases\n\n- {TODAY} · 01-audit: five reports · phases/01-audit.md\n"
+                      f"- {TODAY} · 02-fixes: all merged · phases/02-fixes.md\n\n## Decisions", self.text())
+
+    def test_a_retry_after_a_failed_write_reuses_its_archive(self):
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        (self.dir / "project.md").write_text(PROJECT)  # as if the project.md write had failed
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertEqual(self.files(), ["01-audit.md", "project.md"])
+        self.assertIn("· 01-audit: five reports · phases/01-audit.md\n\n## Decisions", self.text())
+
+    def test_follow_ups_unknown_sections_and_unreadable_rows_carry(self):
+        real = (PROJECT.replace("Follow-ups: none\n", "Follow-ups:\n- lockfile risk\n  wraps here\n- stray rows\n\n"
+                                "### Milestones done\n\n- G1–G6\n")
+                .replace("| done | — | report written |", "| done | report written |")
+                .replace("## Learnings", "## Queue (cards for the user)\n\n- c1\n\n## Learnings"))
+        (self.dir / "project.md").write_text(real)
+        self.project("phase", "audit", "--result", "five reports", "--park", "p")
+        self.assertIn(f"## Goal\n\nParked {TODAY}: p\nFollow-ups:\n- lockfile risk\n  wraps here\n- stray rows\n\n"
+                      "## Phases\n", self.text())
+        self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
+        self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
+
+    def test_a_refused_phase_leaves_every_file_untouched(self):
+        for args, code in [(["Bad_Slug", "--result", "r", *NEXT], 1),
+                           (["audit", "--result", "two\nlines", *NEXT], 1),
+                           (["audit", "--result", "r", "--goal", "g", "--proof", "a\nb"], 1),
+                           (["audit", "--result", "r", "--park", "p", "--goal", "g"], 2),
+                           (["audit", "--result", "r", "--goal", "g"], 2),
+                           (["audit", "--result", "r", "--proof", "p", "--park", "x"], 2)]:
+            with self.subTest(args=args):
+                self.project("phase", *args, code=code)
+                self.assertEqual((self.text(), self.files()), (PROJECT, ["project.md"]))
 
 
 if __name__ == "__main__":
