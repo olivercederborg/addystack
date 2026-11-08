@@ -283,6 +283,14 @@ class ClaudeConfigDir(unittest.TestCase):
             link.symlink_to(KIT / "hooks" / "merge-gate.py")
             self.assertTrue(hookset._ours(str(link), MANIFEST, "~/kit"))
 
+    def test_an_older_link_in_dot_claude_stays_ours_under_claude_config_dir(self):
+        with tempfile.TemporaryDirectory() as home, tempfile.TemporaryDirectory() as folder, \
+                unittest.mock.patch.dict(os.environ, {"HOME": home, "CLAUDE_CONFIG_DIR": folder}):
+            link = pathlib.Path(home, ".claude", "hooks", "merge-gate.py")
+            link.parent.mkdir(parents=True)
+            link.symlink_to(KIT / "hooks" / "merge-gate.py")
+            self.assertTrue(hookset._ours("~/.claude/hooks/merge-gate.py", MANIFEST, "~/kit"))
+
 
 if __name__ == "__main__":
     unittest.main()

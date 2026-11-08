@@ -237,8 +237,11 @@ def _script(command: str) -> str:
 
 def _legacy_dirs() -> Tuple[str, ...]:
     """Where installs before addystack linked the kit's hook scripts: the hooks folder in
-    Claude Code's folder and in ~/.codex."""
-    return str(config.claude_home() / "hooks"), os.path.expanduser("~/.codex/hooks")
+    Claude Code's folder, in ~/.claude too, since a settings file copied into a new
+    CLAUDE_CONFIG_DIR still runs the old links, and in ~/.codex."""
+    folders = (str(config.claude_home() / "hooks"), os.path.expanduser("~/.claude/hooks"),
+               os.path.expanduser("~/.codex/hooks"))
+    return tuple(dict.fromkeys(folders))
 
 
 def _words(command: str) -> Tuple[str, ...]:
