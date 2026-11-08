@@ -5579,7 +5579,8 @@ class RoutineStop(unittest.TestCase):
         need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
         three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
                                                     for key in "abc"])
-        for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
+        for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n",
+                     "# Replies\n\n## Turn block ##\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
             with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
                 rules = pathlib.Path(folder, "replies.md")
                 if text:
@@ -5593,7 +5594,7 @@ class RoutineStop(unittest.TestCase):
                 if text and "Turn block" in text:
                     self.assertEqual(spec.resolve(), rules.resolve())
                 else:
-                    self.assertEqual(spec, HOOKS.parent / "references" / "turn-block.md")
+                    self.assertEqual(spec.resolve(), (HOOKS.parent / "references" / "turn-block.md").resolve())
                     self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
                 self.assertIn(f"({cited}, Turn block section)", self.feedback("Done.", env=env))
                 self.assertIn(f"({cited}, Turn block section)", self.feedback(three, env=env))

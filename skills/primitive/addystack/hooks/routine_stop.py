@@ -185,11 +185,12 @@ def rules_file():
     that isn't there."""
     path = resolved.replies().rules
     try:
-        if not (path and re.search(r"(?m)^#{1,6} Turn block\s*$", Path(path).read_text())):
+        if not (path and re.search(r"(?m)^ {0,3}#{1,6}[ \t]+Turn block(?:[ \t]+#+)?[ \t]*$", Path(path).read_text())):
             path = None
     except (OSError, UnicodeDecodeError):
         path = None
-    path = path or resolved.kit() / "references" / "turn-block.md"
+    # Beside this hook, not the kit state records, which can name an older checkout.
+    path = path or Path(__file__).resolve().parent.parent / "references" / "turn-block.md"
     try:
         return "~/" + str(Path(path).relative_to(Path.home()))
     except ValueError:
