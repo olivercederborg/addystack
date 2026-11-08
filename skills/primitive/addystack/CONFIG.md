@@ -10,9 +10,9 @@ Your settings live in `~/.config/addystack/`, which you can keep in your dotfile
 - `addystack.jsonc` is your config. Keys you leave out use the kit's defaults. Its
   `$schema` documents each key, and [`examples/addystack.jsonc`](examples/addystack.jsonc)
   shows them in use.
-- `global.md` holds your own global instructions. The build adds them to the kit's when
-  your config sets `"instructions": "global.md"`, which `install` does when it moves text
-  there.
+- `global.md` holds your own global instructions. The build adds them to the kit's only
+  when your config sets `"instructions": "global.md"`. `install` sets it when it moves text
+  there. If you create the file yourself, set it too.
 - `notes/` holds steps you add to core skills.
 
 ## Applying an edit
@@ -21,7 +21,7 @@ Run `addystack build`. If you changed `hosts`, `hooks`, or `replies`, run
 `addystack install` instead, since those decide which hooks are installed.
 
 The build overwrites `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so keep your own
-instructions in `global.md`. `addystack print-config` prints the merged config.
+instructions in the file `instructions` names. `addystack print-config` prints the merged config.
 
 ## Policy
 
