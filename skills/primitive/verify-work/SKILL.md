@@ -116,9 +116,9 @@ Cleanups, 🟡 **Not verified** when the only gap is a real run that can't happe
 words, and show the worst finding's code as the reply's one snippet.
 
 The fold holds what a reader and a re-run need: the base and head checked, the checks,
-one evidence line per finding, the fix diffs, and each artifact itself (the image, table,
-or log, as [evidence](references/evidence.md) shows its kind), never a path or a count in
-its place. A Done shows its proof the same way.
+one evidence line per finding, the fix diffs, and every artifact itself (each image,
+table, or log, as [evidence](references/evidence.md) shows its kind), never a path,
+folder, or count in its place. A Done shows its proof the same way.
 
 ````markdown
 🔴 **Not done: a retry after finalizing never publishes the export.**
@@ -154,7 +154,8 @@ Checked base `a1b2c3d` · head `e4f5a6b`
 `--finding` per finding line. Pass each artifact as `--evidence KIND=REF` and each kind
 the intent implies as `--require KIND`: the recorder refuses Done while a needed kind
 lacks a ref. The merge gate reads the latest verdict for the exact diff, so a Not done
-revokes an earlier Done.
+revokes an earlier Done. When the recorder refuses because this isn't a fresh
+work-verifier, start one with these steps and paste its receipt.
 
 PR title or description text blocks only through a check that fails on it, such as a
 required issue link. Otherwise it keeps a Done, as a **Fix before push** line in the fold
@@ -195,8 +196,11 @@ verdict stands and stop, unless it's a Not verified whose run can now happen.
    a boundary the last real runs didn't cover gets its own Real run, as does each run
    that verdict couldn't do.
 4. **Earlier findings**: each one marked fix is gone at the head, with every other
-   instance of its class the change caused, searched across the repo. One still there
-   stays open under its number.
+   instance of its class the change caused, searched across the repo. Name each fixed one
+   as gone, and keep one still there as a finding line under its old number. Ones it
+   marked follow-up or skip stay settled, and aren't raised again.
+
+Report the re-check's verdict as step 3 does, with its numbered finding lines and receipt.
 
 With no Blocker or Cleanup left, new or earlier, and no run owed, say "Nothing further",
 name the delta checked, and record Done for the new head. Optional finds go on one
