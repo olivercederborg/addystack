@@ -7,8 +7,8 @@ than the Bash tool's 2-minute default timeout, `sleep N` of a minute or more, an
 and `while read` loops that pause between items, stay allowed. Added after 107 such commands in 43 sessions, counted from
 transcripts (Sep 17 to Oct 9, 2026).
 
-In a T3 delegated child it points at counted loops instead, since a background task doesn't
-wake a child once its turn ends.
+In a T3 delegated child it points at counted loops instead, since the parent takes each of a
+child's turn ends as its result, so a child can't end its turn to wait on a background task.
 
 Known limit: loops written inside a script file or heredoc that the command runs aren't
 seen."""
@@ -62,11 +62,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import bare_references  # noqa: E402
 
 if bare_references.delegated_child(payload):
-    # Nothing re-invokes a T3 delegated child after its turn ends, so pr_watch.py sends back a
-    # turn that ends on background work; R76's child moved its commit to the background on this advice.
+    # A child's parent takes each turn end as its result, so pr_watch.py sends back a turn that
+    # ends on background work; R76's child moved its commit to the background on this advice.
     advice = ("Wait in counted loops whose sleeps add up to under 2 minutes each, such as "
               "`for i in $(seq 11); do kill -0 <pid> 2>/dev/null || break; sleep 10; done`, and repeat "
-              "until it's done. A background task doesn't wake a delegated child once its turn ends.")
+              "until it's done. Your parent takes each turn end as your result, so don't end the turn "
+              "to wait on a background task.")
 else:
     advice = ("Run it with `run_in_background: true`, which re-invokes you when it exits; use the Monitor "
               "tool to wait for a line in a log or file; or, for a PR's CI and reviews, use T3's "

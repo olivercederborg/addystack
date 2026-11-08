@@ -4632,7 +4632,8 @@ class BackgroundTurnEnd(unittest.TestCase):
         feedback = self.run_hook()
         self.assertIn("`Commit the fix`", feedback)
         self.assertIn("in the foreground", feedback)
-        self.assertIn("counted loops of under 2 minutes", feedback)
+        self.assertIn("counted loops whose sleeps add up to under 2 minutes", feedback)
+        self.assertIn("without starting it again", feedback)
 
     def test_sends_back_unfinished_background_subagent(self):
         self.write([self.AGENT])

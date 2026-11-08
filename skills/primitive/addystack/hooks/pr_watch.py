@@ -16,14 +16,16 @@ tool calls in shapes this doesn't read yet.
 
 In a T3 delegated child, it sends the turn back instead when the turn is ending while a
 background command (`run_in_background`) or background subagent it started this turn is
-still running. A child's parent takes its last reply as the result, so nothing wakes the
-child when the task finishes, and a brief rule against it failed at least five times
-(suite-audit R17, R38, R47, R76, R77; D-r78). It also reads the transcript of each
+still running. A child's parent takes each turn end as the child's result, so it gets a
+"still running" note instead of one, even when the task's notification wakes the child later,
+as it did in 170 of the 200 fires the 7-day replay found. A brief rule against it failed at
+least five times (suite-audit R17, R38, R47, R76, R77; D-r78). It also reads the transcript of each
 foreground subagent or forked skill this turn ran, since R77's forked verify-work ended on
 its own background test run and handed back "I'll wait for the result notification" as its
 verdict. A task counts as finished once a task notification or a TaskStop names it.
 `t3_background_wait` doesn't count: it only keeps the thread marked Working, and R76 ended
-on its commit after calling it. Monitors don't count, since one often outlives the event it
+on its commit after calling it. The send-back says to wait on a command rather than rerun
+it, since a second `git commit` started during the first one's pre-commit fails on HEAD's lock. Monitors don't count, since one often outlives the event it
 was waiting for. Codex is a no-op: its exec sessions never promise to wake the agent, and
 no Codex child was seen ending a turn this way."""
 import json, os, re, subprocess, sys
@@ -250,11 +252,10 @@ def background_feedback(event):
     if not left:
         return None
     return (f"Your turn is ending while background work started this turn is still running: {', '.join(left)}. "
-            "As a delegated child, nothing wakes you when it finishes, since your parent takes this reply as "
-            "your result, so wait for it in the foreground before ending the turn: rerun it in the foreground "
-            "with a timeout, or check its output file or process in counted loops of under 2 minutes each (a "
-            "subagent's run is already over, so run it again in the foreground; `t3_background_wait` only keeps "
-            "the thread marked Working).")
+            "Your parent takes each turn end as your result, even if that work wakes you later, so wait for it "
+            "before ending the turn: check a command's output file or pid in counted loops whose sleeps add up "
+            "to under 2 minutes each, without starting it again, and run a subagent's work again in the "
+            "foreground, since its run is over (`t3_background_wait` only keeps the thread marked Working).")
 
 
 def main():
