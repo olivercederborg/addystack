@@ -38,9 +38,9 @@ Known limits:
   environment without the agent mark, so a Codex server that's an Apple binary, such as
   Xcode's mcpbridge, counts toward the total, and a command Codex starts with a cleared
   environment and no shell doesn't.
-- An orphan from an installed app (under /Applications/) that leads its own process
-  group isn't agent work by its environment alone, since an app such as OrbStack starts
-  its VM with the environment of whichever command woke it.
+- An orphan in a process group an installed app (under /Applications/) leads isn't
+  agent work by its environment alone, since an app such as OrbStack starts its VM with
+  the environment of whichever command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
   counts toward the total.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
@@ -279,7 +279,9 @@ class Owners:
                 pid = parent.pid
             for proc in reversed(chain):
                 head = head or self.owner.get(proc.ident) or self.group.get(proc.pgid)
-                if head is None and proc.marked and not is_installed_app(proc):
+                leader = procs.get(proc.pgid)
+                if (head is None and proc.marked
+                        and not (leader is not None and is_installed_app(leader))):
                     head = self.group[proc.pgid] = proc.ident
                 owner[proc.ident] = head
         return owner

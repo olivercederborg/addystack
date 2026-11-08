@@ -168,6 +168,13 @@ class Attribution(unittest.TestCase):
             AGENT, proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr"))))
         self.assertEqual(commands, {})
 
+    def test_marked_helper_in_an_app_s_group_does_not_claim_it(self):
+        app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
+        commands = Owners().attribute(snapshot(
+            AGENT, proc(501, 1, pgid=501, marked=True, argv=(app,)),
+            proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",))))
+        self.assertEqual(commands, {})
+
     def test_orphaned_python_job_is_still_agent_work(self):
         # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the
         # exited command's group.
