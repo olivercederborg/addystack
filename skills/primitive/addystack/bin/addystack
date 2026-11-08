@@ -178,7 +178,9 @@ def _update_checkout(tag: Optional[str]) -> int:
     once the fetch succeeds, check out tag, or for a checkout detached at a v* tag, a release
     user's, the newest v* tag, then install. A checkout detached anywhere else stays as it
     is, and installs."""
-    branch = _git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
+    # The full ref, since --short gives heads/main when a tag is also named main.
+    ref = _git("symbolic-ref", "--quiet", "HEAD").stdout.strip()
+    branch = ref[len("refs/heads/"):] if ref.startswith("refs/heads/") else ""
     if branch and not tag:
         return _update_branch(branch)
     if _dirty():

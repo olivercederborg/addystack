@@ -423,6 +423,13 @@ class BranchCheckout(Update):
         self.assertEqual(self.branch(), "feature")
         self.assert_left(result, head, "feature's upstream isn't there after git fetch")
 
+    def test_fast_forwards_a_branch_a_tag_shares_its_name_with(self):
+        self.git(self.checkout, "tag", "main")
+        self.commit(self.upstream, "main-2")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
+        self.assertIn("fast-forwarded main to origin/main", result.stdout)
+
     def test_leaves_the_branch_when_the_fetch_fails(self):
         self.commit(self.upstream, "main-2")
         self.upstream.rename(self.home / "offline")
