@@ -133,8 +133,8 @@ smallest option, often leaving things as they are.
   next step posts or sends drafts shows each in full again, since what the reader
   approves is what goes out.
 - **One picture** per turn at most: an image, an inline page, or a UI card. Text views,
-  such as code, a table, or a flow line, don't count. An inline page (`html_render`) only
-  for screenshots, a chart, or a UI mockup; read [pictures](references/pictures.md) first.
+  such as code, a table, or a flow line, don't count. Any other inline page only for
+  screenshots, a chart, or a UI mockup; read [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
 - **Blank lines**: chat joins lines that have no blank line between them, so separate
   lines with a blank line or make them list items.
