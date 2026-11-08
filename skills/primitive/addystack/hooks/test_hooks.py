@@ -1157,6 +1157,9 @@ class BashRewrite(unittest.TestCase):
         'result="$(cd "$(pwd)" && swift test)"',
         "bash -lc 'swift test'",
         "infisical run --env=test -- sh -c 'bun run test:unit'",
+        "bun run --cwd packages/sentry test:unit",
+        "bun run vitest run src/a.test.ts",
+        "../../scripts/with-test-database.sh bun x vitest run",
     ]
 
     def test_denies_a_verifier_build_run_in_the_background(self):

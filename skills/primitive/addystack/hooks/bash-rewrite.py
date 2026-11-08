@@ -161,10 +161,10 @@ def modifier_fixes(command):
 # by a relative scripts/ path and its name says build, test, or bench. A path after the
 # runner's word (`bun test/server.ts`) runs a file, not the runner.
 RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
-          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build)"
-          r"|(?:npx\s+|bunx\s+|bun\s+x\s+)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
+          r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:--cwd[=\s]\S+\s+|--filter[=\s]\S+\s+|-C\s+\S+\s+)*(?:test|build)"
+          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npx\s+|bunx\s+|bun\s+(?:x|run)\s+)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
           r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+call"
-          r"|(?:(?:ba|z)?sh\s+)?(?:\./)?[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
+          r"|(?:(?:ba|z)?sh\s+)?(?:\.\.?/)*[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
 WRAPPER = (r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|exec|command"
            r"|caffeinate(?:\s+-\w+)*)\s+)*")
 # `swift test --help` or `xcodebuild -version` asks about the tool and runs nothing.
@@ -210,7 +210,9 @@ def unwaited(code):
     names, or the last job for `$!`. A keyword counts only where a command starts, so `echo
     done` closes nothing. Known limits: a quoted runner word or test path (`python3
     "test_x.py"`) and a quoted `--help` read as text, and `$(…)` nests one level deep;
-    none was among 25,365 verifier commands from Nov 1 to 8, 2026."""
+    none was among 25,365 verifier commands from Nov 1 to 8, 2026. Neither is an `sh -c`
+    passed through a shell function (`run() { "$@"; }; run sh -c '…'`), nor quotes inside
+    a quoted `$(…)` with parentheses of their own; both ran in the foreground when seen."""
     # Each frame: [start of its current list item, shell, steady (no branch, loop body, or guard around it)].
     frames, shells, jobs, after = [[0, 0, True]], 0, [], "\n"
     for token in TOKEN.finditer(code):
