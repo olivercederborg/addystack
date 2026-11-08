@@ -197,6 +197,21 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
 
+    def test_a_dangling_first_test_file_still_runs_its_folder(self):
+        (self.repo / "scripts" / "test_000_broken.py").symlink_to("absent.py")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
+    def test_inherited_nullglob_still_runs_the_host_suites(self):
+        startup = pathlib.Path(self.folder.name, "bash-env")
+        startup.write_text("shopt -s nullglob\n")
+        os.environ["BASH_ENV"] = str(startup)
+        self.addCleanup(os.environ.pop, "BASH_ENV")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
     def test_no_host_suite_blocks_the_commit(self):
         (self.repo / "scripts" / "test_host.py").unlink()
         run, _ = self.commit(dagger=False)
