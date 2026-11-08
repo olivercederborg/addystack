@@ -4,9 +4,9 @@ command would merge, and deny it unless
 - the PR's own checks ran and passed, or, in a repo with no workflows in
   `.github/workflows`, or whose workflows' path and branch filters skip the PR
   (workflow_triggers.py), the user's latest prompt asks for the merge (`merge on go` in
-  shared/workflow.md); a checkout whose trust is `gate` (resolved.py) needs no go when no
-  workflow exists at the PR's base, head, or default branch, since the fresh Done below
-  is enough,
+  shared/workflow.md); a checkout whose trust is `gate` (resolved.py) needs no go to merge
+  its own PR, named by number from a known folder, when no workflow exists at the PR's
+  base, head, or default branch, since the fresh Done below is enough,
 - the repo's default branch is green: its latest checks passed, or it has none,
 - a fresh work-verifier's latest verdict for that exact diff is Done (verdicts.py),
 - the PR's base branch gained no commits since the PR branched that touch files the PR
@@ -73,8 +73,12 @@ if not match or {"-h", "--help", "--disable-auto"} & set(args):
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-for folder in re.findall(r"\bcd\s+(\S+)", code[:match.start()]):  # in order: `cd a && cd b` lands in a/b
+cds = re.findall(r"\bcd\s+(\S+)", code[:match.start()])
+for folder in cds:  # in order: `cd a && cd b` lands in a/b
     cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(folder)))
+# Whether every cd before the merge runs and stays in its shell: none sits in a subshell, a
+# pipe, or a branch `||` or `;` can skip or go around.
+cwd_certain = not cds or not re.search(r"\|\||[;|()\n]|(?<!&)&(?!&)", code[:match.start()])
 
 def deny(*reasons):
     if DRY_RUN:
@@ -230,6 +234,10 @@ for i, arg in enumerate(args):
         positional.append(arg)
 target = positional[0] if positional else None
 repo_args = ["-R", repo] if repo else []
+# Whether the merge is surely this checkout's PR, which gate's no-go merge needs: a repo flag in
+# any form, or a URL or branch target, can name another repo's PR, which gh pr view and gh repo
+# view, resolved here, wouldn't see.
+local = cwd_certain and not any(arg.startswith(("-R", "--repo")) for arg in args) and "/" not in (target or "")
 # A merge the gate can't place in its checkout gets pointed at the locator.
 WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
          "checkout of the repo, prints the checkout to merge from and the merge line to run there")
@@ -267,7 +275,7 @@ try:
     import resolved, verdicts  # here, so a broken module blocks only merges
     # An unresolved policy can still read gate, when every rule is gate, so it never counts.
     policy = resolved.policy(cwd)
-    gate = policy.trust == "gate" and "unresolved" not in policy.matched
+    gate = local and policy.trust == "gate" and "unresolved" not in policy.matched
     default = data["defaultBranchRef"]
     # Diff locally, as the recorder does: `gh pr diff` shortens blob ids its own way and fails
     # past 300 files or 20,000 lines.
