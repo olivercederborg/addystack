@@ -50,10 +50,11 @@ GLOBAL = "global.md"
 def claude_home() -> Path:
     """Claude Code's folder, absolute: $CLAUDE_CONFIG_DIR, trimmed, when it isn't blank, else
     ~/.claude, as the skills CLI (v1.7.6 `claudeHome`) reads it. Like the CLI, it doesn't
-    expand a `~` in the variable, and reads a relative one from the working directory. Read
-    on each call, so the environment of the moment counts."""
+    expand a `~` in the variable, reads a relative one from the working directory, and folds
+    `..` by its text, as Node's path functions do, so every caller reads and writes the same
+    files. Read on each call, so the environment of the moment counts."""
     configured = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
-    return Path(configured).absolute() if configured else Path("~/.claude").expanduser()
+    return Path(os.path.abspath(configured)) if configured else Path("~/.claude").expanduser()
 
 
 # Absolute path -> text, set by planned() for a dry run.

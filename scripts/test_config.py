@@ -217,6 +217,7 @@ class ClaudeHome(Workspace):
         # directory.
         self.assertEqual(self.home(CLAUDE_CONFIG_DIR="~/claude-work"), pathlib.Path.cwd() / "~/claude-work")
         self.assertEqual(self.home(CLAUDE_CONFIG_DIR="cc"), pathlib.Path.cwd() / "cc")
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="/opt/missing/../claude"), pathlib.Path("/opt/claude"))
 
     def test_unset_or_blank_is_dot_claude_in_home(self):
         self.assertEqual(self.home(), self.dir / ".claude")
