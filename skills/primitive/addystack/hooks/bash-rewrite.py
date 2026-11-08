@@ -274,7 +274,8 @@ def verifier_fix(payload, tool_input, command):
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout >= LONG:
         return None, None
     return None, (f"raised the timeout to {LONG} ms, since Bash moves a build or test past its timeout to the "
-                  "background, and a work-verifier fork's background work stops when it hands back. " + SPLIT)
+                  "background, and a work-verifier fork's background work stops when it hands back. "
+                  + SPLIT.rstrip("."))  # main() ends each note with its own period
 
 
 def apply(command, edits):

@@ -1250,6 +1250,7 @@ class BashRewrite(unittest.TestCase):
                     self.assertEqual(out["permissionDecision"], "allow")
                     self.assertEqual(out["updatedInput"], {"command": command, "description": "d", "timeout": 600000})
                     self.assertIn("split it", out["additionalContext"])
+                    self.assertNotIn("..", out["additionalContext"] + out["permissionDecisionReason"])
         self.assertIsNone(self.verifier(self.BUILDS[0], timeout=600000))
 
     def test_leaves_other_commands_and_agents_alone(self):
