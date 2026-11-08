@@ -220,6 +220,13 @@ Proofs:
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
         self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
 
+    def test_a_notes_table_under_the_workers_table_carries(self):
+        notes = "Notes:\n\n| Item | Owner | Proof | State | Next | Comment |\n|---|---|---|---|---|---|\n| migration | t | d | done | m | keep |\n"
+        (self.dir / "project.md").write_text(PROJECT.replace("Proofs:\n", notes + "\nProofs:\n"))
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertIn("| migration | t | d | done | m | keep |\n", self.text())
+        self.assertNotIn("| review (pilot) |", self.text())
+
     def test_a_running_goal_that_starts_with_parked_is_running(self):
         self.project("phase", "audit", "--result", "five reports", "--goal", "Parked work is ready.", "--proof", "p")
         self.project("start", *NEXT, code=1)
