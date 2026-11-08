@@ -181,8 +181,9 @@ A run after an earlier verdict ("anything else?", "is it done now?", after fixes
 restack) checks the **delta**: what changed since the head that verdict checked. Take
 that verdict's base, head, and findings from the verifier's record, the last line of
 `scripts/github.sh target`, never from the caller's account. With `last: none`, or when
-the user asks for a full pass, run steps 1 to 4. When the line has `known`, say why the
-verdict stands and stop, unless it's a Not verified whose run can now happen.
+the user asks for a full pass, run steps 1 to 4. When the line has `known`, the verdict
+stands: say why and stop there, reading no new code and recording nothing, unless it's a
+Not verified whose run can now happen.
 
 1. **Delta**: pin the base and head as step 1 does. On the recorded base, with the
    recorded head an ancestor, read `git diff <last head> <head>`. On a new base, read
