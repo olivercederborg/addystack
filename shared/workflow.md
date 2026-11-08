@@ -91,7 +91,9 @@ own `.agents/addystack.jsonc` can only make it stricter.
   when the user's go names merging ("merge it and start next"), whether that's their
   latest message or the go that started the run.
 - **`gate`**: the agent marks ready and merges a verified stack once the merge-gate
-  hook allows it. Claude Code and Codex both run that hook, with four limits in Codex:
+  hook allows it, which in a repo with no workflows needs no go for the merge line
+  `scripts/stack.sh where` prints. Claude Code and Codex both run that hook, with four
+  limits in Codex:
   - Only a Claude `work-verifier` subagent can record a Done verdict, since
     `verdict-stamp.py` runs only in Claude Code. A Codex session can merge only once a
     Claude verify-work run has recorded Done for that diff.
