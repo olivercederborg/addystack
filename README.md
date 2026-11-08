@@ -52,8 +52,8 @@ applies an edit, policy, and notes.
 python3 ~/.agents/skills/addystack/bin/addystack update
 ```
 
-It updates the skills, adds skills that became core, removes core skills it dropped, and
-reruns `install`. `/addystack update` also summarizes [`CHANGELOG.md`](CHANGELOG.md) and
+It updates the skills, adds skills that became core, removes core skills the release
+dropped, and reruns `install`. `/addystack update` also summarizes [`CHANGELOG.md`](CHANGELOG.md) and
 flags notes whose skill changed.
 
 ## Working on the kit
