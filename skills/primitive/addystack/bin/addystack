@@ -131,9 +131,51 @@ def _install_from_kit() -> int:
     return _step([sys.executable, str(KIT / "bin" / "addystack"), "install"])
 
 
+def _dirty() -> bool:
+    return bool(_git("status", "--porcelain", "--untracked-files=no").stdout.strip())
+
+
+def _left(why: str) -> int:
+    """Leaves the checkout as it is, says why in one line, and installs from it."""
+    print(f"addystack: {why}, so update left it as is; installing from it", file=sys.stderr, flush=True)
+    return _install_from_kit()
+
+
+def _update_branch(branch: str) -> int:
+    """A developer's checkout on a branch: fetch, then fast-forward the branch to its
+    upstream. A branch with uncommitted changes, no upstream, or commits its upstream lacks
+    stays as it is. Either way it installs from what's on disk."""
+    if _dirty():
+        return _left(f"{KIT} has uncommitted changes on {branch}")
+    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}").stdout.strip()
+    if not upstream:
+        return _left(f"{branch} has no upstream")
+    fetched = _git("fetch", "--quiet")
+    if fetched.returncode:
+        return _left(f"git fetch failed in {KIT}: {' '.join(fetched.stderr.split())}")
+    if _git("rev-parse", "HEAD").stdout == _git("rev-parse", "@{upstream}").stdout:
+        print(f"{branch} is up to date with {upstream}")
+    elif _git("merge-base", "--is-ancestor", "HEAD", "@{upstream}").returncode == 0:
+        merged = _git("merge", "--ff-only", "--quiet", "@{upstream}")
+        if merged.returncode:
+            return _left(f"git merge --ff-only {upstream} failed: {' '.join(merged.stderr.split())}")
+        print(f"fast-forwarded {branch} to {upstream} in {KIT}")
+    elif _git("merge-base", "--is-ancestor", "@{upstream}", "HEAD").returncode == 0:
+        return _left(f"{branch} is ahead of {upstream}")
+    else:
+        return _left(f"{branch} has diverged from {upstream}")
+    return _install_from_kit()
+
+
 def _update_checkout(tag: Optional[str]) -> int:
-    """A maintainer's checkout: fetch, check out the newest v* tag (or tag), then install."""
-    if _git("status", "--porcelain", "--untracked-files=no").stdout.strip():
+    """A git checkout of the kit. On a branch and without tag, a developer's: update the
+    branch (_update_branch), never switching it. Otherwise fetch and check out tag, or for a
+    checkout detached at a v* tag, a release user's, the newest v* tag. Detached anywhere
+    else, it stays as it is. Then install."""
+    branch = _git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
+    if branch and not tag:
+        return _update_branch(branch)
+    if _dirty():
         print(f"addystack: {KIT} has uncommitted changes; commit or stash them, then run addystack update",
               file=sys.stderr)
         return 1
@@ -141,6 +183,9 @@ def _update_checkout(tag: Optional[str]) -> int:
     if fetched.returncode:
         print(f"addystack: git fetch failed in {KIT}: {fetched.stderr.strip()}", file=sys.stderr)
         return 1
+    if not tag and not _git("tag", "--points-at", "HEAD", "--list", "v*").stdout.strip():
+        head = _git("rev-parse", "--short", "HEAD").stdout.strip()
+        return _left(f"{KIT} is detached at {head}, not at a v* tag")
     tags = _git("tag", "--list", "v*", "--sort=-v:refname").stdout.split()
     tag = tag or (tags[0] if tags else None)
     if tag is None or tag not in tags:
@@ -150,7 +195,7 @@ def _update_checkout(tag: Optional[str]) -> int:
     if checkout.returncode:
         print(f"addystack: git checkout {tag} failed: {checkout.stderr.strip()}", file=sys.stderr)
         return 1
-    print(f"checked out {tag} in {KIT}")
+    print(f"checked out {tag} in {KIT}" + (f"; git checkout {branch} returns to your branch" if branch else ""))
     return _install_from_kit()
 
 
@@ -212,9 +257,10 @@ def _update_skills() -> int:
 
 
 def update(args: argparse.Namespace) -> int:
-    """Updates the kit and its skills, then installs (D9). A kit that is a git checkout
-    moves to the newest v* tag; one the skills CLI installed updates through it. Every step
-    runs without a terminal, so an agent can run it."""
+    """Updates the kit and its skills, then installs (D9). A kit that is a git checkout on a
+    branch fast-forwards that branch when it can, and one detached at a v* tag moves to the
+    newest tag (_update_checkout); one the skills CLI installed updates through it. Every
+    step runs without a terminal, so an agent can run it."""
     if _git("ls-files", "--error-unmatch", "bin/addystack").returncode == 0:
         return _update_checkout(args.to)
     if args.to:
@@ -446,7 +492,8 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("install", help="merge hooks, adopt instruction files, link the agent, build, doctor").add_argument(
         "--dry-run", action="store_true", help="print each change and write nothing")
     sub.add_parser("update", help="update the kit and its skills, then install").add_argument(
-        "--to", metavar="TAG", help="in a git checkout, the tag to check out instead of the newest")
+        "--to", metavar="TAG", help="in a git checkout, the tag to check out, even from a branch; without it, "
+                                    "a branch fast-forwards and a checkout at a v* tag moves to the newest")
     init_command = sub.add_parser("init", help="write ~/.config/addystack/addystack.jsonc")
     init_command.add_argument("--yes", action="store_true", help="write the detected defaults without asking")
     init_command.add_argument("--force", action="store_true", help="replace an existing config, keeping a .bak")
