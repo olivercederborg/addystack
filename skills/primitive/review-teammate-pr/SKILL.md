@@ -172,7 +172,7 @@ Draft every finding that will be posted, in the same turn as step 3, following t
 will read on GitHub, and give its target: `path:line`, or `path:start-end` for a
 range, for a new inline comment on lines the PR diff shows, or the thread link for a
 reply. Show drafts waiting for approval below a **Review** note, and in every later reply
-that offers to post them or posts them, show each draft it posts again in full. Run
+whose next step posts them, show each draft it posts again in full. Run
 `scripts/check-mermaid.mjs` on each draft with a Mermaid diagram, which parses it with
 the version GitHub renders, and fix what it rejects. Before showing an inline draft, run
 `scripts/github.sh anchors N drafts.json`: a draft outside the diff can't post, and one
