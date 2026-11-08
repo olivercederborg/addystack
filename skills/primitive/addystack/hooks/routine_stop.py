@@ -10,7 +10,8 @@ file, or the kit's references/turn-block.md), and this reads it: when the state 
 stop, nothing needs the user, and the recommended option's class is routine, the agent does
 that option instead of asking, whatever the block's `standing` list holds: those items, still
 open from earlier replies, don't block the step. It stays out of the way when the turn
-answers their question, since the router ends those with options, and after "no autonomy". A reply
+answers their question or a read-only request such as "show me …", since the router ends
+those with options, and after "no autonomy". A reply
 whose block is missing or malformed goes back once with the reason, since this hook and
 merge-gate.py read nothing without it.
 
@@ -63,7 +64,9 @@ REVIEW_SKILL = "review-teammate-pr"
 # The router's workflow skills: the review is over once one of these loads after it.
 WORKFLOWS = {REVIEW_SKILL, "address-review", "architect", "autopilot", "babysit", "build", "coordinator", "correct",
              "diagnosing-bugs", "open-pr", "review-loop", "scope-grill", "tdd", "verify-work"}
-QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who)\b", re.I)
+# A question, or a read-only request the router answers the same way: "show me the project file".
+QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who"
+                      r"|show|tell me|explain|describe|list|summari[sz]e|walk me through)\b", re.I)
 
 
 def should_continue(turn, messages):

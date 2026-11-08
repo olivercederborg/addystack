@@ -5630,6 +5630,20 @@ class RoutineStop(unittest.TestCase):
         self.assertIsNotNone(self.run_on(self.with_turn(standing=[need]), said=said))
         self.assertIsNone(self.run_on(self.with_turn(needs=[need]), said=("fix the header", claude_wrote("Done."), "a")))
 
+    def test_a_read_only_request_is_answered_like_a_question(self):
+        """Ported from suite-audit R83: "show me …" asks for an answer, so the turn that gives
+        it ends on its options."""
+        for said in ["show me the project file for this coordinator thread", "explain the 30 wait count",
+                     "tell me what's left", "list the open PRs", "walk me through the stack", "describe the fix",
+                     "summarize the review"]:
+            for turn in [{}, {"standing": [{"id": 1, "kind": "do", "name": "delete the old Keychain item"}]}]:
+                with self.subTest(said=said, turn=turn):
+                    self.assertIsNone(self.run_on(self.with_turn(**turn), said=("fix the header", said)))
+        # Words that only start like one still send on.
+        for said in ["showcase it", "listen for the error and fix it", "do it"]:
+            with self.subTest(said=said):
+                self.assertIsNotNone(self.run_on(self.REPLY, said=(said,)))
+
     def test_sends_a_reply_without_a_valid_block_back_once(self):
         for reply, reason in [
             (self.REPLY.rsplit("\n\n", 1)[0], "no turn block at the end of the reply"),
