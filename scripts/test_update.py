@@ -426,6 +426,14 @@ class BranchCheckout(Update):
         self.assertEqual(self.branch(), "feature")
         self.assert_left(result, head, "git fetch failed")
 
+    def test_leaves_a_branch_with_more_than_one_upstream(self):
+        self.git(self.upstream, "branch", "feature")
+        self.commit(self.upstream, "main-2")
+        self.git(self.checkout, "config", "--add", "branch.main.merge", "refs/heads/feature")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assert_left(result, head, "main has more than one upstream")
+
     def test_fast_forwards_an_upstream_the_fetch_refspec_leaves_out(self):
         self.git(self.checkout, "config", "--add", "remote.origin.fetch", "^refs/heads/main")
         self.commit(self.upstream, "main-2")

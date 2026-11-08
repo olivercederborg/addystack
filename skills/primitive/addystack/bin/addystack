@@ -149,9 +149,12 @@ def _update_branch(branch: str) -> int:
     if _dirty():
         return _left(f"{KIT} has uncommitted changes on {branch}")
     remote = _git("config", "--get", f"branch.{branch}.remote").stdout.strip()
-    merge = _git("config", "--get", f"branch.{branch}.merge").stdout.strip()
-    if not remote or not merge:
+    merges = _git("config", "--get-all", f"branch.{branch}.merge").stdout.split()
+    if not remote or not merges:
         return _left(f"{branch} has no upstream")
+    if len(merges) > 1:
+        return _left(f"{branch} has more than one upstream")
+    merge = merges[0]
     upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{upstream}}").stdout.strip() \
         or f"{merge} on {remote}"
     # The configured upstream itself, as git pull fetches it, so neither a stale
