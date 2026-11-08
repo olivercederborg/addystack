@@ -59,9 +59,9 @@ if not reason:
     sys.exit(0)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bare_references  # noqa: E402
+import t3_child  # noqa: E402
 
-if bare_references.delegated_child(payload):
+if t3_child.delegated_brief(payload.get("session_id")) is not None:
     # A child's parent takes each turn end as its result, so pr_watch.py sends back a turn that
     # ends on background work; R76's child moved its commit to the background on this advice.
     advice = ("Wait in counted loops whose sleeps add up to under 2 minutes each, such as "

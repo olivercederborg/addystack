@@ -300,6 +300,23 @@ def run_hook(hook, payload, env=None):
     return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 
 
+def state_db(folder, thread, brief, creator="agent"):
+    """A T3 state database in folder whose thread runs session "s" and "s1", with brief as its first message."""
+    path = os.path.join(folder, f"state-{hashlib.sha1((thread + brief + creator).encode()).hexdigest()[:8]}.sqlite")
+    if os.path.exists(path):
+        return path
+    with contextlib.closing(sqlite3.connect(path)) as db, db:
+        db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, payload_json text)")
+        db.execute("create table orchestration_v2_projection_messages "
+                   "(thread_id text, role text, payload_json text, created_at text)")
+        for session in ("s", "s1"):
+            db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?)",
+                       (thread, json.dumps({"nativeThreadRef": {"nativeId": session}})))
+        db.execute("insert into orchestration_v2_projection_messages values (?, 'user', ?, '2026-11-08')",
+                   (thread, json.dumps({"text": brief, "createdBy": creator})))
+    return path
+
+
 def fake_home(folder, drop=()):
     """A home under folder with a kit at ~/kit whose hooks link to this checkout's, a
     resolved.json in ~/state that selects every hook, and settings.json and hooks.json
@@ -2004,12 +2021,13 @@ class NoForegroundWaits(unittest.TestCase):
         self.assertFalse(self.bash("until grep -q EXIT /tmp/b.log; do sleep 15; done", background=True))
 
     def test_points_a_delegated_child_at_counted_loops(self):
-        def reason(brief):
-            with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+        def reason(brief, thread="thread:delegated-task:x", creator="agent"):
+            with tempfile.TemporaryDirectory() as folder, \
+                    tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
                 transcript.write(json.dumps({"type": "user", "message": {"content": brief}}) + "\n")
                 transcript.flush()
                 out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
-                                     env={**os.environ, "T3_STATE_DB": "/nonexistent"},
+                                     env={**os.environ, "T3_STATE_DB": state_db(folder, thread, brief, creator)},
                                      input=json.dumps({"tool_name": "Bash", "session_id": "s",
                                                        "tool_input": {"command": "while pgrep make; do sleep 5; done"},
                                                        "transcript_path": transcript.name})).stdout
@@ -2017,7 +2035,9 @@ class NoForegroundWaits(unittest.TestCase):
         child = reason("Act as the implementation sub-agent for this task.\n\nBuild it.")
         self.assertIn("counted loops", child)
         self.assertNotIn("run_in_background", child)
-        self.assertIn("run_in_background", reason("Build it."))
+        self.assertIn("run_in_background", reason("Build it.", thread="thread:top", creator="user"))
+        self.assertIn("run_in_background", reason(
+            "Act as the implementation sub-agent for this task.\n\nBuild it.", thread="thread:top", creator="user"))
 
 
 
@@ -4590,6 +4610,7 @@ class BackgroundTurnEnd(unittest.TestCase):
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)
         self.path = pathlib.Path(self.folder.name, "s1.jsonl")
+        self.db = state_db(self.folder.name, "thread:delegated-task:x", self.BRIEF)
 
     def write(self, steps, path=None, brief=BRIEF):
         """steps: ("bg", tool, input, result text), ("notice", text) for a queued notification,
@@ -4622,7 +4643,7 @@ class BackgroundTurnEnd(unittest.TestCase):
 
     def run_hook(self, event=None, env=None):
         out = subprocess.run([str(self.HOOK)], capture_output=True, text=True, check=True,
-                             env={**os.environ, "T3CODE_CLI_PATH": "/t3", "T3_STATE_DB": "/nonexistent", **(env or {})},
+                             env={**os.environ, "T3CODE_CLI_PATH": "/t3", "T3_STATE_DB": self.db, **(env or {})},
                              input=json.dumps({"transcript_path": str(self.path), "session_id": "s1",
                                                "cwd": self.folder.name, **(event or {})})).stdout
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else None
@@ -4667,9 +4688,12 @@ class BackgroundTurnEnd(unittest.TestCase):
                 self.assertIsNone(self.run_hook())
 
     def test_passes_outside_a_delegated_child_already_sent_back_or_codex(self):
-        self.write([self.COMMIT], brief="Fix the bug.")
-        self.assertIsNone(self.run_hook())
-        self.write([self.COMMIT])
+        # A top-level thread passes, even one whose first prompt reads like a brief, and so does any
+        # doubt, such as a missing database.
+        for brief in ("Fix the bug.", self.BRIEF):
+            self.write([self.COMMIT], brief=brief)
+            self.assertIsNone(self.run_hook(env={"T3_STATE_DB": state_db(self.folder.name, "thread:top", brief, "user")}))
+        self.assertIsNone(self.run_hook(env={"T3_STATE_DB": "/nonexistent"}))
         self.assertIsNone(self.run_hook({"stop_hook_active": True}))
         self.assertIsNone(self.run_hook({"turn_id": "t"}))
 

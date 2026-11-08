@@ -32,7 +32,7 @@ import json, os, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bare_references, transcripts  # noqa: E402
+import bare_references, t3_child, transcripts  # noqa: E402
 
 PUSH = re.compile(r"\bgh\s+(?:stack\s+(submit|push|sync)|pr\s+(create|ready))\b(?![^;&|\n]*(?:--help|-h\b|--undo))")
 MERGE = re.compile(r"\bgh\s+(?:pr|stack)\s+merge\b")
@@ -266,7 +266,9 @@ def main():
     if event.get("stop_hook_active") or "turn_id" in event:
         return
     if bare_references.delegated_child(event):
-        if feedback := background_feedback(event):
+        # Only T3's database names a child here: a top-level thread whose first prompt reads like
+        # a brief may leave background work running.
+        if t3_child.delegated_brief(event.get("session_id")) is not None and (feedback := background_feedback(event)):
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": feedback}}))
         return
     if not os.environ.get("T3CODE_CLI_PATH"):
