@@ -179,9 +179,9 @@ def project_feedback(reply, project):
 
 
 def rules_file():
-    """The user's reply rules file, which holds the Turn block section, or the kit's replies.md
-    when they keep none, as ~/… under $HOME."""
-    path = resolved.replies().rules or resolved.kit() / "replies.md"
+    """The user's reply rules file, which holds the Turn block section, or the kit's own
+    spec, references/turn-block.md, when they keep none, as ~/… under $HOME."""
+    path = resolved.replies().rules or resolved.kit() / "references" / "turn-block.md"
     try:
         return "~/" + str(Path(path).relative_to(Path.home()))
     except ValueError:
@@ -233,9 +233,10 @@ def main():
              "message and folds the rest away, so your final reply has to stand on its own: "
              "carry forward what the reply above told the user, with the step's result added.")
     elif len(turn.options) > NEXT_MAX:
-        send(event, f"Your Next offers {len(turn.options)} options; replies.md allows two: `a`, your "
-             "pick, and `b` only when the reply stops for the user's call, as on a decision card's "
-             "no, the smallest option. The user steers in their own words instead of picking a third. Send "
+        send(event, f"Your Next offers {len(turn.options)} options; the turn block allows two "
+             f"({rules_file()}, Turn block section): `a`, your pick, and `b` only when the reply stops for "
+             "the user's call, as on a decision card's no, the smallest option. The user steers in "
+             "their own words instead of picking a third. Send "
              "your whole reply again with at most two options, in Next and in the turn block. T3 "
              "shows only a turn's last message, so the resent reply has to stand on its own. Add "
              "no note about the change.")

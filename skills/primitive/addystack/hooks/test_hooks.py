@@ -2,7 +2,7 @@
 check whether it denies."""
 import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
 
-import bare_references, hook_parity, merge_go, reply_budget, transcripts, turn_block, verdicts, workflow_triggers
+import bare_references, hook_parity, merge_go, reply_budget, resolved, routine_stop, transcripts, turn_block, verdicts, workflow_triggers
 
 try:
     from markdown_it import MarkdownIt
@@ -5504,12 +5504,12 @@ class RoutineStop(unittest.TestCase):
     REPLY = ("✅ **Committed.**\n\n---\n\n**Next**\n\n"
              "- **`a` → run verify-work on PR #87 in a fresh verifier** · *recommended*\n\n" + block(TURN))
 
-    def run_on(self, reply, said=("fix the header",), **event):
+    def run_on(self, reply, said=("fix the header",), env=None, **event):
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
             for text in said:  # Codex's rollout shape when the event is Codex's
                 transcript.write(json.dumps(codex_said(text) if "turn_id" in event else claude_said(text)) + "\n")
             transcript.flush()
-            out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, input=json.dumps(
+            out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, env=env, input=json.dumps(
                 {"last_assistant_message": reply, "transcript_path": transcript.name, **event})).stdout
         return json.loads(out) if out else None
 
@@ -5545,7 +5545,7 @@ class RoutineStop(unittest.TestCase):
                     found = self.feedback(reply, **event)
                     self.assertIn(f"Your reply has no valid turn block: {reason}", found)
                     self.assertIn("Send your whole reply again", found)
-                    self.assertIn("replies.md, Turn block section)", found)
+                    self.assertIn(f"({routine_stop.rules_file()}, Turn block section)", found)
         # Codex as decision: block, Claude Code as additionalContext.
         self.assertEqual(set(self.run_on("Done.", turn_id="t1")), {"decision", "reason"})
         self.assertEqual(self.run_on("Done.")["hookSpecificOutput"]["hookEventName"], "Stop")
@@ -5563,7 +5563,7 @@ class RoutineStop(unittest.TestCase):
         for event in [{}, {"turn_id": "t1"}]:
             with self.subTest(event=event):
                 found = self.feedback(reply, **event)
-                self.assertIn("Your Next offers 3 options; replies.md allows two", found)
+                self.assertIn("Your Next offers 3 options; the turn block allows two", found)
                 self.assertIn("Send your whole reply again", found)
         self.assertIsNone(self.run_on(reply, stop_hook_active=True))
         # Two options is an ordinary stop, and a reply from before the cap still parses.
@@ -5572,6 +5572,26 @@ class RoutineStop(unittest.TestCase):
         # A routine `a` with nothing waiting is sent on, not back: the agent does it instead.
         routine = self.with_turn(options=[self.ROUTINE, *three[1:]], needs=[])
         self.assertIn("isn't a stop", self.feedback(routine))
+
+    def test_send_backs_cite_a_turn_block_spec_that_exists(self):
+        """With no reply rules file, the kit's own spec; with one, the user's file."""
+        need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
+        three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
+                                                    for key in "abc"])
+        for rules in [None, str(RULES)]:
+            with self.subTest(rules=rules), tempfile.TemporaryDirectory() as folder:
+                env = resolved_state(folder, json.dumps({"replies": {"style": "reply-shape", "rules": rules,
+                                                                     "turnBlock": True}}))
+                with unittest.mock.patch.object(resolved, "STATE", pathlib.Path(folder, "resolved.json")):
+                    cited = routine_stop.rules_file()
+                spec = pathlib.Path(cited).expanduser()
+                if rules:
+                    self.assertEqual(spec.resolve(), RULES.resolve())
+                else:
+                    self.assertEqual(spec, HOOKS.parent / "references" / "turn-block.md")
+                    self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
+                self.assertIn(f"({cited}, Turn block section)", self.feedback("Done.", env=env))
+                self.assertIn(f"({cited}, Turn block section)", self.feedback(three, env=env))
 
     def test_sends_an_issue_option_in_a_teammate_review_back_once(self):
         def load(name):
