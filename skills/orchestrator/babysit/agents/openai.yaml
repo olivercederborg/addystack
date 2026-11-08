@@ -1,0 +1,6 @@
+interface:
+  display_name: "Babysit"
+  short_description: "Keep your PR or stack moving when its watch wakes"
+  default_prompt: "Use $babysit on this PR."
+policy:
+  allow_implicit_invocation: true

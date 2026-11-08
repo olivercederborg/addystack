@@ -1,0 +1,307 @@
+"""Brings each host's hooks and instruction file in line with a Resolved config (plan D9).
+
+`addystack install` runs this before build, and `addystack update` ends with an install.
+It never installs or links a skill: skills install with `npx skills add`, and doctor
+accepts that install or a maintainer's linked checkout.
+
+Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
+hookset.merge into Claude Code's ~/.claude/settings.json `hooks` key and Codex's
+~/.codex/hooks.json (hookset.PATHS), so every hook addystack didn't install stays where it
+is. A hook addystack installed is one the ledger records, at installed.json in the state
+folder (`ADDYSTACK_STATE`), or one a manifest entry renders for this kit (hookset.owner), so
+a user's hook on another script in the kit's hooks folder stays; each is removed once it's
+no longer selected. A disabled host's earlier hooks are removed too, when its file exists.
+A settings file that isn't a JSON object stops the run before anything is written.
+
+Instructions: before build replaces ~/.claude/CLAUDE.md or ~/.codex/AGENTS.md for an
+enabled host, text there that addystack didn't build (its first line isn't a build header)
+moves into the user's instructions file: the one the config's `instructions` names, or
+`global.md` beside the config, created or appended to, never overwritten. Text the file
+already holds isn't added again, so a second install, or the same text in both hosts'
+files, adds it once. Appended text that doesn't open with a `# ` heading gets one naming
+its source, so it doesn't join the file's last section. When the config names no
+instructions file, install sets `"instructions": "global.md"` in it, so the build carries
+the text; with no config yet, the build reads `global.md` beside where it would be
+(config.load_layers), and `addystack init` names it.
+"""
+from __future__ import annotations
+
+import json
+import os
+import stat
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, List, Literal, Optional, Tuple
+
+import config
+import hookset
+import render
+import resolved as _resolved
+from config import Resolved
+
+LEDGER = _resolved.STATE.parent / "installed.json"
+
+# The first line of a file addystack built: `addystack build`'s, and scripts/build-global.py's
+# before it.
+_BUILT = ("<!-- Built by addystack build", "<!-- Built by scripts/build-global.py")
+_GLOBAL = config.GLOBAL
+
+
+@dataclass(frozen=True)
+class Change:
+    """One change run() makes, or plan() would make."""
+    kind: Literal["hooks", "adopt-instructions"]
+    target: Path
+    detail: str
+
+
+def run(resolved: Resolved) -> List[Change]:
+    """Every change needed, made. Raises ValueError, before writing anything, when a
+    settings file or the config can't be read or edited safely."""
+    changes, writes = plan(resolved)
+    for path, text in writes.items():
+        _write(path, text)
+    return changes
+
+
+def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
+    """Every change needed, and the text each file it writes would hold, the ledger's
+    included, writing nothing; so install --dry-run can preview the build from that state
+    (config.planned). Raises as run() does."""
+    writes: Dict[Path, str] = {}
+    changes = _adopt(resolved, writes)
+    ledger = _ledger()
+    recorded: Dict[str, List[List[str]]] = {}
+    for runtime in hookset.PATHS:
+        change, pairs = _hooks(resolved, runtime, ledger.get(runtime, []), writes)
+        changes += [change] if change else []
+        if pairs:
+            recorded[runtime] = pairs
+    wanted = {"version": 1, "hooks": recorded}
+    if _read_json(LEDGER.expanduser()) != wanted:
+        writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
+    return changes, writes
+
+
+def _write(path: Path, text: str) -> None:
+    """Writes text to path, through a link to the file it names; see _replace."""
+    _replace(Path(os.path.realpath(path)), text)
+
+
+def _replace(path: Path, text: str) -> None:
+    """Replaces path with text by renaming a file written beside it, so a reader never sees
+    half a file. A link at path is replaced, not written through. The new file keeps the
+    mode of the file it replaces, so a private settings file stays private, plus the
+    owner's read and write, so an unreadable file it replaces comes back readable; a new
+    one gets the umask's. build writes through it too."""
+    try:
+        mode: Optional[int] = stat.S_IMODE(os.stat(path).st_mode) | stat.S_IRUSR | stat.S_IWUSR
+    except OSError:
+        mode = None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(f".{path.name}.addystack-tmp")
+    partial.unlink(missing_ok=True)
+    # Created private when it replaces a file, so its text is never readable by more than
+    # the old file's was, then given that file's mode.
+    descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if mode is not None else 0o666)
+    with os.fdopen(descriptor, "w") as file:
+        file.write(text)
+        if mode is not None:
+            os.fchmod(file.fileno(), mode)
+    os.replace(partial, path)
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def _ledger() -> Dict[str, List[Tuple[str, str]]]:
+    """The (event, command) pairs the last install wrote, by runtime; none when the ledger
+    is missing or unreadable."""
+    data = _read_json(LEDGER.expanduser())
+    hooks = data.get("hooks") if isinstance(data, dict) else None
+    found: Dict[str, List[Tuple[str, str]]] = {}
+    for runtime, pairs in (hooks.items() if isinstance(hooks, dict) else ()):
+        if isinstance(pairs, list):
+            found[runtime] = [(pair[0], pair[1]) for pair in pairs
+                              if isinstance(pair, list) and len(pair) == 2 and all(isinstance(p, str) for p in pair)]
+    return found
+
+
+def _hooks(resolved: Resolved, runtime: hookset.Runtime, earlier: List[Tuple[str, str]],
+           writes: Dict[Path, str]) -> Tuple[Optional[Change], List[List[str]]]:
+    """The change to runtime's settings file, queued in writes, and the pairs it installs."""
+    path = Path(hookset.PATHS[runtime]).expanduser()
+    enabled = bool(resolved["hosts"].get(runtime))
+    if not enabled and not path.exists():
+        return None, []
+    try:
+        document = json.loads(path.read_text()) if path.exists() else {}
+    except (OSError, ValueError) as error:
+        raise ValueError(f"can't read {path}: {error}; fix it, then run addystack install") from error
+    if not isinstance(document, dict):
+        raise ValueError(f"{path} doesn't hold a JSON object; fix it, then run addystack install")
+    entries = hookset.select(resolved, runtime) if enabled else []
+    merged = hookset.merge(document, entries, hookset.owner(resolved, earlier))
+    pairs = [[entry.event, entry.command] for entry in entries]
+    if merged == document and path.exists():
+        return None, pairs
+    before = {(e["event"], e["command"]) for e in hookset._installed(document)}
+    after = {(e["event"], e["command"]) for e in hookset._installed(merged)}
+    lines = [f"+ {event} {command}" for event, command in sorted(after - before)]
+    lines += [f"- {event} {command}" for event, command in sorted(before - after)]
+    writes[path] = json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
+    return Change("hooks", path, "\n".join(lines) or "regroups its hooks"), pairs
+
+
+def _adopt(resolved: Resolved, writes: Dict[Path, str]) -> List[Change]:
+    """Moves each enabled host's hand-written instruction file into the user's
+    instructions file, queued in writes."""
+    hosts = [(render.CLAUDE, "claude"), (render.CODEX, "codex")]
+    found = [(path.expanduser(), text) for path, host in hosts if resolved["hosts"].get(host)
+             for text in [_hand_written(path.expanduser())] if text]
+    if not found:
+        return []
+    target, named = _instructions_file()
+    current = target.read_text() if target.is_file() else ""
+    text = current
+    moved = []
+    for source, body in found:
+        if body in text:
+            continue
+        if text.strip():
+            heading = "" if _opens_with_heading(body) else f"# From {render._home(source)}\n\n"
+            text = f"{text.rstrip()}\n\n{heading}{body}\n"
+        else:
+            text = f"{body}\n"
+        moved.append(source)
+    changes = []
+    if text != current:
+        writes[target] = text
+        later = "; addystack init names it in your new config" if _user_layer() is None else ""
+        changes.append(Change("adopt-instructions", target,
+                              f"moves the text of {', '.join(render._home(path) for path in moved)} into it{later}"))
+    if not named:
+        changes += _name_instructions(writes)
+    return changes
+
+
+def _hand_written(path: Path) -> Optional[str]:
+    """The file's text, stripped, when it holds text addystack didn't build; else None.
+    Raises ValueError when it's there but can't be read or isn't UTF-8, since build would
+    replace text nobody moved."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError) as error:
+        reason = error.strerror if isinstance(error, OSError) else f"not UTF-8 text at byte {error.start}"
+        raise ValueError(f"can't read {path}: {reason}; fix it or move it aside, then run addystack install") \
+            from error
+    if not text.strip() or text.lstrip().startswith(_BUILT):
+        return None
+    return text.strip()
+
+
+def _opens_with_heading(text: str) -> bool:
+    return text.startswith("# ")
+
+
+def _user_layer() -> Optional[config.Layer]:
+    return next((layer for layer in config.load_layers() if layer.name == "user"), None)
+
+
+def _instructions_file() -> Tuple[Path, bool]:
+    """The user's instructions file, and whether the config already names it."""
+    layer = _user_layer()
+    named = layer.data.get("instructions") if layer else None
+    if isinstance(named, str):
+        return Path(config._absolute(named, layer.dir)), True
+    return config.CONFIG.expanduser().absolute().parent / _GLOBAL, False
+
+
+def _name_instructions(writes: Dict[Path, str]) -> List[Change]:
+    """Sets `"instructions": "global.md"` in the user's config, keeping its comments and
+    layout; nothing without a config, since init names it."""
+    path = config.CONFIG.expanduser().absolute()
+    layer = _user_layer()
+    if layer is None:
+        return []
+    text = path.read_text()
+    value = _top_level_value(text, "instructions")
+    if value is not None and text.startswith("null", value):
+        edited: Optional[str] = f'{text[:value]}"{_GLOBAL}"{text[value + len("null"):]}'
+    else:
+        start = _opening_brace(text)
+        if start is None:
+            edited = None
+        else:
+            comma = "," if layer.data else ""
+            edited = f'{text[:start + 1]}\n  "instructions": "{_GLOBAL}"{comma}{text[start + 1:]}'
+    try:
+        same = edited is not None and config._parse(path, edited) == {**layer.data, "instructions": _GLOBAL}
+    except config.Invalid:
+        same = False
+    if not same:
+        raise ValueError(f'couldn\'t add "instructions": "{_GLOBAL}" to {path}; add it yourself, then run '
+                         "addystack install")
+    writes[path] = edited
+    return [Change("adopt-instructions", path, f'sets "instructions": "{_GLOBAL}", so the build carries it')]
+
+
+def _skip(text: str, i: int) -> int:
+    """The index of the next character past space and JSONC comments from i; an unclosed
+    block comment runs to the end."""
+    while i < len(text):
+        if text[i].isspace():
+            i += 1
+        elif text.startswith("//", i):
+            end = text.find("\n", i)
+            i = len(text) if end < 0 else end
+        elif text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            i = len(text) if end < 0 else end + 2
+        else:
+            break
+    return i
+
+
+def _string_end(text: str, i: int) -> int:
+    """The index past the JSON string that opens at i."""
+    end = i + 1
+    while end < len(text) and text[end] != '"':
+        end += 2 if text[end] == "\\" else 1
+    return end + 1
+
+
+def _top_level_value(text: str, key: str) -> Optional[int]:
+    """The index where the value of the config's top-level `key` starts, or None. Text in
+    comments and strings, and keys of nested objects, don't count."""
+    depth, i = 0, 0
+    while True:
+        i = _skip(text, i)
+        if i >= len(text):
+            return None
+        char = text[i]
+        if char == '"':
+            end = _string_end(text, i)
+            colon = _skip(text, end)
+            if depth == 1 and colon < len(text) and text[colon] == ":":
+                try:
+                    if json.loads(text[i:end]) == key:
+                        return _skip(text, colon + 1)
+                except ValueError:
+                    return None
+            i = end
+        else:
+            depth += 1 if char in "{[" else -1 if char in "}]" else 0
+            i += 1
+
+
+def _opening_brace(text: str) -> Optional[int]:
+    """The index of the config's top-level `{`, past leading comments and space."""
+    i = _skip(text, 0)
+    return i if i < len(text) and text[i] == "{" else None

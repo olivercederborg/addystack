@@ -1,0 +1,276 @@
+/* Review artifact page, in the system-note look: a spec sheet with a
+   running head, a big title beside the verdict, a strip of numbers, numbered sections with
+   framed figures, and spec tables. The build puts the Geist @font-face rules above this file.
+   Pages use these tokens and primitives; extra.css may place things, but adds no colors,
+   shadows, or gradients. */
+
+:root {
+  color-scheme: light dark;
+  --sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --mono: "Geist Mono", ui-monospace, monospace;
+  /* 8px rhythm */
+  --u: 8px;
+  --page: 960px;
+  /* a figure's drawing width; the frame centres it on the dot grid */
+  --fig: 640px;
+  --frame-pad: calc(3 * var(--u));
+
+  /* ink, greys, one accent; the accent marks only what's new */
+  --bg:     light-dark(oklch(98.7% 0.002 100), oklch(14.5% 0.004 270));
+  --panel:  light-dark(oklch(100% 0 none),     oklch(17.5% 0.005 270));
+  --ink:    light-dark(oklch(20% 0 none),      oklch(94% 0.003 270));
+  --grey-1: light-dark(oklch(52% 0 none),      oklch(68% 0.006 270));
+  --grey-2: light-dark(oklch(91.5% 0.002 100), oklch(26% 0.007 270));
+  --grey-3: light-dark(oklch(84% 0.003 100),   oklch(36% 0.007 270));
+  --dot:    light-dark(oklch(88.5% 0.003 100), oklch(27% 0.006 270));
+  --accent: light-dark(oklch(54% 0.2 262),     oklch(74% 0.14 262));
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 14px/24px var(--sans);
+  font-variant-numeric: tabular-nums;
+  font-synthesis: none;
+  /* Chromium on Linux snaps hinted glyph advances to whole pixels, which collapses Geist's
+     narrow word space. Keep letter-spacing 0 at 15px and under for the same reason. */
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+::selection { background: color-mix(in oklch, var(--accent) 22%, transparent); }
+
+main { inline-size: min(100% - 6 * var(--u), var(--page)); margin-inline: auto; counter-reset: sec; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p, li { text-wrap: pretty; }
+p { margin: 0; }
+code { font: 400 12px/1 var(--mono); }
+.new { color: var(--accent); }
+
+a { color: inherit; text-decoration-line: underline; text-decoration-color: var(--grey-3); text-decoration-thickness: 1px; text-underline-offset: 3px; border-radius: 2px; }
+a:focus-visible, summary:focus-visible { outline: 1px solid var(--accent); outline-offset: 3px; }
+a:active, summary:active { color: var(--ink); }
+@media (hover: hover) and (pointer: fine) {
+  a:hover { color: var(--ink); text-decoration-color: currentColor; }
+  summary:hover { color: var(--ink); }
+}
+
+/* running head: repo and kind on the left, the PRs and their base on the right, in caps */
+.bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 calc(2 * var(--u)); padding-block: calc(2 * var(--u)); border-block-end: 1px solid var(--grey-2); font: 400 12px/24px var(--mono); color: var(--grey-1); text-transform: uppercase; }
+.bar b { font-weight: 500; color: var(--ink); }
+
+/* hero: the title, big, beside the verdict sentence */
+.hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: calc(3 * var(--u)) calc(6 * var(--u)); align-items: end; padding-block: calc(10 * var(--u)) calc(5 * var(--u)); }
+.hero h1 { font: 600 clamp(32px, 4.6vw, 48px)/1.05 var(--sans); letter-spacing: -0.035em; }
+.verdict { font: 400 16px/24px var(--sans); color: var(--grey-1); }
+.verdict strong { font-weight: 500; color: var(--ink); }
+.verdict code { font-size: 14px; color: var(--ink); }
+
+/* specs: 2–4 numbers that sum the PR up, each over a mono caption */
+ul.specs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; border-block: 1px solid var(--grey-2); }
+.specs li { display: grid; align-content: start; gap: var(--u); padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(2.5 * var(--u)) 0; font: 400 12px/16px var(--mono); color: var(--grey-1); }
+.specs li + li { padding-inline-start: calc(2.5 * var(--u)); border-inline-start: 1px solid var(--grey-2); }
+.specs b { font: 500 32px/40px var(--sans); letter-spacing: -0.03em; color: var(--ink); }
+
+/* ruler: where this PR sits in its rollout, 3–6 steps, .now on this review's step */
+ol.ruler { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: calc(3 * var(--u)) 0 0; padding: 0; list-style: none; font: 400 12px/16px var(--mono); }
+.ruler li { position: relative; padding: calc(1.5 * var(--u)) var(--u) 0 0; border-block-start: 1px solid var(--grey-3); }
+.ruler li::before { content: ""; position: absolute; inset: -4px auto auto 0; inline-size: 1px; block-size: var(--u); background: var(--grey-3); }
+.ruler li span { display: block; margin-block-start: calc(0.5 * var(--u)); color: var(--grey-1); }
+.ruler .now { color: var(--accent); }
+.ruler .now::before { inline-size: 2px; background: var(--accent); }
+
+/* sections: a number in the gutter (a CSS counter), the plain label as the heading, one line */
+section.sec { padding-block-start: calc(11 * var(--u)); counter-increment: sec; }
+.sec-head { display: grid; grid-template-columns: calc(11 * var(--u)) minmax(0, 1fr); column-gap: calc(2 * var(--u)); align-items: baseline; margin-block-end: calc(3 * var(--u)); }
+.sec-head::before { content: counter(sec, decimal-leading-zero); font: 400 12px/32px var(--mono); color: var(--grey-1); }
+.sec-head h2 { font: 600 24px/32px var(--sans); letter-spacing: -0.02em; }
+.sec-head p { grid-column: 2; max-inline-size: 72ch; margin-block-start: var(--u); color: var(--grey-1); }
+.sec-head p code { color: var(--ink); }
+
+/* figures: one per section, in a frame: crop marks at its corners, a "Fig. n — title" bar
+   with grey meta on the right, and a body on a 16px dot grid. The body's content box is the
+   drawing width (640 on desktop, 358 on a phone, where the frame bleeds to the screen
+   edges), so its container query picks .dg.wide or the stacked .dg.narrow. */
+figure { margin: 0; }
+.frame {
+  position: relative;
+  border: 1px solid var(--grey-2);
+  background-color: var(--panel);
+  background-image: radial-gradient(var(--dot) 1px, transparent 1.2px);
+  background-size: calc(2 * var(--u)) calc(2 * var(--u));
+  background-position: var(--u) var(--u);
+}
+.frame::before, .frame::after, .frame > .cm::before, .frame > .cm::after { content: ""; position: absolute; inline-size: 9px; block-size: 9px; border: 0 solid var(--grey-1); pointer-events: none; }
+.frame::before { inset: -1px auto auto -1px; border-width: 1px 0 0 1px; }
+.frame::after { inset: -1px -1px auto auto; border-width: 1px 1px 0 0; }
+.frame > .cm::before { inset: auto auto -1px -1px; border-width: 0 0 1px 1px; }
+.frame > .cm::after { inset: auto -1px -1px auto; border-width: 0 1px 1px 0; }
+.frame-bar { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 calc(2 * var(--u)); padding: var(--u) var(--frame-pad); border-block-end: 1px solid var(--grey-2); background: var(--panel); font: 400 12px/24px var(--mono); color: var(--grey-1); text-transform: uppercase; }
+.frame-bar b { font-weight: 500; color: var(--ink); }
+.frame-bar > * { min-inline-size: 0; overflow-wrap: anywhere; }
+/* the body pads out to the drawing width, so its content box (and the container query) is
+   640px wherever the frame is wider, and drawings and cards share one edge */
+.frame-body { padding: calc(4 * var(--u)) max(var(--frame-pad), (100% - var(--fig)) / 2); container: fig / inline-size; }
+.dg { display: block; inline-size: 100%; block-size: auto; overflow: visible; }
+/* drawings never scale past the width they were drawn at */
+.dg.wide { max-inline-size: var(--fig); margin-inline: auto; }
+/* a narrow drawing keeps its own width (≤ 358px), shrinking only to fit */
+.dg.narrow { inline-size: auto; max-inline-size: min(100%, 358px); margin-inline: auto; }
+/* a split's half drawing keeps its own width too, from the pane's start edge */
+.dg.half { inline-size: auto; max-inline-size: 100%; }
+/* a paired figure shows one drawing; a lone narrow drawing always shows */
+.dg.wide ~ .dg.narrow { display: none; }
+@container fig (inline-size < 640px) {
+  .dg.wide:has(~ .dg.narrow) { display: none; }
+  .dg.wide ~ .dg.narrow { display: block; }
+}
+
+/* a split: the behavior before and after, side by side, each pane a ≤ 358px drawing under a
+   caps label; the panes stack when two don't fit. The after pane's label is in the accent. */
+.frame-body.split { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 358px)); justify-content: center; align-items: start; gap: calc(4 * var(--u)) calc(8 * var(--u)); padding-inline: var(--frame-pad); }
+.pane-label { margin-block-end: calc(2 * var(--u)); padding-block-end: var(--u); border-block-end: 1px solid var(--grey-3); font: 400 12px/24px var(--mono); color: var(--grey-1); text-transform: uppercase; }
+.pane.after .pane-label { border-color: var(--accent); color: var(--accent); }
+
+/* review pins: a numbered accent dot on what a reviewer should check, matched by the same
+   number on the code behind it in the fold */
+.dg .pin circle { fill: var(--accent); }
+.dg .pin-n { font: 500 12px var(--mono); fill: var(--panel); }
+span.pin { display: inline-grid; place-items: center; inline-size: calc(2 * var(--u)); block-size: calc(2 * var(--u)); margin-inline-end: var(--u); border-radius: 50%; background: var(--accent); color: var(--panel); font: 500 12px/1 var(--mono); vertical-align: 1px; }
+
+/* notes: 1–3 short numbered lines under a figure, split by hairlines */
+ol.notes { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); margin: 0; padding: 0; list-style: none; border-block-end: 1px solid var(--grey-2); counter-reset: note; }
+/* the number hangs in a 32px indent */
+.notes li { counter-increment: note; overflow-wrap: anywhere; padding: calc(2 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u) - 1px) calc(4 * var(--u)); font: 400 13px/24px var(--sans); color: var(--grey-1); }
+.notes li::before { content: counter(note, decimal-leading-zero); display: inline-block; inline-size: calc(4 * var(--u)); margin-inline-start: calc(-4 * var(--u)); font: 400 12px/24px var(--mono); color: var(--grey-1); }
+.notes li + li { padding-inline-start: calc(6 * var(--u)); border-inline-start: 1px solid var(--grey-2); }
+.notes b { font-weight: 500; color: var(--ink); }
+
+/* SVG text: .sans for words, .mono for names and values, .sub for a node's searchable name
+   under its plain label, .quiet for captions, endpoints, column heads and PR numbers, .new
+   for what this PR adds, .tag for a box's header row. check.mjs resolves .mono, .sub and
+   .new against the PR. tspan.grey dims part of a line. */
+.dg .sans  { font: 400 13px var(--sans); fill: var(--ink); }
+.dg .mono  { font: 400 12px var(--mono); fill: var(--ink); }
+.dg .sub   { font: 400 12px var(--mono); fill: var(--grey-1); }
+.dg .quiet { font: 400 12px var(--mono); fill: var(--grey-1); }
+.dg .new   { font: 400 12px var(--mono); fill: var(--accent); }
+.dg .tag   { font: 400 12px var(--mono); fill: var(--grey-1); }
+.dg .grey  { fill: var(--grey-1); }
+/* a label set on a line: a knock-out rect in the frame's color behind it */
+.knock { fill: var(--panel); }
+/* connectors: .edge is the path taken today (solid ink), .edge.dashed one this PR adds behind a gate (dashed grey) */
+.edge .l { fill: none; stroke: var(--ink); stroke-width: 1; }
+.edge .ah { fill: var(--ink); }
+.edge.dashed .l { stroke: var(--grey-1); stroke-dasharray: 3 3; }
+.edge.dashed .ah { fill: var(--grey-1); }
+/* nodes: a box with a tag header row; .box.added outlines what this PR adds */
+.box .bg { fill: var(--panel); stroke: var(--grey-3); stroke-width: 1; }
+.box .rule { stroke: var(--grey-2); stroke-width: 1; }
+.box.added .bg { stroke: var(--accent); }
+.box.added .tag { fill: var(--accent); }
+/* glyphs: a gate as a switch, a file, a returned token, a paperclip, a mock's frame */
+.switch .track { fill: var(--grey-2); }
+.switch .knob { fill: var(--panel); stroke: var(--grey-1); stroke-width: 1; }
+.switch.on .track { fill: var(--accent); }
+.switch.on .knob { stroke: var(--accent); }
+.file path { fill: var(--panel); stroke: var(--accent); stroke-width: 1; stroke-linejoin: round; }
+.token { fill: var(--panel); stroke: var(--accent); stroke-width: 1; }
+.clip { fill: none; stroke: var(--accent); stroke-width: 1; stroke-linecap: round; }
+.mock rect { fill: var(--panel); stroke: var(--grey-3); stroke-width: 1; }
+.mock path { fill: none; stroke: var(--grey-2); stroke-width: 1; }
+
+/* cards: what one record looks like, a head line and key/value lines, in a frame's body */
+.frame-body.cards { display: grid; gap: var(--u); }
+.card { border: 1px solid var(--grey-3); border-radius: 6px; background: var(--panel); }
+.card p { display: flex; gap: var(--u) calc(2 * var(--u)); margin: 0; padding: calc(var(--u) - 0.5px) calc(1.5 * var(--u)); }
+.card .head { justify-content: space-between; flex-wrap: wrap; border-block-end: 1px solid var(--grey-2); font: 400 12px/24px var(--mono); }
+.card .kv { font: 400 13px/24px var(--sans); }
+.card .kv > .grey { flex: 0 0 88px; font: 400 12px/24px var(--mono); }
+.card .grey { color: var(--grey-1); }
+
+/* forks: Decisions as the option picked (a solid dot) over the one passed up (a hollow dot,
+   grey), each with what it means, so the trade shows without a why */
+ul.forks { margin: 0; padding: 0; list-style: none; border-block-end: 1px solid var(--grey-2); }
+.forks > li { display: grid; grid-template-columns: 26% minmax(0, 1fr); column-gap: calc(2 * var(--u)); padding-block: calc(1.5 * var(--u) - 0.5px) calc(1.5 * var(--u)); border-block-start: 1px solid var(--grey-2); }
+.forks > li:first-child { border-block-start-color: var(--grey-3); }
+.forks .call { font-weight: 500; }
+.forks .pick, .forks .over { position: relative; display: grid; grid-template-columns: minmax(0, 13rem) minmax(0, 1fr); column-gap: calc(2 * var(--u)); padding-inline-start: calc(3 * var(--u)); grid-column: 2; }
+.forks .pick::before, .forks .over::before { content: ""; position: absolute; inset: 8px auto auto 0; inline-size: 8px; block-size: 8px; border-radius: 50%; }
+.forks .pick::before { background: var(--ink); }
+.forks .over { color: var(--grey-1); }
+.forks .over::before { border: 1px solid var(--grey-1); }
+/* the stem joining the two dots */
+.forks .pick::after { content: ""; position: absolute; inset: 16px auto -8px 3.5px; inline-size: 1px; background: var(--grey-3); }
+.forks .call + .pick { grid-row: 1; }
+.forks .opt { font: 400 12px/24px var(--mono); color: var(--ink); overflow-wrap: anywhere; }
+.forks .over .opt { color: var(--grey-1); }
+.forks code { font: inherit; }
+
+/* spec tables: Verified and Not verified; the first column names the row, td.v holds
+   a value or SHA in mono */
+table.spec { inline-size: 100%; border-collapse: collapse; font: 400 14px/24px var(--sans); }
+.spec th { text-align: start; padding: 0 calc(2 * var(--u)) var(--u) 0; border-block-end: 1px solid var(--grey-3); font: 400 12px/24px var(--mono); color: var(--grey-1); text-transform: uppercase; }
+.spec td { padding: calc(1.5 * var(--u) - 0.5px) calc(2 * var(--u)) calc(1.5 * var(--u)) 0; border-block-end: 1px solid var(--grey-2); vertical-align: top; color: var(--grey-1); overflow-wrap: anywhere; }
+.spec td:first-child { inline-size: 26%; font-weight: 500; color: var(--ink); }
+.spec td.v { font: 400 12px/24px var(--mono); color: var(--ink); }
+.spec code { color: var(--ink); }
+
+/* the fold, as quiet as the page allows */
+.fold { margin-block-start: calc(11 * var(--u)); }
+details { border-block-start: 1px solid var(--grey-2); padding-block-start: calc(2 * var(--u)); }
+summary { display: flex; align-items: center; gap: var(--u); inline-size: fit-content; font: 400 13px/24px var(--sans); color: var(--grey-1); cursor: pointer; list-style: none; border-radius: 2px; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: ""; inline-size: 5px; block-size: 5px; border-inline-end: 1px solid currentColor; border-block-end: 1px solid currentColor; transform: rotate(-45deg); }
+details[open] summary::before { transform: rotate(45deg) translate(-1px, -1px); }
+details h3 { font: 600 13px/24px var(--sans); margin: calc(3 * var(--u)) 0 var(--u); }
+details h3 code { color: var(--grey-1); }
+details p, details ul { font: 400 13px/24px var(--sans); color: var(--grey-1); }
+details p code, details li code, details td code { color: var(--ink); }
+details pre { margin: 0; padding: calc(2 * var(--u)) var(--frame-pad); border: 1px solid var(--grey-2); background: var(--panel); font: 400 12px/24px var(--mono); overflow-x: auto; }
+details pre .cm { color: var(--grey-1); }
+.tablewrap { overflow-x: auto; }
+details table { inline-size: 100%; border-collapse: collapse; font: 400 13px/24px var(--sans); }
+details th { text-align: start; font: 400 12px/24px var(--mono); color: var(--grey-1); padding: 0 calc(1.5 * var(--u)) var(--u) 0; border-block-end: 1px solid var(--grey-3); }
+details td { padding: calc(var(--u) - 0.5px) calc(1.5 * var(--u)) calc(var(--u) - 0.5px) 0; border-block-end: 1px solid var(--grey-2); vertical-align: top; overflow-wrap: anywhere; color: var(--grey-1); }
+details ul { margin: 0; padding-inline-start: calc(2 * var(--u)); }
+
+/* footer: the Markdown copy and the font notice */
+.foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 calc(3 * var(--u)); margin-block-start: calc(12 * var(--u)); padding-block: calc(3 * var(--u)) calc(6 * var(--u)); border-block-start: 1px solid var(--grey-2); font: 400 12px/24px var(--mono); color: var(--grey-1); }
+.foot .notice { max-inline-size: 64ch; }
+
+@media (width < 800px) {
+  .hero { grid-template-columns: minmax(0, 1fr); padding-block: calc(6 * var(--u)) calc(4 * var(--u)); }
+  ul.specs { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .specs li:nth-child(odd) { padding-inline-start: 0; border-inline-start: 0; }
+  .specs li:nth-child(n + 3) { border-block-start: 1px solid var(--grey-2); }
+  ol.ruler { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: calc(2 * var(--u)); }
+}
+
+@media (width < 640px) {
+  main { inline-size: calc(100% - 4 * var(--u)); }
+  .sec-head { grid-template-columns: auto minmax(0, 1fr); }
+  .sec-head p { grid-column: 1 / -1; }
+  /* the frame bleeds to the screen edges; its body pads only what's left past the 358px
+     drawing, so drawings and cards keep that width (and 12px text) down to 358px screens */
+  .frame { margin-inline: calc(-2 * var(--u)); border-inline: 0; }
+  .frame::before, .frame > .cm::before { inset-inline-start: 0; }
+  .frame::after, .frame > .cm::after { inset-inline-end: 0; }
+  .frame-bar { padding-inline: calc(2 * var(--u)); }
+  .frame-body, .frame-body.split { padding-inline: max(0px, (100% - 358px) / 2); }
+  ol.notes { grid-auto-flow: row; }
+  .notes li + li { padding-inline-start: calc(4 * var(--u)); border-inline-start: 0; border-block-start: 1px solid var(--grey-2); }
+  .forks > li { grid-template-columns: minmax(0, 1fr); row-gap: var(--u); }
+  .forks .call + .pick { grid-row: auto; }
+  /* the stem crosses the row gap to the hollow dot */
+  .forks .pick::after { inset-block-end: calc(-2 * var(--u)); }
+  .forks .pick, .forks .over { grid-column: 1; grid-template-columns: minmax(0, 1fr); }
+  /* tables become stacked rows: the name, then each cell under it */
+  /* the head row leaves the layout but stays in the accessibility tree, so cells keep their headers */
+  .spec thead { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .spec tr { display: grid; padding-block: calc(1.5 * var(--u)); border-block-end: 1px solid var(--grey-2); }
+  .spec td { padding: 0; border: 0; }
+  .spec td:first-child { inline-size: auto; }
+}

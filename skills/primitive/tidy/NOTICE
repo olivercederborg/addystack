@@ -1,0 +1,13 @@
+This skill is adapted from Ben Holmes's skills, skills/simplify/, and renamed `tidy`
+so it doesn't collide with Claude Code's bundled `simplify`.
+
+Upstream repository: https://github.com/bholmesdev/skills
+Upstream commit: 44da67bd1896cdafced6f60573b62ae71d18ef2a
+Upstream directory: https://github.com/bholmesdev/skills/tree/44da67bd1896cdafced6f60573b62ae71d18ef2a/skills/simplify
+
+The adapted skill preserves the upstream MIT license (see LICENSE). Its description
+runs it on completed changes before review or when requested, within the current
+task, instead of automatically whenever code feels ready or comments come up. It
+also names the diff base, keeps structural moves inside the touched code (wider
+ones become suggestions), lets the repo's conventions and lenses win where
+they overlap, and ends with a report and a Done when.

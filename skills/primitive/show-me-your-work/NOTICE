@@ -1,0 +1,9 @@
+This skill is adapted from Lauren Tan's pstack, skills/show-me-your-work/.
+
+Upstream repository: https://github.com/cursor/plugins
+Upstream directory: https://github.com/cursor/plugins/tree/main/pstack/skills/show-me-your-work
+
+The adapted skill preserves the upstream MIT license (see LICENSE). It was copied from
+pstack and edited locally before it entered this repo, and the upstream commit it
+started from wasn't recorded, so its SKILL.md differs from upstream at 4e5b1cf2cc
+(2026-10-05) in ways this notice doesn't itemize. It adds agents/openai.yaml for Codex.

@@ -1,0 +1,461 @@
+#!/usr/bin/env python3
+"""addystack: install, configure, build, and check the addystack skills kit.
+
+    addystack install [--dry-run]      merge hooks, adopt instruction files, build, doctor; never a skill
+    addystack update [--to TAG]        update the kit and its skills, then install
+    addystack init [--yes] [--force]   write ~/.config/addystack/addystack.jsonc
+    addystack build [--check|--dry-run]
+    addystack doctor
+    addystack print-config [--layers]  the resolved config as JSON
+    addystack policy --repo PATH [--explain]
+
+Errors exit 1 and bad usage exits 2. `--check` and `--dry-run` never write. `build`
+writes resolved.json and the built parts to the state folder, and each enabled host's
+instruction file, replacing a symlink there with a file. A symlink counts as out of date
+even when its target holds the built text. It also builds each note in the config's
+notes/ folder to the state folder's notes/, and removes a built note whose source is gone.
+`--check` exits 1 naming each file that differs; `--dry-run` prints each one's diff.
+
+Private overrides, for tests and dry runs; each defaults to the value after it:
+
+    ADDYSTACK_CONFIG     the user's config     ~/.config/addystack/addystack.jsonc
+    ADDYSTACK_STATE      the state folder      ~/.local/state/addystack
+    ADDYSTACK_CLAUDE_MD  Claude Code's file    ~/.claude/CLAUDE.md
+    ADDYSTACK_CODEX_MD   Codex's file          ~/.codex/AGENTS.md
+    ADDYSTACK_SKILLS_CLI update's skills CLI   npx -y skills
+    ADDYSTACK_SCHEMA_URL init's schema URL     none until the kit's repo is public
+
+`install` also keeps a ledger of the hooks it wrote, installed.json in the state folder.
+"""
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import difflib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+from typing import Callable, Dict, List, Optional
+
+KIT = Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
+
+import config  # noqa: E402
+import doctor as _doctor  # noqa: E402
+import reconcile  # noqa: E402
+import resolved  # noqa: E402
+import skill_layer  # noqa: E402
+import skills_cli  # noqa: E402
+
+
+def install(args: argparse.Namespace) -> int:
+    """Validates the config, reconciles hooks and instruction files, builds, then runs
+    doctor (D10). --dry-run prints each change, and build's diffs from the state those
+    changes would leave, and writes nothing."""
+    value = _resolve()
+    if value is None:
+        return 1
+    writes: Dict[Path, str] = {}
+    try:
+        if args.dry_run:
+            changes, writes = reconcile.plan(value)
+        else:
+            changes = reconcile.run(value)
+    except (OSError, ValueError, config.Invalid) as error:
+        print(f"addystack: {error}", file=sys.stderr)
+        return 1
+    for change in changes:
+        print(f"{'would change' if args.dry_run else 'changed'} {change.target} ({change.kind})")
+        print(*(f"  {line}" for line in change.detail.splitlines()), sep="\n")
+    if args.dry_run:
+        if not changes:
+            print("addystack install would change no hooks or instruction files")
+        # Build's diffs from the state install would leave: the adopted global.md, and the
+        # config naming it.
+        with config.planned(writes):
+            return build(argparse.Namespace(check=False, dry_run=True))
+    code = build(argparse.Namespace(check=False, dry_run=False))
+    return code or doctor(args)
+
+
+def _git(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", str(KIT), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
+
+
+# What skills v1.7.6 `update` prints, exiting 0, for a source it couldn't reach or read
+# (cli.mjs `updateGlobalSkills`), such as offline.
+_UNCHECKED = ("Failed to check skills from", "Failed to check for deleted skills from")
+
+
+def _step(argv: List[str], unchecked: bool = False) -> int:
+    """Runs one update step without a terminal, echoing it first. With unchecked, the step
+    fails when its output says the skills CLI couldn't check a source."""
+    print("$", " ".join(argv), flush=True)
+    try:
+        process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True,
+                                   errors="replace")
+    except OSError as error:
+        print(f"addystack: can't run {argv[0]}: {error}", file=sys.stderr)
+        return 1
+    failed = False
+    for line in process.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        failed = failed or (unchecked and any(marker in line for marker in _UNCHECKED))
+    code = process.wait()
+    if failed and not code:
+        print("addystack: skills update couldn't check every source, so no skill was added or removed; check your "
+              "network, then run addystack update again", file=sys.stderr)
+        return 1
+    return code
+
+
+def _install_from_kit() -> int:
+    """Runs install with the kit's code as it is now on disk, since the update replaced it."""
+    return _step([sys.executable, str(KIT / "bin" / "addystack"), "install"])
+
+
+def _update_checkout(tag: Optional[str]) -> int:
+    """A maintainer's checkout: fetch, check out the newest v* tag (or tag), then install."""
+    if _git("status", "--porcelain", "--untracked-files=no").stdout.strip():
+        print(f"addystack: {KIT} has uncommitted changes; commit or stash them, then run addystack update",
+              file=sys.stderr)
+        return 1
+    fetched = _git("fetch", "--tags", "--quiet")
+    if fetched.returncode:
+        print(f"addystack: git fetch failed in {KIT}: {fetched.stderr.strip()}", file=sys.stderr)
+        return 1
+    tags = _git("tag", "--list", "v*", "--sort=-v:refname").stdout.split()
+    tag = tag or (tags[0] if tags else None)
+    if tag is None or tag not in tags:
+        print(f"addystack: {KIT} has no tag {tag}" if tag else f"addystack: {KIT} has no v* tag", file=sys.stderr)
+        return 1
+    checkout = _git("checkout", "--quiet", "--detach", f"refs/tags/{tag}")
+    if checkout.returncode:
+        print(f"addystack: git checkout {tag} failed: {checkout.stderr.strip()}", file=sys.stderr)
+        return 1
+    print(f"checked out {tag} in {KIT}")
+    return _install_from_kit()
+
+
+def _unlisted(path: Path) -> int:
+    print(f"addystack: {path} is missing or unreadable, so no skill was added or removed; reinstall addystack "
+          "with npx skills add <its repo> -g", file=sys.stderr)
+    return 1
+
+
+def _pending() -> Path:
+    """Where update keeps the release list it started from until its adds and removes finish:
+    `skills update` replaces the kit's own list first, so a retry after a failed add would
+    otherwise see no change."""
+    return resolved.STATE.expanduser().parent / "update-pending.json"
+
+
+def _update_skills() -> int:
+    """An npx skills install: update the installed skills, add the skills the release makes
+    core, remove the kit's skills it no longer lists as core, then install. A release list it can't read stops it
+    before it adds or removes a skill: read as empty, it would remove every one. A run that
+    stops before its adds and removes finish leaves the list it started from in _pending(),
+    and the next run starts from that."""
+    pending = _pending()
+    first = pending if pending.exists() else KIT / skill_layer.RELEASE
+    before = skill_layer.read_list(first)
+    if before is None:
+        return _unlisted(first)
+    source = skills_cli.source(skills_cli.locked())
+    if source is None:
+        print(f"addystack: {skills_cli.lock_path()} has no entry for the {skills_cli.KIT_SKILL} skill, so update "
+              "can't tell which repo the kit came from; install it with npx skills add <its repo> -g, or run update "
+              "from a git checkout of the kit", file=sys.stderr)
+        return 1
+    if first != pending:
+        reconcile._write(pending, json.dumps({"skills": before}, indent=2) + "\n")
+    code = _step(skills_cli.update(), unchecked=True)
+    if code:
+        return code
+    release = skill_layer.released(KIT)
+    if release is None:
+        return _unlisted(KIT / skill_layer.RELEASE)
+    lock = skills_cli.locked()
+    was_core, now_core = set(skill_layer.core(before)), set(skill_layer.core(release))
+    # A skill that became core: one the user removed while it was core stays removed, and a
+    # name the lock already holds, from any repo, isn't replaced.
+    added = [name for name in skill_layer.core(release) if name not in was_core and name not in lock]
+    # A skill that was core and is gone or optional now, installed from the kit's repo: an
+    # optional one the user chose, or one of theirs from another repo, stays.
+    dropped = [name for name in skills_cli.from_source(lock, source)
+               if name in was_core and name not in now_core]
+    if added:
+        code = _step(skills_cli.add(skills_cli.add_source(lock), added))
+    if not code and dropped:
+        code = _step(skills_cli.remove(dropped))
+    if code:
+        return code
+    pending.unlink()
+    return _install_from_kit()
+
+
+def update(args: argparse.Namespace) -> int:
+    """Updates the kit and its skills, then installs (D9). A kit that is a git checkout
+    moves to the newest v* tag; one the skills CLI installed updates through it. Every step
+    runs without a terminal, so an agent can run it."""
+    if _git("ls-files", "--error-unmatch", "bin/addystack").returncode == 0:
+        return _update_checkout(args.to)
+    if args.to:
+        print("addystack: --to needs a git checkout of the kit; the skills CLI installs the latest release",
+              file=sys.stderr)
+        return 2
+    return _update_skills()
+
+
+# The schema's public URL (D3, D18), written into a new config's `$schema` when it answers.
+# None until the kit's repo is public; ADDYSTACK_SCHEMA_URL overrides it, for tests.
+SCHEMA_URL: Optional[str] = None
+
+
+def _schema_ref() -> str:
+    """The public schema URL when it answers, or the installed schema's absolute path."""
+    url = os.environ.get("ADDYSTACK_SCHEMA_URL", SCHEMA_URL)
+    if url:
+        try:
+            with urllib.request.urlopen(url, timeout=3):
+                return url
+        except (OSError, ValueError):
+            pass
+    return str(KIT / "schema" / "v1.json")
+
+
+def _detected_name() -> Optional[str]:
+    """The first word of git's user.name, or None."""
+    try:
+        name = subprocess.run(["git", "config", "--get", "user.name"], capture_output=True, text=True,
+                              timeout=10).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return name[0] if name else None
+
+
+def _starter(folder: Path) -> str:
+    """A new config with the detected defaults: the user's name from git, the hosts on
+    PATH, and their global.md when one is there, as install leaves it."""
+    lines = [f'"$schema": {json.dumps(_schema_ref())}', '"version": 1']
+    name = _detected_name()
+    if name:
+        lines.append(f'"identity": {{ "name": {json.dumps(name)} }}')
+    hosts = {"claude": shutil.which("claude") is not None, "codex": shutil.which("codex") is not None,
+             "t3": Path("~/.t3").expanduser().is_dir()}
+    lines.append(f'"hosts": {{ {", ".join(f"{json.dumps(k)}: {json.dumps(v)}" for k, v in hosts.items())} }}')
+    if (folder / "global.md").is_file():
+        lines.append('"instructions": "global.md"')
+    body = ",\n  ".join(lines)
+    return ("// Your addystack config, written by addystack init. Every key is optional; one you leave\n"
+            "// out falls back to the kit's addystack.defaults.jsonc. $schema describes each key, and\n"
+            "// the kit's examples/addystack.jsonc shows them in use.\n"
+            f"{{\n  {body}\n}}\n")
+
+
+def init(args: argparse.Namespace) -> int:
+    """Writes a new config with the detected defaults. Without --yes it asks first, and
+    without a terminal it writes nothing; an existing config is replaced only with --force,
+    and kept beside it as addystack.jsonc.bak."""
+    if args.section:
+        print(f"addystack: init {args.section} isn't built; the /addystack skill changes one section",
+              file=sys.stderr)
+        return 2
+    path = config.CONFIG.expanduser().absolute()
+    exists = path.exists() or path.is_symlink()
+    if exists and not args.force:
+        print(f"addystack: {path} already exists; pass --force to replace it, keeping it as {path.name}.bak",
+              file=sys.stderr)
+        return 1
+    text = _starter(path.parent)
+    if not args.yes:
+        if not sys.stdin.isatty():
+            print("addystack: init asks before writing; pass --yes to write the detected defaults", file=sys.stderr)
+            return 2
+        sys.stdout.write(text)
+        if input(f"Write this to {path}? [y/N] ").strip().lower() not in ("y", "yes"):
+            return 1
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if exists:
+        os.replace(path, path.with_name(f"{path.name}.bak"))
+        print(f"moved the old config to {path.with_name(f'{path.name}.bak')}")
+    path.write_text(text)
+    print(f"wrote {path}; next: addystack install")
+    return 0 if _resolve() is not None else 1
+
+
+def _resolve() -> Optional[config.Resolved]:
+    """The resolved config, or None after printing each issue to stderr."""
+    try:
+        return config.resolve()
+    except config.Invalid as invalid:
+        print(f"addystack: {config.CONFIG} is invalid:", file=sys.stderr)
+        for issue in invalid.issues:
+            print(f"  {issue.path}: {issue.message}", file=sys.stderr)
+        return None
+
+
+def _files(count: int) -> str:
+    return f"{count} file{'s' if count != 1 else ''}"
+
+
+def build(args: argparse.Namespace) -> int:
+    value = _resolve()
+    if value is None:
+        return 1
+    # This is lib's own CLI, so it shares doctor's private _stale and _read rather than
+    # add exports to the approved contract; build, --check, and doctor then never disagree.
+    stale = _doctor._stale(value)
+    if args.check:
+        if stale:
+            print("Out of date; run addystack build:", *stale, sep="\n  ", file=sys.stderr)
+            return 1
+        return 0
+    removed = [path for path, text in stale.items() if text is None]
+    written = {path: text for path, text in stale.items() if text is not None}
+    if args.dry_run:
+        for path, text in stale.items():
+            before = (_doctor._read(path) or "").splitlines(keepends=True)
+            sys.stdout.writelines(difflib.unified_diff(before, (text or "").splitlines(keepends=True), str(path),
+                                                       "/dev/null" if text is None else str(path)))
+        actions = [f"write {_files(len(written))}"] if written or not removed else []
+        actions += [f"remove {_files(len(removed))}"] if removed else []
+        print(f"addystack build would {' and '.join(actions)}")
+        return 0
+    for path in removed:
+        path.unlink()
+        print(f"removed {path}")
+    for path, text in written.items():
+        # Written beside it, then renamed over it: a link, such as today's CLAUDE.md into
+        # the kit, is replaced rather than written through, and so is an unreadable file.
+        # It keeps the replaced file's mode, the way install's writes do.
+        reconcile._replace(path, text)
+        print(f"wrote {path}")
+    return 0
+
+
+def doctor(args: argparse.Namespace) -> int:
+    try:
+        value = config.resolve()
+    except config.Invalid:
+        value = None
+    checks = _doctor.run(value)
+    for check in checks:
+        skipped = check.detail.startswith("skipped")
+        mark = "skip" if skipped else "ok" if check.ok else "FAIL"
+        print(f"{mark:4}  {check.name}: {check.detail}")
+        if not check.ok and check.fix:
+            print(f"      fix: {check.fix}")
+    return 0 if all(check.ok for check in checks) else 1
+
+
+def print_config(args: argparse.Namespace) -> int:
+    if args.layers:
+        try:
+            layers = config.load_layers()
+        except config.Invalid as invalid:
+            print(*(f"{issue.path}: {issue.message}" for issue in invalid.issues), sep="\n", file=sys.stderr)
+            return 1
+        print(json.dumps([{"name": layer.name, "dir": str(layer.dir), "data": layer.data} for layer in layers],
+                         indent=2))
+        return 0
+    value = _resolve()
+    if value is None:
+        return 1
+    print(json.dumps(value, indent=2))
+    return 0
+
+
+def _repo_file(repo: str, matched: List[str]) -> Optional[Dict[str, object]]:
+    """The repo's own policy file as --explain shows it: its path and the fields it sets,
+    or the issues that kept it from applying. None when policy() didn't read one."""
+    if "repo-file" not in matched and "repo-file-invalid" not in matched:
+        return None
+    # resolved.py's own git runner, so the top level is the one policy() read.
+    top = resolved._toplevel(repo)
+    if top is None:
+        return None
+    path = Path(top) / resolved.REPO_FILE
+    try:
+        return {"path": str(path), "set": config.load_repo_policy(path),
+                "note": "each field takes the stricter of this value and your config's"}
+    except config.Invalid as invalid:
+        return {"path": str(path), "issues": [f"{issue.path}: {issue.message}" for issue in invalid.issues]}
+
+
+def policy(args: argparse.Namespace) -> int:
+    """Prints resolved.policy(--repo) as one JSON object; --explain adds each rule
+    that matched and the fields it set, and the repo's own policy file when policy()
+    read one."""
+    out = dataclasses.asdict(resolved.policy(args.repo))
+    state = resolved.STATE.expanduser()
+    if args.explain:
+        try:
+            rules = json.loads(state.read_text())["policy"]["rules"]
+            out["explain"] = {"resolved": str(state),
+                              "rules": [rule for rule in rules if rule["source"] in out["matched"]]}
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
+            out["explain"] = {"resolved": None, "rules": []}
+        repo_file = _repo_file(args.repo, out["matched"])
+        if repo_file:
+            out["explain"]["repoFile"] = repo_file
+        if "repo-file-invalid" in out["matched"]:
+            out["explain"]["unresolved"] = ("the repo's policy file couldn't be used: the strictest value of each "
+                                            "field")
+        elif "unresolved" in out["matched"]:
+            out["explain"]["unresolved"] = ("the lookup couldn't finish, as when the origin remote can't be read or "
+                                            "the command runs inside .git: the strictest value of each field")
+    if not state.is_file():
+        print(f"addystack: {state} is missing, so this is the kit's defaults; run addystack build", file=sys.stderr)
+    print(json.dumps(out))
+    return 0
+
+
+COMMANDS: Dict[str, Callable[[argparse.Namespace], int]] = {
+    "install": install,
+    "update": update,
+    "init": init,
+    "build": build,
+    "doctor": doctor,
+    "print-config": print_config,
+    "policy": policy,
+}
+
+
+def parser() -> argparse.ArgumentParser:
+    commands = argparse.ArgumentParser(prog="addystack", description=__doc__.splitlines()[0],
+                                       formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = commands.add_subparsers(dest="command", required=True)
+    sub.add_parser("install", help="merge hooks, adopt instruction files, build, doctor").add_argument(
+        "--dry-run", action="store_true", help="print each change and write nothing")
+    sub.add_parser("update", help="update the kit and its skills, then install").add_argument(
+        "--to", metavar="TAG", help="in a git checkout, the tag to check out instead of the newest")
+    init_command = sub.add_parser("init", help="write ~/.config/addystack/addystack.jsonc")
+    init_command.add_argument("--yes", action="store_true", help="write the detected defaults without asking")
+    init_command.add_argument("--force", action="store_true", help="replace an existing config, keeping a .bak")
+    init_command.add_argument("section", nargs="?", help="ask only this section, such as replies")
+    build_command = sub.add_parser("build", help="resolve the config and write the built files")
+    mode = build_command.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true", help="exit 1 naming each built file that differs")
+    mode.add_argument("--dry-run", action="store_true", help="print each built file's diff")
+    sub.add_parser("doctor", help="check the config and the built files")
+    sub.add_parser("print-config", help="the resolved config as JSON").add_argument(
+        "--layers", action="store_true", help="each parsed layer instead, in merge order")
+    policy_command = sub.add_parser("policy", help="a checkout's policy as JSON")
+    policy_command.add_argument("--repo", required=True, help="the checkout the work lands in")
+    policy_command.add_argument("--explain", action="store_true", help="add each rule that matched")
+    return commands
+
+
+def main(argv: Optional[List[str]] = None) -> int:
+    args = parser().parse_args(argv)
+    return COMMANDS[args.command](args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

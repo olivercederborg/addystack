@@ -1,0 +1,11 @@
+This skill is adapted from Ayoub Ghriss's i-have-adhd skill and renamed `reply-shape`.
+
+Upstream repository: https://github.com/ayghri/i-have-adhd
+Upstream commit: 839872f9d1cd634fed642b4589ce7226199cc15f
+Upstream file: https://github.com/ayghri/i-have-adhd/blob/839872f9d1cd634fed642b4589ce7226199cc15f/.cursor/skills/i-have-adhd/SKILL.md
+
+The adapted skill preserves the upstream MIT license (see LICENSE). It keeps the
+upstream rules of leading with state, matter-of-fact errors, capped lists, and no
+preamble, recap, or closers, and adds the glance (a headline, the smallest view that
+fits, up to three notes, one evidence fold, and a 60-word budget), status markers, and
+rules for pictures, code, and checks.

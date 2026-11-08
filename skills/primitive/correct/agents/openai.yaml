@@ -1,0 +1,6 @@
+interface:
+  display_name: "Correct"
+  short_description: "Turn repeated corrections into checks proven on past mistakes"
+  default_prompt: "Use $correct to make the mistakes agents keep repeating in this repo impossible."
+policy:
+  allow_implicit_invocation: true

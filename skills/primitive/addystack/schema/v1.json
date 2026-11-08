@@ -1,0 +1,280 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "addystack/schema/v1.json",
+  "title": "addystack config",
+  "markdownDescription": "An addystack config layer: the user's `~/.config/addystack/addystack.jsonc` or the kit's `addystack.defaults.jsonc`. Every key is optional; a missing key falls back to the earlier layers.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "default": "",
+      "markdownDescription": "The absolute path of this schema, `<kit>/schema/v1.json`, so the editor completes and checks the file."
+    },
+    "version": {
+      "const": 1,
+      "default": 1,
+      "markdownDescription": "The config format's version. Only `1` exists."
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "name": "the user", "github": null },
+      "markdownDescription": "Who the agents work for.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "default": "the user",
+          "markdownDescription": "What the instructions call you, such as `Sam`."
+        },
+        "github": {
+          "type": ["string", "null"],
+          "default": null,
+          "markdownDescription": "Your GitHub login, or `null`."
+        }
+      }
+    },
+    "hosts": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "claude": true, "codex": true, "t3": false, "machines": [] },
+      "markdownDescription": "The agent hosts and machines you use. `build` writes an instruction file only for an enabled host.",
+      "properties": {
+        "claude": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Build `~/.claude/CLAUDE.md` for Claude Code."
+        },
+        "codex": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Build `~/.codex/AGENTS.md` for Codex."
+        },
+        "t3": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "You run agents through T3 Code."
+        },
+        "machines": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Other machines that run your agents, by ssh alias, such as `buildbox`."
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "defaults": {}, "repos": [] },
+      "markdownDescription": "How agents work per checkout: `defaults` for every checkout, then each matching `repos` rule over it, field by field, in order.",
+      "properties": {
+        "defaults": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": {},
+          "markdownDescription": "The policy of a checkout no rule matches.",
+          "properties": {
+            "planning": { "$ref": "#/definitions/planning" },
+            "trust": { "$ref": "#/definitions/trust" },
+            "pushVia": { "$ref": "#/definitions/pushVia" },
+            "issues": { "$ref": "#/definitions/issues" },
+            "lenses": { "$ref": "#/definitions/lenses" },
+            "verifySkill": { "$ref": "#/definitions/verifySkill" },
+            "decisionsSection": { "$ref": "#/definitions/decisionsSection" }
+          }
+        },
+        "repos": {
+          "type": "array",
+          "default": [],
+          "markdownDescription": "Rules for some checkouts. Each sets only the fields it names; a later rule wins field by field.",
+          "items": { "$ref": "#/definitions/rule" }
+        }
+      }
+    },
+    "replies": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "style": "own", "rules": null, "next": "off", "turnBlock": false },
+      "markdownDescription": "How agents write their replies to you.",
+      "properties": {
+        "style": {
+          "enum": ["reply-shape", "own"],
+          "default": "own",
+          "markdownDescription": "`reply-shape` loads the kit's reply-shape skill and your `rules`; `own` keeps the reply rules in your instructions."
+        },
+        "rules": {
+          "type": ["string", "null"],
+          "default": null,
+          "markdownDescription": "Your reply rules file, relative to this config's folder, such as `replies.md`, or `null`."
+        },
+        "next": {
+          "enum": ["off", "lettered"],
+          "default": "off",
+          "markdownDescription": "`lettered` ends each stop with a lettered `Next` list."
+        },
+        "turnBlock": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "End each reply with a machine-readable turn block, for tools such as Prefrontal."
+        }
+      }
+    },
+    "judgment": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "principles": { "preset": "addystack", "exclude": [] }, "taste": null },
+      "markdownDescription": "The principles and taste agents judge work by.",
+      "properties": {
+        "principles": {
+          "type": "object",
+          "additionalProperties": false,
+          "default": { "preset": "addystack", "exclude": [] },
+          "markdownDescription": "Which principles the instructions index.",
+          "properties": {
+            "preset": {
+              "enum": ["addystack", "none"],
+              "default": "addystack",
+              "markdownDescription": "`addystack` indexes the kit's principles; `none` leaves the index out."
+            },
+            "exclude": {
+              "type": "array",
+              "items": {
+                "enum": ["do-it-before-asking", "fix-the-cause-in-scope", "reuse-before-adding", "check-exposure",
+                         "prove-it-works", "explain-the-number", "attack-the-premise",
+                         "encode-lessons-in-structure", "slim-scope"]
+              },
+              "default": [],
+              "markdownDescription": "Principles to leave out of the index, by name."
+            }
+          }
+        },
+        "taste": {
+          "type": ["string", "null"],
+          "default": null,
+          "markdownDescription": "Your taste file, relative to this config's folder, such as `taste.md`, or `null`."
+        }
+      }
+    },
+    "instructions": {
+      "type": ["string", "null"],
+      "default": null,
+      "markdownDescription": "Your own instructions file, relative to this config's folder, such as `global.md`. Its sections merge into the built files by heading."
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "preset": "recommended", "enable": [], "disable": [] },
+      "markdownDescription": "Which of the kit's hooks to install.",
+      "properties": {
+        "preset": {
+          "enum": ["recommended", "all"],
+          "default": "recommended",
+          "markdownDescription": "`recommended` installs the safety and workflow hooks; `all` adds the reply and machine hooks."
+        },
+        "enable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Hooks to add to the preset, by id."
+        },
+        "disable": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "markdownDescription": "Hooks to remove from the preset, by id."
+        }
+      }
+    }
+  },
+  "definitions": {
+    "planning": {
+      "enum": ["gated", "autonomous"],
+      "default": "gated",
+      "markdownDescription": "`gated` plans with scope-grill and architect and waits at their gates; `autonomous` lets autopilot write its own brief."
+    },
+    "trust": {
+      "enum": ["draft", "gate", "merge-on-go"],
+      "default": "draft",
+      "markdownDescription": "How far agents take a verified stack: `draft` stops at a draft stack, `gate` merges once the merge gate allows it, `merge-on-go` merges when your go names merging."
+    },
+    "pushVia": {
+      "enum": ["git", "gh-stack"],
+      "default": "git",
+      "markdownDescription": "`gh-stack` sends every branch, push, and PR operation through `gh stack`."
+    },
+    "issues": {
+      "enum": ["none", "github", "linear"],
+      "default": "none",
+      "markdownDescription": "Where follow-up issues go."
+    },
+    "lenses": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": [],
+      "markdownDescription": "Convention skills to load before judging code, by name, or lens files by path relative to this config's folder."
+    },
+    "verifySkill": {
+      "type": ["string", "null"],
+      "default": null,
+      "markdownDescription": "The skill that proves a change works in the running app, such as `verify-app`, or `null`."
+    },
+    "decisionsSection": {
+      "type": "boolean",
+      "default": false,
+      "markdownDescription": "PR descriptions carry a Decisions section."
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "default": {},
+      "markdownDescription": "Which checkouts the rule applies to. Every key given must hold.",
+      "properties": {
+        "remote": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "A regex searched in the origin remote's URL, ignoring case, such as `[:/]my-org/`."
+        },
+        "path": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "A glob matched against the checkout's root, such as `~/code/personal/*`."
+        }
+      }
+    },
+    "repoPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "markdownDescription": "A repo's own `.agents/addystack.jsonc`, committed at its top level. It can only make the policy stricter: each field takes the stricter of this value and the user's, so a cloned repo can't loosen what a user's config enforces.",
+      "properties": {
+        "$schema": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "This schema's URL or path, with `#/definitions/repoPolicy`, so the editor completes and checks the file."
+        },
+        "planning": { "$ref": "#/definitions/planning" },
+        "trust": { "$ref": "#/definitions/trust" },
+        "pushVia": { "$ref": "#/definitions/pushVia" }
+      }
+    },
+    "rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["match"],
+      "default": {},
+      "markdownDescription": "A repo rule: its `match`, and the policy fields it sets.",
+      "properties": {
+        "match": { "$ref": "#/definitions/match" },
+        "planning": { "$ref": "#/definitions/planning" },
+        "trust": { "$ref": "#/definitions/trust" },
+        "pushVia": { "$ref": "#/definitions/pushVia" },
+        "issues": { "$ref": "#/definitions/issues" },
+        "lenses": { "$ref": "#/definitions/lenses" },
+        "verifySkill": { "$ref": "#/definitions/verifySkill" },
+        "decisionsSection": { "$ref": "#/definitions/decisionsSection" }
+      }
+    }
+  }
+}

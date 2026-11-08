@@ -1,0 +1,6 @@
+interface:
+  display_name: "Blast radius"
+  short_description: "Prove what a code change can break"
+  default_prompt: "Use $blast-radius to find and prove the risks outside this diff."
+policy:
+  allow_implicit_invocation: true

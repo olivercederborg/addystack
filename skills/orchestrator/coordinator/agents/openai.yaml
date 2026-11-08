@@ -1,0 +1,6 @@
+interface:
+  display_name: "Coordinator"
+  short_description: "Run a project from one pinned thread of workers"
+  default_prompt: "Use $coordinator to run this project."
+policy:
+  allow_implicit_invocation: true

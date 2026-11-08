@@ -1,0 +1,6 @@
+interface:
+  display_name: "Autopilot"
+  short_description: "Build an approved plan to a verified stack of draft PRs"
+  default_prompt: "Use $autopilot to build the approved plan, with its contract when it has one."
+policy:
+  allow_implicit_invocation: true

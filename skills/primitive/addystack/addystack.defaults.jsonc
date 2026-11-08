@@ -1,0 +1,25 @@
+// The kit's defaults, the first config layer. Every key is set here, so a key the user's
+// config leaves out falls back to this value. They're strict on purpose: an
+// unknown checkout plans with gates and stops at a draft stack.
+{
+  "$schema": "./schema/v1.json",
+  "version": 1,
+  "identity": { "name": "the user", "github": null },
+  "hosts": { "claude": true, "codex": true, "t3": false, "machines": [] },
+  "policy": {
+    "defaults": {
+      "planning": "gated",
+      "trust": "draft",
+      "pushVia": "git",
+      "issues": "none",
+      "lenses": [],
+      "verifySkill": null,
+      "decisionsSection": false
+    },
+    "repos": []
+  },
+  "replies": { "style": "own", "rules": null, "next": "off", "turnBlock": false },
+  "judgment": { "principles": { "preset": "addystack", "exclude": [] }, "taste": null },
+  "instructions": null,
+  "hooks": { "preset": "recommended", "enable": [], "disable": [] }
+}

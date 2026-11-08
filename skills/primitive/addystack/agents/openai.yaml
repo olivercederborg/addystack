@@ -1,0 +1,6 @@
+interface:
+  display_name: "addystack"
+  short_description: "Set up, change, explain, or update your addystack install"
+  default_prompt: "Use $addystack to change how agents work in this repo."
+policy:
+  allow_implicit_invocation: true

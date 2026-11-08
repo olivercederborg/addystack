@@ -1,0 +1,30 @@
+{
+  "skills": {
+    "address-review": "primitive",
+    "addystack": "primitive",
+    "architect": "primitive",
+    "autopilot": "orchestrator",
+    "babysit": "orchestrator",
+    "blast-radius": "primitive",
+    "bro": "optional",
+    "build": "primitive",
+    "coordinator": "orchestrator",
+    "correct": "primitive",
+    "grounding": "primitive",
+    "in-your-own-words": "optional",
+    "ketchup": "optional",
+    "open-pr": "primitive",
+    "orchestrate": "primitive",
+    "reflect": "primitive",
+    "reply-shape": "optional",
+    "review-artifact": "optional",
+    "review-loop": "primitive",
+    "review-teammate-pr": "primitive",
+    "scope-grill": "primitive",
+    "show-me-your-work": "primitive",
+    "tidy": "primitive",
+    "unslop": "primitive",
+    "use-lakebed": "optional",
+    "verify-work": "primitive"
+  }
+}

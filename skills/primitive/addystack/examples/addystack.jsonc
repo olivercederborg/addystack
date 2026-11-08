@@ -1,0 +1,24 @@
+// An example ~/.config/addystack/addystack.jsonc. `addystack init` or /addystack
+// writes yours; every key is optional and falls back to the kit's defaults.
+{
+  "$schema": "/Users/you/.local/share/addystack/schema/v1.json",
+  "version": 1,
+  "identity": { "name": "Sam", "github": "sam" },
+  "hosts": { "claude": true, "codex": true, "machines": [] },
+
+  // How agents work per checkout. Rules apply in order, each setting only its fields.
+  "policy": {
+    "defaults": { "planning": "gated", "trust": "draft" },
+    "repos": [
+      { "match": { "path": "~/code/personal/*" }, "planning": "autonomous", "trust": "merge-on-go" }
+    ]
+  },
+
+  // "reply-shape" loads the kit's reply rules; "own" keeps yours, from global.md.
+  "replies": { "style": "own", "rules": null, "next": "off", "turnBlock": false },
+
+  // Files next to this one, such as "taste.md" and "global.md". Each named file must exist.
+  "judgment": { "principles": { "exclude": [] }, "taste": null },
+  "instructions": null,
+  "hooks": { "preset": "recommended", "enable": [], "disable": [] }
+}

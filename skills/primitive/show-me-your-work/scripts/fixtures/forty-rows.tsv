@@ -1,0 +1,41 @@
+ts	phase	decision	why	evidence	result	pr
+2026-10-31T09:00:00Z	route	step 0: ran the route checks	process	make test	green	
+2026-10-31T09:01:00Z	brief	step 1: ran the brief checks	process	make test	green	
+2026-10-31T09:02:00Z	build	step 2: ran the build checks	process	make test	green	
+2026-10-31T09:03:00Z	verify	step 3: ran the verify checks	process	make test	green	
+2026-10-31T09:04:00Z	review	step 4: ran the review checks	process	make test	green	
+2026-10-31T09:05:00Z	route	step 5: ran the route checks	process	make test	green	
+2026-10-31T09:06:00Z	brief	step 6: ran the brief checks	process	make test	green	
+2026-10-31T09:07:00Z	build	step 7: ran the build checks	process	make test	green	
+2026-10-31T09:08:00Z	verify	step 8: ran the verify checks	process	make test	green	
+2026-10-31T09:09:00Z	review	step 9: ran the review checks	process	make test	green	
+2026-10-31T09:10:00Z	route	step 10: ran the route checks	process	make test	green	
+2026-10-31T09:11:00Z	brief	step 11: ran the brief checks	process	make test	green	
+2026-10-31T09:12:00Z	build	Cache the parsed config per process	instead of parsing on every call; assumes the config file doesn't change while the server runs	src/config.ts:14	done	agent
+2026-10-31T09:13:00Z	verify	step 13: ran the verify checks	process	make test	green	
+2026-10-31T09:14:00Z	review	step 14: ran the review checks	process	make test	green	
+2026-10-31T09:15:00Z	route	step 15: ran the route checks	process	make test	green	
+2026-10-31T09:16:00Z	brief	step 16: ran the brief checks	process	make test	green	
+2026-10-31T09:17:00Z	build	step 17: ran the build checks	process	make test	green	
+2026-10-31T09:18:00Z	verify	step 18: ran the verify checks	process	make test	green	
+2026-10-31T09:19:00Z	review	step 19: ran the review checks	process	make test	green	
+2026-10-31T09:20:00Z	route	step 20: ran the route checks	process	make test	green	
+2026-10-31T09:21:00Z	brief	step 21: ran the brief checks	process	make test	green	
+2026-10-31T09:22:00Z	build	step 22: ran the build checks	process	make test	green	
+2026-10-31T09:23:00Z	verify	step 23: ran the verify checks	process	make test	green	
+2026-10-31T09:24:00Z	review	step 24: ran the review checks	process	make test	green	
+2026-10-31T09:25:00Z	route	step 25: ran the route checks	process	make test	green	
+2026-10-31T09:26:00Z	brief	step 26: ran the brief checks	process	make test	green	
+2026-10-31T09:27:00Z	architect	Export loadConfig as the one entry point	instead of a Config class; assumes callers only read	src/config.ts:3	picked	you
+2026-10-31T09:28:00Z	verify	step 28: ran the verify checks	process	make test	green	
+2026-10-31T09:29:00Z	review	step 29: ran the review checks	process	make test	green	
+2026-10-31T09:30:00Z	route	step 30: ran the route checks	process	make test	green	
+2026-10-31T09:31:00Z	brief	step 31: ran the brief checks	process	make test	green	
+2026-10-31T09:32:00Z	build	step 32: ran the build checks	process	make test	green	
+2026-10-31T09:33:00Z	verify	step 33: ran the verify checks	process	make test	green	
+2026-10-31T09:34:00Z	review	step 34: ran the review checks	process	make test	green	
+2026-10-31T09:35:00Z	route	step 35: ran the route checks	process	make test	green	
+2026-10-31T09:36:00Z	brief	step 36: ran the brief checks	process	make test	green	
+2026-10-31T09:37:00Z	build	step 37: ran the build checks	process	make test	green	
+2026-10-31T09:38:00Z	verify	step 38: ran the verify checks	process	make test	green	
+2026-10-31T09:39:00Z	review	step 39: ran the review checks	process	make test	green	

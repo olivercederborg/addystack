@@ -1,0 +1,7 @@
+interface:
+  display_name: "Use Lakebed"
+  short_description: "Preview or deploy Lakebed capsules safely"
+  default_prompt: "Use $use-lakebed to prepare this Lakebed capsule for preview or deployment."
+
+policy:
+  allow_implicit_invocation: true

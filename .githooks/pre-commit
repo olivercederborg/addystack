@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Blocks a commit whose SKILL.md frontmatter is invalid or size passes the re-attach cap,
+# whose skill names a skill in a higher layer, whose kit text names a user or a team, whose chat format pointer
+# has drifted from shared/, whose core skill lacks shared/notes-line.md near its top,
+# whose core/skills.json differs from the skill folders, whose copies (scripts/copies.txt)
+# differ from their sources or left a symlink in the kit,
+# whose built global/built/*.md file differs from its sources (in the workshop), whose
+# example replies break reply-shape's layout, whose reply-rules payload passes 8,000
+# characters, or whose skill-script or hook tests fail.
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+"$root/scripts/check-frontmatter.sh"
+"$root/scripts/check-skill-size.sh"
+"$root/scripts/check-layers.py"
+"$root/scripts/check-neutral.py"
+"$root/scripts/sync-format.sh" --check
+"$root/scripts/sync-notes.py" --check
+"$root/scripts/sync-skill-list.py" --check
+# Copies are checked in what this commit records, not on disk: a source staged without
+# its synced copy passes on disk. checkout-index honours GIT_INDEX_FILE, which git sets
+# for a commit of named paths.
+index_tree="$(mktemp -d)"
+trap 'rm -rf "$index_tree"' EXIT
+git checkout-index --all --ignore-skip-worktree-bits --prefix="$index_tree/"
+"$index_tree/scripts/sync-copies.py" --check
+# With core.symlinks off, checkout-index writes a staged link as a plain file, so the
+# index's own modes catch one too.
+staged_links="$(git ls-files --stage | awk '$1 == "120000" { print $4 }')"
+if [[ -n "$staged_links" ]]; then
+  echo "A staged symlink; list its target in scripts/copies.txt instead:" "$staged_links" >&2
+  exit 1
+fi
+if [[ -x "$root/maintainer/build-global.py" ]]; then "$root/maintainer/build-global.py" --check; fi
+"$root/scripts/check_examples.py"
+"$root/scripts/check-reply-budget.py"
+# The hook tests matter only when the commit changes a file they depend on. That check
+# reads the index, so it runs before the unset below.
+hooks_staged=false
+if "$root/scripts/hook-inputs-staged.sh"; then hooks_staged=true; fi
+# Git runs hooks with GIT_DIR and its other repo-local variables set (always in a
+# worktree); a test that runs `git init` would then reinitialize this repo instead.
+unset $(git rev-parse --local-env-vars)
+
+# Each folder's test_*.py, on this machine.
+run_suites() {
+  local tests
+  for tests in "$@"; do
+    if compgen -G "$tests/test_*.py" > /dev/null; then
+      PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -q -s "$tests" -p 'test_*.py'
+    fi
+  done
+}
+
+# The kit's suites, which are Dagger checks: each shipped skill's scripts/test_*.py
+# (skills/<layer>/<skill>/scripts), shared/scripts', scripts/', and the tool's
+# hooks/test_*.py when hooks_staged.
+host_suites() {
+  local dirs=("$root"/skills/{primitive,orchestrator,optional}/*/scripts "$root"/shared/scripts "$root"/scripts)
+  if $hooks_staged; then dirs+=("$root"/skills/primitive/addystack/hooks); fi
+  run_suites "${dirs[@]}"
+}
+
+# The same suites as Dagger checks (.dagger/src/skills/main.py), which re-run only the
+# suites whose files changed, in parallel; the lints above already ran. Without dagger
+# (a Linux machine without it), or an engine it can reach, the suites run here. Listing the checks first
+# reaches the engine before any runs, so a failed check always blocks the commit, and a
+# pattern no check matches blocks it too, since dagger check runs nothing for it and exits 0.
+checks=('skills:*-tests' skills:suites-listed)
+unmatched() {  # each of checks that no name in $listed matches
+  local pattern name
+  for pattern in "${checks[@]}"; do
+    while read -r name _; do [[ $name == $pattern ]] && continue 2; done <<< "$listed"
+    printf ' %s' "$pattern"
+  done
+}
+export DAGGER_NO_NAG=1
+cd "$root"
+if ! command -v dagger > /dev/null; then
+  echo "pre-commit: dagger isn't installed, so the test suites run here"
+  host_suites
+elif ! listed=$(dagger check -l -s "${checks[@]}" 2> /dev/null); then
+  if dagger core version > /dev/null 2>&1; then
+    echo "pre-commit: dagger check -l failed, so the Dagger module didn't load; run it to see why" >&2
+    exit 1
+  fi
+  echo "pre-commit: Dagger can't reach its engine (is Docker running?), so the test suites run here"
+  host_suites
+elif missing=$(unmatched) && [ -n "$missing" ]; then
+  echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-commit" >&2
+  exit 1
+elif ! dagger check -qq "${checks[@]}"; then
+  echo "pre-commit: a Dagger check failed. If its test can't find a file, add the file to that" \
+       "suite's inputs in .dagger/src/skills/main.py" >&2
+  exit 1
+elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
+  # The hook tests that need macOS, which Dagger's Linux containers skip.
+  # scripts/test_pre_commit.py fails when this list misses one.
+  macos_only=(test_hooks.KeychainHomeGuard test_agent_memory_guard.Signals
+              test_agent_memory_guard.CommandLine.test_exec_is_seen_although_the_process_id_stays
+              test_agent_memory_guard.CommandLine.test_cpu_time_is_in_nanoseconds
+              test_agent_memory_guard.CommandLine.test_cpu_includes_reaped_children_and_start_is_wall_clock)
+  (cd skills/primitive/addystack/hooks && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only[@]}")
+fi
+# The workshop's own suites, which the kit's Dagger module leaves out: its preferences and
+# preset skills', and maintainer/'s. They run here whenever the checkout has them.
+run_suites "$root"/skills/{preferences,preset}/*/scripts "$root"/maintainer

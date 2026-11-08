@@ -1,0 +1,4 @@
+ts	phase	decision	why	evidence	result	pr
+2026-10-29T09:10:00Z	plan	D1. A Receipt that needs no VAT code (a top-up) counts as Has, so settlement top-ups stay in Ready to export	instead of a "Needs nothing" option	apps/web/src/features/bookkeeping/(receipts)/(export-readiness)/readiness-card.utils.ts:61	planned	you
+2026-10-29T09:40:00Z	build	ran the receipts and readiness suites	proof	bun test	green	
+2026-10-29T09:55:00Z	build	"Has VAT code" means start export accepts the Receipt's code, not that a code is set; on e-conomic a purchase with no code counts as Has	instead of Has meaning a code is set; assumes users read "No VAT code" as "would block export"	apps/web/src/features/bookkeeping/(receipts)/(export-readiness)/matches-vat-code-filter.utils.ts:28	done	agent

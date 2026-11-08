@@ -1,0 +1,149 @@
+"""Tests for doctor's hosts, skill links, hooks, and policy tools checks in a scratch HOME:
+each passes on a working install and fails with a fix line naming what to run."""
+from __future__ import annotations
+
+import json, os, shutil, unittest
+
+from addystack_home import KIT, SKILLS, Home
+
+GH_STACK_RULE = '{ "policy": { "repos": [ { "match": { "remote": "acme" }, "pushVia": "gh-stack" } ] } }'
+
+
+class Doctor(Home):
+    def check(self, name):
+        """doctor's line for a check, and its fix line when it has one."""
+        lines = self.cli("doctor").stdout.splitlines()
+        index = next(i for i, line in enumerate(lines) if line[6:].startswith(f"{name}: "))
+        fix = lines[index + 1].strip() if index + 1 < len(lines) and lines[index + 1].startswith("      fix:") else None
+        return lines[index], fix
+
+    def only_stubs_on_path(self):
+        self.env["PATH"] = os.pathsep.join([str(self.stubs), "/usr/bin", "/bin"])
+
+
+class Hosts(Doctor):
+    def test_each_enabled_host_with_its_version(self):
+        self.assertEqual(self.check("hosts"), ("ok    hosts: claude 1.2.3, codex 1.2.3", None))
+
+    def test_an_enabled_host_missing_from_path_fails(self):
+        (self.stubs / "codex").unlink()
+        self.only_stubs_on_path()
+        line, fix = self.check("hosts")
+        self.assertTrue(line.startswith("FAIL  hosts: codex is enabled but not on PATH"), line)
+        self.assertEqual(fix, "fix: install codex, or set hosts.codex to false in ~/.config/addystack/addystack.jsonc")
+
+    def test_a_disabled_host_isnt_checked(self):
+        (self.stubs / "codex").unlink()
+        self.only_stubs_on_path()
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.assertEqual(self.check("hosts"), ("ok    hosts: claude 1.2.3", None))
+
+
+class SkillLinks(Doctor):
+    linked = False
+
+    def core(self):
+        return [name for name, layer in json.loads((KIT / "core/skills.json").read_text())["skills"].items()
+                if layer in ("primitive", "orchestrator")]
+
+    def test_a_maintainers_linked_checkout_passes(self):
+        self.link_skills()
+        line, _ = self.check("skill links")
+        self.assertTrue(line.startswith(f"ok    skill links: {len(self.core())} core skills"), line)
+
+    def test_an_npx_install_passes(self):
+        # The skills CLI copies into ~/.agents/skills and links Claude Code's folder to it.
+        for name in self.core():
+            shutil.copytree(SKILLS[name], self.home / ".agents/skills" / name)
+            (self.home / ".claude/skills").mkdir(parents=True, exist_ok=True)
+            (self.home / ".claude/skills" / name).symlink_to(f"../../.agents/skills/{name}")
+        self.assertTrue(self.check("skill links")[0].startswith("ok    skill links"))
+
+    def lock(self):
+        # The addystack skill's source names the kit's, though more names came from another.
+        theirs = {name: {"source": "someone/else"} for name in ("build", "tidy", "grounding")}
+        self.write(self.home / ".local/state/skills/.skill-lock.json",
+                   json.dumps({"version": 3, "skills": {"addystack": {"source": "acme/addystack"}, **theirs}}))
+
+    def test_a_core_skill_the_user_didnt_install_is_a_note_not_a_failure(self):
+        # D9 lets a user install some core skills with --skill, and update leaves a removed one removed.
+        self.lock()
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        for name in self.core():
+            if name not in ("address-review", "architect"):
+                (self.home / ".claude/skills").mkdir(parents=True, exist_ok=True)
+                (self.home / ".claude/skills" / name).symlink_to(SKILLS[name])
+        line, fix = self.check("skill links")
+        count = len(self.core())
+        self.assertEqual(line, f"ok    skill links: ~/.claude/skills has {count - 2} of {count} core skills; not installed: "
+                               "address-review, architect (npx skills add acme/addystack -g -y --skill "
+                               "address-review architect adds them)")
+        self.assertIsNone(fix)
+
+    def test_an_installed_core_skill_missing_its_files_fails_with_the_install_command_from_the_lock(self):
+        self.lock()
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.write(self.home / ".claude/skills/build/references/format.md", "left over\n")
+        line, fix = self.check("skill links")
+        self.assertEqual(line, "FAIL  skill links: ~/.claude/skills/build has no SKILL.md")
+        self.assertEqual(fix, "fix: run npx skills add acme/addystack -g -y --skill build, or link each from your "
+                              "checkout")
+
+    def test_a_dangling_link_fails(self):
+        for folder in (".claude/skills", ".agents/skills"):
+            (self.home / folder).mkdir(parents=True)
+            for name in self.core():
+                (self.home / folder / name).symlink_to(SKILLS[name])
+        (self.home / ".claude/skills/build").unlink()
+        (self.home / ".claude/skills/build").symlink_to(self.home / "gone")
+        line, fix = self.check("skill links")
+        self.assertEqual(line, "FAIL  skill links: ~/.claude/skills/build is a dangling link")
+        self.assertEqual(fix, "fix: remove each dangling link, then run npx skills add <the addystack repo> -g -y "
+                              "--skill build, or link each from your checkout")
+
+
+class Hooks(Doctor):
+    def test_missing_settings_fail_until_install(self):
+        line, fix = self.check("hooks")
+        self.assertTrue(line.startswith("FAIL  hooks: claude: "), line)
+        self.assertEqual(fix, "fix: addystack install")
+        self.cli("install")
+        self.assertEqual(self.check("hooks"), ("ok    hooks: match the selection", None))
+
+    def test_a_hook_removed_by_hand_fails(self):
+        self.cli("install")
+        settings = self.json(self.settings)
+        settings["hooks"].pop("UserPromptSubmit")
+        self.settings.write_text(json.dumps(settings))
+        line, _ = self.check("hooks")
+        self.assertIn(f"claude: missing UserPromptSubmit {KIT}/hooks/", line)
+
+
+class PolicyTools(Doctor):
+    def test_nothing_is_needed_without_a_gh_stack_rule(self):
+        self.only_stubs_on_path()
+        self.assertEqual(self.check("policy tools"), ("ok    policy tools: none needed", None))
+
+    def test_a_gh_stack_rule_needs_gh(self):
+        self.only_stubs_on_path()
+        self.write(self.config, GH_STACK_RULE)
+        line, fix = self.check("policy tools")
+        self.assertEqual(line, "FAIL  policy tools: gh isn't on PATH, and a rule pushes through gh stack")
+        self.assertEqual(fix, "fix: install the GitHub CLI (https://cli.github.com), then gh extension install "
+                              "github/gh-stack")
+
+    def test_a_gh_stack_rule_needs_the_extension(self):
+        self.stub("gh", '[ "$1" = stack ] && exit 1; echo gh 2.0')
+        self.write(self.config, GH_STACK_RULE)
+        self.assertEqual(self.check("policy tools"),
+                         ("FAIL  policy tools: gh stack isn't installed, and a rule pushes through gh stack",
+                          "fix: gh extension install github/gh-stack"))
+
+    def test_gh_and_the_extension_pass(self):
+        self.stub("gh", "echo ok")
+        self.write(self.config, GH_STACK_RULE)
+        self.assertEqual(self.check("policy tools"), ("ok    policy tools: gh and gh stack", None))
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,19 @@
+attack-the-premise.md is adapted from Lauren Tan's pstack,
+skills/principle-attack-the-premise/SKILL.md. encode-lessons-in-structure.md takes its
+architecture rung from pstack's skills/correct/SKILL.md. explain-the-number.md is
+adapted from skills/principle-explain-the-number/SKILL.md. fix-the-cause-in-scope.md
+takes its signal rule from skills/principle-fix-root-causes/SKILL.md at upstream commit
+36cecbf (2026-10-13), and its reproduce-where-it-failed and ship-what-the-evidence-shows
+rules from skills/poteto-mode/playbooks/bug-fix.md at upstream commit ae5650f
+(2026-11-01). The index's shape (one line per principle, read the leaf before
+applying it) follows pstack's poteto-mode.
+
+Upstream repository: https://github.com/cursor/plugins
+Upstream commit: 978ca6e9c0e012047cd5058b8e829240336e704e
+Upstream directory: https://github.com/cursor/plugins/tree/978ca6e9c0e012047cd5058b8e829240336e704e/pstack/skills
+
+attack-the-premise.md follows upstream commit
+e5136d82418d2db3165ea1050d17577cd618cc05, which restated it as testing the premise
+instead of taking a census.
+
+The upstream MIT license notice is in LICENSE.

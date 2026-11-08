@@ -1,0 +1,142 @@
+<header class="bar"><span><b>◆ shop</b> / review</span><span><a href="https://github.com/acme/shop/pull/5527">#5527</a> · <a href="https://github.com/acme/shop/pull/5528">#5528</a> → develop</span></header>
+<section class="hero">
+  <h1>Dinero on Export V3</h1>
+  <p class="verdict"><strong>Safe to merge dark.</strong> Export V3 can now export Dinero receipts; no company has <code>EXPORT_V3_DINERO</code>, so all stay on V2.</p>
+</section>
+<ul class="specs">
+  <li><b>0</b>companies exposed</li>
+  <li><b>2</b>stacked PRs</li>
+  <li><b>84/84</b>unit tests</li>
+  <li><b>35/35</b>parity cases</li>
+</ul>
+<ol class="ruler" aria-label="Rollout">
+  <li class="now">01 review<span>#5527 · #5528</span></li>
+  <li>02 merge<span>dark, no company</span></li>
+  <li>03 beta<span>DEV-1796</span></li>
+  <li>04 roll out<span>flag per company</span></li>
+</ol>
+<section class="sec">
+  <div class="sec-head"><h2>Route</h2></div>
+  <figure class="frame"><span class="cm" aria-hidden="true"></span><figcaption class="frame-bar"><b>Fig. 1 — Route</b><span>one receipt, flag off and on</span></figcaption><div class="frame-body split"><div class="pane"><p class="pane-label">Flag off · every company today</p><svg class="dg half" viewBox="0 0 358 76" width="358" height="76" role="img" aria-label="Flag off, every company today: EXPORT_V3_DINERO is off, so the export goes to Export V2, unchanged, through exportBookkeepingExportV2."><g class="switch"><rect class="track" x="0.5" y="4.5" width="27" height="15" rx="7.5"/><circle class="knob" cx="8.5" cy="12" r="5.5"/></g><text class="mono" x="36" y="16">EXPORT_V3_DINERO</text><text class="quiet" x="160" y="16">off</text><text class="quiet" x="358" y="16" text-anchor="end">#5528</text><g class="edge"><path class="l" d="M14.5 20L14.5 38.5Q14.5 44.5 20.5 44.5L33 44.5"/><path class="ah" d="M38 44.5L33 47.5L33 41.5Z"/></g><text class="sans" x="44" y="48">Export V2, unchanged</text><text class="sub" x="44" y="68">exportBookkeepingExportV2</text></svg></div><div class="pane after"><p class="pane-label">Flag on · no company yet</p><svg class="dg half" viewBox="0 0 358 352" width="358" height="352" role="img" aria-label="Flag on, no company yet: receipt.pdf is uploaded with POST /v1/{org}/files, which answers with fileGuid file-guid-1; POST /v1.2/{org}/ledgeritems then posts one line dated 2026-01-15, account 3606, contra 55000, Cloud hosting, 125.50 DKK, with receipt.pdf attached. Pin 1 marks the gate, pin 2 the posted line."><g class="switch on"><rect class="track" x="0.5" y="4.5" width="27" height="15" rx="7.5"/><circle class="knob" cx="19.5" cy="12" r="5.5"/></g><text class="mono" x="36" y="16">EXPORT_V3_DINERO</text><text class="new" x="160" y="16">on</text><g class="pin"><circle cx="192" cy="12" r="8"/><text class="pin-n" x="192" y="16" text-anchor="middle">1</text></g><text class="quiet" x="358" y="16" text-anchor="end">#5528</text><g class="edge"><path class="l" d="M14.5 20L14.5 34.5Q14.5 40.5 20.5 40.5L33 40.5"/><path class="ah" d="M38 40.5L33 43.5L33 37.5Z"/></g><g class="file"><path d="M40.5 32.5H48.5L52.5 36.5V48.5H40.5Z"/><path d="M48.5 32.5V36.5H52.5"/></g><text class="mono" x="60" y="45">receipt.pdf</text><text class="quiet" x="358" y="45" text-anchor="end">#5527</text><g class="edge"><path class="l" d="M46.5 52L46.5 83"/><path class="ah" d="M46.5 88L43.5 83L49.5 83Z"/></g><text class="quiet" x="58" y="74">POST /v1/{org}/files</text><rect class="token" x="40.5" y="88.5" width="159" height="20" rx="3"/><text class="new" x="48" y="103"><tspan class="grey">fileGuid </tspan>file-guid-1</text><g class="edge"><path class="l" d="M46.5 109L46.5 143"/><path class="ah" d="M46.5 148L43.5 143L49.5 143Z"/></g><text class="quiet" x="58" y="132">POST /v1.2/{org}/ledgeritems</text><g class="mock"><rect x="0.5" y="148.5" width="357" height="159" rx="6"/></g><g class="pin"><circle cx="334" cy="168" r="8"/><text class="pin-n" x="334" y="172" text-anchor="middle">2</text></g><text class="quiet" x="12" y="172">Date</text><text class="mono" x="112" y="172">2026-01-15</text><text class="quiet" x="12" y="196">Account</text><text class="mono" x="112" y="196">3606</text><text class="quiet" x="12" y="220">Contra</text><text class="mono" x="112" y="220">55000</text><text class="quiet" x="12" y="244">Description</text><text class="sans" x="112" y="244">Cloud hosting</text><text class="quiet" x="12" y="268">Amount</text><text class="mono" x="112" y="268">125.50 <tspan class="grey">DKK</tspan></text><text class="quiet" x="12" y="292">File</text><path class="clip" transform="translate(112 279)" d="M2.5 5v6a2.5 2.5 0 0 0 5 0V3.5a1.75 1.75 0 0 0-3.5 0V10a.75.75 0 0 0 1.5 0V5"/><text class="mono" x="128" y="292">receipt.pdf</text><text class="quiet" x="0" y="328">Illustration of the posted request,</text><text class="quiet" x="0" y="344">not a Dinero screenshot</text></svg></div></div></figure>
+  <ol class="notes"><li><b>Expired Dinero logins</b> ask to reconnect, without retrying.</li></ol>
+</section>
+<section class="sec">
+  <div class="sec-head"><h2>Currency</h2><p>Dinero books only DKK, so other wallets keep V2's note.</p></div>
+  <figure class="frame"><span class="cm" aria-hidden="true"></span><figcaption class="frame-bar"><b>Fig. 2 — Currency</b><span>one record per wallet, from the tests</span></figcaption><div class="frame-body cards">
+    <div class="card"><p class="head"><span>DKK wallet <span class="grey">· 18.15 EUR purchase</span></span><span><span class="grey">amount</span> 136.125</span></p>
+      <p class="kv"><span class="grey">description</span><span>Cloud hosting</span></p></div>
+    <div class="card"><p class="head"><span>EUR wallet <span class="grey">· 20 EUR</span></span><span><span class="grey">amount</span> 20</span></p>
+      <p class="kv"><span class="grey">description</span><span><span class="pin" aria-label="Pin 3">3</span><code class="new">[EUR amount treated as DKK; correct draft before posting]</code> - Cloud hosting</span></p></div>
+  </div></figure>
+</section>
+<section class="sec">
+  <div class="sec-head"><h2>Decisions</h2></div>
+  <ul class="forks">
+    <li><span class="call">Rollout flag</span>
+      <p class="pick"><span class="opt"><code>EXPORT_V3_DINERO</code></span><span>On for no company.</span></p>
+      <p class="over"><span class="opt"><code>EXPORT_V3</code></span><span>Already on for 214 companies.</span></p></li>
+    <li><span class="call">Non-DKK wallets</span>
+      <p class="pick"><span class="opt">V2's note</span><span>The draft exports, flagged.</span></p>
+      <p class="over"><span class="opt">fail the export</span><span>No draft at all.</span></p></li>
+  </ul>
+</section>
+<section class="sec">
+  <div class="sec-head"><h2>Verified</h2></div>
+  <table class="spec">
+    <thead><tr><th>Check</th><th>At</th><th>Result</th></tr></thead>
+    <tbody>
+      <tr><td>Required CI</td><td class="v"><code>1ca088c190</code> · <code>067fcfb23e</code></td><td>Both PRs pass.</td></tr>
+      <tr><td>Unit tests</td><td class="v"><code>067fcfb23e</code></td><td>Adapter, gate, errors 84/84; dispatcher 4/4.</td></tr>
+      <tr><td>V2/V3 parity</td><td class="v"><code>742c277b9f</code></td><td>35/35 money cases match.</td></tr>
+      <tr><td>Pages</td><td class="v"><code>4250ed670b</code></td><td>Unchanged, flag on or off.</td></tr>
+    </tbody>
+  </table>
+</section>
+<section class="sec">
+  <div class="sec-head"><h2>Not verified</h2></div>
+  <table class="spec">
+    <thead><tr><th>Gap</th><th>Covered</th></tr></thead>
+    <tbody>
+      <tr><td>A real Dinero org</td><td>The beta step, DEV-1796.</td></tr>
+      <tr><td>Merging with #5287</td><td>A test catches Dinero on V3 without its flag.</td></tr>
+    </tbody>
+  </table>
+</section>
+<div class="fold"><details>
+  <summary>Code behind each pin, and evidence</summary>
+
+  <h3>Path through the code</h3>
+  <p><code>createPendingExport</code>, <code>createPendingReexport</code>, and <code>exportScheduler</code> ask <code>runsOnExportV3</code>, then <code>dispatchBookkeepingExports</code> sends the export to <code>exportBookkeepingExportV2</code> or <code>startExportTask</code>. On V3, <code>exportReceiptTask</code> gets <code>integrationLayer</code>'s <code>DINERO</code> case, which runs <code>ExportAttachmentFirst</code> with <code>DineroAttachments</code> and <code>DineroJournalEntries</code>. On develop, <code>routesByServiceType.DINERO</code> is <code>null</code>, so <code>isOnExportV3("DINERO")</code> is false. Every document is uploaded; the first <code>fileGuid</code> is linked, as in V2.</p>
+
+  <h3><span class="pin">1</span>The gate · <code>apps/web/src/features/bookkeeping/bookkeeping-integration.layer.ts:65-91</code></h3>
+<pre><span class="cm">/** The flag each V3 service type still rolling out needs; the rest use V3 for every company. */</span>
+const EXPORT_V3_ROLLOUT_FLAGS = new Map&lt;BookkeepingServiceType, FeatureFlag&gt;([
+  ["E_CONOMIC", EXPORT_V3_FEATURE_FLAG],
+  <span class="new">["DINERO", EXPORT_V3_DINERO_FEATURE_FLAG],</span>
+])
+
+<span class="cm">/**
+ * Whether the company's exports through a service type run on Export V3. It needs Export Strategy
+ * routes, and during the service type's rollout the company's rollout flag.
+ */</span>
+export const runsOnExportV3 = Effect.fn("runsOnExportV3")(function* ({
+  company,
+  serviceType,
+}: {
+  company: FeatureFlagCompany
+  serviceType: BookkeepingServiceType
+}) {
+  if (!ExportStrategy.isOnExportV3(serviceType)) return false
+
+  const rolloutFlag = EXPORT_V3_ROLLOUT_FLAGS.get(serviceType)
+  if (!rolloutFlag) return true
+
+  const featureFlags = yield* FeatureFlags
+
+  return yield* featureFlags.has(company, rolloutFlag)
+})</pre>
+
+  <h3>Gate outcomes · <code>bookkeeping-integration.layer.test.ts</code></h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th><code>serviceType</code></th><th>Stored flags</th><th>Runs on</th></tr></thead>
+    <tbody>
+      <tr><td><code>DINERO</code></td><td>none, or only <code>EXPORT_V3</code></td><td>V2</td></tr>
+      <tr><td><code>DINERO</code></td><td><code>EXPORT_V3_DINERO</code></td><td>V3</td></tr>
+      <tr><td><code>DINERO</code>, Acme's own company</td><td>none</td><td>V2</td></tr>
+      <tr><td><code>E_CONOMIC</code></td><td><code>EXPORT_V3</code> / only <code>EXPORT_V3_DINERO</code></td><td>V3 / V2</td></tr>
+      <tr><td><code>MONEYBIRD</code></td><td>none</td><td>V3</td></tr>
+      <tr><td><code>UNICONTA</code></td><td>both</td><td>V2</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="pin">2</span>Field mapping · <code>(dinero)/(export)/create-ledger-item.ts:49-68</code>, values from its contract test</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th><code>JournalEntryDraft</code></th><th><code>LedgerItemModelV2</code></th><th>Example</th></tr></thead>
+    <tbody>
+      <tr><td><code>date</code></td><td><code>voucherDate</code></td><td>2026-01-15T23:59:59.000Z → "2026-01-15"</td></tr>
+      <tr><td><code>references.attachmentIds[0]</code></td><td><code>fileGuid</code></td><td>"file-guid-1", left out with no documents</td></tr>
+      <tr><td><code>account.number</code></td><td><code>lines[0].accountNumber</code></td><td>"3606" → 3606</td></tr>
+      <tr><td><code>contraAccount.number</code></td><td><code>lines[0].balancingAccountNumber</code></td><td>"55000" → 55000; missing fails with <code>MissingAccountNumber</code></td></tr>
+      <tr><td><code>walletAmount</code></td><td><code>lines[0].amount</code></td><td>125.5</td></tr>
+      <tr><td><code>description</code></td><td><code>lines[0].description</code></td><td>"Cloud hosting"</td></tr>
+      <tr><td><code>vatCode</code>, currencies, <code>supplierId</code>, dimensions</td><td>not sent</td><td>VAT comes from the account's default</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3><span class="pin">3</span>Currency · <code>projectToLedgerCurrency</code></h3>
+  <p><code>projectToLedgerCurrency</code> (<code>create-ledger-item.ts:99-113</code>) sends a DKK wallet's amount as is, zero included (<code>ee038144a2</code>). Any other wallet gets the V2 prefix. Since <code>1ca088c190</code> it no longer calls the shared <code>BookingCurrency.resolve</code>. Test values: a DKK wallet with an 18.15 EUR purchase sends 136.125; a 20 EUR wallet sends 20 with the prefix.</p>
+
+  <h3>Notes</h3>
+  <ul>
+    <li>Expired login (<code>c64f6bc77d</code>): <code>(dinero)/dinero-error-mapping.ts</code> reads Visma Connect's <code>invalid_grant</code> as <code>InvalidCredentials</code>, which doesn't retry and shows "Authentication failed. Please reconnect your integration."</li>
+    <li>Merge rule for #5287: whoever merges second keeps <code>runsOnExportV3</code> and its map, and drops only the <code>E_CONOMIC</code> entry.</li>
+  </ul>
+
+  <h3>Evidence</h3>
+  <ul>
+    <li>Dinero adapter tests 19/19 against mocked Dinero (ledger item 12, attachment 4, accounts 3), plus 8 gate cases and the Acme company case.</li>
+    <li>apps/web typecheck exit 0. Unit tests for the adapter, gate, OAuth, and error mapping: 84/84.</li>
+    <li>CI passes on both PRs: Typecheck, Lint, Vitest, Storybook, and Playwright 1–4/4.</li>
+    <li>Heads: #5527 <code>1ca088c190</code>, #5528 <code>067fcfb23e</code>.</li>
+  </ul>
+</details></div>

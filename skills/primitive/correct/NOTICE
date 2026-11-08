@@ -1,0 +1,13 @@
+This skill is adapted from Lauren Tan's pstack, skills/correct/ (SKILL.md).
+
+Upstream repository: https://github.com/cursor/plugins
+Upstream commit: 8b3326d99fd4b993cb33a24dad8af03175c642c5
+Upstream directory: https://github.com/cursor/plugins/tree/8b3326d99fd4b993cb33a24dad8af03175c642c5/pstack/skills/correct
+
+The adapted skill preserves the upstream MIT license (see LICENSE). It keeps upstream's
+framing and its order of levels (architecture, types, lint, tests, docs), and adds what a
+run on the user's workout-tracker repo taught: named mining sources with a bundled T3
+miner (scripts/corrections.py), a two-occurrence bar with citations, a replay proof per
+sub-check on the pre-fix file, per-occurrence rules under a ratchet that reads the lint
+config at the merge base, one inline exception format, and this kit's chat format and
+approval step. It is model-invoked, so reflect and the user's router can reach it.

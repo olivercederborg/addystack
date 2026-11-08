@@ -1,0 +1,286 @@
+"""Tests for `addystack install` (plan D9, D10) in a scratch HOME: it merges the selected
+hooks into each host's settings and keeps every other hook, removes only hooks it
+installed earlier, moves hand-written CLAUDE.md and AGENTS.md text into global.md before
+the first build, and --dry-run writes nothing; and plan check 9's local part, a fresh
+user's install, init --yes, build, and doctor."""
+from __future__ import annotations
+
+import json, os, pathlib, shutil, stat, unittest
+
+from addystack_home import KIT, SKILLS, Home
+
+UNRELATED = {"matcher": "Bash", "hooks": [{"type": "command", "command": "~/bin/my-guard.sh", "timeout": 5}]}
+
+
+class Hooks(Home):
+    def test_adds_the_selected_hooks_from_the_kit_and_keeps_an_unrelated_one(self):
+        self.write(self.settings, json.dumps({"model": "opus", "hooks": {"PreToolUse": [UNRELATED]}}))
+        self.ok("install")
+        settings = self.json(self.settings)
+        self.assertEqual(settings["model"], "opus")
+        self.assertEqual(settings["hooks"]["PreToolUse"][0], UNRELATED)
+        ours = [command for commands in self.commands(self.settings).values() for command in commands
+                if command != "~/bin/my-guard.sh"]
+        self.assertTrue(ours)
+        self.assertTrue(all(command.startswith(f"{KIT}/hooks/") for command in ours), ours)
+        self.assertTrue(self.codex_hooks.is_file())
+        self.assertEqual(self.json(self.state / "installed.json")["version"], 1)
+
+    def test_a_second_install_changes_no_hooks(self):
+        self.ok("install")
+        before = self.settings.read_text()
+        self.assertNotIn("changed", self.ok("install").stdout)
+        self.assertEqual(self.settings.read_text(), before)
+
+    def test_removes_a_hook_it_installed_once_its_no_longer_selected(self):
+        self.write(self.config, '{ "hooks": { "preset": "all" }, "replies": { "turnBlock": true } }')
+        self.write(self.settings, json.dumps({"hooks": {"Stop": [{"hooks": [UNRELATED["hooks"][0]]}]}}))
+        self.ok("install")
+        self.assertIn(f"{KIT}/hooks/routine_stop.py", self.commands(self.settings)["Stop"])
+        self.write(self.config, '{ "hooks": { "preset": "all" }, "replies": { "turnBlock": false } }')
+        out = self.ok("install").stdout
+        self.assertIn(f"- Stop {KIT}/hooks/routine_stop.py", out)
+        self.assertNotIn(f"{KIT}/hooks/routine_stop.py", self.commands(self.settings)["Stop"])
+        self.assertEqual(self.commands(self.settings)["Stop"][0], "~/bin/my-guard.sh")
+
+    def test_keeps_a_users_hook_on_a_kit_script_no_manifest_entry_runs(self):
+        mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": f"{KIT}/hooks/my-personal-hook.sh"}]}
+        self.write(self.settings, json.dumps({"hooks": {"PreToolUse": [mine]}}))
+        out = self.ok("install").stdout
+        self.assertEqual(self.json(self.settings)["hooks"]["PreToolUse"][0], mine)
+        self.assertNotIn("my-personal-hook.sh", out)
+        self.assertNotIn("my-personal-hook.sh", self.ok("doctor").stdout)
+
+    def test_removes_a_hook_the_ledger_recorded_from_a_kit_that_moved(self):
+        old = "/old/kit/hooks/merge-gate.py"
+        self.write(self.settings, json.dumps({"hooks": {"PreToolUse": [
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": old}]}, UNRELATED]}}))
+        self.write(self.state / "installed.json", json.dumps({"version": 1, "hooks": {"claude": [["PreToolUse", old]]}}))
+        self.ok("install")
+        commands = self.commands(self.settings)["PreToolUse"]
+        self.assertNotIn(old, commands)
+        self.assertIn("~/bin/my-guard.sh", commands)
+
+    def test_a_disabled_host_gets_no_hooks_and_loses_the_ones_it_had(self):
+        self.ok("install")
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.ok("install")
+        self.assertEqual(self.json(self.codex_hooks), {"hooks": {}})
+        self.assertNotIn("codex", self.json(self.state / "installed.json")["hooks"])
+
+    def test_a_settings_file_that_isnt_json_stops_before_any_write(self):
+        self.write(self.settings, "{ not json")
+        self.write(self.claude_md, "My rules.\n")
+        before = self.snapshot()
+        result = self.cli("install")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("can't read", result.stderr)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_each_replaced_file_keeps_its_mode(self):
+        # Under a 022 umask a new file is 644; a private file the user made 600 stays 600.
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.write(self.config.parent / "global.md", "# Mine\n")
+        self.write(self.settings, '{ "env": { "API_KEY": "secret" } }')
+        self.write(self.claude_md, "# Personal\n\nPrivate rule.\n")
+        self.write(self.state / "installed.json", "{}")
+        files = [self.config, self.config.parent / "global.md", self.settings, self.claude_md,
+                 self.state / "installed.json"]
+        for path in files:
+            path.chmod(0o600)
+        umask = os.umask(0o022)
+        try:
+            self.ok("install")
+        finally:
+            os.umask(umask)
+        self.assertIn("Private rule.", self.claude_md.read_text())
+        self.assertEqual({str(path): oct(stat.S_IMODE(path.stat().st_mode)) for path in files},
+                         {str(path): "0o600" for path in files})
+
+    def test_an_invalid_config_stops_before_any_write(self):
+        self.write(self.config, '{ "replies": { "style": "reply-shap" } }')
+        before = self.snapshot()
+        result = self.cli("install")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("replies.style", result.stderr)
+        self.assertEqual(self.snapshot(), before)
+
+
+class Instructions(Home):
+    def global_md(self):
+        return (self.config.parent / "global.md").read_text()
+
+    def test_moves_hand_written_text_into_global_md_before_the_first_build(self):
+        self.write(self.claude_md, "# Mine\n\n- Claude rule.\n")
+        self.write(self.codex_md, "# Mine\n\n- Codex rule.\n")
+        self.ok("install")
+        self.assertEqual(self.global_md(), "# Mine\n\n- Claude rule.\n\n# Mine\n\n- Codex rule.\n")
+        self.assertTrue(self.claude_md.read_text().startswith("<!-- Built by addystack build"))
+        self.assertTrue(self.codex_md.read_text().startswith("<!-- Built by addystack build"))
+
+    def test_without_a_config_the_build_carries_the_moved_text_now_and_later(self):
+        self.write(self.claude_md, "# Claude\n\n- Answer in French.\n")
+        self.write(self.codex_md, "# Codex\n\n- Run tests first.\n")
+        self.ok("install")
+        self.assertFalse(self.config.exists())
+        for path in (self.claude_md, self.codex_md):
+            self.assertIn("- Answer in French.", path.read_text())
+            self.assertIn("- Run tests first.", path.read_text())
+        self.ok("build", "--check")
+        self.write(self.config.parent / "global.md", "# Claude\n\n- Answer in Swedish.\n")
+        self.ok("build")
+        self.assertIn("- Answer in Swedish.", self.claude_md.read_text())
+
+    def test_the_same_text_in_both_files_moves_once_and_a_second_install_adds_nothing(self):
+        self.write(self.claude_md, "Shared rule.\n")
+        self.write(self.codex_md, "Shared rule.\n")
+        self.ok("install")
+        self.ok("install")
+        self.assertEqual(self.global_md(), "Shared rule.\n")
+
+    def test_appends_to_an_existing_global_md_under_a_heading_naming_the_source(self):
+        self.write(self.config.parent / "global.md", "# Data\n\n- Kept.\n")
+        self.write(self.claude_md, "Loose rule.\n")
+        self.ok("install")
+        self.assertEqual(self.global_md(), "# Data\n\n- Kept.\n\n# From ~/.claude/CLAUDE.md\n\nLoose rule.\n")
+
+    def test_names_global_md_in_a_config_without_instructions_so_the_build_carries_it(self):
+        self.write(self.config, '// mine\n{\n  "identity": { "name": "Sam" }\n}\n')
+        self.write(self.claude_md, "# Mine\n\n- Kept rule.\n")
+        self.ok("install")
+        self.assertEqual(self.config.read_text(),
+                         '// mine\n{\n  "instructions": "global.md",\n  "identity": { "name": "Sam" }\n}\n')
+        self.assertIn("- Kept rule.", self.claude_md.read_text())
+
+    def test_replaces_a_null_instructions(self):
+        self.write(self.config, '{ "instructions": null }')
+        self.write(self.codex_md, "Codex rule.\n")
+        self.ok("install")
+        self.assertEqual(self.config.read_text(), '{ "instructions": "global.md" }')
+        self.assertIn("Codex rule.", self.codex_md.read_text())
+
+    def test_replaces_the_real_null_instructions_not_one_in_a_comment_or_a_string(self):
+        cases = {
+            "comment": ('// Example: "instructions": null\n{"instructions":null, "hosts":{"codex":false}}\n',
+                        '// Example: "instructions": null\n{"instructions":"global.md", "hosts":{"codex":false}}\n'),
+            "string": ('{ "identity": { "name": "\\"instructions\\": null" },\n  /* "instructions": null */ '
+                       '"instructions" /* here */ : null }',
+                       '{ "identity": { "name": "\\"instructions\\": null" },\n  /* "instructions": null */ '
+                       '"instructions" /* here */ : "global.md" }'),
+        }
+        for name, (before, after) in cases.items():
+            with self.subTest(name):
+                self.write(self.config, before)
+                self.write(self.claude_md, "My original instruction.\n")
+                self.ok("install")
+                self.assertEqual(self.config.read_text(), after)
+                self.assertIn("My original instruction.", self.claude_md.read_text())
+
+    def test_appends_to_the_file_the_config_names(self):
+        self.write(self.config, '{ "instructions": "mine.md" }')
+        self.write(self.config.parent / "mine.md", "# Old\n")
+        self.write(self.claude_md, "# New\n")
+        self.ok("install")
+        self.assertEqual((self.config.parent / "mine.md").read_text(), "# Old\n\n# New\n")
+        self.assertFalse((self.config.parent / "global.md").exists())
+
+    def test_a_host_file_it_cant_read_stops_before_any_write(self):
+        def unreadable():
+            self.write(self.claude_md, "Private rules.\n").chmod(0)
+            self.addCleanup(self.claude_md.chmod, 0o644)
+
+        cases = {"unreadable": unreadable,
+                 "not UTF-8": lambda: self.claude_md.write_bytes(b"Private rules \xff\n")}
+        for name, make in cases.items():
+            with self.subTest(name):
+                self.claude_md.parent.mkdir(parents=True, exist_ok=True)
+                make()
+                result = self.cli("install")
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(f"can't read {self.claude_md}", result.stderr)
+                self.claude_md.chmod(0o644)
+                self.assertIn(b"Private rules", self.claude_md.read_bytes())
+                for path in (self.config.parent, self.settings, self.codex_hooks, self.state):
+                    self.assertFalse(path.exists(), path)
+
+    def test_a_built_file_and_a_disabled_hosts_file_stay_where_they_are(self):
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.write(self.claude_md, "<!-- Built by scripts/build-global.py from global/shared.md. -->\nKit text.\n")
+        self.write(self.codex_md, "Codex only.\n")
+        self.ok("install")
+        self.assertFalse((self.config.parent / "global.md").exists())
+        self.assertEqual(self.codex_md.read_text(), "Codex only.\n")
+
+
+class DryRun(Home):
+    def test_prints_every_change_and_writes_nothing(self):
+        self.write(self.config, '{ "identity": { "name": "Sam" } }')
+        self.write(self.settings, json.dumps({"hooks": {"PreToolUse": [UNRELATED]}}))
+        self.write(self.claude_md, "My rules.\n")
+        before = self.snapshot()
+        out = self.ok("install", "--dry-run").stdout
+        self.assertEqual(self.snapshot(), before)
+        self.assertIn(f"would change {self.settings} (hooks)", out)
+        self.assertIn(f"+ PreToolUse {KIT}/hooks/", out)
+        self.assertIn(f"would change {self.config.parent / 'global.md'} (adopt-instructions)", out)
+        self.assertIn(f"would change {self.config} (adopt-instructions)", out)
+        self.assertIn("addystack build would write", out)
+
+
+    def test_previews_the_build_from_the_state_the_install_would_leave(self):
+        # The adopted text lands in global.md, and the config, when there is one, names it,
+        # so the built CLAUDE.md keeps the rule: the preview mustn't show it removed.
+        for name, config in {"config": '{ "hosts": { "codex": false } }', "no config": None}.items():
+            with self.subTest(name):
+                if config is None:
+                    self.config.unlink()
+                else:
+                    self.write(self.config, config)
+                self.write(self.claude_md, "# Personal\n\nUNIQUE PREVIEW RULE\n")
+                before = self.snapshot()
+                out = self.ok("install", "--dry-run").stdout
+                self.assertEqual(self.snapshot(), before)
+                self.assertNotIn("-UNIQUE PREVIEW RULE", out.splitlines())
+                self.assertIn(f"+++ {self.claude_md}", out)
+
+
+
+class FreshUser(Home):
+    """Plan check 9's local part: a user with their own CLAUDE.md, AGENTS.md, and hook
+    installs the core skills the way the skills CLI does, then runs install, init --yes,
+    build, and doctor. The Linux container and GitHub repo run is a later step."""
+    linked = False
+
+    def test_install_init_build_doctor(self):
+        self.write(self.claude_md, "# My Claude rules\n\n- Answer in French.\n")
+        self.write(self.codex_md, "# My Codex rules\n\n- Run tests first.\n")
+        self.write(self.settings, json.dumps({"hooks": {"PreToolUse": [UNRELATED]}}))
+        release = json.loads((KIT / "core/skills.json").read_text())["skills"]
+        for name in (name for name, layer in release.items() if layer in ("primitive", "orchestrator")):
+            shutil.copytree(SKILLS[name], self.home / ".agents/skills" / name,
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            (self.home / ".claude/skills").mkdir(parents=True, exist_ok=True)
+            (self.home / ".claude/skills" / name).symlink_to(f"../../.agents/skills/{name}")
+
+        self.ok("install")
+        self.ok("init", "--yes")
+        self.ok("build")
+        doctor = self.ok("doctor").stdout
+
+        self.assertNotIn("FAIL", doctor)
+        global_md = (self.config.parent / "global.md").read_text()
+        self.assertIn("- Answer in French.", global_md)
+        self.assertIn("- Run tests first.", global_md)
+        self.assertIn("- Answer in French.", self.claude_md.read_text())
+        self.assertIn("- Run tests first.", self.codex_md.read_text())
+        self.assertEqual(self.json(self.settings)["hooks"]["PreToolUse"][0], UNRELATED)
+        for path in (self.settings, self.codex_hooks):
+            ours = [c for commands in self.commands(path).values() for c in commands if c != "~/bin/my-guard.sh"]
+            self.assertTrue(ours)
+            for command in ours:
+                self.assertTrue(command.startswith(f"{KIT}/hooks/"), command)
+                self.assertTrue(pathlib.Path(command.split()[0]).is_file(), command)
+
+
+if __name__ == "__main__":
+    unittest.main()

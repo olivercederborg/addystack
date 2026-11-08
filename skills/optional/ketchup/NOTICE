@@ -1,0 +1,10 @@
+This skill is adapted from Lauren Tan's pstack, skills/ketchup/SKILL.md.
+
+Upstream repository: https://github.com/cursor/plugins
+Upstream commit: bc1443790cc980d0ea857663260a831299884508
+Upstream directory: https://github.com/cursor/plugins/tree/bc1443790cc980d0ea857663260a831299884508/pstack/skills/ketchup
+
+The adapted skill preserves the upstream MIT license (see LICENSE). It lays the reply
+out in the user's own reply style instead of a fixed order, adds a completion check to
+the gather step, keeps pictures within the reply style's limits, drops the `/visualize`
+skill, and adds agents/openai.yaml for Codex.
