@@ -132,6 +132,18 @@ class Attribution(unittest.TestCase):
         self.assertEqual(sorted(commands), [200, 300])
         self.assertEqual(owners.services, {300})
 
+    def test_shell_that_exec_d_into_its_program_is_still_a_command(self):
+        # Codex's `zsh -lc "pnpm typecheck"` becomes node; the agent mark survives the exec.
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(200, 100, marked=True, argv=("node", "tsc"))))
+        self.assertEqual(owners.services, set())
+
+    def test_hidden_environment_is_a_command(self):
+        # macOS hides an Apple binary's environment, such as git or sandbox-exec.
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(200, 100, marked=None, argv=("/usr/bin/git",))))
+        self.assertEqual(owners.services, set())
+
     def test_service_is_forgotten_once_it_exits(self):
         owners = Owners()
         owners.attribute(snapshot(AGENT, proc(300, 100, argv=("gt", "mcp"))))
@@ -143,6 +155,14 @@ class Attribution(unittest.TestCase):
         commands = Owners().attribute(snapshot(
             AGENT, proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr"))))
         self.assertEqual(commands, {})
+
+    def test_orphaned_python_job_is_still_agent_work(self):
+        # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the
+        # exited command's group.
+        python = "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"
+        commands = Owners().attribute(snapshot(
+            AGENT, proc(47025, 1, pgid=47023, marked=True, argv=(python, "-c", "job"))))
+        self.assertEqual(list(commands), [47025])
 
     def test_deep_chain_does_not_overflow_the_stack(self):
         chain = [proc(1000 + i, 999 + i, pgid=1000) for i in range(1, 5000)]
@@ -396,7 +416,10 @@ class CommandLine(unittest.TestCase):
         self.assertTrue(marked)
 
     def test_unmarked_environment(self):
-        self.assertFalse(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1])
+        self.assertIs(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1], False)
+
+    def test_hidden_environment_is_unknown(self):
+        self.assertIsNone(guard.parse_procargs(self.procargs(b"node", env=[]))[1])
 
     # Spins until its own CPU clock reads half a second, not for a wall-clock span: on a
     # loaded Mac a second of wall time can hold a fifth of a CPU second.

@@ -33,12 +33,13 @@ Known limits:
 - Processes are signalled by pid right after their kernel id is rechecked; only a pid
   reused within those microseconds would be hit.
 - A process running as another user (a `sudo` child) isn't seen.
-- An agent's direct child that isn't a shell counts as a service, such as an MCP server:
-  it gets the per-command budgets but not the total, so a command an agent runs without
-  a shell does too.
-- An orphan running from an app bundle (`.app/Contents/`) isn't agent work by its
-  environment alone, since an app such as OrbStack starts its VM with the environment of
-  whichever command woke it.
+- An agent's direct child that isn't a shell and has a readable environment without the
+  agent mark counts as a service, such as an MCP server: it gets the per-command budgets
+  but not the total. A command an agent starts with a cleared environment and no shell
+  does too.
+- An orphan from an installed app (under /Applications/) that leads its own process
+  group isn't agent work by its environment alone, since an app such as OrbStack starts
+  its VM with the environment of whichever command woke it.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
   too, and dies after 30 minutes; run it as a background task the agent tracks.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
@@ -142,7 +143,8 @@ command_lines = {}
 
 def parse_procargs(raw):
     """KERN_PROCARGS2 is argc, the exec path, NUL padding, argv, then the environment.
-    Returns argv and whether the environment marks the process as agent work."""
+    Returns argv and whether the environment marks the process as agent work, or None
+    when the environment is hidden or empty, as macOS hides Apple binaries'."""
     argc = struct.unpack("i", raw[:4])[0]
     body = raw[4:]
     start = body.find(b"\0")
@@ -150,7 +152,8 @@ def parse_procargs(raw):
         start += 1
     fields = body[start:].split(b"\0") if start >= 0 else []
     args = [arg.decode(errors="replace") for arg in fields[:argc]]
-    return args, any(var.startswith(AGENT_ENV) for var in fields[argc:])
+    env = [var for var in fields[argc:] if var]
+    return args, any(var.startswith(AGENT_ENV) for var in env) if env else None
 
 
 def command_line(pid, ident, version):
@@ -209,19 +212,24 @@ def is_agent(proc):
     return bool(proc.argv) and os.path.basename(proc.argv[0]) in AGENTS
 
 
-# An agent runs each command through a shell; a direct child that isn't one is a server
-# the agent keeps for its session, such as an MCP server.
 SHELLS = {"sh", "bash", "zsh", "dash", "fish"}
 
 
 def is_service(proc):
-    return bool(proc.argv) and os.path.basename(proc.argv[0]).lstrip("-") not in SHELLS
+    """A server an agent keeps for its session, such as an MCP server: a direct child that
+    isn't a shell and whose readable environment lacks the agent mark. A command keeps the
+    mark after its shell execs into the program, and Codex starts its MCP servers with a
+    cleared environment. A hidden environment counts as a command."""
+    return (bool(proc.argv) and proc.marked is False
+            and os.path.basename(proc.argv[0]).lstrip("-") not in SHELLS)
 
 
-def is_app(proc):
-    """An app's own process, such as OrbStack's VM, which inherits the environment of the
-    agent command that started it."""
-    return bool(proc.argv) and ".app/Contents/" in proc.argv[0]
+def is_installed_app(proc):
+    """An installed app's own process, such as OrbStack's VM, which leads its own process
+    group and inherits the environment of the agent command that woke it. Homebrew's
+    Python and Playwright's browsers run from app bundles too, but not from /Applications."""
+    return (bool(proc.argv) and proc.argv[0].startswith("/Applications/")
+            and proc.pgid == proc.pid)
 
 
 class Owners:
@@ -265,7 +273,7 @@ class Owners:
                 pid = parent.pid
             for proc in reversed(chain):
                 head = head or self.owner.get(proc.ident) or self.group.get(proc.pgid)
-                if head is None and proc.marked and not is_app(proc):
+                if head is None and proc.marked and not is_installed_app(proc):
                     head = self.group[proc.pgid] = proc.ident
                 owner[proc.ident] = head
         return owner
