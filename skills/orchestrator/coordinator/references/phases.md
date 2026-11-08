@@ -3,8 +3,8 @@
 Read at coordinator step 7, once the phase's proof holds. A project runs in phases: each
 has its own goal and proof, and ends here. The project closes only on the user's word.
 
-1. **Integrated check**: run [close](close.md)'s integrated check on this phase's
-   unmerged PRs, and record its result, the heads, and the trunk SHA it ran at under
+1. **Integrated check**: run [close](close.md)'s integrated check on every unmerged
+   project PR, and record its result, the heads, and the trunk SHA it ran at under
    Decisions. With no unmerged PRs, skip it.
 2. **Promote**: copy each decision and learning that binds the next phase into
    `standing-rules.md`. Write into Goal's Follow-ups each follow-up whose detail lives in
