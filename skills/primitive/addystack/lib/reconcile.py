@@ -8,9 +8,10 @@ Hooks: each enabled host's settings get the hooks hookset.select picks, merged w
 hookset.merge into Claude Code's ~/.claude/settings.json `hooks` key and Codex's
 ~/.codex/hooks.json (hookset.PATHS), so every hook addystack didn't install stays where it
 is. A hook addystack installed is one the ledger records, at installed.json in the state
-folder (`ADDYSTACK_STATE`), or one a manifest entry renders for this kit (hookset.owner), so
-a user's hook on another script in the kit's hooks folder stays; each is removed once it's
-no longer selected. A disabled host's earlier hooks are removed too, when its file exists.
+folder (`ADDYSTACK_STATE`), or one a manifest entry renders for this kit, or one that runs
+a manifest script from the kit path the last build recorded, when the checkout has moved
+(hookset.owner). So a user's hook on another script in the kit's hooks folder stays, and
+each of addystack's is removed once it's no longer selected. A disabled host's earlier hooks are removed too, when its file exists.
 A settings file that isn't a JSON object stops the run before anything is written.
 
 Instructions: before build replaces ~/.claude/CLAUDE.md or ~/.codex/AGENTS.md for an
@@ -145,7 +146,7 @@ def _hooks(resolved: Resolved, runtime: hookset.Runtime, earlier: List[Tuple[str
     if not isinstance(document, dict):
         raise ValueError(f"{path} doesn't hold a JSON object; fix it, then run addystack install")
     entries = hookset.select(resolved, runtime) if enabled else []
-    merged = hookset.merge(document, entries, hookset.owner(resolved, earlier))
+    merged = hookset.merge(document, entries, hookset.owner(resolved, earlier, _moved_kits(resolved)))
     pairs = [[entry.event, entry.command] for entry in entries]
     if merged == document and path.exists():
         return None, pairs
@@ -155,6 +156,17 @@ def _hooks(resolved: Resolved, runtime: hookset.Runtime, earlier: List[Tuple[str
     lines += [f"- {event} {command}" for event, command in sorted(before - after)]
     writes[path] = json.dumps(merged, indent=2, ensure_ascii=False) + "\n"
     return Change("hooks", path, "\n".join(lines) or "regroups its hooks"), pairs
+
+
+def _moved_kits(resolved: Resolved) -> List[str]:
+    """The kit path the last build recorded in resolved.json, when it isn't this one: the
+    checkout moved, as when a maintainer's kit moved into its own repo, so hooks rendered
+    for that path are addystack's to re-point."""
+    data = _read_json(_resolved.STATE.expanduser())
+    earlier = data.get("kit") if isinstance(data, dict) else None
+    if not isinstance(earlier, str) or os.path.realpath(os.path.expanduser(earlier)) == os.path.realpath(str(resolved["kit"])):
+        return []
+    return [earlier]
 
 
 def _adopt(resolved: Resolved, writes: Dict[Path, str]) -> List[Change]:
