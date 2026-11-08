@@ -4652,13 +4652,16 @@ class BackgroundTurnEnd(unittest.TestCase):
         self.write([self.COMMIT])
         feedback = self.run_hook()
         self.assertIn("`Commit the fix`", feedback)
-        self.assertIn("in the foreground", feedback)
         self.assertIn("counted loops whose sleeps add up to under 2 minutes", feedback)
         self.assertIn("without starting it again", feedback)
+        self.assertNotIn("again in the foreground", feedback)
 
     def test_sends_back_unfinished_background_subagent(self):
         self.write([self.AGENT])
-        self.assertIn("`Review the diff`", self.run_hook())
+        feedback = self.run_hook()
+        self.assertIn("`Review the diff`", feedback)
+        self.assertIn("without starting it again", feedback)
+        self.assertNotIn("again in the foreground", feedback)
 
     def test_passes_finished_or_stopped_work(self):
         done_a7 = ("notice", "<task-notification>\n<task-id>a7</task-id>\n<status>completed</status>\n</task-notification>")
@@ -4701,7 +4704,9 @@ class BackgroundTurnEnd(unittest.TestCase):
         self.write([("fork", "verify-work", "f1", "I'll wait for the result notification.")])
         self.fork("f1", [("bg", "Bash", {"command": "python3 -m unittest", "description": "Run the suite",
                                          "run_in_background": True}, "Command running in background with ID: b5.")])
-        self.assertIn("`Run the suite` in verify-work's run", self.run_hook())
+        feedback = self.run_hook()
+        self.assertIn("`Run the suite` in verify-work's run", feedback)
+        self.assertIn("Then run verify-work again in the foreground", feedback)
 
     def test_passes_a_fork_that_reported_or_was_run_again(self):
         verdict = "Done: " + "checked " * 60

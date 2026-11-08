@@ -228,7 +228,7 @@ def unfinished(path, session_id):
     notification or TaskStop ended it and it doesn't serve, including those a foreground
     subagent or forked skill left running when it returned."""
     started, finished, forks = background_tasks(path, this_turn=True)
-    found = [(task, f"`{label}`", serves) for task, (label, serves) in started.items()]
+    found = [(task, f"`{label}`", serves, None) for task, (label, serves) in started.items()]
     for n, (agent, name, handed_back) in enumerate(forks):
         fork = Path(path).parent / str(session_id) / "subagents" / f"agent-{agent}.jsonl"
         # A later run of the same skill or subagent replaces this one's result.
@@ -238,8 +238,9 @@ def unfinished(path, session_id):
         finished |= done
         if len(handed_back.split()) >= REPORT_WORDS:
             continue
-        found += [(task, f"`{label}` in {name or 'a subagent'}'s run", serves) for task, (label, serves) in inner.items()]
-    return [label for task, label, serves in found if task not in finished and not serves]
+        found += [(task, f"`{label}` in {name or 'a subagent'}'s run", serves, name or "the subagent")
+                  for task, (label, serves) in inner.items()]
+    return [(label, owner) for task, label, serves, owner in found if task not in finished and not serves]
 
 
 def background_feedback(event):
@@ -251,11 +252,15 @@ def background_feedback(event):
         return None
     if not left:
         return None
-    return (f"Your turn is ending while background work started this turn is still running: {', '.join(left)}. "
-            "Your parent takes each turn end as your result, even if that work wakes you later, so wait for it "
-            "before ending the turn: check a command's output file or pid in counted loops whose sleeps add up "
-            "to under 2 minutes each, without starting it again, and run a subagent's work again in the "
-            "foreground, since its run is over (`t3_background_wait` only keeps the thread marked Working).")
+    # A returned skill or subagent's run is over, so only running it again gets its result.
+    rerun = sorted({owner for _, owner in left if owner})
+    return (f"Your turn is ending while background work started this turn is still running: "
+            f"{', '.join(label for label, _ in left)}. Your parent takes each turn end as your result, even if "
+            "that work wakes you later, so wait for it without starting it again: sleep in counted loops whose "
+            "sleeps add up to under 2 minutes each, checking a command's output file or pid, until its task "
+            "notification arrives (`t3_background_wait` only keeps the thread marked Working)."
+            + (f" Then run {' and '.join(rerun)} again in the foreground, since its run ended before that work did."
+               if rerun else ""))
 
 
 def main():
