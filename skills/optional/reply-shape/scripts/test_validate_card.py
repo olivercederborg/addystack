@@ -75,6 +75,11 @@ class Problems(unittest.TestCase):
         self.assertEqual(problems({"decision": {"options": options}}),
                          ["$.ui[0].decision.options: each key once, got a, a", "$.ui[0].decision.options: at most one rec"])
 
+    def test_a_ui_that_isnt_a_list_is_named(self):
+        for value, shown in ((None, "null"), (3, "3"), (True, "true")):
+            with self.subTest(value):
+                self.assertEqual(card.check({"ui": value}), [f"$.ui: expected array, got {shown}"])
+
     def test_reference_problems_show_beside_schema_problems(self):
         found = problems({"outcome": {"status": "meh", "text": "x"}},
                          {"table": {"columns": ["N"], "rows": [["A"]], "pick": 1}})

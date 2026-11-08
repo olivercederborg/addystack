@@ -199,7 +199,8 @@ def references(payload, skip=()):
     """Problems the schema can't express, in each block the schema passed (not in skip): an
     index past its list, and decision keys or picks that clash."""
     found = []
-    for i, block in enumerate(payload.get("ui", []) if isinstance(payload, dict) else []):
+    blocks = payload.get("ui") if isinstance(payload, dict) else None
+    for i, block in enumerate(blocks if isinstance(blocks, list) else []):
         if i in skip or not isinstance(block, dict) or len(block) != 1:
             continue
         (kind, body), = block.items()
