@@ -174,9 +174,10 @@ def _update_branch(branch: str) -> int:
 
 def _update_checkout(tag: Optional[str]) -> int:
     """A git checkout of the kit. On a branch and without tag, a developer's: update the
-    branch (_update_branch), never switching it. Otherwise fetch and check out tag, or for a
-    checkout detached at a v* tag, a release user's, the newest v* tag. Detached anywhere
-    else, it stays as it is. Then install."""
+    branch (_update_branch), never switching it. Otherwise, with no uncommitted changes and
+    once the fetch succeeds, check out tag, or for a checkout detached at a v* tag, a release
+    user's, the newest v* tag, then install. A checkout detached anywhere else stays as it
+    is, and installs."""
     branch = _git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
     if branch and not tag:
         return _update_branch(branch)
@@ -498,7 +499,7 @@ def parser() -> argparse.ArgumentParser:
     sub.add_parser("install", help="merge hooks, adopt instruction files, link the agent, build, doctor").add_argument(
         "--dry-run", action="store_true", help="print each change and write nothing")
     sub.add_parser("update", help="update the kit and its skills, then install").add_argument(
-        "--to", metavar="TAG", help="in a git checkout, the tag to check out, even from a branch; without it, "
+        "--to", metavar="TAG", help="in a git checkout, the v* tag to check out, even from a branch; without it, "
                                     "a branch fast-forwards and a checkout at a v* tag moves to the newest")
     init_command = sub.add_parser("init", help="write ~/.config/addystack/addystack.jsonc")
     init_command.add_argument("--yes", action="store_true", help="write the detected defaults without asking")
