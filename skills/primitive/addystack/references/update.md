@@ -16,9 +16,9 @@ the release makes core, removes the ones it dropped, then installs, which builds
 runs `doctor`. It runs without a terminal. When only `doctor` fails, the update landed:
 go on to steps 3 and 4, then report doctor's failure and its `fix:` line, since a note
 on a dropped skill fails it. When an earlier step fails, report its error and the
-`fix:` line, and stop. When it warns that the skills CLI couldn't check another source,
-one that isn't the kit's, the update still landed: name that source in the report, since
-its skills weren't updated.
+`fix:` line, and stop. A warning that the skills CLI couldn't check another source, one
+that isn't the kit's, doesn't stop the update, and the rules above still decide whether
+it landed. Either way, name that source in the report, since its skills weren't updated.
 
 ## 3. Summarize
 
