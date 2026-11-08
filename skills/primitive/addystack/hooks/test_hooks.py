@@ -2494,32 +2494,33 @@ class MergeGate(unittest.TestCase):
         pathlib.Path(self.repo, ".agents", "addystack.jsonc").write_text('{ "trust": "draft",')
         self.assertIn("asks for the merge", self.reason("gh pr merge 12"))
 
-    def test_reads_the_checkout_from_every_cd_in_order(self):
-        # `cd <draft worktree> && cd sub` merges from the draft worktree's sub, not the start's.
+    def test_a_gate_repo_merges_on_a_done_alone_from_the_lines_stack_sh_prints(self):
         self.trust("gate")
         self.scenario(prs={12: None})
         self.verify(12)
-        draft = os.path.join(self.dir, "draft")
-        subprocess.run(["git", "worktree", "add", "-q", "--detach", draft], cwd=self.repo, env=self.env, check=True)
-        pathlib.Path(draft, ".agents").mkdir()
-        pathlib.Path(draft, ".agents", "addystack.jsonc").write_text('{ "trust": "draft" }')
-        for root in (self.repo, draft):
-            os.makedirs(os.path.join(root, "sub"))
-        self.assertIsNone(self.reason("cd sub && gh pr merge 12"))
-        self.assertIn("asks for the merge", self.reason(f"cd {draft} && cd sub && gh pr merge 12"))
+        for command in [f"cd {self.repo} && gh pr merge 12 --merge", f"cd {self.repo} && gh stack merge 12 --yes",
+                        "gh pr ready 12 && gh pr merge 12 --merge", "gh pr merge 12 --squash -d"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command))
 
     def test_a_gate_repo_asks_for_the_go_for_a_merge_it_cant_bind_to_itself(self):
-        # Review round 2: a repo flag or URL can name another repo's PR, and a cd in a
-        # subshell or a skippable branch may not be where the merge runs.
+        # Review rounds 2 and 3: the gate resolves the PR, its trust, and its Done in the
+        # checkout, so any other shell, which could merge another repo's PR or run somewhere
+        # else, keeps the go: a repo flag in any form, a URL, branch, or missing target, a
+        # second merge, or a cd that a subshell, pipe, branch, or text could make not apply.
         self.trust("gate")
         self.scenario(prs={12: None})
         self.verify(12)
-        self.assertIsNone(self.reason("cd . && gh pr merge 12"))
         for command in ["gh pr merge 12 -R o/r", "gh pr merge --repo=o/other 12", "gh pr merge -Ro/other 12",
-                        "gh pr merge https://github.com/o/other/pull/12", "( cd . ) && gh pr merge 12",
-                        "false || cd . && gh pr merge 12", "cd . | cat && gh pr merge 12", "cd . ; gh pr merge 12"]:
+                        "gh pr merge 12 -sRo/other", "GH_REPO=o/other gh pr merge 12",
+                        "gh pr merge https://github.com/o/other/pull/12", "gh pr merge feature", "gh pr merge",
+                        "gh pr merge 12 && gh pr merge 13 -R o/other", "( cd . ) && gh pr merge 12",
+                        "false || cd . && gh pr merge 12", "cd . | cat && gh pr merge 12", "cd . ; gh pr merge 12",
+                        "cd . && cd . && gh pr merge 12", "pushd . && gh pr merge 12", "echo cd . && gh pr merge 12"]:
             with self.subTest(command=command):
                 self.assertIn("asks for the merge", self.reason(command))
+        self.env["GH_REPO"] = "o/other"
+        self.assertIn("asks for the merge", self.reason("gh pr merge 12"))
 
     def test_a_gate_repo_still_needs_a_fresh_done_and_passing_checks(self):
         self.trust("gate")
