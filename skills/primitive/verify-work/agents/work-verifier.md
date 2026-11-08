@@ -26,7 +26,7 @@ date, claim and contradiction message-id prefixes):
    each transient state, triggered yourself. *Same thread, 2026-10-01, 1c2b7854 → 52cdde8c*
 3. "Both #47 states showed correctly in the embedded admin": the list stops reloading
    after 60s, and the check released the hold at 90s. → ui: drive the state change past
-   its time window yourself. *Autopilot: translation quick wins 1–3, 2026-10-11, 97431184 → f5c5a852*
+   its time window yourself. *Translation quick wins 1–3, 2026-10-11, 97431184 → f5c5a852*
 4. "the two syncs caused no production regressions": an error with no message gave an
    empty `serverError` that forms read as success. → parity: the same inputs on base and
    head, outcomes diffed. *Orchestrator: Effect v4 migration, 2026-10-22, c14c8d31 → 9d51c08f*
