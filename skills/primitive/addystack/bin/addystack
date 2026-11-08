@@ -147,13 +147,17 @@ def _update_branch(branch: str) -> int:
     stays as it is. Either way it installs from what's on disk."""
     if _dirty():
         return _left(f"{KIT} has uncommitted changes on {branch}")
-    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}").stdout.strip()
-    if not upstream:
+    if not _git("config", "--get", f"branch.{branch}.merge").stdout.strip():
         return _left(f"{branch} has no upstream")
     fetched = _git("fetch", "--quiet")
     if fetched.returncode:
         return _left(f"git fetch failed in {KIT}: {' '.join(fetched.stderr.split())}")
-    if _git("rev-parse", "HEAD").stdout == _git("rev-parse", "@{upstream}").stdout:
+    # Resolved after the fetch, which can prune it or leave it unfetched.
+    tip = _git("rev-parse", "--verify", "--quiet", "@{upstream}").stdout
+    if not tip:
+        return _left(f"{branch}'s upstream isn't there after git fetch")
+    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}").stdout.strip()
+    if _git("rev-parse", "HEAD").stdout == tip:
         print(f"{branch} is up to date with {upstream}")
     elif _git("merge-base", "--is-ancestor", "HEAD", "@{upstream}").returncode == 0:
         merged = _git("merge", "--ff-only", "--no-overwrite-ignore", "--quiet", "@{upstream}")

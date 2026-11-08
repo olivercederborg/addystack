@@ -412,6 +412,17 @@ class BranchCheckout(Update):
         self.assertEqual(self.branch(), "work")
         self.assert_left(result, head, "work has no upstream")
 
+    def test_leaves_a_branch_whose_upstream_the_fetch_pruned(self):
+        self.git(self.upstream, "branch", "feature")
+        self.git(self.checkout, "fetch", "-q")
+        self.git(self.checkout, "checkout", "-q", "-b", "feature", "--track", "origin/feature")
+        self.git(self.checkout, "config", "fetch.prune", "true")
+        self.git(self.upstream, "branch", "-D", "feature")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "feature")
+        self.assert_left(result, head, "feature's upstream isn't there after git fetch")
+
     def test_leaves_the_branch_when_the_fetch_fails(self):
         self.commit(self.upstream, "main-2")
         self.upstream.rename(self.home / "offline")
