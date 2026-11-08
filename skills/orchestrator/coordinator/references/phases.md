@@ -24,8 +24,8 @@ Then follow the pick:
   Once no worker is `running`, `waiting`, `overdue`, or `unknown`, delete the heartbeat
   and startup timer and set their Listening lines to none. Unwatch each merged PR. Keep
   each [duty](duties.md) running: a finding worth work reaches the user as a card to
-  start the next phase. Keep
-  the thread pinned, and reply with step 5's one-line status.
+  start the next phase. Keep the thread pinned, and reply with step 5's one-line
+  status.
 - **Close**: follow [close](close.md).
 
 `phase` saves `project.md` to `phases/`, adds the Phases line, and resets the phase's
