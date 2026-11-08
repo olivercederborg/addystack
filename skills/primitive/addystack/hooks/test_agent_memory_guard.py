@@ -228,17 +228,16 @@ class Runaway(unittest.TestCase):
         self.assertIsNone(guard.runaway(commands, services.keys()))
         self.assertIsNotNone(guard.runaway(commands))
 
-    def test_work_a_service_starts_later_counts_toward_the_total(self):
-        # Codex's Node REPL runs a 15 GB job an hour in; a 14 GB command runs beside it.
-        repl = [proc(1, 1, start=0), proc(2, 1, start=3600, footprint=15 * GB)]
+    def test_work_a_service_runs_counts_past_its_idle_allowance(self):
+        # Codex's Node REPL kernel, started 59.9 s after its server, runs a 16 GB job
+        # beside a 14 GB command: 15 GB past the allowance plus 14 passes 28.
+        repl = [proc(1, 1), proc(2, 1, footprint=16 * GB)]
         commands = {1: repl, 100: [proc(100, 1, footprint=14 * GB)]}
         head, _ = guard.runaway(commands, {1})
         self.assertEqual(head, 1)
 
-    def test_a_service_s_startup_helpers_stay_out_of_the_total(self):
-        server = [proc(1, 1, start=0), proc(2, 1, start=2, footprint=15 * GB)]
-        commands = {1: server, 100: [proc(100, 1, footprint=14 * GB)]}
-        self.assertIsNone(guard.runaway(commands, {1}))
+    def test_a_service_within_its_allowance_adds_nothing(self):
+        self.assertEqual(guard.counted(1, [proc(1, 1, footprint=0.9 * GB)], {1}), (0, 0))
 
     def test_a_service_still_gets_the_per_command_budget(self):
         head, _ = guard.runaway(dict([self.command(1, 3, 7)]), {1})

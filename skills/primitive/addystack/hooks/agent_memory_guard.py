@@ -34,12 +34,11 @@ Known limits:
   reused within those microseconds would be hit.
 - A process running as another user (a `sudo` child) isn't seen.
 - An agent's direct child that isn't a shell counts as a service, such as an MCP server:
-  it gets the per-command budgets but not the total. Under Codex it also needs a readable
-  environment without the agent mark, so a Codex server that's an Apple binary, such as
-  Xcode's mcpbridge, counts toward the total, and a command Codex starts with a cleared
-  environment and no shell doesn't. A Claude command that `exec`s out of its wrapper
-  shell reads as a service too. A service's processes that start over a minute after it,
-  such as work Codex's Node REPL runs, count toward the total.
+  it gets the per-command budgets, and only its use past 1 GB and 10 processes counts
+  toward the total. Under Codex it also needs a readable environment without the agent
+  mark, so a Codex server that's an Apple binary, such as Xcode's mcpbridge, counts in
+  full, and a command Codex starts with a cleared environment and no shell gets the
+  allowance. So does a Claude command that `exec`s out of its wrapper shell.
 - An orphan in a process group led by an installed app's own executable (under
   /Applications/, in an app's Contents/MacOS/) isn't agent work by its environment
   alone, since an app such as OrbStack starts its VM with the environment of whichever
@@ -64,9 +63,10 @@ MAX_FOOTPRINT = 20 * GB
 MAX_TOTAL_PROCESSES = 1500
 MAX_TOTAL_FOOTPRINT = 28 * GB
 INTERVAL_SECONDS = 0.5
-# A service's processes that start this long after it are work it runs, and count toward
-# the total; an MCP server's own helpers start within a few seconds.
-SERVICE_STARTUP_SECONDS = 60
+# A service's use past this allowance is work it runs, and counts toward the total. Idle
+# MCP servers measured 0.06 to 0.14 GB and 1 or 2 processes each on Nov 8, 2026.
+SERVICE_IDLE_FOOTPRINT = 1 * GB
+SERVICE_IDLE_PROCESSES = 10
 # An abandoned command is killed once it averages ABANDONED_CORES over the window. A
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
@@ -325,38 +325,38 @@ def footprint(members):
     return sum(proc.footprint for proc in members)
 
 
-def service_work(head, members):
-    """The members of a service that are work, not the idle server: those that started
-    over SERVICE_STARTUP_SECONDS after it, such as a subprocess Codex's Node REPL runs."""
-    first = next((proc for proc in members if proc.ident == head), None)
-    if first is None:
-        return members
-    return [proc for proc in members if proc.start - first.start > SERVICE_STARTUP_SECONDS]
+def counted(head, members, services):
+    """What a command adds to the total, as (processes, bytes). A service adds only what
+    it uses past an idle server's allowance, so work it runs, such as a job in Codex's
+    Node REPL, still counts."""
+    if head not in services:
+        return len(members), footprint(members)
+    return (max(0, len(members) - SERVICE_IDLE_PROCESSES),
+            max(0, footprint(members) - SERVICE_IDLE_FOOTPRINT))
 
 
 def runaway(commands, services=frozenset()):
     """Return (head, reason) for the command to kill, or None. A service gets the
-    per-command budgets but stays out of the total: on Nov 8, 2026 one Codex server's 54
-    sessions kept 19 GB of idle MCP servers, and the total killed real work all evening."""
+    per-command budgets, and only its use past the idle allowance counts toward the
+    total: on Nov 8, 2026 one Codex server's 54 sessions kept 19 GB of idle MCP servers,
+    and the total killed real work all evening."""
     for head, members in commands.items():
         if len(members) > MAX_PROCESSES:
             return head, f"{len(members)} processes, over the per-command {MAX_PROCESSES}"
         if footprint(members) > MAX_FOOTPRINT:
             return head, (f"{footprint(members) / GB:.1f} GB, over the per-command "
                           f"{MAX_FOOTPRINT / GB:g} GB")
-    commands = {head: members if head not in services else service_work(head, members)
-                for head, members in commands.items()}
-    commands = {head: members for head, members in commands.items() if members}
-    if not commands:
+    usage = {head: counted(head, members, services) for head, members in commands.items()}
+    if not usage:
         return None
-    total_processes = sum(len(members) for members in commands.values())
-    total_footprint = sum(footprint(members) for members in commands.values())
+    total_processes = sum(processes for processes, _ in usage.values())
+    total_footprint = sum(size for _, size in usage.values())
     if total_processes > MAX_TOTAL_PROCESSES:
-        head = max(commands, key=lambda h: len(commands[h]))
+        head = max(usage, key=lambda h: usage[h][0])
         return head, (f"agent commands at {total_processes} processes, over the total "
                       f"{MAX_TOTAL_PROCESSES}; this is the biggest")
     if total_footprint > MAX_TOTAL_FOOTPRINT:
-        head = max(commands, key=lambda h: footprint(commands[h]))
+        head = max(usage, key=lambda h: usage[h][1])
         return head, (f"agent commands at {total_footprint / GB:.1f} GB, over the total "
                       f"{MAX_TOTAL_FOOTPRINT / GB:g} GB; this is the biggest")
     return None
