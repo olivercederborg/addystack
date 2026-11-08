@@ -244,7 +244,7 @@ def unfinished(path, session_id):
         finished |= done
         if len(handed_back.split()) >= REPORT_WORDS:
             continue
-        found += [(task, f"`{label}` in {name or 'a subagent'}'s run", serves, name or "the subagent")
+        found += [(task, f"`{label}`", serves, name or "the subagent")
                   for task, (label, serves) in inner.items()]
     return [(label, owner) for task, label, serves, owner in found if task not in finished and not serves]
 
@@ -258,15 +258,21 @@ def background_feedback(event):
         return None
     if not left:
         return None
-    # A returned skill or subagent's run is over, so only running it again gets its result.
+    live = [label for label, owner in left if not owner]
+    # A returned skill or subagent's background work is killed with its run (Claude Code's launch
+    # line says so), so only running it again gets its result.
     rerun = sorted({owner for _, owner in left if owner})
-    return (f"Your turn is ending while background work started this turn is still running: "
-            f"{', '.join(label for label, _ in left)}. Your parent takes each turn end as your result, even if "
-            "that work wakes you later, so wait for it without starting it again: sleep in counted loops whose "
-            "sleeps add up to under 2 minutes each, checking a command's output file or pid, until its task "
-            "notification arrives (`t3_background_wait` only keeps the thread marked Working)."
-            + (f" Then run {' and '.join(rerun)} again in the foreground, since its run ended before that work did."
-               if rerun else ""))
+    feedback = [f"Your turn is ending while background work started this turn is still running: {', '.join(live)}. "
+                "Your parent takes each turn end as your result, even if that work wakes you later, so wait for it "
+                "without starting it again: sleep in counted loops whose sleeps add up to under 2 minutes each, "
+                "checking a command's output file or pid, until its task notification arrives (`t3_background_wait` "
+                "only keeps the thread marked Working)." if live else
+                "Your parent takes each turn end as your result."]
+    if rerun:
+        feedback.append(f"{' and '.join(rerun)} handed back before its background work finished "
+                        f"({', '.join(label for label, owner in left if owner)}), and that work ended with its run, so "
+                        "run it again in the foreground and wait for its result before ending the turn.")
+    return " ".join(feedback)
 
 
 def main():

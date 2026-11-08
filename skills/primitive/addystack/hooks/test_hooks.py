@@ -4715,8 +4715,9 @@ class BackgroundTurnEnd(unittest.TestCase):
         self.fork("f1", [("bg", "Bash", {"command": "python3 -m unittest", "description": "Run the suite",
                                          "run_in_background": True}, "Command running in background with ID: b5.")])
         feedback = self.run_hook()
-        self.assertIn("`Run the suite` in verify-work's run", feedback)
-        self.assertIn("Then run verify-work again in the foreground", feedback)
+        self.assertIn("verify-work handed back before its background work finished (`Run the suite`)", feedback)
+        self.assertIn("run it again in the foreground", feedback)
+        self.assertNotIn("until its task notification arrives", feedback)
 
     def test_passes_a_fork_that_reported_or_was_run_again(self):
         verdict = "Done: " + "checked " * 60
