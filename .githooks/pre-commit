@@ -57,7 +57,9 @@ run_suites() {
 # (skills/<layer>/<skill>/scripts), shared/scripts', scripts/', and the tool's
 # hooks/test_*.py when hooks_staged.
 host_suites() {
-  local dirs=("$root"/skills/{primitive,orchestrator,optional}/*/scripts "$root"/shared/scripts "$root"/scripts)
+  # Declared, then assigned: bash 3.2 does no brace expansion inside `local dirs=(…)`.
+  local dirs
+  dirs=("$root"/skills/{primitive,orchestrator,optional}/*/scripts "$root"/shared/scripts "$root"/scripts)
   if $hooks_staged; then dirs+=("$root"/skills/primitive/addystack/hooks); fi
   run_suites "${dirs[@]}"
 }

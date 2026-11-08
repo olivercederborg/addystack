@@ -7,6 +7,9 @@ import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
 HOOK = KIT / ".githooks" / "pre-commit"
+# Whether /bin/bash is older than 4, as macOS ships it.
+BASH_3 = os.path.exists("/bin/bash") and int(subprocess.run(
+    ["/bin/bash", "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True).stdout) < 4
 
 
 def darwin_only(decorator, names):
@@ -164,6 +167,25 @@ class DaggerOrHost(unittest.TestCase):
         run, _ = self.commit(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("dagger isn't installed", run.stdout)
+        self.assertTrue(self.ran.exists())
+
+    @unittest.skipUnless(BASH_3, "needs /bin/bash older than 4, as on macOS")
+    def test_bash_3_runs_a_skill_suite_on_the_host(self):
+        # bash 3.2 does no brace expansion inside `local name=(…)`, so the folder list
+        # once collapsed to one path that matched nothing.
+        skill = self.repo / "skills" / "primitive" / "my-skill" / "scripts"
+        skill.mkdir(parents=True)
+        skill_ran = pathlib.Path(self.folder.name, "skill-suite-ran")
+        (skill / "test_skill.py").write_text(
+            "import pathlib, unittest\n"
+            "class Skill(unittest.TestCase):\n"
+            "    def test_runs(self):\n"
+            f"        pathlib.Path({str(skill_ran)!r}).touch()\n")
+        (self.bin / "bash").unlink()
+        (self.bin / "bash").symlink_to("/bin/bash")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(skill_ran.exists())
         self.assertTrue(self.ran.exists())
 
 
