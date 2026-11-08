@@ -182,15 +182,17 @@ def _agent(value: Optional[Resolved]) -> Check:
     if not value["hosts"].get("claude"):
         return Check("agent", True, "not needed: the claude host is off", None)
     link, source = reconcile.AGENT.expanduser(), reconcile.AGENT_SOURCE.expanduser()
-    if _is_verifier(link):
+    # A link counts only when it's install's, to the copy verify-work ships: one to an older
+    # copy, such as a kit checkout's repo root, would run that copy's instructions.
+    if _is_verifier(link) and (not link.is_symlink() or os.readlink(link) == str(source)):
         return Check("agent", True, f"{render._home(link)} is the work-verifier agent"
-                     + (f", through {render._home(Path(os.readlink(link)))}" if link.is_symlink() else ""), None)
+                     + (f", through {render._home(source)}" if link.is_symlink() else ""), None)
     if not os.path.lexists(source.parents[1]):
         return Check("agent", True, f"not needed: verify-work isn't in {render._home(source.parents[2])}", None)
     if not link.is_symlink() and os.path.lexists(link):
         return Check("agent", False, f"{render._home(link)} isn't the work-verifier agent; verify-work's fork needs "
                      "it to record a Done verdict", f"move {render._home(link)} aside, then run addystack install")
-    problem = (f"{render._home(link)} links to {os.readlink(link)}, which isn't the work-verifier agent"
+    problem = (f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
                if link.is_symlink() else f"{render._home(link)} is missing")
     fix = "addystack install"
     if not source.is_file():

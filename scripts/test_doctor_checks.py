@@ -122,7 +122,18 @@ class Agent(Doctor):
         self.link.symlink_to("/old/kit/agents/work-verifier.md")
         line, fix = self.check("agent")
         self.assertTrue(line.startswith("FAIL  agent: ~/.claude/agents/work-verifier.md links to "
-                                        "/old/kit/agents/work-verifier.md, which isn't the work-verifier agent"), line)
+                                        "/old/kit/agents/work-verifier.md, not ~/.claude/skills/verify-work/agents/"
+                                        "work-verifier.md"), line)
+        self.assertEqual(fix, "fix: addystack install")
+
+    def test_a_link_to_an_older_copy_of_the_agent_fails(self):
+        # The old repo-root copy still reads as the agent while a kit checkout keeps it.
+        old = self.home / "kit/agents/work-verifier.md"
+        old.parent.mkdir(parents=True)
+        old.write_text((SKILLS["verify-work"] / "agents/work-verifier.md").read_text())
+        self.link.symlink_to(old)
+        line, fix = self.check("agent")
+        self.assertTrue(line.startswith(f"FAIL  agent: ~/.claude/agents/work-verifier.md links to {old}, not "), line)
         self.assertEqual(fix, "fix: addystack install")
 
     def test_a_file_that_isnt_the_agent_fails_and_one_that_is_passes(self):
