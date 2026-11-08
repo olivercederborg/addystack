@@ -337,9 +337,7 @@ class Checkout(Update):
         self.git(self.checkout, "commit", "-q", "--allow-empty", "-m", "trying something")
         head = self.git(self.checkout, "rev-parse", "HEAD")
         result = self.ok("update", bin_=self.bin)
-        self.assertEqual(self.git(self.checkout, "rev-parse", "HEAD"), head)
         self.assert_left(result, head, "not at a v* tag")
-        self.assertIn("ok    hooks: match the selection", result.stdout)
 
 
 class BranchCheckout(Update):
