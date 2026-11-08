@@ -23,7 +23,8 @@ Then follow the pick:
 - **Park**: run `project.py <folder> phase <slug> --result <one line> --park <reason>`.
   Once no worker is `running`, `waiting`, `overdue`, or `unknown`, delete the heartbeat
   and startup timer and set their Listening lines to none. Unwatch each merged PR. Keep
-  each [duty](duties.md) running, since its findings can start the next phase. Keep
+  each [duty](duties.md) running: a finding worth work reaches the user as a card to
+  start the next phase. Keep
   the thread pinned, and reply with step 5's one-line status.
 - **Close**: follow [close](close.md).
 
