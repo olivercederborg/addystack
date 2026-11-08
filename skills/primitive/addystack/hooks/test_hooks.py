@@ -1154,6 +1154,9 @@ class BashRewrite(unittest.TestCase):
         'sh -c "cd /tmp/x && swift test"',
         "python3 scripts/test_check_install.py -q",
         "exec python3 -m unittest -q scripts.test_check_install",
+        'result="$(cd "$(pwd)" && swift test)"',
+        "bash -lc 'swift test'",
+        "infisical run --env=test -- sh -c 'bun run test:unit'",
     ]
 
     def test_denies_a_verifier_build_run_in_the_background(self):
@@ -1179,6 +1182,12 @@ class BashRewrite(unittest.TestCase):
             "swift test & if false; then wait; fi",
             "(swift test &); wait",
             "wait; swift test &",
+            "swift test & pid=$!; echo wait",
+            "swift test & pid=$!; false && { wait; }; echo resumed",
+            "swift test & pid=$!; wait | cat",
+            "swift test & pid=$!; sleep 1 & wait $!",
+            "swift test & pid=$!; sleep 1 & other=$!; wait $other",
+            "swift test & wait -n",
         ]:
             with self.subTest(command=command):
                 out = self.verifier(command, timeout=600000)
@@ -1196,6 +1205,12 @@ class BashRewrite(unittest.TestCase):
             "(swift test & wait) && echo ok",
             "{ swift test & } ; wait",
             "swift test & pid=$!; wait $pid",
+            'swift test & pid=$!; sleep 1; wait "$pid"',
+            "swift test & wait $!",
+            "echo do; swift test & wait",
+            "for d in a b; do (cd $d && swift build) & done; echo done; wait",
+            # verify-75's fork, Nov 4, 2026: the pid on the next line, and the wait inside a piped group.
+            "{\n(cd $W && swift test > /tmp/t.log 2>&1) &\nt=$!\nfor i in {1..600}; do sleep 1; done\nwait $t; tail -3 /tmp/t.log\n} 2>&1 | tee $E",
         ]:
             with self.subTest(command=command):
                 out = self.verifier(command, timeout=600000)
@@ -1223,6 +1238,7 @@ class BashRewrite(unittest.TestCase):
             "xcodebuild -version",
             "make --version | head -1",
             "echo 'sh -c \"swift test\"'",  # a script in single quotes is text
+            "echo sh -c 'swift test'",  # echo prints the script
         ]:
             with self.subTest(command=command):
                 self.assertIsNone(self.verifier(command))

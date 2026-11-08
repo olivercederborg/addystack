@@ -170,10 +170,15 @@ WRAPPER = (r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/
 # `swift test --help` or `xcodebuild -version` asks about the tool and runs nothing.
 INSPECTS = r"(?![^;&|\n]*\s(?:--?help|-h|--?version|-list|-showsdks|-showBuildSettings)(?=\s|$))"
 BUILD_OR_TEST = re.compile(LEAD + WRAPPER + RUNNER + INSPECTS)
-# The script `sh -c` or `bash -c` runs, quoted.
-SCRIPT = re.compile(r"\b((?:ba|z)?sh\s+(?:-\w+\s+)*-c\s+)(['\"])(.*?)(?<!\\)\2", re.S)
+# The script `sh -c`, `bash -lc`, or `zsh -fc` runs, quoted, when the shell runs as a command
+# (after `--`, as in `infisical run -- sh -c '…'`, too); `echo sh -c '…'` only prints one.
+SCRIPT = re.compile(r"((?:^|[;&|({\n]|\s--)\s*" + WRAPPER + r"(?:\S*/)?(?:ba|z)?sh\s+(?:-[a-z]+\s+)*-[a-z]*c\s+)"
+                    r"(['\"])(.*?)(?<!\\)\2", re.S)
+# A `$(…)` with up to one `$(…)` nested in it, and a variable, which double quotes leave code.
+SUBSTITUTION = r"\$\((?:[^()]|\([^()]*\))*\)|\$\{?\w+\}?|\$!"
 # What opens and closes a group, ends a list item, or waits, in masked code.
 TOKEN = re.compile(r"\(|\)|\{|\}|;;?|\n|&&|\|\||&|(?<![\w-])(?:do|then|done|fi|esac|wait)(?![\w-])")
+KEYWORD_AFTER = re.compile(r"(?:^|[;\n&|({)}]|(?<![\w-])(?:do|then|else|done|fi|esac))\s*\Z")
 VERIFIER = "work-verifier"
 # Bash's most; a command past it moves to the background however long its timeout.
 LONG = 600000
@@ -185,12 +190,13 @@ SPLIT = ("If it could take longer than 10 minutes, split it into batches that ea
 
 def run_code(command):
     """command as the shell runs it: shell_code's masking, but the script `sh -c` runs, as a
-    group of its own, and each `$(…)` in double quotes stay code. Offsets shift."""
+    group of its own, and each `$(…)` and variable in double quotes stay code. Offsets shift."""
     code = SCRIPT.sub(lambda m: f"{m.group(1)}( {m.group(3)} )", mask_heredocs(command, quoted_only=False))
-    keep = lambda m: m.group() if m.group().startswith("$(") else blank(m.group())
-    code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", lambda m: "'" + (
-        re.sub(r"\$\([^()]*\)|[^$]+|\$", keep, m.group()[1:-1]) if m.group()[0] == '"' else blank(m.group()[1:-1])) + "'",
-        code)
+    keep = lambda m: m.group() if m.group().startswith("$") and len(m.group()) > 1 else blank(m.group())
+    # A `$(…)` inside double quotes may hold quotes of its own: `"$(cd "$(pwd)" && swift test)"`.
+    code = re.sub(r"'[^']*'|\"(?:\\.|" + SUBSTITUTION + r"|[^\"\\])*\"", lambda m: "'" + (
+        re.sub(SUBSTITUTION + r"|[^$]+|\$", keep, m.group()[1:-1]) if m.group()[0] == '"' else blank(m.group()[1:-1]))
+        + "'", code)
     code = re.sub(r"(?:(?<=[\s;&|(])|^)#[^\n]*", lambda m: ";" * len(m.group()), code, flags=re.M)
     return re.sub(r"\d?>&\d?|&>", lambda m: m.group().replace("&", "_"), code)
 
@@ -198,29 +204,43 @@ def run_code(command):
 def unwaited(code):
     """The text of each command, a whole `&&` list, loop, or group included, that a lone `&`
     sends to the background with no `wait` for it later in code. A `wait` counts when it
-    starts a list item in the same shell, outside any branch or loop body; `(wait)`, `false
-    && wait`, and `then wait` don't, since each may leave the job running."""
-    # Each frame: [start of its current list item, shell, steady (no branch or loop body around it)].
+    starts a list item in the same shell, outside any branch, loop body, or guarded group,
+    and isn't piped; `(wait)`, `false && wait`, `then wait`, and `wait | cat` don't, since
+    each may leave the job running. With arguments it covers only the job whose `pid=$!` it
+    names, or the last job for `$!`. A keyword counts only where a command starts, so `echo
+    done` closes nothing. Known limits: a quoted runner word or test path (`python3
+    "test_x.py"`) and a quoted `--help` read as text, and `$(…)` nests one level deep;
+    none was among 25,365 verifier commands from Nov 1 to 8, 2026."""
+    # Each frame: [start of its current list item, shell, steady (no branch, loop body, or guard around it)].
     frames, shells, jobs, after = [[0, 0, True]], 0, [], "\n"
     for token in TOKEN.finditer(code):
         text, frame = token.group(), frames[-1]
+        if text[0].isalpha() and not KEYWORD_AFTER.search(code[:token.start()]):
+            continue
         if text == "(":
             shells += 1
             frames.append([token.end(), shells, True])
         elif text in ("{", "do", "then"):
-            frames.append([token.end(), frame[1], frame[2] and text == "{"])
+            frames.append([token.end(), frame[1], frame[2] and text == "{" and after not in ("&&", "||")])
         elif text in (")", "}", "done", "fi", "esac"):
             if len(frames) > 1:
                 frames.pop()
         elif text in (";", ";;", "\n"):
             frame[0] = token.end()
         elif text == "&":
-            jobs.append((code[frame[0]:token.start()], frame[1]))
+            pid = re.match(r"\s*(\w+)=\$!", code[token.end():])
+            jobs.append((code[frame[0]:token.start()], frame[1], pid and pid.group(1)))
             frame[0] = token.end()
         elif text == "wait" and frame[2] and after in (";", ";;", "\n", "&", "{", "("):
-            jobs = [job for job in jobs if job[1] != frame[1]]
+            args = re.match(r"[^;&|\n)}]*(\|(?!\|))?", code[token.end():])
+            if not args.group(1):
+                names = set(re.findall(r"\$\{?(\w+)", args.group()))
+                mine = [job for job in jobs if job[1] == frame[1]]
+                covered = mine if not args.group().strip() else [job for job in mine if job[2] in names] + (
+                    mine[-1:] if "$!" in args.group() else [])
+                jobs = [job for job in jobs if job not in covered]
         after = text
-    return [job for job, _ in jobs]
+    return [job for job, _, _ in jobs]
 
 
 def verifier_fix(payload, tool_input, command):
