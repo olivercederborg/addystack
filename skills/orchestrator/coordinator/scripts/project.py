@@ -242,11 +242,7 @@ def _drop_final(lines: list[str]) -> list[str]:
     if "## Workers" not in lines:
         return []
     start_at, end = _section(lines, "Workers")
-    first = next((i for i in range(start_at + 1, end) if lines[i].startswith("|")), end)
-    # The table runs from its header to the first line that is neither a row nor blank, so a
-    # notes table further down the section is never read as workers.
-    stop = next((i for i in range(first, end) if lines[i].strip() and not lines[i].startswith("|")), end)
-    table = [i for i in range(first, stop) if lines[i].startswith("|")]
+    table = [i for i in range(start_at + 1, end) if lines[i].startswith("|")]
     header = _cells(lines[table[0]]) if table else []
     if len(table) < 2 or COLUMNS["state"] not in header:
         return []
