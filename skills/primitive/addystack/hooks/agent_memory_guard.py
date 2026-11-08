@@ -37,7 +37,9 @@ Known limits:
   it gets the per-command budgets but not the total. Under Codex it also needs a readable
   environment without the agent mark, so a Codex server that's an Apple binary, such as
   Xcode's mcpbridge, counts toward the total, and a command Codex starts with a cleared
-  environment and no shell doesn't.
+  environment and no shell doesn't. A Claude command that `exec`s out of its wrapper
+  shell reads as a service too. A service's processes that start over a minute after it,
+  such as work Codex's Node REPL runs, count toward the total.
 - An orphan in a process group an installed app (under /Applications/) leads isn't
   agent work by its environment alone, since an app such as OrbStack starts its VM with
   the environment of whichever command woke it.
@@ -61,6 +63,9 @@ MAX_FOOTPRINT = 20 * GB
 MAX_TOTAL_PROCESSES = 1500
 MAX_TOTAL_FOOTPRINT = 28 * GB
 INTERVAL_SECONDS = 0.5
+# A service's processes that start this long after it are work it runs, and count toward
+# the total; an MCP server's own helpers start within a few seconds.
+SERVICE_STARTUP_SECONDS = 60
 # An abandoned command is killed once it averages ABANDONED_CORES over the window. A
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
@@ -317,6 +322,15 @@ def footprint(members):
     return sum(proc.footprint for proc in members)
 
 
+def service_work(head, members):
+    """The members of a service that are work, not the idle server: those that started
+    over SERVICE_STARTUP_SECONDS after it, such as a subprocess Codex's Node REPL runs."""
+    first = next((proc for proc in members if proc.ident == head), None)
+    if first is None:
+        return members
+    return [proc for proc in members if proc.start - first.start > SERVICE_STARTUP_SECONDS]
+
+
 def runaway(commands, services=frozenset()):
     """Return (head, reason) for the command to kill, or None. A service gets the
     per-command budgets but stays out of the total: on Nov 8, 2026 one Codex server's 54
@@ -327,7 +341,9 @@ def runaway(commands, services=frozenset()):
         if footprint(members) > MAX_FOOTPRINT:
             return head, (f"{footprint(members) / GB:.1f} GB, over the per-command "
                           f"{MAX_FOOTPRINT / GB:g} GB")
-    commands = {head: members for head, members in commands.items() if head not in services}
+    commands = {head: members if head not in services else service_work(head, members)
+                for head, members in commands.items()}
+    commands = {head: members for head, members in commands.items() if members}
     if not commands:
         return None
     total_processes = sum(len(members) for members in commands.values())
