@@ -170,8 +170,8 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
             folders = list(saved.iterdir()) if verdict == "done" else []
         except FileNotFoundError:  # no evidence saved yet; any other error could hide a log
             folders = []
-        left = [found for folder in folders if len(folder.name) >= 7 and head.startswith(folder.name)
-                for found in kinds.left_out_mutants(folder, evidence.get("mutants", []))]
+        left = kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
+                                       and head.startswith(folder.name)], evidence.get("mutants", []))
     except OSError as error:
         raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
     if left:

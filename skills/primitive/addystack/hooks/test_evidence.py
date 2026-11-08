@@ -375,6 +375,57 @@ class Recording(Repo):
         with self.assertRaisesRegex(verdicts.VerdictError, r"mutants\.log in this head's evidence folder.*hidden regression"):
             self.record(head, evidence={"idiom": idiom})
 
+    def test_each_mutant_log_counts_once_by_identity(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = pathlib.Path(self.saved(head, "runs/mutants.log", "survived: real regression\n"))
+        folder = log.parent.parent
+        (folder / "a").symlink_to(log.parent)
+        (folder / "b").symlink_to(log.parent)
+        short = pathlib.Path(self.saved(head[:8], "notes.txt", "x\n")).parent
+        (short / "runs").symlink_to(log.parent)
+        with self.assertRaisesRegex(verdicts.VerdictError, r"it shows 1 survived \(real regression\)"):
+            self.record(head, evidence={"idiom": idiom})
+        os.link(log, folder / "mutants-again.log")
+        (log.parent / "x").mkdir()
+        (log.parent / "x" / "y").symlink_to(log.parent / "z")
+        (log.parent / "z").mkdir()
+        (log.parent / "z" / "x").symlink_to(log.parent / "x")  # a cycle below the head's folder
+        for name in ("p1", "p2"):  # a branching one, which a walk that revisits folders takes 2^40 steps through
+            (log.parent / "x" / name).symlink_to(log.parent)
+        with self.assertRaisesRegex(verdicts.VerdictError, r"it shows 1 survived \(real regression\)"):
+            self.record(head, evidence={"idiom": idiom})
+        os.unlink(folder / "mutants-again.log")
+        kills =pathlib.Path(self.saved(head, "runs/mutants.log", "killed: a\nkilled: b\nkilled: c\n"))
+        os.link(kills, folder / "mutants-copy.log")  # a hard link is the same file
+        variant = str(kills).replace("mutants.log", "MUTANTS.log")
+        same_case = os.path.exists(variant) and os.path.samefile(variant, kills)
+        for ref in [str(kills), str(folder / "mutants-copy.log")] + ([variant] if same_case else []):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.record(head, evidence={"idiom": idiom, "mutants": [ref]}).verdict, "done")
+
+    def test_a_file_named_for_the_head_or_a_fifo_is_no_log(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder.parent / head[:8]).write_text("not a folder\n")
+        os.mkfifo(folder / "mutants.fifo")  # reading one would wait for a writer
+        self.assertEqual(self.record(head, evidence={"idiom": idiom}).verdict, "done")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_a_link_in_a_folder_done_cannot_search_refuses_done(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        elsewhere = self.dir / "runs"
+        elsewhere.mkdir()
+        (elsewhere / "mutants.log").write_text("survived: real regression\n")
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder / "run").symlink_to(elsewhere)
+        folder.chmod(0o644)
+        self.addCleanup(folder.chmod, 0o755)
+        with self.assertRaisesRegex(verdicts.VerdictError, "Done reads every mutant log.*Permission denied"):
+            self.record(head, evidence={"idiom": idiom})
+
     def test_bad_evidence_is_refused_for_every_verdict(self):
         head = self.change({"README.md": "# app\n\nMore.\n"})
         for verdict in verdicts.VERDICTS:

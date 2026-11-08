@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -276,27 +277,45 @@ def survivors(refs: list[str]) -> str | None:
     return f"{len(found)} survived ({'; '.join(found)})" if found else None
 
 
-def left_out_mutants(folder: Path, refs: list[str]) -> list[tuple[str, list[str]]]:
-    """(path, survivors) for each file under folder, a head's evidence folder, whose name
-    says mutant or mutation and that holds a survivor or 3 results (`killed:` or `survived:`
-    lines), when refs, a Done's mutants evidence, don't name it. Fewer, all killed, hide
-    nothing, and `check` wouldn't take them. verify-108-1 saved a log with three survivors
-    there on Nov 8, 2026, and recorded Done without it. It follows linked folders, each once,
-    and raises OSError for a file or folder it can't read, since that could hide a survivor
+def left_out_mutants(folders: list[Path], refs: list[str]) -> list[tuple[str, list[str]]]:
+    """(path, survivors) for each regular file under folders, a head's evidence folders,
+    whose name says mutant or mutation and that holds a survivor or 3 results (`killed:` or
+    `survived:` lines), when refs, a Done's mutants evidence, don't name that file. Fewer, all
+    killed, hide nothing, and `check` wouldn't take them. verify-108-1 saved a log with three
+    survivors there on Nov 8, 2026, and recorded Done without it. Files and folders compare
+    by device and inode, so a case-variant path, a hard link, or a linked folder counts once.
+    It raises OSError for a file or folder it can't read, since that could hide a survivor
     too; `is_dir()` and `is_file()` would read one as absent."""
     def fail(error):
         raise error
-    given = {Path(ref).resolve() for ref in refs if not ref.startswith(NOT_RUN)}
-    found, walked = [], set()
-    for root, folders, names in os.walk(folder, onerror=fail, followlinks=True):
-        walked.add(os.path.realpath(root))
-        folders[:] = sorted(name for name in folders if os.path.realpath(os.path.join(root, name)) not in walked)
-        for path in (Path(root, name) for name in sorted(names) if MUTANT_LOG.search(name)):
-            if path.resolve() in given:
-                continue
-            results = MUTANT_LINE.findall(path.read_text(errors="replace"))
-            if any(outcome == "survived" for outcome, _ in results) or len(results) >= 3:
-                found.append((str(path), [mutant for outcome, mutant in results if outcome == "survived"]))
+    def identity(path):
+        info = os.stat(path)
+        return info.st_dev, info.st_ino
+    given = {identity(ref) for ref in refs if not ref.startswith(NOT_RUN)}
+    found, walked, read = [], set(), set()
+    for folder in folders:
+        if not stat.S_ISDIR(os.stat(folder).st_mode) or identity(folder) in walked:
+            continue  # a file named like the head isn't an evidence folder
+        walked.add(identity(folder))
+        for root, subfolders, names in os.walk(folder, onerror=fail, followlinks=True):
+            kept = []
+            for name in sorted(subfolders):
+                if (key := identity(os.path.join(root, name))) not in walked:
+                    walked.add(key)
+                    kept.append(name)
+            subfolders[:] = kept
+            for name in sorted(names):
+                path = os.path.join(root, name)
+                os.lstat(path)  # raises where root lists names it can't search, so a link there isn't skipped
+                if not MUTANT_LOG.search(name):
+                    continue
+                info = os.stat(path)
+                if not stat.S_ISREG(info.st_mode) or (key := (info.st_dev, info.st_ino)) in given | read:
+                    continue  # reading a FIFO would wait for a writer
+                read.add(key)
+                results = MUTANT_LINE.findall(Path(path).read_text(errors="replace"))
+                if any(outcome == "survived" for outcome, _ in results) or len(results) >= 3:
+                    found.append((path, [mutant for outcome, mutant in results if outcome == "survived"]))
     return found
 
 
