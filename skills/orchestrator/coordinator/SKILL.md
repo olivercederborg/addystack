@@ -192,7 +192,7 @@ queue and the worker's thread:
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words. In the same reply, show the next card with no recap. When the queue is empty,
 reply with a one-line status: a ⏳ line while any worker runs, else
-that every worker is done.
+a line that nothing is running.
 
 **Done when:** every answer is sent and recorded, and the reply shows the next card or
 the one-line status.
