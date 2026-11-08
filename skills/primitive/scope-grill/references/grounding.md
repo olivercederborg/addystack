@@ -18,7 +18,7 @@ design question), and the environment. Ask only when a missing decision would ch
 the investigation, and keep gathering evidence in the meantime.
 
 **Answering the user directly**, including a challenge such as "are you sure?": read
-grounding's [`references/answer.md`](references/answer.md) now, before checking
+grounding's `references/answer.md` now, before checking
 sources. Loaded as another skill's lens, report in that skill's format instead.
 
 ## Sources

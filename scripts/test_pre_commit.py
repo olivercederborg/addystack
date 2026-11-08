@@ -70,7 +70,7 @@ class DaggerOrHost(unittest.TestCase):
         self.repo = pathlib.Path(self.folder.name, "repo")
         (self.repo / ".githooks").mkdir(parents=True)
         shutil.copy(HOOK, self.repo / ".githooks" / "pre-commit")
-        lints = ["check-frontmatter.sh", "check-skill-size.sh", "check-layers.py", "check-neutral.py", "sync-format.sh",
+        lints = ["check-frontmatter.sh", "check-skill-size.sh", "check-layers.py", "check-neutral.py", "check-links.py", "sync-format.sh",
                  "sync-notes.py", "sync-skill-list.py", "sync-copies.py", "check_examples.py",
                  "check-reply-budget.py"]
         self.script("hook-inputs-staged.sh", "exit 1")

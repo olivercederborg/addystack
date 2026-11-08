@@ -168,6 +168,12 @@ class Skills:
 
     @function
     @check
+    async def links(self, kit: source(*TRACKED)) -> None:
+        """scripts/check-links.py, over the whole kit"""
+        await run(kit, "scripts/check-links.py")
+
+    @function
+    @check
     async def format_sync(self, kit: source("skills/*/*/SKILL.md", "shared/format-pointer.md", "scripts/sync-format.sh")) -> None:
         """scripts/sync-format.sh --check"""
         await run(kit, "scripts/sync-format.sh", "--check")
