@@ -9,7 +9,8 @@ KIT = pathlib.Path(__file__).resolve().parent.parent
 HOOK = KIT / ".githooks" / "pre-commit"
 # Whether /bin/bash is older than 4, as macOS ships it.
 BASH_3 = os.path.exists("/bin/bash") and int(subprocess.run(
-    ["/bin/bash", "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True).stdout) < 4
+    ["/bin/bash", "--norc", "--noprofile", "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True,
+    env={k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")}).stdout.split()[-1]) < 4
 
 
 def darwin_only(decorator, names):
