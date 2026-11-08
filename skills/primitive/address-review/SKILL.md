@@ -44,20 +44,13 @@ Calls here: **Fix**, **Decline**, **Defer**, **No change**.
 - 2 · CodeRabbit · review body · doesn't hold: file details count as PII · source: `docs/conventions/logging.md`
 
 </details>
-
----
-
-**Next**
-
-- **`a` → fix 1, decline 2, then push, reply, resolve** · *recommended*
-- `b` → the same calls, stopping before the push
 ````
 After fixing, when the user stopped before the push:
 
 ````markdown
 ✅ **Retried uploads reuse their receipt. Nothing is pushed yet.**
 
-- **Review**: the two replies below. `a` posts them as written.
+- **Review**: the two replies below. Approval posts them as written.
 
 **1** · cubic thread
 
@@ -78,13 +71,6 @@ After fixing, when the user stopped before the push:
 ✅ typecheck · ✅ lint · ✅ tests 4/4, with the same file uploaded twice → one receipt · ✅ idioms (the repo's lenses, grounding, taste)
 
 </details>
-
----
-
-**Next**
-
-- **`a` → push, post both replies, resolve both threads** · *recommended*
-- `b` → push only
 ````
 ## 1. Fetch
 
@@ -137,12 +123,12 @@ decision is a decision card. Small local fixes, such as a rename, an import, or 
 guard, show their code after fixing.
 
 The headline counts the calls and is marked by the worst claim that holds. When
-every call is clear, the `Next` options are all recommended calls, then push, reply,
-resolve; or the same calls, stopping before the push. One answer settles the round.
-Option `a` runs steps 3 and 4 without stopping, and ends with the report and the posted
+every call is clear, recommend all recommended calls, then push, reply, resolve, and
+offer the same calls stopping before the push. One answer settles the round. Taking
+the recommendation runs steps 3 and 4 without stopping, and ends with the report and the posted
 replies, or at the report when a check fails or a fix has to differ from what was shown. When
-a push would dismiss existing approvals, say so in each option that pushes. When step 1
-marked a PR for a restack, name the restack in each option that pushes. When an item
+a push would dismiss existing approvals, say so wherever you offer a push. When step 1
+marked a PR for a restack, name the restack wherever you offer a push. When an item
 needs a decision, go through those items one card at a time, answered by number or in
 a batch ("do 2-3", "1 fix, 2 decline, 4 defer"). With autonomy under **Approval**,
 take every recommended call, log it, and run steps 3 and 4 without asking. A card that
@@ -175,15 +161,15 @@ its code, and every PR step 1 marked for a restack is restacked.
 
 As soon as the fixes are done, draft the replies in the
 [reply style](references/reply-style.md), each starting with the
-[agent disclosure](references/disclosure.md). Option `a` offers the rest of the loop:
+[agent disclosure](references/disclosure.md). Recommend the rest of the loop:
 push, post the displayed drafts, resolve, and, when the fixes make sections of the PR
-description stale, update them with open-pr. Creating an issue for a Defer is its own
-option.
+description stale, update them with open-pr. Creating an issue for a Defer is offered
+on its own.
 
-Drafts that `a` would post show in full below a **Review** note, in every reply whose
-`a` posts them. Replies that already went out with an approved `a` go in the fold.
+Drafts that step would post show in full below a **Review** note, in every reply whose
+approval posts them. Replies that already went out with the user's approval go in the fold.
 
-- Push per **Approval**: when the user picks that `Next`, says so in their own words,
+- Push per **Approval**: when the user accepts that step, says so in their own words,
   or has granted autonomy. When they ask for part of the loop ("just push", "just
   reply"), do exactly that part.
 - With autonomy, post the replies the user's instructions don't name as a stop, such as
