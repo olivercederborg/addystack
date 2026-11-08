@@ -9,7 +9,11 @@ may restate this section; the hooks then cite that file instead.
 
 ````markdown
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"which export fixes"}],"options":[{"key":"a","class":"routine","text":"yes: fix the currency column and null dates, one commit each"},{"key":"b","class":"routine","text":"no: fix only the currency column"}]} -->
+<!-- turn {"state":"done","needs":[],"options":[]} -->
+<!-- turn {"state":"running","needs":[],"options":[],"elapsed":"10 min"} -->
 ````
+
+One block per reply; these are three alternatives.
 
 ## Form
 
@@ -17,16 +21,18 @@ may restate this section; the hooks then cite that file instead.
   own line, outside any code block or code span. A block inside one is an example; a
   second block outside one makes the reply malformed.
 - **Body**: one JSON object, each field once, no unknown fields, and no `-->` or `--!>`,
-  which would end the comment early and show the rest.
+  which would end the comment early and show the rest. `state`, `needs`, and `options` are
+  required in every block; `needs` and `options` are lists, empty when there's nothing.
 
 ## Fields
 
 The shared fields and their limits are prefrontal-turns' base, the spec Prefrontal reads.
 
 - **`state`**: `stop` ends on Next, `done` on Done, and `running` on a ⏳ line while CI, a
-  child, or a watch runs.
+  child, or a watch runs, or is the block alone where a skill makes that a quiet watch
+  wake's whole reply.
   - `stop` carries at least one option or need.
-  - `done` carries neither.
+  - `done` carries neither: both are empty lists.
   - `running` carries no options and always `elapsed` (up to 40 characters, such as
     `"10 min"`), plus `eta`, the time left, only when it's measured. Only `running`
     carries either.
@@ -38,7 +44,7 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
   reply that's still open stays listed.
 - **`options`**: the Next options in order, as `{"key", "class", "text"}`, with `text` 1-400
   characters. The first is the recommended one.
-- **`project`** (optional): up to 40 characters; threads that share it group into one row.
+- **`project`** (optional): 1-40 characters; threads that share it group into one row.
   A child whose brief has a `Project:` line sets it to that name.
 
 ## Options
@@ -49,9 +55,9 @@ addystack adds the two-option cap and each option's class.
   call, as on a decision card's no or the smallest option. `routine_stop.py` sends back a
   reply with a third.
 - **`class`**: the router stop the option crosses, one of:
-  - `stop:merge`: merging or marking ready. Its text is the plain merge request with no
-    other step, as in "merge #12 and #13", since only that counts as the user's go when
-    they pick it.
+  - `stop:merge`: merging or marking ready. A merge option's text is the plain merge
+    request with no other step, as in "merge #12 and #13", since only that counts as the
+    user's go when they pick it; a ready-only option, such as "mark #12 ready", isn't one.
   - `stop:push`: a force-push to a shared branch, or a push to a branch someone else
     owns or one that would dismiss an approval.
   - `stop:post`: a message to a person.
