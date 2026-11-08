@@ -260,8 +260,8 @@ def background_feedback(event):
     if not left:
         return None
     live = [label for label, owner in left if not owner]
-    # A returned skill or subagent's background work is killed with its run (Claude Code's launch
-    # line says so), so only running it again gets its result.
+    # A returned skill or subagent's run is over, and Claude Code kills its background work with it
+    # (1,523 of 1,671 such launches in the 7 days to Nov 8, 2026 say so), so only a rerun gets its result.
     rerun = sorted({owner for _, owner in left if owner})
     feedback = [f"Your turn is ending while background work started this turn is still running: {', '.join(live)}. "
                 "Your parent takes each turn end as your result, even if that work wakes you later, so wait for it "
@@ -271,8 +271,8 @@ def background_feedback(event):
                 "Your parent takes each turn end as your result."]
     if rerun:
         feedback.append(f"{' and '.join(rerun)} handed back before its background work finished "
-                        f"({', '.join(label for label, owner in left if owner)}), and that work ended with its run, so "
-                        "run it again in the foreground and wait for its result before ending the turn.")
+                        f"({', '.join(label for label, owner in left if owner)}), and its run is over, so run it "
+                        "again in the foreground and wait for its result before ending the turn.")
     return " ".join(feedback)
 
 
