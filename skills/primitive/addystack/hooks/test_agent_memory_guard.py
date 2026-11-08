@@ -183,6 +183,16 @@ class Attribution(unittest.TestCase):
             proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",)))
         self.assertEqual(commands, {})
 
+    def test_group_whose_leader_is_unread_is_adopted_only_once_it_reads(self):
+        app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
+        helper = proc(502, 501, pgid=501, marked=True, argv=("node",))
+        owners = Owners()
+        with mock.patch.dict(guard.bundle_executables, self.BUNDLES, clear=True):
+            unread = owners.attribute(snapshot(AGENT, proc(501, 1, pgid=501, argv=()), helper))
+            read = owners.attribute(snapshot(
+                AGENT, proc(501, 1, pgid=501, marked=True, argv=(app,)), helper))
+        self.assertEqual((unread, read), ({}, {}))
+
     def test_detached_job_on_an_app_s_bundled_cli_is_still_agent_work(self):
         for node in ("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
                      "/Applications/Stremio.app/Contents/MacOS/node"):

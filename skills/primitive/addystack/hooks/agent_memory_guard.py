@@ -303,9 +303,11 @@ class Owners:
                 pid = parent.pid
             for proc in reversed(chain):
                 head = head or self.owner.get(proc.ident) or self.group.get(proc.pgid)
+                # Not while the group's leader is an app, or unread, so may be one: the
+                # adoption outlives the read.
                 leader = procs.get(proc.pgid)
-                if (head is None and proc.marked
-                        and not (leader is not None and is_installed_app(leader))):
+                if (head is None and proc.marked and not (
+                        leader is not None and (not leader.argv or is_installed_app(leader)))):
                     head = self.group[proc.pgid] = proc.ident
                 owner[proc.ident] = head
         return owner
