@@ -205,7 +205,9 @@ class DaggerOrHost(unittest.TestCase):
 
     def test_inherited_glob_settings_still_run_the_host_suites(self):
         startup = pathlib.Path(self.folder.name, "bash-env")
-        startup.write_text(f"shopt -s nullglob\nGLOBIGNORE='{self.repo / 'scripts' / 'test_host.py'}'\n")
+        # The real path, since git, and so the hook's root, resolves /var to /private/var.
+        hidden = pathlib.Path(os.path.realpath(self.repo), "scripts", "test_host.py")
+        startup.write_text(f"shopt -s nullglob\nGLOBIGNORE='{hidden}'\n")
         os.environ["BASH_ENV"] = str(startup)
         self.addCleanup(os.environ.pop, "BASH_ENV")
         run, _ = self.commit(dagger=False)
