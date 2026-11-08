@@ -219,6 +219,7 @@ Proofs:
     def test_a_refused_phase_leaves_every_file_untouched(self):
         for args, code in [(["Bad_Slug", "--result", "r", *NEXT], 1),
                            (["audit", "--result", "two\nlines", *NEXT], 1),
+                           (["audit", "--result", "ok\r## Listening", *NEXT], 1),
                            (["audit", "--result", "r", "--goal", "g", "--proof", "a\nb"], 1),
                            (["audit", "--result", "r", "--park", "p", "--goal", "g"], 2),
                            (["audit", "--result", "r", "--goal", "g"], 2),

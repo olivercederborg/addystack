@@ -203,7 +203,7 @@ def _end(lines: list[str], start: int) -> int:
 
 
 def _line(name: str, value: str) -> str:
-    if not value.strip() or "\n" in value.strip():
+    if not value.strip() or "\n" in value.strip() or "\r" in value:
         raise ProjectError(f"--{name} takes one non-empty line")
     return value.strip()
 
