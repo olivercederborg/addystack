@@ -1,6 +1,6 @@
 ---
 name: build
-description: "Implements an agreed plan in verified steps inside its scope. Use when asked to implement, build, or code up a plan, spec, or ticket, including \"build it\" after a plan was discussed or a lettered `Next` pick that implements it."
+description: "Implements an agreed plan in verified steps inside its scope. Use when asked to implement, build, or code up a plan, spec, or ticket, including \"build it\" after a plan was discussed or a lettered pick that implements it."
 compatibility: Requires git.
 metadata:
   layer: primitive
@@ -121,12 +121,6 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
 - 3 steps, 3 commits · Deviations: none · Not in scope: untouched · review-loop: 1 blocker fixed
 
 </details>
-
----
-
-**Next**
-
-- **`a` → verify-work, then push and open a draft PR** · *recommended*
 ````
 
 - **Headline**: what the build does now, in plain words. A failing check makes it 🔴,
@@ -140,8 +134,8 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
   cases, any deviation, a confirmation that Not in scope was left alone, and
   review-loop's blockers, fixed or dropped.
 
-Push or submit per **Approval**: when the user picks a `Next` option, says so, or has
-granted autonomy.
+Recommend verify-work, then a push and a draft PR. Push or submit per **Approval**: when
+the user says so, or has granted autonomy.
 
 **Done when:** every decision in the plan is implemented, all checks pass, the behavior
 was run, review-loop is settled, nothing outside the plan was built, and
