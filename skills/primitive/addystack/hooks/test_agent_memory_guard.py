@@ -175,6 +175,12 @@ class Attribution(unittest.TestCase):
             proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",))))
         self.assertEqual(commands, {})
 
+    def test_detached_job_on_an_app_s_bundled_cli_is_still_agent_work(self):
+        node = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
+        commands = Owners().attribute(snapshot(
+            AGENT, proc(501, 1, pgid=501, marked=True, argv=(node, "-e", "job"))))
+        self.assertEqual(list(commands), [501])
+
     def test_orphaned_python_job_is_still_agent_work(self):
         # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the
         # exited command's group.

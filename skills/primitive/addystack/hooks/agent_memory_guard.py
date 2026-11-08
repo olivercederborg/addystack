@@ -40,9 +40,10 @@ Known limits:
   environment and no shell doesn't. A Claude command that `exec`s out of its wrapper
   shell reads as a service too. A service's processes that start over a minute after it,
   such as work Codex's Node REPL runs, count toward the total.
-- An orphan in a process group an installed app (under /Applications/) leads isn't
-  agent work by its environment alone, since an app such as OrbStack starts its VM with
-  the environment of whichever command woke it.
+- An orphan in a process group led by an installed app's own executable (under
+  /Applications/, in an app's Contents/MacOS/) isn't agent work by its environment
+  alone, since an app such as OrbStack starts its VM with the environment of whichever
+  command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
   counts toward the total.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
@@ -237,10 +238,12 @@ def is_service(proc, agent):
 
 def is_installed_app(proc):
     """An installed app's own process, such as OrbStack's VM, which leads its own process
-    group and inherits the environment of the agent command that woke it. Homebrew's
-    Python and Playwright's browsers run from app bundles too, but not from /Applications."""
+    group and inherits the environment of the agent command that woke it. An app's main
+    and helper executables live in Contents/MacOS/; a CLI it bundles elsewhere, such as
+    ChatGPT's node or Xcode's toolchain, stays agent work, and so do Homebrew's Python and
+    Playwright's browsers, which aren't under /Applications/."""
     return (bool(proc.argv) and proc.argv[0].startswith("/Applications/")
-            and proc.pgid == proc.pid)
+            and ".app/Contents/MacOS/" in proc.argv[0] and proc.pgid == proc.pid)
 
 
 class Owners:
