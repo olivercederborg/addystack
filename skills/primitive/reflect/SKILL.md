@@ -181,6 +181,7 @@ This repo pushes through gh stack, so `git push` is blocked: use `gh stack push`
 
 - Also applied: build names the verification skill; open-pr triggers on "PR body".
 - Skipped: the `tdd` lesson, since that skill is an installed copy.
+- Recommended: rerun the build eval on #212, since 1 changed `build`.
 
 <details><summary>Items and checks: ⚠️ 1 eval not rerun · ✅ 3 applied · ⬜ 1 skipped</summary>
 
