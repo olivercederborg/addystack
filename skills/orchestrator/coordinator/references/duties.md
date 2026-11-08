@@ -13,8 +13,9 @@ In the turn the user asks:
 
 1. **Name** it with a short slug, such as `bug-reports`. When Listening already has a
    live `Duty <name>` line, this request changes that duty: delete its scheduled task,
-   `task_cancel` a probe still running on its row and set the row's `taskId` to none,
-   then go on, keeping its `last` time in step 3 unless the source changed.
+   `task_cancel` a probe still running on its row, and set the row `done` with its
+   Thread cell's `taskId` set to none (`worker --state done --thread`). Then go on,
+   keeping its `last` time in step 3 unless the source changed.
 2. **Schedule** it: a `schedule_task` bound to this thread at the user's cadence, whose
    prompt names `project.md`'s path to read first and says `Duty <name> tick`.
 3. **Write its line** under Listening with the task id `schedule_task` returned:
@@ -45,9 +46,9 @@ Listening holds its `Duty <name>` line with a `last` time.
    - `standing-rules.md` and `duties/<name>.md`, pasted in full, a missing history
      being empty.
 
-   Record it in Workers as `duty <name>` with its link and `taskId`, reusing that row
-   each tick. When the last tick's probe still runs, let this tick pass; the next
-   window starts at the line's `last` time.
+   Record it in Workers as `duty <name>`, `running`, with its link and `taskId`,
+   reusing that row each tick. When the last tick's probe still runs, let this tick
+   pass; the next window starts at the line's `last` time.
 2. **Handle the result**, on the wake its `duty <name>` row's result brings, as a worker
    result (SKILL.md step 4). A result for an ended duty, or one whose `taskId` isn't
    the row's, is dropped. A failed probe leaves `last` as it was, so the next tick
@@ -73,8 +74,8 @@ new finding is in `duties/<name>.md` and is a Workers row, a Follow-up, or a que
 ## End a duty
 
 A duty ends at its `until`, on the user's word, or at close. Delete its scheduled task
-with `delete_scheduled_task`, `task_cancel` a probe still running on its row, and
-rewrite its line with `listen` to `none (ended <date>: <reason>)`.
+with `delete_scheduled_task`, `task_cancel` a probe still running on its row, set the
+row `done`, and rewrite its line with `listen` to `none (ended <date>: <reason>)`.
 
 **Done when:** the duty's scheduled task is gone, no probe of it runs, and its line
 reads `none`.
