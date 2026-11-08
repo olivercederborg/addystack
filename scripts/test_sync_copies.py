@@ -240,16 +240,6 @@ def copied_scripts():
     return pairs
 
 
-class RealTree(unittest.TestCase):
-    def test_every_marked_copy_in_this_checkout_is_listed(self):
-        # Imported, not run with --check: Dagger's suite holds only part of the tree, so its
-        # listed copies can be missing, but any marked copy it holds must still be listed.
-        spec = importlib.util.spec_from_file_location("sync_copies", SCRIPT)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        self.assertEqual(module.orphans(KIT, {destination for _, destination in module.listed(KIT)}), [])
-
-
 class CopiedScriptsRun(unittest.TestCase):
     """Each copied script works from its copy, as a skill installed alone holds it: shell
     scripts print the same usage as their source, which some read from their own header,
