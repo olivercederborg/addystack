@@ -5,8 +5,8 @@ kind below names the proof that catches that failure. [`scripts/verdicts.py
 classify`](../scripts/verdicts.py) matches text, not syntax, so its kinds are a floor:
 an exported declaration that changed gets the contract diff, flagged or not.
 
-Save artifacts in `$(git rev-parse --path-format=absolute --git-common-dir)/verify-work/evidence/<head-sha>/`
-and pass each as `--evidence KIND=PATH`. Show every artifact in the verdict, Done or Not
+Save artifacts in `$(git rev-parse --path-format=absolute --git-common-dir)/verify-work/evidence/<head-sha>/`,
+writing with shell redirection or the capture tool, and pass each as `--evidence KIND=PATH`. Show every artifact in the verdict, Done or Not
 done, as its kind's **Show** line says.
 
 ## ui
