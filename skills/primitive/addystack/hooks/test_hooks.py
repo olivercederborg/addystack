@@ -2122,6 +2122,17 @@ class NoForegroundWaits(unittest.TestCase):
         self.assertIn("run_in_background", reason(
             "Act as the implementation sub-agent for this task.\n\nBuild it.", thread="thread:top", creator="user"))
 
+    def test_points_a_verifier_fork_at_counted_loops(self):
+        # verify-102-2's fork, Nov 7, 2026: told to use run_in_background, it handed back without a verdict.
+        out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
+                             env={k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"},
+                             input=json.dumps({"tool_name": "Bash", "session_id": "s", "agent_id": "a1",
+                                               "agent_type": "work-verifier", "tool_input": {
+                                                   "command": 'until grep -q "exit" /tmp/b.log; do sleep 15; done'}})).stdout
+        reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertIn("counted loops", reason)
+        self.assertNotIn("run_in_background", reason)
+
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
