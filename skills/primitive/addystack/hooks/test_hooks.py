@@ -1819,6 +1819,19 @@ class ReplyShapeContext(unittest.TestCase):
     def output(self, skill, source="startup", args=(), db="/nonexistent/statev2.sqlite", config=REPLY_SHAPE):
         return json.loads(self.run_hook(skill, source, args, db, config))
 
+    def test_without_an_override_it_loads_from_claude_config_dir(self):
+        with tempfile.TemporaryDirectory() as folder:
+            skill = pathlib.Path(folder, "profile", "skills", "reply-shape", "SKILL.md")
+            skill.parent.mkdir(parents=True)
+            skill.write_text("PROFILE SKILL")
+            env = {key: value for key, value in resolved_state(folder, self.REPLY_SHAPE).items()
+                   if key != "REPLY_SHAPE_SKILL"}
+            out = subprocess.run(
+                [str(HOOKS / self.HOOK)], input=json.dumps({"session_id": self.SESSION, "source": "startup"}),
+                capture_output=True, text=True, check=True,
+                env={**env, "CLAUDE_CONFIG_DIR": str(skill.parents[2]), "T3_STATE_DB": "/nonexistent"}).stdout
+            self.assertIn("PROFILE SKILL", out)
+
     def test_an_old_path_argument_loads_the_rules_file(self):
         # Settings rendered before --rules pass a path; that entry must still load the rules.
         with tempfile.TemporaryDirectory() as folder:

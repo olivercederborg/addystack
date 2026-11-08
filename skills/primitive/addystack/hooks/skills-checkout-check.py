@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SessionStart: keep the skills checkout that ~/.claude/skills links into on
+"""SessionStart: keep the skills checkout that Claude Code's skill folder links into on
 `origin/main`, since merged skill changes don't load until it is. Added after a checkout
 sat on a merged branch, 29 commits behind, while sessions loaded its stale skills (Oct
 2026). Reads only local refs, so it needs no network and stays fast.
@@ -14,7 +14,8 @@ import datetime, json, os, pathlib, shutil, subprocess, sys
 import hook_parity
 
 json.load(sys.stdin)
-link = pathlib.Path(os.environ.get("SKILLS_LINK", "~/.claude/skills/reply-shape")).expanduser()
+link = (pathlib.Path(os.environ["SKILLS_LINK"]).expanduser() if os.environ.get("SKILLS_LINK")
+        else hook_parity.config.claude_home() / "skills" / "reply-shape")
 
 
 def git(*args):
