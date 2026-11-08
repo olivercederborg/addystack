@@ -24,6 +24,17 @@ T3 session on Oct 30, 2026).
   Oct 20 to 30 wrote or patched F earlier in the same command; 16 of the 208 bodies posted
   then fail it, and 335 of 558 edits ran no check. `--body` text and `--body-file -` aren't
   checked.
+- **Verifier builds and tests.** In a work-verifier fork, a build or test (BUILD_OR_TEST)
+  runs with a 600000 ms timeout, the most Bash allows, and one asked to run with
+  `run_in_background` or sent there with `&` is denied, unless the command `wait`s for it.
+  Bash moves a command past its timeout (2 minutes by default) to the background, and a
+  fork's background work stops when it hands back, so the build and the verdict waiting on
+  it are lost. That cost tower-app three verdicts on Nov 7 to 8, 2026 (verify-102-2,
+  verify-102-4, verify-105-1). pr_watch.py sends a T3 child back for it, but only after the
+  fork's run is over, so verify-work starts again, and not at all when the fork's hand-back
+  runs to 40 words, as verify-102-2's 56 did; a top-level session's forks get no check.
+  Work past 10 minutes still moves, as verify-107-1's and verify-107-4's did, so each note
+  says to split it.
 
 In bypass permissions mode the fixed command is allowed; in any other mode it's asked, so
 the hook never approves a command the permission rules would have asked about. A deny from
@@ -145,6 +156,68 @@ def modifier_fixes(command):
     return edits, list(notes.values())
 
 
+# A build or test runner in command position, after any `NAME=value` assignments or a wrapper
+# that runs it, such as `taskpolicy -b` or `time`. A repo's own script counts when it's named
+# by a relative scripts/ path and its name says build, test, or bench. A path after the
+# runner's word (`bun test/server.ts`) runs a file, not the runner.
+RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
+          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build)"
+          r"|(?:npx\s+|bunx\s+|bun\s+x\s+)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
+          r"|python3?\s+(?:-\w+\s+)*-m\s+(?:pytest|unittest)|dagger\s+call"
+          r"|(?:(?:ba|z)?sh\s+)?(?:\./)?[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
+WRAPPER = r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|caffeinate(?:\s+-\w+)*)\s+)*"
+BUILD_OR_TEST = re.compile(LEAD + WRAPPER + RUNNER)
+VERIFIER = "work-verifier"
+# Bash's most; a command past it moves to the background however long its timeout.
+LONG = 600000
+LOST = ("A work-verifier fork's background work stops when the fork hands back, so this build or test "
+        "and the verdict waiting on it would be lost. ")
+SPLIT = ("If it could take longer than 10 minutes, split it into batches that each finish under that, "
+         "such as by test filter, since Bash moves a longer command to the background too.")
+
+
+def backgrounded(code):
+    """(text, end) for each command in code that a lone `&` sends to the background, its
+    group's or pipeline's whole text included, and end the `&`'s offset."""
+    starts, found, i = [0], [], 0
+    while i < len(code):
+        char = code[i]
+        if char in "({":
+            starts.append(i + 1)
+        elif char in ")}" and len(starts) > 1:
+            starts.pop()
+        elif char in ";\n" or code.startswith("||", i) or code.startswith("&&", i):
+            i += 1 if char in ";\n" else 2
+            starts[-1] = i
+            continue
+        elif char == "&":
+            found.append((code[starts[-1]:i], i))
+            starts[-1] = i + 1
+        i += 1
+    return found
+
+
+def verifier_fix(payload, tool_input, command):
+    """(deny reason, None) when a work-verifier fork would background a build or test,
+    (None, note) when its build or test needs the long timeout, else (None, None)."""
+    if payload.get("agent_type") != VERIFIER:
+        return None, None
+    code = shell_code(command)
+    if not BUILD_OR_TEST.search(code):
+        return None, None
+    if tool_input.get("run_in_background"):
+        return f"{LOST}Run it in the foreground with `timeout: {LONG}`. {SPLIT}", None
+    # A `wait` after the `&` finishes the job inside the call.
+    waits = [match.end() for match in re.finditer(LEAD + r"wait\b", code)]
+    if any(BUILD_OR_TEST.search(part) and not any(at > end for at in waits) for part, end in backgrounded(code)):
+        return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None
+    timeout = tool_input.get("timeout")
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout >= LONG:
+        return None, None
+    return None, (f"raised the timeout to {LONG} ms, since Bash moves a build or test past its timeout to the "
+                  "background, and a work-verifier fork's background work stops when it hands back. " + SPLIT)
+
+
 def apply(command, edits):
     for at, _, text in sorted(edits, key=lambda e: (e[0], e[1]), reverse=True):
         command = command[:at] + text + command[at:]
@@ -163,16 +236,18 @@ def main():
     pipe_edits, pipe_notes, heads = pipefail_fixes(command)
     zsh_edits, zsh_notes = modifier_fixes(command)
     body_edits, body_notes = body_check_fixes(command)
+    refused, timeout_note = verifier_fix(payload, tool_input, command)
     if heads:
-        reason = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
-                  "kills it with SIGPIPE, and the `&&` chain runs on with head's status. Pipe it into "
-                  "`tail` instead, or run the git step on its own.")
+        refused = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
+                   "kills it with SIGPIPE, and the `&&` chain runs on with head's status. Pipe it into "
+                   "`tail` instead, or run the git step on its own.")
+    if refused:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": reason}}))
+                                                 "permissionDecisionReason": refused}}))
         return
-    if not pipe_edits and not zsh_edits and not body_edits:
+    if not pipe_edits and not zsh_edits and not body_edits and not timeout_note:
         return
-    notes = "; ".join(pipe_notes + zsh_notes + body_notes)
+    notes = "; ".join(pipe_notes + zsh_notes + body_notes + ([timeout_note] if timeout_note else []))
     if "record-verdict.sh" in command and payload.get("agent_id"):
         # verdict-stamp.py rewrites a subagent's recording too, and only the last rewrite applies.
         reason = f"verdict-stamp.py also rewrites this command, and only one rewrite applies, so fix it yourself: {notes}."
@@ -183,7 +258,8 @@ def main():
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if payload.get("permission_mode") == "bypassPermissions" else "ask",
         "permissionDecisionReason": f"bash-rewrite.py {notes}.",
-        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits)},
+        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits),
+                         **({"timeout": LONG} if timeout_note else {})},
         "additionalContext": f"bash-rewrite.py changed the command before it ran: it {notes}. Write it that way next time.",
     }}))
 

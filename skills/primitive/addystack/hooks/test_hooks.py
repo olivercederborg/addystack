@@ -1134,6 +1134,87 @@ class BashRewrite(unittest.TestCase):
                 self.assertEqual(out["permissionDecision"], "ask")
                 self.assertEqual(out["updatedInput"]["command"], "(set -o pipefail; git push | tail -1) && echo")
 
+    def verifier(self, command, agent_type="work-verifier", **tool_input):
+        payload = {"tool_name": "Bash", "agent_id": "a1", "agent_type": agent_type, "permission_mode": "bypassPermissions",
+                   "tool_input": {"command": command, "description": "d", **tool_input}}
+        out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env={**os.environ, "SHELL": "/bin/bash"},
+                             capture_output=True, text=True, check=True).stdout
+        return json.loads(out)["hookSpecificOutput"] if out else None
+
+    # Recorded verifier calls, Nov 2026: verify-102-2's and verify-105-1's builds, which their forks handed back on.
+    BUILDS = [
+        'cd /tmp/vw102-2 && (taskpolicy -b swift build --build-tests > /tmp/b.log 2>&1; echo "exit $?" >> /tmp/b.log)',
+        'cd /tmp/vw105 && taskpolicy -b swift build --build-tests > /tmp/vw105-build.log 2>&1; echo "exit $?"',
+        "cd /tmp/vw && xcodebuild -project App/P.xcodeproj -scheme P build",
+        "cd /tmp/vw96-4 && taskpolicy -b Scripts/check-run-test.sh /tmp/out",
+        "for c in a b; do (cd /tmp/$c && bun run test:unit) ; done",
+        "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q test_hooks",
+        "/usr/bin/time -p make -j4",
+    ]
+
+    def test_denies_a_verifier_build_run_in_the_background(self):
+        for command in self.BUILDS:
+            with self.subTest(command=command):
+                out = self.verifier(command, run_in_background=True, timeout=3600000)
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn("timeout: 600000", out["permissionDecisionReason"])
+                self.assertIn("split it", out["permissionDecisionReason"])
+
+    def test_denies_a_verifier_build_sent_to_the_background_with_an_ampersand(self):
+        for command in [
+            # verify-48b's fork, Nov 3, 2026: it started both builds and printed "started".
+            "cd /tmp/vw48b && (for c in Debug Release; do xcodebuild -scheme P -configuration $c build > /tmp/x-$c.log 2>&1; done) > /dev/null 2>&1 &\necho started",
+            "(cd /tmp/a && swift test > /tmp/a.log 2>&1) &\n(cd /tmp/b && swift build > /tmp/b.log 2>&1) &\necho started",
+            "nohup swift test > /tmp/t.log 2>&1 & echo $!",
+        ]:
+            with self.subTest(command=command):
+                out = self.verifier(command, timeout=600000)
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn("`&`", out["permissionDecisionReason"])
+
+    def test_allows_a_verifier_ampersand_that_waits_or_isnt_a_build(self):
+        for command in [
+            "for m in m1 m2; do (cd /tmp/$m && swift build --build-tests > /tmp/$m.log 2>&1) & done; wait; tail -1 /tmp/m1.log",
+            "(bun run typecheck > /tmp/tc.log 2>&1) & (bun run test:unit > /tmp/t.log 2>&1) & wait; tail -5 /tmp/t.log",
+            "pnpm build 2>&1 | tail -1 && (cd /tmp/vw-base && nohup pnpm preview --port 4322 > /tmp/p.log 2>&1 &) ; sleep 2",
+            "(bun test/support/fake-postmark/server.ts > /tmp/pm.log 2>&1 &) ; curl -s localhost:4010",
+            "(Scripts/motion-check.sh 6 /tmp/m --precise > /tmp/m.out 2>&1 &) ; sleep 1.5",
+            "swift test > /tmp/t.log 2>&1 && echo ok",
+        ]:
+            with self.subTest(command=command):
+                out = self.verifier(command, timeout=600000)
+                self.assertTrue(out is None or out["permissionDecision"] != "deny", out)
+
+    def test_gives_a_verifier_build_the_long_timeout(self):
+        for command in self.BUILDS:
+            for timeout in [None, 120000, 300000]:
+                with self.subTest(command=command, timeout=timeout):
+                    out = self.verifier(command, **({"timeout": timeout} if timeout else {}))
+                    self.assertEqual(out["permissionDecision"], "allow")
+                    self.assertEqual(out["updatedInput"], {"command": command, "description": "d", "timeout": 600000})
+                    self.assertIn("split it", out["additionalContext"])
+        self.assertIsNone(self.verifier(self.BUILDS[0], timeout=600000))
+
+    def test_leaves_other_commands_and_agents_alone(self):
+        for command in [
+            "cd ~/.claude/skills/verify-work && scripts/github.sh view 12",  # a skill's script
+            "bash ~/.claude/skills/x/scripts/build-index.sh",
+            'grep -rhoE "(bun|bunx|tsc|executor apps)" docs',  # runner names in quoted text
+            "grep -rn 'unittest\\|pytest' .github",
+            "git log --oneline -3; cat Makefile",
+            "xcodebuild-like --version",
+        ]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.verifier(command))
+        for agent_type in ["general-purpose", "Explore", None]:
+            with self.subTest(agent_type=agent_type):
+                self.assertIsNone(self.verifier(self.BUILDS[0], agent_type=agent_type, run_in_background=True))
+
+    def test_raises_the_timeout_alongside_another_fix(self):
+        out = self.verifier("git rebase main | tail -1 && swift test")
+        self.assertEqual(out["updatedInput"]["command"], "(set -o pipefail; git rebase main | tail -1) && swift test")
+        self.assertEqual(out["updatedInput"]["timeout"], 600000)
+
     CHECK = shlex.quote(str(HOOKS.parent / "scripts" / "check-body.mjs"))
 
     def test_checks_a_body_file_just_before_posting_it(self):
