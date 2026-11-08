@@ -35,6 +35,7 @@ import dataclasses
 import difflib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -89,14 +90,17 @@ def _git(*args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(KIT), *args], capture_output=True, text=True, stdin=subprocess.DEVNULL)
 
 
-# What skills v1.7.6 `update` prints, exiting 0, for a source it couldn't reach or read
-# (cli.mjs `updateGlobalSkills`), such as offline.
-_UNCHECKED = ("Failed to check skills from", "Failed to check for deleted skills from")
+# What skills v1.7.6 `update` prints, in grey and exiting 0, for a source it couldn't reach
+# or read (cli.mjs `updateGlobalSkills`), such as offline: `✗ Failed to check skills from
+# <source>`, where <source> is the lock entry's `source` as written.
+_UNCHECKED = re.compile(r"Failed to check (?:for deleted )?skills from (.+)")
+_COLOR = re.compile(r"\x1b\[[0-9;]*m")
 
 
-def _step(argv: List[str], unchecked: bool = False) -> int:
-    """Runs one update step without a terminal, echoing it first. With unchecked, the step
-    fails when its output says the skills CLI couldn't check a source."""
+def _step(argv: List[str], kit: Optional[str] = None) -> int:
+    """Runs one update step without a terminal, echoing it first. With kit, the kit's source,
+    the step fails when its output says the skills CLI couldn't check that source, and only
+    warns for another source, such as an unrelated repo that is unreachable."""
     print("$", " ".join(argv), flush=True)
     try:
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, text=True,
@@ -108,11 +112,16 @@ def _step(argv: List[str], unchecked: bool = False) -> int:
     for line in process.stdout:
         sys.stdout.write(line)
         sys.stdout.flush()
-        failed = failed or (unchecked and any(marker in line for marker in _UNCHECKED))
+        unchecked = _UNCHECKED.search(_COLOR.sub("", line)) if kit else None
+        if unchecked and unchecked[1].strip() == kit:
+            failed = True
+        elif unchecked:
+            print(f"addystack: skills update couldn't check {unchecked[1].strip()}, which isn't the kit's source, "
+                  "so its skills weren't updated; carrying on", file=sys.stderr, flush=True)
     code = process.wait()
     if failed and not code:
-        print("addystack: skills update couldn't check every source, so no skill was added or removed; check your "
-              "network, then run addystack update again", file=sys.stderr)
+        print(f"addystack: skills update couldn't check the kit's source, {kit}, so no skill was added or removed; "
+              "check your network, then run addystack update again", file=sys.stderr)
         return 1
     return code
 
@@ -177,7 +186,7 @@ def _update_skills() -> int:
         return 1
     if first != pending:
         reconcile._write(pending, json.dumps({"skills": before}, indent=2) + "\n")
-    code = _step(skills_cli.update(), unchecked=True)
+    code = _step(skills_cli.update(), kit=source)
     if code:
         return code
     release = skill_layer.released(KIT)
