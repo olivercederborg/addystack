@@ -1,17 +1,13 @@
 # Evidence by change type
 
 Tests pass while a UI, a migration, or a deploy still fails the way its type fails. Each
-kind below names the proof that catches that failure. Run [`scripts/verdicts.py
-classify`](../scripts/verdicts.py) `<base-sha> <head-sha>` for the kinds the diff needs,
-and add the kinds the intent implies with `--require KIND`. The recorder refuses Done
-until each kind has a ref that backs it. Classify matches text, not syntax, so its kinds
-are a floor: an exported declaration that changed gets the contract diff below, flagged
-or not.
+kind below names the proof that catches that failure. [`scripts/verdicts.py
+classify`](../scripts/verdicts.py) matches text, not syntax, so its kinds are a floor:
+an exported declaration that changed gets the contract diff, flagged or not.
 
-Save artifacts in `$(git rev-parse --path-format=absolute --git-common-dir)/verify-work/evidence/<head-sha>/`,
-writing with shell redirection or the capture tool, and pass each as
-`--evidence KIND=PATH`. Show every artifact in the verdict, Done or Not done, as its
-kind's **Show** line says.
+Save artifacts in `$(git rev-parse --path-format=absolute --git-common-dir)/verify-work/evidence/<head-sha>/`
+and pass each as `--evidence KIND=PATH`. Show every artifact in the verdict, Done or Not
+done, as its kind's **Show** line says.
 
 ## ui
 
@@ -74,9 +70,9 @@ Ref: the URL, or a file holding the response.
 
 ## toolchain
 
-For a change to the config a dev server or bundler loads. A plugin or loader added there
-runs on every module in local dev, which CI's production build never exercises. Measure
-the same cold workload at base and head with
+For a change to the config a dev server or bundler loads, whose plugins run on every
+module in local dev, where CI's production build never goes. Measure the same cold
+workload at base and head with
 [`scripts/dev-cost.py`](../scripts/dev-cost.py): a worktree of each, the repo's own dev
 command, its bundler cache in `--clean`, and one or two real pages in `--path`. Run
 base, head, base, head, appending each printed line to one log. A mean that grows 20% or
@@ -93,9 +89,8 @@ Ref: the log.
 For code the change adds or edits outside tests. Ground each non-trivial pattern it
 introduces, such as a library API, a framework hook, or an error-handling or
 concurrency construct, with [grounding](grounding.md): is it how the library's authors
-intend it, per their docs or source at the installed version? Repo precedent shows
-consistency, not idiom. A pattern that doesn't hold is a finding. Write one line per
-pattern in grounding's evidence-line form, with a URL as its source:
+intend it at the installed version? Repo precedent shows consistency, not idiom. A
+pattern that doesn't hold is a finding. Write one line per pattern, with a URL source:
 
 ```text
 `Effect.retry` with `Schedule.exponential` · verified by the retry test · source: https://effect.website/docs/error-management/retrying/
