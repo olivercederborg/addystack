@@ -178,8 +178,8 @@ behavior change in the diff, and `check-body.mjs` passes on the body.
   Publish as a draft, then report the link in a ✅ headline, fold the title and body,
   and offer marking it ready for review, and editing it.
 - **Otherwise, show the exact title and body first,** once, below a **Review** note, and
-  wait. Approval means publish: a new PR as a draft, or ready when the user says so; in
-  sync mode, the update.
+  offer submitting as a draft, submitting ready, and editing for a new PR; updating and
+  editing in sync mode. Approval means publish.
 - **Submit with the stacking tool** the repo uses or the user's rules name (for example
   `gh stack submit --auto`, which opens a draft for every layer without a PR, so the
   approval must cover each one; `--auto` skips the editor, which an agent can't answer).
