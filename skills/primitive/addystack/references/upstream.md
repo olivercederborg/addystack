@@ -39,7 +39,8 @@ Opening a PR sends it to a person, so the user's okay on this preview is require
 ## 4. Open the draft
 
 Commit, push the branch the way the policy says, and open it as a draft:
-`gh pr create --draft --repo <repo>`.
+`gh pr create --draft --repo <repo>`, or `gh stack submit --auto` when the policy says
+gh stack, which pushes and opens drafts in one step.
 
 Without push rights, go through a fork:
 
