@@ -183,7 +183,7 @@ class Attribution(unittest.TestCase):
             proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",)))
         self.assertEqual(commands, {})
 
-    def test_group_whose_leader_is_unread_is_adopted_only_once_it_reads(self):
+    def test_marked_helper_never_claims_a_group_whose_leader_reads_late_as_an_app(self):
         app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
         helper = proc(502, 501, pgid=501, marked=True, argv=("node",))
         owners = Owners()
@@ -194,11 +194,16 @@ class Attribution(unittest.TestCase):
         self.assertEqual((unread, read), ({}, {}))
 
     def test_detached_job_on_an_app_s_bundled_cli_is_still_agent_work(self):
-        for node in ("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
-                     "/Applications/Stremio.app/Contents/MacOS/node"):
-            commands = self.attribute_with_bundles(
-                proc(501, 1, pgid=501, marked=True, argv=(node, "-e", "job")))
-            self.assertEqual(list(commands), [501], node)
+        xcode_python = ("/Applications/Xcode.app/Contents/Developer/Library/Frameworks/"
+                        "Python3.framework/Versions/3.9/Resources/Python.app")
+        bundles = {**self.BUNDLES, xcode_python: "Python"}
+        for cli in ("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
+                    "/Applications/Stremio.app/Contents/MacOS/node",
+                    xcode_python + "/Contents/MacOS/Python"):  # what /usr/bin/python3 runs
+            with mock.patch.dict(guard.bundle_executables, bundles, clear=True):
+                commands = Owners().attribute(snapshot(
+                    AGENT, proc(501, 1, pgid=501, marked=True, argv=(cli, "-e", "job"))))
+            self.assertEqual(list(commands), [501], cli)
 
     def test_orphaned_python_job_is_still_agent_work(self):
         # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the
@@ -248,8 +253,8 @@ class Runaway(unittest.TestCase):
         self.assertIsNotNone(guard.runaway(commands))
 
     def test_work_a_service_runs_counts_past_its_idle_allowance(self):
-        # Codex's Node REPL kernel, started 59.9 s after its server, runs a 16 GB job
-        # beside a 14 GB command: 15 GB past the allowance plus 14 passes 28.
+        # Codex's Node REPL runs a 16 GB job beside a 14 GB command: 15 GB past the
+        # allowance plus 14 passes 28.
         repl = [proc(1, 1), proc(2, 1, footprint=16 * GB)]
         commands = {1: repl, 100: [proc(100, 1, footprint=14 * GB)]}
         head, _ = guard.runaway(commands, {1})

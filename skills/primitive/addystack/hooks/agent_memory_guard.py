@@ -245,7 +245,7 @@ def bundle_executable(bundle):
         try:
             with open(os.path.join(bundle, "Contents", "Info.plist"), "rb") as info:
                 bundle_executables[bundle] = plistlib.load(info).get("CFBundleExecutable")
-        except (OSError, ValueError, plistlib.InvalidFileException):
+        except Exception:  # a missing or malformed plist must not fail every tick
             bundle_executables[bundle] = None
     return bundle_executables[bundle]
 
@@ -259,7 +259,9 @@ def is_installed_app(proc):
     if not proc.argv or proc.pgid != proc.pid or not proc.argv[0].startswith("/Applications/"):
         return False
     bundle, marker, name = proc.argv[0].rpartition(".app/Contents/MacOS/")
-    return bool(marker) and "/" not in name and bundle_executable(bundle + ".app") == name
+    # A framework's Python.app is the interpreter /usr/bin/python3 runs, not an app.
+    return (bool(marker) and "/" not in name and ".framework/" not in bundle
+            and bundle_executable(bundle + ".app") == name)
 
 
 class Owners:
