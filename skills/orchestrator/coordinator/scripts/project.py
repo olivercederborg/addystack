@@ -219,12 +219,17 @@ def _parked(lines: list[str]) -> bool:
 
 def _goal(lines: list[str], body: list[str]) -> None:
     """Replaces Goal's body with `body` and its Follow-ups: the `Follow-ups:` line and the
-    `- ` or indented lines right after it, or `Follow-ups: none`."""
+    `- ` or indented lines after it, blank lines between them included, or `Follow-ups: none`."""
     start_at, end = _section(lines, "Goal")
     at = next((i for i in range(start_at + 1, end) if lines[i].startswith("Follow-ups:")), None)
     follow_ups = ["Follow-ups: none"]
     if at is not None:
-        stop = next((i for i in range(at + 1, end) if not lines[i].startswith(("- ", " ", "\t")) or not lines[i].strip()), end)
+        stop = at + 1
+        for i in range(at + 1, end):
+            if lines[i].startswith(("- ", " ", "\t")) and lines[i].strip():
+                stop = i + 1
+            elif lines[i].strip():
+                break
         follow_ups = lines[at:stop]
     lines[start_at + 1:end] = ["", *body, *follow_ups, ""]
 

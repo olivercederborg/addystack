@@ -205,13 +205,13 @@ Proofs:
         self.assertIn("· 01-audit: five reports · phases/01-audit.md\n\n## Decisions", self.text())
 
     def test_follow_ups_unknown_sections_and_unreadable_rows_carry(self):
-        real = (PROJECT.replace("Follow-ups: none\n", "Follow-ups:\n- lockfile risk\n  wraps here\n- stray rows\n\n"
+        real = (PROJECT.replace("Follow-ups: none\n", "Follow-ups:\n- lockfile risk\n  wraps here\n\n- stray rows\n\n"
                                 "### Milestones done\n\n- G1–G6\n")
                 .replace("| done | — | report written |", "| done | report written |")
                 .replace("## Learnings", "## Queue (cards for the user)\n\n- c1\n\n## Learnings"))
         (self.dir / "project.md").write_text(real)
         self.project("phase", "audit", "--result", "five reports", "--park", "p")
-        self.assertIn(f"## Goal\n\nParked {TODAY}: p\nFollow-ups:\n- lockfile risk\n  wraps here\n- stray rows\n\n"
+        self.assertIn(f"## Goal\n\nParked {TODAY}: p\nFollow-ups:\n- lockfile risk\n  wraps here\n\n- stray rows\n\n"
                       "## Phases\n", self.text())
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
         self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
