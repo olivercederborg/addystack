@@ -7,8 +7,9 @@ schema, is denied with the fix. A page that doesn't load reply.js passes.
 
 This wrapper only finds reply-shape: beside the kit in an install (`skills/reply-shape`),
 in the kit's own checkout (`skills/optional/reply-shape`), or the folder of the
-REPLY_SHAPE_SKILL file. Without reply-shape there are no cards to check, so it passes."""
-import os, pathlib, subprocess, sys
+REPLY_SHAPE_SKILL file. Without reply-shape there are no cards to check, so it passes; a
+check that crashes or times out refuses the card, naming why."""
+import json, os, pathlib, subprocess, sys
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -30,8 +31,18 @@ def main():
     script = validator()
     if script is None:
         return
-    done = subprocess.run([sys.executable, str(script), "--hook"], input=sys.stdin.read(),
-                          capture_output=True, text=True, timeout=8)
+    try:
+        done = subprocess.run([sys.executable, str(script), "--hook"], input=sys.stdin.read(),
+                              capture_output=True, text=True, timeout=8)
+        failed = done.returncode != 0 and (done.stderr.strip().splitlines() or ["no output"])[-1]
+    except subprocess.TimeoutExpired:
+        done, failed = None, "timed out"
+    if failed:
+        # A card the check couldn't finish isn't known to draw, so it's refused, with why.
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+              "permissionDecisionReason": f"reply-shape's card check failed ({failed}); fix the card, or run "
+                                          "scripts/validate-card.py page.html to see why."}}))
+        return
     sys.stdout.write(done.stdout)
 
 

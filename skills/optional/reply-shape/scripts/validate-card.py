@@ -18,6 +18,7 @@ Usage: validate-card.py [payload.json | page.html | -]
 """
 
 import json
+import math
 import pathlib
 import re
 import sys
@@ -130,21 +131,27 @@ class Validator:
 
 
 class Scripts(HTMLParser):
-    """A page's script srcs, and the text of each script whose id is exactly "ui", parsed as
-    the browser does: attribute spacing and quotes vary, and script text is never markup."""
+    """A page's script srcs, every element whose id is exactly "ui" in document order (the
+    first is the one getElementById gives the renderer), and the text of each such script,
+    parsed as the browser does: a repeated attribute keeps its first value, spacing and
+    quotes vary, and script text is never markup."""
 
     def __init__(self, html):
         super().__init__()
-        self.srcs, self.payloads, self._open = [], [], None
+        self.srcs, self.ui_tags, self.payloads, self._open = [], [], [], None
         self.feed(html)
         self.close()
 
     def handle_starttag(self, tag, attrs):
+        first = {}
+        for name, value in attrs:
+            first.setdefault(name, value)
+        if first.get("id") == "ui":
+            self.ui_tags.append(tag)
         if tag == "script":
-            attrs = dict(attrs)
-            if attrs.get("src"):
-                self.srcs.append(attrs["src"].strip())
-            self._open = [] if attrs.get("id") == "ui" else None
+            if first.get("src"):
+                self.srcs.append(first["src"].strip())
+            self._open = [] if first.get("id") == "ui" else None
 
     def handle_data(self, data):
         if self._open is not None:
@@ -160,9 +167,25 @@ def _no_constant(name):
     raise ValueError(f"{name} isn't JSON")
 
 
+def _safe_int(text):
+    if abs(int(text)) > 2 ** 53 - 1:
+        raise ValueError(f"{text} loses precision in JavaScript; write it as a string")
+    return int(text)
+
+
+def _finite(text):
+    if not math.isfinite(float(text)):
+        raise ValueError(f"{text} isn't a finite JavaScript number; write it as a string")
+    return float(text)
+
+
 def parse(text):
-    """JSON as the browser's JSON.parse reads it, so NaN and Infinity fail."""
-    return json.loads(text, parse_constant=_no_constant)
+    """JSON as the renderer gets it from JSON.parse: NaN and Infinity fail, and so does a
+    number JavaScript can't hold exactly, or nesting too deep to check."""
+    try:
+        return json.loads(text, parse_constant=_no_constant, parse_int=_safe_int, parse_float=_finite)
+    except RecursionError:
+        raise ValueError("nested too deep") from None
 
 
 def load(text):
@@ -172,11 +195,13 @@ def load(text):
     return parse(found[0] if found else text)
 
 
-def references(payload):
-    """Problems the schema can't express: an index past its list, and decision keys or picks
-    that clash."""
+def references(payload, skip=()):
+    """Problems the schema can't express, in each block the schema passed (not in skip): an
+    index past its list, and decision keys or picks that clash."""
     found = []
     for i, block in enumerate(payload.get("ui", []) if isinstance(payload, dict) else []):
+        if i in skip or not isinstance(block, dict) or len(block) != 1:
+            continue
         (kind, body), = block.items()
         path = f"$.ui[{i}].{kind}"
         if kind == "table" and body.get("pick", 0) >= len(body["rows"]):
@@ -195,7 +220,12 @@ def references(payload):
 def check(payload, schema=None):
     """The problems in payload, as `<path>: <message>` lines; none when it's valid."""
     schema = schema or json.loads(SCHEMA.read_text())
-    return Validator(schema).errors(payload, schema) or references(payload)
+    try:
+        errors = Validator(schema).errors(payload, schema)
+    except RecursionError:
+        return ["$: nested too deep"]
+    broken = {int(m.group(1)) for m in map(re.compile(r"\$\.ui\[(\d+)\]").match, errors) if m}
+    return errors + references(payload, broken)
 
 
 def pinned():
@@ -213,8 +243,8 @@ def refusal(html):
     wrong = [src for src in sources if src != url]
     if wrong:
         return f"Reply card loads {wrong[0]}; load exactly {url} (reply-shape's ui/renderer.url)."
-    if len(page.payloads) > 1:
-        return 'Reply card has more than one <script id="ui">; keep one, since the renderer reads only the first.'
+    if len(page.ui_tags) > 1:
+        return 'Reply card has more than one element with id="ui"; keep only the card\'s script, since the renderer reads the first.'
     if not page.payloads:
         return 'Reply card has no payload; add <script type="application/json" id="ui">{"ui":[...]}</script> after reply.js.'
     try:

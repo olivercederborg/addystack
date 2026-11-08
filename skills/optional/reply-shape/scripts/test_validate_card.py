@@ -75,6 +75,12 @@ class Problems(unittest.TestCase):
         self.assertEqual(problems({"decision": {"options": options}}),
                          ["$.ui[0].decision.options: each key once, got a, a", "$.ui[0].decision.options: at most one rec"])
 
+    def test_reference_problems_show_beside_schema_problems(self):
+        found = problems({"outcome": {"status": "meh", "text": "x"}},
+                         {"table": {"columns": ["N"], "rows": [["A"]], "pick": 1}})
+        self.assertEqual(found, ['$.ui[0].outcome.status: "meh" is not one of done, risk, blocked, working',
+                                 "$.ui[1].table.pick: no row 1; rows count from 0"])
+
     def test_an_unsupported_schema_keyword_fails_loudly(self):
         with self.assertRaisesRegex(ValueError, "unsupported schema keyword 'format'"):
             card.check("x", {"type": "string", "format": "uri"})

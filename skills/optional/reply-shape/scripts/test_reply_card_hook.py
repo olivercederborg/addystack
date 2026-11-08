@@ -53,9 +53,31 @@ class Hook(unittest.TestCase):
         self.assertIn("more than one", run({"html": page() + f'<script type="application/json" id="ui">{good}</script>'}))
         self.assertIn("has no payload", run({"html": f'<script src="{URL}"></script><script type="application/json" id="ui-state">{good}</script>'}))
 
-    def test_nan_and_infinity_are_not_json(self):
+    def test_the_first_attribute_and_the_first_id_win_as_in_the_browser(self):
+        good = '{"ui":[{"outcome":{"status":"done","text":"Fixed"}}]}'
+        twice = f'<script src="{OLD}" src="{URL}"></script><script type="application/json" id="ui">{good}</script>'
+        self.assertIn("load exactly", run({"html": twice}))
+        self.assertIn('more than one element with id="ui"', run({"html": f'<script src="{URL}"></script><div id="ui">x</div>' + page()[len(f'<script src="{URL}"></script>'):]}))
+
+    def test_numbers_must_survive_json_parse(self):
         nan = '{"ui":[{"delta":{"label":"CPU","now":"1 s","was":"2 s","bars":[["run",NaN]]}}]}'
         self.assertIn("not JSON: NaN", run({"html": page(nan)}))
+        self.assertIn("isn't a finite", run({"html": page(nan.replace("NaN", "1e400"))}))
+        self.assertIn("loses precision", run({"html": page('{"ui":[{"table":{"columns":["ID"],"rows":[[9007199254740993]]}}]}')}))
+        # Refused either way: "nested too deep" where JSON parsing recurses (Python 3.9), or
+        # as an unknown block where it doesn't.
+        self.assertRegex(run({"html": page('{"ui":' + "[" * 3000 + "0" + "]" * 3000 + "}")}) or "",
+                         "nested too deep|unknown block")
+
+    def test_a_check_that_crashes_refuses_the_card(self):
+        with tempfile.TemporaryDirectory() as folder:
+            wrapper = Path(folder, "kit", "addystack", "hooks", "reply-card.py")
+            broken = Path(folder, "kit", "reply-shape", "scripts", "validate-card.py")
+            for path in (wrapper, broken):
+                path.parent.mkdir(parents=True)
+            shutil.copy(WRAPPER, wrapper)
+            broken.write_text("raise SystemExit('boom')\n")
+            self.assertIn("card check failed (boom)", run({"html": page()}, wrapper=wrapper))
 
     def test_a_page_without_the_renderer_passes(self):
         self.assertIsNone(run({"html": "<svg><rect/></svg><script>console.log(1)</script>"}))
