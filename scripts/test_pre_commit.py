@@ -7,6 +7,10 @@ import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
 HOOK = KIT / ".githooks" / "pre-commit"
+# Whether /bin/bash is older than 4, as macOS ships it.
+BASH_3 = os.path.exists("/bin/bash") and int(subprocess.run(
+    ["/bin/bash", "--norc", "--noprofile", "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True,
+    env={k: v for k, v in os.environ.items() if k not in ("BASH_ENV", "ENV")}).stdout.split()[-1]) < 4
 
 
 def darwin_only(decorator, names):
@@ -165,6 +169,59 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("dagger isn't installed", run.stdout)
         self.assertTrue(self.ran.exists())
+
+    @unittest.skipUnless(BASH_3, "needs /bin/bash older than 4, as on macOS")
+    def test_bash_3_runs_a_skill_suite_on_the_host(self):
+        # bash 3.2 does no brace expansion inside `local name=(…)`, so the folder list
+        # once collapsed to one path that matched nothing.
+        skill = self.repo / "skills" / "primitive" / "my-skill" / "scripts"
+        skill.mkdir(parents=True)
+        skill_ran = pathlib.Path(self.folder.name, "skill-suite-ran")
+        (skill / "test_skill.py").write_text(
+            "import pathlib, unittest\n"
+            "class Skill(unittest.TestCase):\n"
+            "    def test_runs(self):\n"
+            f"        pathlib.Path({str(skill_ran)!r}).touch()\n")
+        (self.bin / "bash").unlink()
+        (self.bin / "bash").symlink_to("/bin/bash")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(skill_ran.exists())
+        self.assertTrue(self.ran.exists())
+
+    def test_a_checkout_path_with_glob_characters_runs_its_suites(self):
+        moved = pathlib.Path(self.folder.name, "re[p]o")
+        self.repo.rename(moved)
+        self.repo = moved
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
+    def test_a_dangling_first_test_file_still_runs_its_folder(self):
+        (self.repo / "scripts" / "test_000_broken.py").symlink_to("absent.py")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
+    def test_inherited_glob_settings_still_run_the_host_suites(self):
+        startup = pathlib.Path(self.folder.name, "bash-env")
+        # The real path, since git, and so the hook's root, resolves /var to /private/var.
+        hidden = pathlib.Path(os.path.realpath(self.repo), "scripts", "test_host.py")
+        startup.write_text(f"shopt -s nullglob\nGLOBIGNORE='{hidden}'\n")
+        os.environ["BASH_ENV"] = str(startup)
+        self.addCleanup(os.environ.pop, "BASH_ENV")
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
+    def test_no_host_suite_blocks_the_commit(self):
+        (self.repo / "scripts" / "test_host.py").unlink()
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("pre-commit: no host test suite ran", run.stderr)
+        self.assertIn("skills/primitive/*/scripts", run.stderr)
+        self.assertIn(" scripts;", run.stderr)
+        self.assertFalse(self.ran.exists())
 
 
 class MacosOnly(unittest.TestCase):
