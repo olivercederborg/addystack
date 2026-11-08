@@ -163,8 +163,8 @@ As soon as the fixes are done, draft the replies in the
 [reply style](references/reply-style.md), each starting with the
 [agent disclosure](references/disclosure.md). Recommend the rest of the loop:
 push, post the displayed drafts, resolve, and, when the fixes make sections of the PR
-description stale, update them with open-pr, and offer pushing only. Creating an issue
-for a Defer is its own option.
+description stale, update them with open-pr. Also offer pushing only. Creating an
+issue for a Defer is its own option.
 
 Drafts that step would post show in full below a **Review** note, in every reply whose
 approval posts them. Replies that already went out with the user's approval go in the fold.
