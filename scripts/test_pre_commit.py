@@ -39,7 +39,8 @@ def macos_tests():
     return found
 
 
-# A dagger that logs each call. `core version` exits DAGGER_ENGINE. `check -l` fails when
+# A dagger that logs each call. `core version` exits DAGGER_ENGINE. `check -l` hangs with
+# DAGGER_HANG set, as with an engine stuck restarting, and fails when
 # the engine or the module (DAGGER_MODULE) does, and otherwise lists DAGGER_LIST's names
 # under a header, as the real one does. `check` exits DAGGER_CHECK.
 FAKE_DAGGER = """#!/bin/sh
@@ -48,6 +49,7 @@ case $1 in
   core) exit "$DAGGER_ENGINE" ;;
   check)
     if [ "$2" = -l ]; then
+      [ -z "$DAGGER_HANG" ] || sleep 30
       [ "$DAGGER_ENGINE" = 0 ] && [ "$DAGGER_MODULE" = 0 ] || exit 1
       echo "Name  Description"
       for name in $DAGGER_LIST; do echo "$name  a suite"; done
@@ -98,14 +100,14 @@ class DaggerOrHost(unittest.TestCase):
         path.chmod(0o755)
 
     def commit(self, engine=0, check=0, module=0, listed="skills:my-inbox-tests skills:suites-listed",
-               dagger=True):
+               dagger=True, **extra):
         if dagger:
             (self.bin / "dagger").write_text(FAKE_DAGGER)
             (self.bin / "dagger").chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         env.update(PATH=f"{self.bin}:/usr/bin:/bin", DAGGER_LOG=str(self.log), DAGGER_ENGINE=str(engine),
                    DAGGER_CHECK=str(check), DAGGER_MODULE=str(module), DAGGER_LIST=listed,
-                   HOST_RAN=str(self.ran))
+                   HOST_RAN=str(self.ran), **extra)
         run = subprocess.run([str(self.repo / ".githooks" / "pre-commit")], cwd=self.repo, env=env,
                              capture_output=True, text=True)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
@@ -128,6 +130,13 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("Dagger can't reach its engine", run.stdout)
         self.assertEqual(calls, [LIST, "core version"])
+        self.assertTrue(self.ran.exists())
+
+    def test_an_engine_that_doesnt_answer_runs_the_host_suites(self):
+        run, calls = self.commit(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT="2")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("Dagger's engine didn't answer in 2s", run.stdout)
+        self.assertEqual(calls, [LIST])
         self.assertTrue(self.ran.exists())
 
     def test_a_module_that_doesnt_load_blocks_the_commit(self):
