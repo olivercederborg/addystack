@@ -57,7 +57,7 @@ Not in scope, so a later run picks it up.
 - **Rounds** have one to three open frontier questions, highest impact first. Ask only
   decisions that need the user's input; don't add a question to fill the round. Each has
   a recommended option, and one answer can settle the round: every pick, or every pick
-  but one, as `2b` overrides question 2.
+  but the ones it overrides by number.
 - **Facts are yours; decisions are the user's.** Look up what the code, config, or
   tools can answer, using sub-agents in parallel if needed. While a lookup runs, only
   the questions that depend on it wait.
@@ -92,7 +92,7 @@ name, such as `+4 more in the fold`:
    trail only from a known count; otherwise write `1 proposed migration`.
 4. **Pick**: number each question and its recommended answer and impact. The fold holds
    context, options, costs, sources, and the **For architect** list, or `none`. Then wait: the user takes every pick, names an
-   alternative, or overrides one by number, as `2b` overrides question 2.
+   alternative, or overrides a question by its number.
    A user's `confirm` takes the offered picks, unless they say otherwise.
 
 Example, when a table is suggested but not agreed:
