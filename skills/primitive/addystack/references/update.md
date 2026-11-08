@@ -19,6 +19,9 @@ on a dropped skill fails it. When an earlier step fails, report its error and th
 `fix:` line, and stop. A warning that the skills CLI couldn't check another source, one
 that isn't the kit's, doesn't stop the update, and the rules above still decide whether
 it landed. Either way, name that source in the report, since its skills weren't updated.
+In a git checkout, a line saying update left it as is means the kit didn't move, though
+install still ran: report that line's reason, such as uncommitted changes or a diverged
+branch.
 
 ## 3. Summarize
 

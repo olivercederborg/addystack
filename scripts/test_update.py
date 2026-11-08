@@ -1,7 +1,8 @@
 """Tests for `addystack update` in a scratch HOME, run without a terminal as an agent runs
 it. With an npx skills install it updates the skills, adds the core skills a release adds,
-and removes the ones it dropped (plan check 10). With a maintainer's git checkout it moves
-to the newest v* tag. Both then install. A stub skills CLI (ADDYSTACK_SKILLS_CLI) installs
+and removes the ones it dropped (plan check 10). A git checkout on a branch fast-forwards
+that branch when it can and otherwise stays as it is; one detached at a v* tag moves to the
+newest tag. Each then installs. A stub skills CLI (ADDYSTACK_SKILLS_CLI) installs
 from a local git "release" repo, so no test needs the network."""
 from __future__ import annotations
 
@@ -88,6 +89,14 @@ class Update(Home):
     def git(self, repo, *args):
         return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
                               env=self.env).stdout.strip()
+
+    def assert_left(self, result, head, why):
+        """Update left the checkout where it was, said why in one line, and still installed."""
+        self.assertEqual(self.git(self.checkout, "rev-parse", "HEAD"), head)
+        said = [line for line in result.stderr.splitlines() if "left it as is" in line]
+        self.assertEqual(len(said), 1, result.stderr)
+        self.assertIn(why, said[0])
+        self.assertIn("ok    hooks: match the selection", result.stdout)
 
     def tool(self, folder, skills):
         """The addystack tool's files in folder, with a release list of these skills."""
@@ -287,7 +296,7 @@ class SkillsInstall(Update):
 
 
 class Checkout(Update):
-    """A maintainer's git checkout of the kit."""
+    """A git checkout of the kit detached at a release tag."""
 
     def setUp(self):
         super().setUp()
@@ -323,6 +332,156 @@ class Checkout(Update):
         self.assertEqual(result.returncode, 1)
         self.assertIn("uncommitted changes", result.stderr)
         self.assertEqual((self.checkout / "VERSION").read_text(), "edited")
+
+    def test_leaves_a_checkout_detached_off_any_tag(self):
+        self.git(self.checkout, "commit", "-q", "--allow-empty", "-m", "trying something")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assert_left(result, head, "not at a v* tag")
+
+
+class BranchCheckout(Update):
+    """A developer's git checkout of the kit, on a branch that tracks the kit's main. The
+    newest tag is older than main, so moving to it would drop main's newer work."""
+
+    def setUp(self):
+        super().setUp()
+        self.upstream = self.home / "upstream"
+        self.tool(self.upstream, {})
+        self.git(self.upstream, "init", "-q")
+        self.commit(self.upstream, "v0.1.0")
+        self.git(self.upstream, "tag", "v0.1.0")
+        self.commit(self.upstream, "main-1")
+        self.checkout = self.home / "checkout"
+        subprocess.run(["git", "clone", "-q", str(self.upstream), str(self.checkout)], check=True, env=self.env)
+        self.bin = self.checkout / "bin" / "addystack"
+
+    def commit(self, repo, version):
+        (repo / "VERSION").write_text(version)
+        self.git(repo, "add", "-A")
+        self.git(repo, "commit", "-q", "-m", version)
+
+    def branch(self):
+        return self.git(self.checkout, "branch", "--show-current")
+
+    def test_fast_forwards_the_branch_and_stays_on_it(self):
+        self.commit(self.upstream, "main-2")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "main")
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
+        self.assertIn("fast-forwarded main to origin/main", result.stdout)
+        self.assertNotIn("checked out", result.stdout)
+        self.assertIn("ok    hooks: match the selection", result.stdout)
+
+    def test_says_a_branch_already_at_its_upstream_is_up_to_date(self):
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "main")
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-1")
+        self.assertIn("main is up to date with origin/main", result.stdout)
+
+    def test_leaves_a_branch_that_diverged_from_its_upstream(self):
+        self.commit(self.upstream, "main-2")
+        self.commit(self.checkout, "mine")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "main")
+        self.assert_left(result, head, "main has diverged from origin/main")
+
+    def test_leaves_a_branch_ahead_of_its_upstream(self):
+        self.commit(self.checkout, "mine")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assert_left(result, head, "main is ahead of origin/main")
+
+    def test_leaves_a_branch_with_uncommitted_changes(self):
+        self.commit(self.upstream, "main-2")
+        (self.checkout / "VERSION").write_text("edited")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "main")
+        self.assertEqual((self.checkout / "VERSION").read_text(), "edited")
+        self.assert_left(result, head, "uncommitted changes")
+
+    def test_leaves_a_branch_without_an_upstream(self):
+        self.git(self.checkout, "checkout", "-q", "-b", "work")
+        self.commit(self.upstream, "main-2")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "work")
+        self.assert_left(result, head, "work has no upstream")
+
+    def test_leaves_a_branch_whose_upstream_was_deleted(self):
+        # The remote-tracking branch outlives it, since the fetch doesn't prune.
+        self.git(self.upstream, "checkout", "-q", "-b", "feature")
+        self.commit(self.upstream, "feature-2")
+        self.git(self.upstream, "checkout", "-q", "main")
+        self.git(self.checkout, "fetch", "-q")
+        self.git(self.checkout, "checkout", "-q", "-b", "feature", "--track", "origin/main")
+        self.git(self.checkout, "branch", "-q", "--set-upstream-to", "origin/feature")
+        self.git(self.upstream, "branch", "-q", "-D", "feature")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "feature")
+        self.assert_left(result, head, "git fetch failed")
+
+    def test_leaves_a_branch_with_more_than_one_upstream(self):
+        self.git(self.upstream, "branch", "feature")
+        self.commit(self.upstream, "main-2")
+        self.git(self.checkout, "config", "--add", "branch.main.merge", "refs/heads/feature")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assert_left(result, head, "main has more than one upstream")
+
+    def test_fast_forwards_an_upstream_the_fetch_refspec_leaves_out(self):
+        self.git(self.checkout, "config", "--add", "remote.origin.fetch", "^refs/heads/main")
+        self.commit(self.upstream, "main-2")
+        self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
+
+    def test_fast_forwards_a_branch_a_tag_shares_its_name_with(self):
+        self.git(self.checkout, "tag", "main")
+        self.commit(self.upstream, "main-2")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
+        self.assertIn("fast-forwarded main to origin/main", result.stdout)
+
+    def test_leaves_the_checkout_when_its_branch_changes_during_the_fetch(self):
+        self.git(self.checkout, "branch", "-q", "work")
+        self.commit(self.upstream, "main-2")
+        git = shutil.which("git")
+        self.stub("git", f'"{git}" "$@" || exit\nif [ "$3" = fetch ]; then "{git}" -C "{self.checkout}" checkout -q work; fi')
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.git(self.checkout, "rev-parse", "main"), head)
+        self.assert_left(result, head, "moved off main during the fetch")
+
+    def test_leaves_the_branch_when_the_fetch_fails(self):
+        self.commit(self.upstream, "main-2")
+        self.upstream.rename(self.home / "offline")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.branch(), "main")
+        self.assert_left(result, head, "git fetch failed")
+
+    def test_leaves_the_branch_when_the_fast_forward_would_overwrite_an_ignored_file(self):
+        self.write(self.upstream / ".gitignore", "local.txt\n")
+        self.commit(self.upstream, "main-2")
+        self.git(self.checkout, "pull", "-q", "--ff-only")
+        (self.checkout / "local.txt").write_text("mine")
+        (self.upstream / ".gitignore").unlink()
+        (self.upstream / "local.txt").write_text("theirs")
+        self.commit(self.upstream, "main-3")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "local.txt").read_text(), "mine")
+        self.assert_left(result, head, "git merge --ff-only origin/main failed")
+
+    def test_to_checks_out_that_tag_and_says_how_to_return(self):
+        result = self.ok("update", "--to", "v0.1.0", bin_=self.bin)
+        self.assertEqual((self.checkout / "VERSION").read_text(), "v0.1.0")
+        self.assertEqual(self.branch(), "")
+        self.assertIn("checked out v0.1.0", result.stdout)
+        self.assertIn(f"git -C {self.checkout} checkout main returns to main", result.stdout)
 
 
 if __name__ == "__main__":
