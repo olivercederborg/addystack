@@ -9,7 +9,7 @@ add` install or a link into a maintainer's checkout, while a core skill that isn
 installed is a note, since a user may install some with `--skill` and update leaves a
 removed one removed; with the claude host enabled and verify-work in its skill folder,
 ~/.claude/agents/work-verifier.md is the work-verifier agent, as install links it
-(reconcile.AGENT); the installed hooks match the selection
+(reconcile.AGENT), or a file holding verify-work's copy's text; the installed hooks match the selection
 (hookset.drift); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
@@ -176,28 +176,53 @@ def _is_verifier(path: Path) -> bool:
     return any(re.fullmatch(r"name:\s*(['\"]?)work-verifier\1\s*", line) for line in lines[1:lines.index("---", 1)])
 
 
+def _same_text(path: Path, other: Path) -> bool:
+    """Whether path and other both read and hold the same bytes."""
+    try:
+        return path.read_bytes() == other.read_bytes()
+    except OSError:
+        return False
+
+
 def _agent(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("agent", True, _SKIPPED, None)
     if not value["hosts"].get("claude"):
         return Check("agent", True, "not needed: the claude host is off", None)
     link, source = reconcile.AGENT.expanduser(), reconcile.AGENT_SOURCE.expanduser()
+    regular = os.path.lexists(link) and not link.is_symlink()
     # A link counts only when it's install's, to the copy verify-work ships: one to an older
-    # copy, such as a kit checkout's repo root, would run that copy's instructions.
-    if _is_verifier(link) and (not link.is_symlink() or os.readlink(link) == str(source)):
+    # copy, such as a kit checkout's repo root, would run that copy's instructions. A file
+    # counts only when it holds that copy's text, for the same reason.
+    if _is_verifier(link) and (_same_text(link, source) if regular else os.readlink(link) == str(source)):
         return Check("agent", True, f"{render._home(link)} is the work-verifier agent"
-                     + (f", through {render._home(source)}" if link.is_symlink() else ""), None)
+                     + ("" if regular else f", through {render._home(source)}"), None)
     if not os.path.lexists(source.parents[1]):
         return Check("agent", True, f"not needed: verify-work isn't in {render._home(source.parents[2])}", None)
-    if not link.is_symlink() and os.path.lexists(link):
-        return Check("agent", False, f"{render._home(link)} isn't the work-verifier agent; verify-work's fork needs "
-                     "it to record a Done verdict", f"move {render._home(link)} aside, then run addystack install")
-    problem = (f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
-               if link.is_symlink() else f"{render._home(link)} is missing")
-    fix = "addystack install"
-    if not source.is_file():
+    # verify-work's own copy is missing, or there but not the agent: only reinstalling
+    # verify-work restores it, since install links to it as it is.
+    restore = not _is_verifier(source)
+    install = "addystack install"
+    if restore:
         kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
-        fix = f"run npx skills add {kit} -g -y --skill verify-work, then addystack install"
+        install = f"npx skills add {kit} -g -y --skill verify-work, then addystack install"
+    fix = f"run {install}" if restore else install
+    if regular:
+        if not _is_verifier(link):
+            problem = f"{render._home(link)} isn't the work-verifier agent"
+        elif source.is_file():
+            problem = f"{render._home(link)} differs from {render._home(source)}, so it's an older or edited copy"
+        else:
+            problem = (f"{render._home(link)} is a copy of the work-verifier agent, and {render._home(source)} "
+                       "is missing")
+        fix = f"move {render._home(link)} aside, then run {install}"
+    elif not link.is_symlink():
+        problem = f"{render._home(link)} is missing"
+    elif os.readlink(link) == str(source):
+        problem = (f"{render._home(link)} links to {render._home(source)}, which "
+                   + ("isn't the work-verifier agent" if source.is_file() else "is missing"))
+    else:
+        problem = f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
     return Check("agent", False, f"{problem}; verify-work's fork needs it to record a Done verdict", fix)
 
 

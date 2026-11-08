@@ -150,6 +150,49 @@ class Agent(Doctor):
         self.assertEqual(self.check("agent")[1], "fix: run npx skills add <the addystack repo> -g -y --skill "
                                                  "verify-work, then addystack install")
 
+    def test_a_link_to_verify_works_missing_copy_says_the_copy_is_missing(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        self.link.symlink_to(self.home / ".claude/skills/verify-work/agents/work-verifier.md")
+        self.assertEqual(self.check("agent"),
+                         ("FAIL  agent: ~/.claude/agents/work-verifier.md links to ~/.claude/skills/verify-work/agents/"
+                          "work-verifier.md, which is missing; verify-work's fork needs it to record a Done verdict",
+                          "fix: run npx skills add <the addystack repo> -g -y --skill verify-work, then addystack "
+                          "install"))
+
+    def test_a_link_to_verify_works_corrupt_copy_says_to_reinstall_verify_work(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        self.write(self.home / ".claude/skills/verify-work/agents/work-verifier.md", "corrupt agent\n")
+        self.link.symlink_to(self.home / ".claude/skills/verify-work/agents/work-verifier.md")
+        self.assertEqual(self.check("agent"),
+                         ("FAIL  agent: ~/.claude/agents/work-verifier.md links to ~/.claude/skills/verify-work/agents/"
+                          "work-verifier.md, which isn't the work-verifier agent; verify-work's fork needs it to "
+                          "record a Done verdict",
+                          "fix: run npx skills add <the addystack repo> -g -y --skill verify-work, then addystack "
+                          "install"))
+
+    def test_a_file_that_differs_from_verify_works_copy_fails(self):
+        self.link.write_text("---\nname: work-verifier\n---\nAn older copy.\n")
+        self.assertEqual(self.check("agent"),
+                         ("FAIL  agent: ~/.claude/agents/work-verifier.md differs from ~/.claude/skills/verify-work/"
+                          "agents/work-verifier.md, so it's an older or edited copy; verify-work's fork needs it to "
+                          "record a Done verdict",
+                          "fix: move ~/.claude/agents/work-verifier.md aside, then run addystack install"))
+
+    def test_a_copy_of_the_agent_beside_verify_work_without_its_copy_fails(self):
+        self.link.write_text("---\nname: work-verifier\n---\nAn older copy.\n")
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        self.assertEqual(self.check("agent")[1], "fix: move ~/.claude/agents/work-verifier.md aside, then run npx "
+                                                 "skills add <the addystack repo> -g -y --skill verify-work, then "
+                                                 "addystack install")
+
+    def test_a_copy_of_the_agent_without_verify_work_needs_nothing(self):
+        self.link.write_text("---\nname: work-verifier\n---\nAn older copy.\n")
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.assertEqual(self.check("agent"), ("ok    agent: not needed: verify-work isn't in ~/.claude/skills", None))
+
     def test_without_verify_work_nothing_needs_the_agent(self):
         (self.home / ".claude/skills/verify-work").unlink()
         self.assertEqual(self.check("agent"), ("ok    agent: not needed: verify-work isn't in ~/.claude/skills", None))
