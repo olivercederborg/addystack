@@ -1160,7 +1160,26 @@ class BashRewrite(unittest.TestCase):
         "bun run --cwd packages/sentry test:unit",
         "bun run vitest run src/a.test.ts",
         "../../scripts/with-test-database.sh bun x vitest run",
+        # verify-work's replay, Nov 8, 2026: the long checks verifiers backgrounded most.
+        "cd apps/mobile && bun run typecheck",
+        "DAGGER_NO_NAG=1 dagger check skills:hooks-tests",
+        ".githooks/pre-commit",
+        "./node_modules/.bin/tsc --noEmit -p .",
+        "bash /tmp/vw108-scripts/run-mutant.sh stale-key 'a' 'b'",
+        "python3 /tmp/vw/mutants.py",
+        "turbo run lint",
     ]
+
+    def test_denies_any_verifier_background_run_but_a_server(self):
+        for command in ["until grep -q exit /tmp/b.log; do sleep 15; done", "sleep 300", "./run-checks.sh"]:
+            with self.subTest(command=command):
+                out = self.verifier(command, run_in_background=True)
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn("nohup", out["permissionDecisionReason"])
+        for command, description in [("bun run dev --port 3000", "d"), ("python3 -m http.server 8000", "d"),
+                                     ("./bin/serve", "Start the preview server")]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.verifier(command, run_in_background=True, description=description))
 
     def test_denies_a_verifier_build_run_in_the_background(self):
         for command in self.BUILDS:
@@ -1188,6 +1207,7 @@ class BashRewrite(unittest.TestCase):
             "swift test & pid=$!; echo wait",
             "swift test & pid=$!; false && { wait; }; echo resumed",
             "swift test & pid=$!; wait | cat",
+            "swift test & pid=$!; wait $pid | cat",
             "swift test & pid=$!; sleep 1 & wait $!",
             "swift test & pid=$!; sleep 1 & other=$!; wait $other",
             "swift test & wait -n",

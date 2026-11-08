@@ -25,11 +25,13 @@ T3 session on Oct 30, 2026).
   then fail it, and 335 of 558 edits ran no check. `--body` text and `--body-file -` aren't
   checked.
 - **Verifier builds and tests.** In a work-verifier fork, a build or test (BUILD_OR_TEST)
-  runs with a 600000 ms timeout, the most Bash allows, and one asked to run with
-  `run_in_background` or sent there with `&` is denied, unless the command `wait`s for it.
-  Bash moves a command past its timeout (2 minutes by default) to the background, and a
-  fork's background work stops when it hands back, so the build and the verdict waiting on
-  it are lost. That cost tower-app three verdicts on Nov 7 to 8, 2026 (verify-102-2,
+  runs with a 600000 ms timeout, the most Bash allows, and one sent to the background with
+  `&` is denied, unless the command `wait`s for it. Any command but a server (pr_watch.py's
+  SERVES) asked to run with `run_in_background` is denied too: matching runners by name
+  missed 86 of a week's backgrounded checks, such as typechecks and pre-commit runs. Bash
+  moves a command past its timeout (2 minutes by default) to the background, and a fork's
+  background work stops when it hands back, so the work and the verdict waiting on it are
+  lost. That cost tower-app three verdicts on Nov 7 to 8, 2026 (verify-102-2,
   verify-102-4, verify-105-1). pr_watch.py sends a T3 child back for it, but only after the
   fork's run is over, so verify-work starts again, and not at all when the fork's hand-back
   runs to 40 words, as verify-102-2's 56 did; a top-level session's forks get no check.
@@ -161,9 +163,12 @@ def modifier_fixes(command):
 # by a relative scripts/ path and its name says build, test, or bench. A path after the
 # runner's word (`bun test/server.ts`) runs a file, not the runner.
 RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
-          r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:--cwd[=\s]\S+\s+|--filter[=\s]\S+\s+|-C\s+\S+\s+)*(?:test|build)"
-          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npx\s+|bunx\s+|bun\s+(?:x|run)\s+)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
-          r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+call"
+          r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:--cwd[=\s]\S+\s+|--filter[=\s]\S+\s+|-C\s+\S+\s+)*(?:test|build|typecheck)"
+          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npx\s+|bunx\s+|bun\s+(?:x|run)\s+|\S*/)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
+          r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+(?:call|check)"
+          r"|turbo\s+run|storybook\s+build|\S*\.githooks/pre-commit"
+          # A verifier's own mutant or pre-commit script, by name, wherever it lives.
+          r"|(?:(?:ba|z)?sh\s+|python3?\s+)?\S*?[\w.-]*(?:mutants?|mutate|-mut|pre-?commit)[\w.-]*\.(?:sh|py)"
           r"|(?:(?:ba|z)?sh\s+)?(?:\.\.?/)*[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
 WRAPPER = (r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|exec|command"
            r"|caffeinate(?:\s+-\w+)*)\s+)*")
@@ -182,8 +187,8 @@ KEYWORD_AFTER = re.compile(r"(?:^|[;\n&|({)}]|(?<![\w-])(?:do|then|else|done|fi|
 VERIFIER = "work-verifier"
 # Bash's most; a command past it moves to the background however long its timeout.
 LONG = 600000
-LOST = ("A work-verifier fork's background work stops when the fork hands back, so this build or test "
-        "and the verdict waiting on it would be lost. ")
+LOST = ("A work-verifier fork's background work stops when the fork hands back, so this work and the "
+        "verdict waiting on it would be lost. ")
 SPLIT = ("If it could take longer than 10 minutes, split it into batches that each finish under that, "
          "such as by test filter, since Bash moves a longer command to the background too.")
 
@@ -250,11 +255,16 @@ def verifier_fix(payload, tool_input, command):
     (None, note) when its build or test needs the long timeout, else (None, None)."""
     if payload.get("agent_type") != VERIFIER:
         return None, None
+    if tool_input.get("run_in_background"):
+        import pr_watch  # here, so only a verifier's background call loads it
+        if pr_watch.SERVES.search(command) or pr_watch.LONG_LIVED.search(str(tool_input.get("description") or "")):
+            return None, None
+        return (f"{LOST}Run it in the foreground with `timeout: {LONG}`; only a server, such as a dev server on a "
+                "port, runs with run_in_background here. Start another helper you stop yourself, such as a log "
+                f"recorder, with `nohup … > <log> 2>&1 &`. {SPLIT}"), None
     code = run_code(command)
     if not BUILD_OR_TEST.search(code):
         return None, None
-    if tool_input.get("run_in_background"):
-        return f"{LOST}Run it in the foreground with `timeout: {LONG}`. {SPLIT}", None
     if any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None
     timeout = tool_input.get("timeout")
