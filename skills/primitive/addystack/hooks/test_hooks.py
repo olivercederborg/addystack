@@ -1150,6 +1150,10 @@ class BashRewrite(unittest.TestCase):
         "for c in a b; do (cd /tmp/$c && bun run test:unit) ; done",
         "PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q test_hooks",
         "/usr/bin/time -p make -j4",
+        'result="$(python3 -m unittest -q scripts.test_check_install 2>&1)"; echo "$result"',
+        'sh -c "cd /tmp/x && swift test"',
+        "python3 scripts/test_check_install.py -q",
+        "exec python3 -m unittest -q scripts.test_check_install",
     ]
 
     def test_denies_a_verifier_build_run_in_the_background(self):
@@ -1166,6 +1170,15 @@ class BashRewrite(unittest.TestCase):
             "cd /tmp/vw48b && (for c in Debug Release; do xcodebuild -scheme P -configuration $c build > /tmp/x-$c.log 2>&1; done) > /dev/null 2>&1 &\necho started",
             "(cd /tmp/a && swift test > /tmp/a.log 2>&1) &\n(cd /tmp/b && swift build > /tmp/b.log 2>&1) &\necho started",
             "nohup swift test > /tmp/t.log 2>&1 & echo $!",
+            "swift test && echo done &",
+            "for i in 1 2; do swift test; done &",
+            "if true; then swift build; fi &",
+            # A `wait` that may leave the job running: another shell's, a skipped one, a branch's.
+            "swift test & (wait)",
+            "swift test & false && wait",
+            "swift test & if false; then wait; fi",
+            "(swift test &); wait",
+            "wait; swift test &",
         ]:
             with self.subTest(command=command):
                 out = self.verifier(command, timeout=600000)
@@ -1180,6 +1193,9 @@ class BashRewrite(unittest.TestCase):
             "(bun test/support/fake-postmark/server.ts > /tmp/pm.log 2>&1 &) ; curl -s localhost:4010",
             "(Scripts/motion-check.sh 6 /tmp/m --precise > /tmp/m.out 2>&1 &) ; sleep 1.5",
             "swift test > /tmp/t.log 2>&1 && echo ok",
+            "(swift test & wait) && echo ok",
+            "{ swift test & } ; wait",
+            "swift test & pid=$!; wait $pid",
         ]:
             with self.subTest(command=command):
                 out = self.verifier(command, timeout=600000)
@@ -1203,6 +1219,10 @@ class BashRewrite(unittest.TestCase):
             "grep -rn 'unittest\\|pytest' .github",
             "git log --oneline -3; cat Makefile",
             "xcodebuild-like --version",
+            "swift test --help",
+            "xcodebuild -version",
+            "make --version | head -1",
+            "echo 'sh -c \"swift test\"'",  # a script in single quotes is text
         ]:
             with self.subTest(command=command):
                 self.assertIsNone(self.verifier(command))

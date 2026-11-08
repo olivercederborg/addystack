@@ -163,10 +163,17 @@ def modifier_fixes(command):
 RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
           r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:test|build)"
           r"|(?:npx\s+|bunx\s+|bun\s+x\s+)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
-          r"|python3?\s+(?:-\w+\s+)*-m\s+(?:pytest|unittest)|dagger\s+call"
+          r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+call"
           r"|(?:(?:ba|z)?sh\s+)?(?:\./)?[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
-WRAPPER = r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|caffeinate(?:\s+-\w+)*)\s+)*"
-BUILD_OR_TEST = re.compile(LEAD + WRAPPER + RUNNER)
+WRAPPER = (r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|exec|command"
+           r"|caffeinate(?:\s+-\w+)*)\s+)*")
+# `swift test --help` or `xcodebuild -version` asks about the tool and runs nothing.
+INSPECTS = r"(?![^;&|\n]*\s(?:--?help|-h|--?version|-list|-showsdks|-showBuildSettings)(?=\s|$))"
+BUILD_OR_TEST = re.compile(LEAD + WRAPPER + RUNNER + INSPECTS)
+# The script `sh -c` or `bash -c` runs, quoted.
+SCRIPT = re.compile(r"\b((?:ba|z)?sh\s+(?:-\w+\s+)*-c\s+)(['\"])(.*?)(?<!\\)\2", re.S)
+# What opens and closes a group, ends a list item, or waits, in masked code.
+TOKEN = re.compile(r"\(|\)|\{|\}|;;?|\n|&&|\|\||&|(?<![\w-])(?:do|then|done|fi|esac|wait)(?![\w-])")
 VERIFIER = "work-verifier"
 # Bash's most; a command past it moves to the background however long its timeout.
 LONG = 600000
@@ -176,25 +183,44 @@ SPLIT = ("If it could take longer than 10 minutes, split it into batches that ea
          "such as by test filter, since Bash moves a longer command to the background too.")
 
 
-def backgrounded(code):
-    """(text, end) for each command in code that a lone `&` sends to the background, its
-    group's or pipeline's whole text included, and end the `&`'s offset."""
-    starts, found, i = [0], [], 0
-    while i < len(code):
-        char = code[i]
-        if char in "({":
-            starts.append(i + 1)
-        elif char in ")}" and len(starts) > 1:
-            starts.pop()
-        elif char in ";\n" or code.startswith("||", i) or code.startswith("&&", i):
-            i += 1 if char in ";\n" else 2
-            starts[-1] = i
-            continue
-        elif char == "&":
-            found.append((code[starts[-1]:i], i))
-            starts[-1] = i + 1
-        i += 1
-    return found
+def run_code(command):
+    """command as the shell runs it: shell_code's masking, but the script `sh -c` runs, as a
+    group of its own, and each `$(…)` in double quotes stay code. Offsets shift."""
+    code = SCRIPT.sub(lambda m: f"{m.group(1)}( {m.group(3)} )", mask_heredocs(command, quoted_only=False))
+    keep = lambda m: m.group() if m.group().startswith("$(") else blank(m.group())
+    code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", lambda m: "'" + (
+        re.sub(r"\$\([^()]*\)|[^$]+|\$", keep, m.group()[1:-1]) if m.group()[0] == '"' else blank(m.group()[1:-1])) + "'",
+        code)
+    code = re.sub(r"(?:(?<=[\s;&|(])|^)#[^\n]*", lambda m: ";" * len(m.group()), code, flags=re.M)
+    return re.sub(r"\d?>&\d?|&>", lambda m: m.group().replace("&", "_"), code)
+
+
+def unwaited(code):
+    """The text of each command, a whole `&&` list, loop, or group included, that a lone `&`
+    sends to the background with no `wait` for it later in code. A `wait` counts when it
+    starts a list item in the same shell, outside any branch or loop body; `(wait)`, `false
+    && wait`, and `then wait` don't, since each may leave the job running."""
+    # Each frame: [start of its current list item, shell, steady (no branch or loop body around it)].
+    frames, shells, jobs, after = [[0, 0, True]], 0, [], "\n"
+    for token in TOKEN.finditer(code):
+        text, frame = token.group(), frames[-1]
+        if text == "(":
+            shells += 1
+            frames.append([token.end(), shells, True])
+        elif text in ("{", "do", "then"):
+            frames.append([token.end(), frame[1], frame[2] and text == "{"])
+        elif text in (")", "}", "done", "fi", "esac"):
+            if len(frames) > 1:
+                frames.pop()
+        elif text in (";", ";;", "\n"):
+            frame[0] = token.end()
+        elif text == "&":
+            jobs.append((code[frame[0]:token.start()], frame[1]))
+            frame[0] = token.end()
+        elif text == "wait" and frame[2] and after in (";", ";;", "\n", "&", "{", "("):
+            jobs = [job for job in jobs if job[1] != frame[1]]
+        after = text
+    return [job for job, _ in jobs]
 
 
 def verifier_fix(payload, tool_input, command):
@@ -202,14 +228,12 @@ def verifier_fix(payload, tool_input, command):
     (None, note) when its build or test needs the long timeout, else (None, None)."""
     if payload.get("agent_type") != VERIFIER:
         return None, None
-    code = shell_code(command)
+    code = run_code(command)
     if not BUILD_OR_TEST.search(code):
         return None, None
     if tool_input.get("run_in_background"):
         return f"{LOST}Run it in the foreground with `timeout: {LONG}`. {SPLIT}", None
-    # A `wait` after the `&` finishes the job inside the call.
-    waits = [match.end() for match in re.finditer(LEAD + r"wait\b", code)]
-    if any(BUILD_OR_TEST.search(part) and not any(at > end for at in waits) for part, end in backgrounded(code)):
+    if any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None
     timeout = tool_input.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout >= LONG:
