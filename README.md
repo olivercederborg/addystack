@@ -17,11 +17,10 @@ python3 ~/.agents/skills/addystack/bin/addystack install
 1. `npx skills add` installs the skills. To install only some, pass `--skill <names>`
    and keep `addystack`, whose tool the next steps run.
 2. `init` writes your config, including the agents it finds on your PATH. Run it first,
-   since `install` acts on those agents.
+   since `install` sets up those agents.
 3. For each of those agents, `install` adds the kit's hooks beside yours and moves text
    you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
-   `~/.config/addystack/global.md`. It removes the kit's hooks from other agents, then
-   builds and runs `doctor`.
+   `~/.config/addystack/global.md`. Then it builds and runs `doctor`.
 
 After a Claude-only install, the tool is in `~/.claude/skills/addystack/` by default, so
 use that path in place of `~/.agents/skills/addystack/` in every command here. Below,
