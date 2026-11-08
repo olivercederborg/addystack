@@ -16,7 +16,8 @@ copy can't break the merge gate's reads.
   it's the library's intended use, or a single `none: <why>` line for a change with none.
 
 A ref `not-run:<reason>` names a check that couldn't run here: it's allowed for any kind,
-but never backs Done.
+but never backs Done. A Done also passes every mutant log the head's evidence folder holds
+(left_out_mutants), so a survivor in one refuses it whether or not the kind was required.
 
 Known limits: classify is a text heuristic and a floor, not a parser, and the verifier
 adds the kinds it misses with `--require`. Contract reads `-U0` hunk headers, so it
@@ -82,6 +83,7 @@ MEDIA = {suffix: re.compile(magic, re.S) for suffixes, magic in [
     ((".webp",), rb"RIFF.{4}WEBP"), ((".mp4", ".mov"), rb".{4}ftyp"), ((".webm",), rb"\x1a\x45\xdf\xa3")]
     for suffix in suffixes}
 MUTANT_LINE = re.compile(r"^(killed|survived):\s*(.+)$", re.M)
+MUTANT_LOG = re.compile(r"mutant|mutation", re.I)  # a file name; a test log can quote `survived:` too
 SOURCE_URL = re.compile(r"https?://[^\s<>()\[\]]+")
 NO_PATTERN = re.compile(r"none:\s*\S")
 
@@ -271,6 +273,26 @@ def survivors(refs: list[str]) -> str | None:
     found = [mutant for ref in refs if not ref.startswith(NOT_RUN)
              for outcome, mutant in MUTANT_LINE.findall(Path(ref).read_text(errors="replace")) if outcome == "survived"]
     return f"{len(found)} survived ({'; '.join(found)})" if found else None
+
+
+def left_out_mutants(folder: Path, refs: list[str]) -> list[str]:
+    """Each file under folder, a head's evidence folder, whose name says mutant or mutation
+    and that holds a survivor or 3 results (`killed:` or `survived:` lines), when refs, a
+    Done's mutants evidence, don't name it. Fewer, all killed, hide nothing, and `check`
+    wouldn't take them. verify-108-1 saved a log with three survivors there on Nov 8, 2026,
+    and recorded Done without it."""
+    given = {Path(ref).resolve() for ref in refs if not ref.startswith(NOT_RUN)}
+    found = []
+    for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
+        if not (MUTANT_LOG.search(path.name) and path.is_file()) or path.resolve() in given:
+            continue
+        try:
+            results = [outcome for outcome, _ in MUTANT_LINE.findall(path.read_text(errors="replace"))]
+        except OSError:
+            continue
+        if "survived" in results or len(results) >= 3:
+            found.append(str(path))
+    return found
 
 
 def dev_cost_growth(refs: list[str]) -> str | None:

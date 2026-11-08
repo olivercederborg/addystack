@@ -295,6 +295,51 @@ class Recording(Repo):
         kills = self.media("kills.log", "killed: flip a\nkilled: drop b\nkilled: drop the pad\n")
         self.assertEqual(list(self.record(head, evidence={"mutants": [kills], "idiom": idiom}).required), ["idiom"])
 
+    def saved(self, head, name, text):
+        """A file in head's evidence folder, where verify-work's evidence.md says to save it."""
+        common = self.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+        path = pathlib.Path(common, "verify-work", "evidence", head, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return str(path)
+
+    def test_a_mutant_log_left_out_of_done_refuses_it(self):
+        """verify-108-1, Nov 8, 2026: three survivors in mutants.log, and a Done that passed only idiom."""
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = self.saved(head, "mutants.log", "killed: stale-revision-key by ReviewsTests\n"
+                                              "survived: tick-follows-not-fresh (107 tests passed)\n"
+                                              "survived: no-server-backstop (38 tests passed)\n")
+        with self.assertRaisesRegex(verdicts.VerdictError, r"^Done needs evidence: mutants \(run here\): mutants\.log in "
+                                                           r"this head's evidence folder isn't passed.* → --evidence mutants=<log>$"):
+            self.record(head, evidence={"idiom": idiom})
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants \(supplied\): 2 survived"):
+            self.record(head, evidence={"idiom": idiom, "mutants": [log]})
+        self.record(head, "not-done", evidence={"idiom": idiom}, findings=["tick-follows-not-fresh survives"])
+
+    def test_a_left_out_log_with_every_mutant_killed_backs_done_once_passed(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = self.saved(head[:10], "nested/Mutants-delta.txt", "killed: a\nkilled: b\nkilled: c\n")
+        with self.assertRaisesRegex(verdicts.VerdictError, r"Mutants-delta\.txt in this head's evidence folder"):
+            self.record(head, evidence={"idiom": idiom})
+        self.assertEqual(self.record(head, evidence={"idiom": idiom, "mutants": [log]}).verdict, "done")
+
+    def test_only_a_mutant_log_with_results_for_this_head_counts(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        other = self.change({"src/other.ts": "x\n"})
+        self.git("checkout", "-q", head)
+        self.saved(other, "mutants.log", "survived: on another head\n")  # another head's folder
+        self.saved(head[:6], "mutants.log", "survived: too short a prefix to name the head\n")
+        self.saved(head, "mutants-run.log", "Building for debugging...\nmutant 1 of 3\n")  # no results in it
+        self.saved(head, "tests.log", "survived: a test log that quotes a result\n")  # not named for mutants
+        self.saved(head, "mutants.log", "killed: one probe\nkilled: and another\n")  # hides nothing, and too few to pass
+        self.assertEqual(self.record(head, evidence={"idiom": idiom}).verdict, "done")
+        self.saved(head, "mutants-2.log", "survived: one is enough\n")
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants-2\.log in this head's evidence folder"):
+            self.record(head, evidence={"idiom": idiom})
+
     def test_bad_evidence_is_refused_for_every_verdict(self):
         head = self.change({"README.md": "# app\n\nMore.\n"})
         for verdict in verdicts.VERDICTS:

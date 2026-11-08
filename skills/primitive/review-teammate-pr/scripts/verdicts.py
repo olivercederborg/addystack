@@ -158,13 +158,21 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     for kind in require or []:
         required.setdefault(kind, []).append("--require: the intent implies it")
     required = {kind: required[kind] for kind in kinds.KINDS if kind in required}
-    gaps = [(kind, gap) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
+    gaps = [(kind, gap, required[kind]) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
     if "mutants" not in required and (survived := kinds.survivors(evidence.get("mutants", []))):
-        gaps.append(("mutants", survived))  # a survivor the verifier found refuses Done on any path
+        gaps.append(("mutants", survived, ["supplied"]))  # a survivor the verifier found refuses Done on any path
+    # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
+    # and left out would hide its survivors.
+    saved = _store(cwd).parent / "evidence"
+    folders = [path for path in saved.iterdir() if len(path.name) >= 7 and head.startswith(path.name)] \
+        if saved.is_dir() else []
+    if left := [path for folder in folders for path in kinds.left_out_mutants(folder, evidence.get("mutants", []))]:
+        gaps.append(("mutants", f"{_shown([Path(path).name for path in left])} in this head's evidence folder "
+                                "isn't passed, and a Done passes every mutant log", ["run here"]))
     if verdict == "done" and gaps:
         raise VerdictError("Done needs evidence: " + "; ".join(
-            f"{kind} ({_shown(required.get(kind, ['supplied']))}){'' if gap == 'no evidence' else f': {gap}'}"
-            f" → --evidence {kind}={kinds.PLACEHOLDER[kind]}" for kind, gap in gaps))
+            f"{kind} ({_shown(reasons)}){'' if gap == 'no evidence' else f': {gap}'}"
+            f" → --evidence {kind}={kinds.PLACEHOLDER[kind]}" for kind, gap, reasons in gaps))
     receipt = Receipt(patch_id, ReviewTarget(base, head), datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                       verifier, verdict, evidence, findings, required)
     store = _store(cwd)
