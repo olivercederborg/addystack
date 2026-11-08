@@ -7,8 +7,10 @@ has its own goal and proof, and ends here. The project closes only on the user's
    unmerged PRs, and record its result, the heads, and the trunk SHA it ran at under
    Decisions. With no unmerged PRs, skip it.
 2. **Promote**: copy each decision and learning that binds the next phase into
-   `standing-rules.md`, and write each follow-up whose detail lives in Decisions or
-   Learnings into Goal's Follow-ups. `phase` empties Decisions and Learnings into the
+   `standing-rules.md`. Write into Goal's Follow-ups each follow-up whose detail lives in
+   Decisions or Learnings, and each later phase Goal names, with its proof. Set each
+   worker whose PR is still open to `waiting`, with Waits on `#N open`, so its row and
+   thread stay for the PR's watch. `phase` empties Decisions and Learnings into the
    archive, which a wake doesn't read; only close reads it.
 3. **One card**: bring the user one decision card, as in step 5, with three options:
    start the next phase, park, or close. Make the next phase option `a` when
@@ -21,7 +23,7 @@ Then follow the pick:
 - **Park**: run `project.py <folder> phase <slug> --result <one line> --park <reason>`.
   Once no worker is `running`, `waiting`, `overdue`, or `unknown`, delete the heartbeat
   and startup timer and set their Listening lines to none. Unwatch each merged PR. Keep
-  the thread pinned, and reply with a one-line `done` status.
+  the thread pinned, and reply with step 5's one-line status.
 - **Close**: follow [close](close.md).
 
 `phase` saves `project.md` to `phases/`, adds the Phases line, and resets the phase's
@@ -30,5 +32,6 @@ names new work starts the next phase: run `project.py <folder> start --goal G --
 P`, then return to SKILL.md step 2.
 
 **Done when:** the integrated check passed or had no unmerged PRs, every binding decision
-and learning is in `standing-rules.md`, every follow-up is in Goal's Follow-ups, and the project is in step 2 of its next phase,
-parked (its heartbeat deleted once no worker runs), or in close.
+and learning is in `standing-rules.md`, every follow-up and named later phase is in
+Goal's Follow-ups, every open PR's owner is `waiting`, and the project is in step 2 of
+its next phase, parked (its heartbeat deleted once no worker runs), or in close.
