@@ -46,6 +46,17 @@ class Hook(unittest.TestCase):
         self.assertIn("not JSON", run({"html": page('{"ui":[oops')}))
         self.assertIn("has no payload", run({"html": f'<script src="{URL}"></script>'}))
 
+    def test_the_page_is_read_as_a_browser_reads_it(self):
+        good = '{"ui":[{"outcome":{"status":"done","text":"Fixed"}}]}'
+        old = URL.replace("1.1", "1.0")
+        self.assertIn("load exactly", run({"html": f'<script src = "{old}"></script><script type="application/json" id="ui">{good}</script>'}))
+        self.assertIn("more than one", run({"html": page() + f'<script type="application/json" id="ui">{good}</script>'}))
+        self.assertIn("has no payload", run({"html": f'<script src="{URL}"></script><script type="application/json" id="ui-state">{good}</script>'}))
+
+    def test_nan_and_infinity_are_not_json(self):
+        nan = '{"ui":[{"delta":{"label":"CPU","now":"1 s","was":"2 s","bars":[["run",NaN]]}}]}'
+        self.assertIn("not JSON: NaN", run({"html": page(nan)}))
+
     def test_a_page_without_the_renderer_passes(self):
         self.assertIsNone(run({"html": "<svg><rect/></svg><script>console.log(1)</script>"}))
         self.assertIsNone(run({"html": '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>'}))
@@ -65,11 +76,15 @@ class Hook(unittest.TestCase):
 
 
 class PinnedUrl(unittest.TestCase):
-    def test_every_reply_shape_file_names_the_pinned_url(self):
-        pinned = re.compile(r"https://cdn\.jsdelivr\.net/gh/[^\s\"'`)]*reply-ui@[^\s\"'`)]*")
-        for path in sorted(SKILL.rglob("*.md")):
-            for found in pinned.findall(path.read_text()):
-                with self.subTest(path=path.name):
+    def test_every_renderer_url_in_reply_shape_is_the_pinned_one(self):
+        # Any URL to the renderer's repo or file, pinned to any version or none.
+        renderer = re.compile(r"https?://[^\s\"'`)<>]*(?:reply-ui|/reply\.js)[^\s\"'`)<>]*")
+        docs = sorted(SKILL.rglob("*.md"))
+        self.assertIn(SKILL / "references" / "ui-cards.md", docs, "the docs aren't in this suite's input")
+        self.assertIn(URL, (SKILL / "references" / "ui-cards.md").read_text())
+        for path in docs:
+            for found in renderer.findall(path.read_text()):
+                with self.subTest(path=path.name, url=found):
                     self.assertEqual(found, URL)
 
 
