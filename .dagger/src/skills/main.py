@@ -220,7 +220,7 @@ class Skills:
     @function
     @check
     async def reply_budget(self, kit: source("skills/optional/reply-shape/SKILL.md", "replies.md",
-                                             "scripts/check-reply-budget.py", *HOOK_MODULES)) -> None:
+                                             "scripts/check-reply-budget.py", f"{TOOL}/lib/config.py", *HOOK_MODULES)) -> None:
         """scripts/check-reply-budget.py"""
         await run(kit, "scripts/check-reply-budget.py")
 
