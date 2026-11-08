@@ -33,8 +33,9 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
   wake's whole reply.
   - `stop` carries at least one option or need.
   - `done` carries neither: both are empty lists.
-  - `running` carries no options and always `elapsed` (up to 40 characters, such as
-    `"10 min"`), plus `eta`, the time left, only when it's measured. Only `running`
+  - `running` carries no options and always `elapsed` (1-40 characters, not blank, such
+    as `"10 min"`), plus `eta`, the time left (1-40 characters, not blank), only when it's
+    measured. Only `running`
     carries either.
 - **`needs`**: each Decide, Review, or Do item the reply asks of the user, and a decision
   card's question, as `{"id", "kind", "name"}`. `id` is a whole number of 1 or more,
@@ -43,8 +44,8 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
   screenshot or recording waiting for the user's look is a `review`. A Do from an earlier
   reply that's still open stays listed.
 - **`options`**: the Next options in order, as `{"key", "class", "text"}`, with `text` 1-400
-  characters. The first is the recommended one.
-- **`project`** (optional): 1-40 characters; threads that share it group into one row.
+  characters, not blank. The first is the recommended one.
+- **`project`** (optional): 1-40 characters, not blank; threads that share it group into one row.
   A child whose brief has a `Project:` line sets it to that name.
 
 ## Options
