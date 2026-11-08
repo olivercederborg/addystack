@@ -17,7 +17,10 @@ project with `start` ([phases](phases.md) says when). Its sections:
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.
 - **Listening**: the `Heartbeat` and `Startup` scheduled task ids, or none, and
-  `Watches`: each watched PR with its owner.
+  `Watches`: each watched PR with its owner. Each recurring check is a `Duty <name>`
+  line, `<task id> · <cadence> · <source> · until <end>`, ending `· last <ISO time>, <n>
+  new` after its first tick, or `none (ended <date>: <reason>)` once it ends
+  ([duties](duties.md)).
 
 ## Workers
 
