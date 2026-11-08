@@ -86,7 +86,33 @@ host_suites() {
 # (a Linux machine without it), or an engine it can reach, the suites run here. Listing the checks first
 # reaches the engine before any runs, so a failed check always blocks the commit, and a
 # pattern no check matches blocks it too, since dagger check runs nothing for it and exits 0.
+# An engine stuck restarting (a corrupt cache can crash it on every start) makes the
+# listing hang rather than fail, so it gets PRE_COMMIT_DAGGER_WAIT seconds, then the suites
+# run here too. A cold engine and module load take about a minute.
 checks=('skills:*-tests' skills:suites-listed)
+wait_for_dagger=${PRE_COMMIT_DAGGER_WAIT:-180}
+within() {  # within SECONDS CMD...: CMD's stdout and status, or status 124 once SECONDS pass
+  local limit=$1 out pid status waited=0
+  shift
+  out=$(mktemp)
+  "$@" > "$out" 2> /dev/null &
+  pid=$!
+  while kill -0 "$pid" 2> /dev/null; do
+    if [ "$waited" -ge "$limit" ]; then
+      kill "$pid" 2> /dev/null
+      wait "$pid" 2> /dev/null
+      rm -f "$out"
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  status=0
+  wait "$pid" || status=$?
+  cat "$out"
+  rm -f "$out"
+  return "$status"
+}
 unmatched() {  # each of checks that no name in $listed matches
   local pattern name
   for pattern in "${checks[@]}"; do
@@ -96,11 +122,19 @@ unmatched() {  # each of checks that no name in $listed matches
 }
 export DAGGER_NO_NAG=1
 cd "$root"
+listing=0
+if command -v dagger > /dev/null; then
+  listed=$(within "$wait_for_dagger" dagger check -l -s "${checks[@]}") || listing=$?
+fi
 if ! command -v dagger > /dev/null; then
   echo "pre-commit: dagger isn't installed, so the test suites run here"
   host_suites
-elif ! listed=$(dagger check -l -s "${checks[@]}" 2> /dev/null); then
-  if dagger core version > /dev/null 2>&1; then
+elif [ "$listing" = 124 ]; then
+  echo "pre-commit: Dagger's engine didn't answer in ${wait_for_dagger}s, so the test suites run here." \
+       "If \`docker ps\` shows it restarting, its cache is likely corrupt: remove the container and its volume"
+  host_suites
+elif [ "$listing" != 0 ]; then
+  if within 30 dagger core version > /dev/null; then
     echo "pre-commit: dagger check -l failed, so the Dagger module didn't load; run it to see why" >&2
     exit 1
   fi
