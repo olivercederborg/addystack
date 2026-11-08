@@ -33,6 +33,12 @@ Known limits:
 - Processes are signalled by pid right after their kernel id is rechecked; only a pid
   reused within those microseconds would be hit.
 - A process running as another user (a `sudo` child) isn't seen.
+- An agent's direct child that isn't a shell counts as a service, such as an MCP server:
+  it gets the per-command budgets but not the total, so a command an agent runs without
+  a shell does too.
+- An orphan running from an app bundle (`.app/Contents/`) isn't agent work by its
+  environment alone, since an app such as OrbStack starts its VM with the environment of
+  whichever command woke it.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
   too, and dies after 30 minutes; run it as a background task the agent tracks.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
@@ -203,6 +209,21 @@ def is_agent(proc):
     return bool(proc.argv) and os.path.basename(proc.argv[0]) in AGENTS
 
 
+# An agent runs each command through a shell; a direct child that isn't one is a server
+# the agent keeps for its session, such as an MCP server.
+SHELLS = {"sh", "bash", "zsh", "dash", "fish"}
+
+
+def is_service(proc):
+    return bool(proc.argv) and os.path.basename(proc.argv[0]).lstrip("-") not in SHELLS
+
+
+def is_app(proc):
+    """An app's own process, such as OrbStack's VM, which inherits the environment of the
+    agent command that started it."""
+    return bool(proc.argv) and ".app/Contents/" in proc.argv[0]
+
+
 class Owners:
     """Which agent command owns each process. A process keeps its owner after its parent
     exits, and a new orphan joins the command whose process group it's in, so
@@ -213,6 +234,7 @@ class Owners:
     def __init__(self):
         self.owner = {}  # process ident -> head: the ident of the command's first process
         self.group = {}  # pgid a command head leads -> head
+        self.services = set()  # heads that are an agent's servers, not its commands
 
     def resolve(self, procs, agents):
         owner = {}
@@ -243,7 +265,7 @@ class Owners:
                 pid = parent.pid
             for proc in reversed(chain):
                 head = head or self.owner.get(proc.ident) or self.group.get(proc.pgid)
-                if head is None and proc.marked:
+                if head is None and proc.marked and not is_app(proc):
                     head = self.group[proc.pgid] = proc.ident
                 owner[proc.ident] = head
         return owner
@@ -267,6 +289,11 @@ class Owners:
                 commands.setdefault(head, []).append(proc)
                 if proc.ident == head and proc.pgid == proc.pid:
                     self.group[proc.pgid] = head
+                parent = procs.get(proc.ppid)
+                if (proc.ident == head and parent is not None and is_agent(parent)
+                        and parent.ident == proc.parent_ident and is_service(proc)):
+                    self.services.add(head)
+        self.services &= commands.keys()
         return commands
 
 
@@ -274,14 +301,19 @@ def footprint(members):
     return sum(proc.footprint for proc in members)
 
 
-def runaway(commands):
-    """Return (head, reason) for the command to kill, or None."""
+def runaway(commands, services=frozenset()):
+    """Return (head, reason) for the command to kill, or None. A service gets the
+    per-command budgets but stays out of the total: on Nov 8, 2026 one Codex server's 54
+    sessions kept 19 GB of idle MCP servers, and the total killed real work all evening."""
     for head, members in commands.items():
         if len(members) > MAX_PROCESSES:
             return head, f"{len(members)} processes, over the per-command {MAX_PROCESSES}"
         if footprint(members) > MAX_FOOTPRINT:
             return head, (f"{footprint(members) / GB:.1f} GB, over the per-command "
                           f"{MAX_FOOTPRINT / GB:g} GB")
+    commands = {head: members for head, members in commands.items() if head not in services}
+    if not commands:
+        return None
     total_processes = sum(len(members) for members in commands.values())
     total_footprint = sum(footprint(members) for members in commands.values())
     if total_processes > MAX_TOTAL_PROCESSES:
@@ -423,7 +455,7 @@ def notify(title, subtitle, text):
 def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.time):
     procs = scan()
     commands = owners.attribute(procs)
-    found = runaway(commands)
+    found = runaway(commands, owners.services)
     if not found and abandoned is not None:
         agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
         found = abandoned.busy(commands, agents, now(), wall())

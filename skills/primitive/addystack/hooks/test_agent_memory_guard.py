@@ -123,6 +123,27 @@ class Attribution(unittest.TestCase):
             AGENT, proc(200, 100), proc(me, 200, pgid=200, marked=True)))
         self.assertEqual([p.pid for p in commands[200]], [200])
 
+    def test_agent_child_that_is_not_a_shell_is_a_service(self):
+        owners = Owners()
+        commands = owners.attribute(snapshot(
+            AGENT, proc(200, 100, argv=("/opt/homebrew/bin/bash", "-c", "make")),
+            proc(300, 100, argv=("npm", "exec", "effect-mcp@latest")),
+            proc(301, 300, pgid=300, argv=("node", "mcp.js"))))
+        self.assertEqual(sorted(commands), [200, 300])
+        self.assertEqual(owners.services, {300})
+
+    def test_service_is_forgotten_once_it_exits(self):
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(300, 100, argv=("gt", "mcp"))))
+        owners.attribute(snapshot(AGENT))
+        self.assertEqual(owners.services, set())
+
+    def test_marked_orphan_from_an_app_bundle_is_left_alone(self):
+        vm = "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper"
+        commands = Owners().attribute(snapshot(
+            AGENT, proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr"))))
+        self.assertEqual(commands, {})
+
     def test_deep_chain_does_not_overflow_the_stack(self):
         chain = [proc(1000 + i, 999 + i, pgid=1000) for i in range(1, 5000)]
         commands = Owners().attribute(snapshot(AGENT, proc(1000, 100), *chain))
@@ -154,6 +175,17 @@ class Runaway(unittest.TestCase):
         head, reason = guard.runaway(commands)
         self.assertEqual(head, 1)
         self.assertIn("over the total", reason)
+
+    def test_services_stay_out_of_the_total(self):
+        # 19 GB of idle MCP servers plus a 10 GB typecheck passed the 28 GB total.
+        services = dict(self.command(1000 * i, 2, 0.17) for i in range(1, 57))
+        commands = {**services, **dict([self.command(100, 3, 10 / 3)])}
+        self.assertIsNone(guard.runaway(commands, services.keys()))
+        self.assertIsNotNone(guard.runaway(commands))
+
+    def test_a_service_still_gets_the_per_command_budget(self):
+        head, _ = guard.runaway(dict([self.command(1, 3, 7)]), {1})
+        self.assertEqual(head, 1)
 
     def test_storm_split_across_commands_is_caught_by_the_total(self):
         commands = dict(self.command(i * 1000, 400) for i in range(1, 5))
