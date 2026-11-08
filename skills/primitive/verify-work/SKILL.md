@@ -65,7 +65,8 @@ it breaks. Anything weaker is Optional.
 - **Nearby**: up to three small Optional improvements, in the files the diff touches.
 - **Verification**: the focused typecheck, lint, and tests for the touched packages,
   judged by exit code. Run a new or changed test, eval, or fixture once: its setup must
-  reach the state the code assumes.
+  reach the state the code assumes, and a failing assertion is checked against the
+  fixture before the code changes.
 - **Real run**: run the change once through each real boundary it crosses, since tests
   with fakes pass while the real thing breaks. A served client: a real one, such as an
   MCP or OAuth client that reads the server's own challenge. A database: a migrated copy
