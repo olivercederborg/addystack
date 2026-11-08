@@ -11,8 +11,9 @@ maintainer's scripts in maintainer/, the skills in skills/preferences/ and skill
 (they leave the kit; check-layers.py keeps each skill in its layer's folder), and the
 maintainer's own files the live install reads (the root router.md, replies.md, and
 taste.md, principles/index.md, and global/). License files and lines of attribution
-("Copyright", "Adapted from", a skill's `author:`) name their authors, and KIT_REPO, the
-kit's own repo, may appear anywhere, as in the README's install command.
+("Copyright", "Adapted from", a skill's `author:`) name their authors, and KIT_REPOS, the
+kit's own repo and the public one reply-shape's card renderer loads from, may appear
+anywhere, as in the README's install command.
 
 Files: git's tracked and untracked-but-not-ignored files when the kit is a git checkout,
 otherwise every file under it (Dagger loads only the kit's own folders). Binary files
@@ -35,8 +36,9 @@ PRONOUNS = re.compile(r"\b(?:he|him|his|himself|she|her|hers|herself)\b", re.I)
 ATTRIBUTION = re.compile(r"^\s*(?:[-*>]\s*)?(?:Copyright\b|Adapted from\b|author:)")
 # With the layers that leave the kit: a user's own skills and a team's.
 SKIP_DIRS = ("docs/", "evals/", "maintainer/", "global/", ".git/", "skills/preferences/", "skills/preset/")
-# The kit's own repo, which install commands name.
-KIT_REPO = "olivercederborg/addystack"
+# The kit's own repo, which install commands name, and the public repo jsDelivr serves
+# reply-shape's card renderer from.
+KIT_REPOS = ("olivercederborg/addystack", "olivercederborg/reply-ui")
 # The root files the live install reads until M3, with principles/index.md, the
 # maintainer's render of core/principles.md, and this lint and its tests, which spell out
 # what they ban.
@@ -106,7 +108,8 @@ def main(root: pathlib.Path) -> int:
         for number, line in enumerate(text.split("\n"), 1):
             if ATTRIBUTION.search(line):
                 continue
-            line = line.replace(KIT_REPO, "")
+            for repo in KIT_REPOS:
+                line = line.replace(repo, "")
             found = [m.group(0) for m in NAMES.finditer(line)] + [m.group(0) for m in PRONOUNS.finditer(line)]
             if found:
                 problems.append(f"{path}:{number}: {', '.join(dict.fromkeys(found))}")

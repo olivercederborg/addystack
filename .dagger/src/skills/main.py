@@ -35,6 +35,9 @@ SKILL_SUITES = {
     "skills/primitive/review-loop": ["skills/primitive/review-loop/references/review-lenses.md"],
     # github.sh in shared/scripts runs the tool's hooks/verdicts.py, as it has no copy beside it.
     "shared": [f"{TOOL}/hooks/verdicts.py", f"{TOOL}/hooks/evidence.py"],
+    # The html_render hook tests run the kit's wrapper, which finds reply-shape beside it,
+    # and check that reply-shape's docs name the pinned renderer URL.
+    "skills/optional/reply-shape": [f"{TOOL}/hooks/reply-card.py", "skills/optional/reply-shape/**/*.md"],
     "skills/primitive/show-me-your-work": [],
     "skills/primitive/verify-work": [],
 }
@@ -287,6 +290,12 @@ class Skills:
     async def review_loop_tests(self, kit: skill_source("skills/primitive/review-loop")) -> None:
         """skills/primitive/review-loop/scripts/test_*.py"""
         await skill_tests(kit, "skills/primitive/review-loop")
+
+    @function
+    @check
+    async def reply_shape_tests(self, kit: skill_source("skills/optional/reply-shape")) -> None:
+        """skills/optional/reply-shape/scripts/test_*.py"""
+        await skill_tests(kit, "skills/optional/reply-shape")
 
     @function
     @check
