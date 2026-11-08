@@ -33,6 +33,12 @@ class CheckLinks(unittest.TestCase):
         result = self.run_check()
         self.assertEqual(result.returncode, 0, result.stdout)
 
+    def test_a_heading_with_code_keeps_the_code_in_its_anchor(self):
+        self.write("skills/a/x/SKILL.md", "See [file](references/notes.md#the-verdictspy-file).\n")
+        self.write("skills/a/x/references/notes.md", "# Notes\n\n## The `verdicts.py` file\n")
+        result = self.run_check()
+        self.assertEqual(result.returncode, 0, result.stdout)
+
     def test_names_a_missing_file_and_a_missing_heading(self):
         self.write("skills/a/x/SKILL.md", "See [gone](references/gone.md) and [part](references/notes.md#nope).\n")
         self.write("skills/a/x/references/notes.md", "# Notes\n")

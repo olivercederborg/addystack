@@ -57,8 +57,9 @@ def copy_sources():
     return sources
 
 
-def prose(text):
-    """The text's lines outside fenced code blocks, with code spans blanked."""
+def prose(text, spans=False):
+    """The text's lines outside fenced code blocks, with code spans blanked, or with spans
+    kept as their text, as GitHub reads a heading for its anchor."""
     lines, fence = [], None
     for line in text.splitlines():
         match = FENCE.match(line)
@@ -72,7 +73,7 @@ def prose(text):
             fence = match.group(1)
             lines.append("")
             continue
-        lines.append(re.sub(r"(`+)(?:(?!\1).)+?\1", "", line))
+        lines.append(re.sub(r"(`+)((?:(?!\1).)+?)\1", r"\2" if spans else "", line))
     return lines
 
 
@@ -80,7 +81,7 @@ def anchors(path):
     """GitHub's anchors for path's headings: lowercased, punctuation dropped, spaces to
     hyphens, and a -1, -2 suffix on repeats."""
     seen, found = {}, set()
-    for line in prose(path.read_text()):
+    for line in prose(path.read_text(), spans=True):
         match = HEADING.match(line)
         if not match:
             continue
