@@ -12,8 +12,9 @@ on the user's word.
 In the turn the user asks:
 
 1. **Name** it with a short slug, such as `bug-reports`. When Listening already has a
-   live `Duty <name>` line, this request changes that duty: delete its scheduled task
-   first, then go on, keeping its `last` time in step 3 unless the source changed.
+   live `Duty <name>` line, this request changes that duty: delete its scheduled task,
+   `task_cancel` a probe still running on its row and set the row's `taskId` to none,
+   then go on, keeping its `last` time in step 3 unless the source changed.
 2. **Schedule** it: a `schedule_task` bound to this thread at the user's cadence, whose
    prompt names `project.md`'s path to read first and says `Duty <name> tick`.
 3. **Write its line** under Listening with the task id `schedule_task` returned:
@@ -38,8 +39,9 @@ Listening holds its `Duty <name>` line with a `last` time.
    - what counts as new: a finding the window holds that isn't in
      `duties/<name>.md` in the project folder, a Workers row, or a Follow-up, with
      `project.md`'s absolute path to read;
-   - that it reads only, and returns each finding with a stable identity, such as an
-     issue id or an error fingerprint, its evidence, and a proposed proof;
+   - that it reads only, and returns each finding with a stable identity qualified by
+     its source, such as `prod:<error fingerprint>`, its evidence, and a proposed
+     proof, and, for an end condition, whether it holds and the evidence;
    - `standing-rules.md` and `duties/<name>.md`, pasted in full, a missing history
      being empty.
 
