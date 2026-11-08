@@ -67,8 +67,8 @@ host_suites() {
   if $hooks_staged; then dirs+=("$root"/skills/primitive/addystack/hooks); fi
   run_suites "${dirs[@]}"
   if [ "$suites_ran" = 0 ]; then
-    echo "pre-commit: no host test suite ran, since no folder in host_suites has a test_*.py;" \
-         "fix its folder list in .githooks/pre-commit" >&2
+    echo "pre-commit: no host test suite ran, since none of these has a test_*.py:" \
+         "${dirs[*]#"$root"/}; fix host_suites' folder list in .githooks/pre-commit" >&2
     exit 1
   fi
 }

@@ -202,6 +202,8 @@ class DaggerOrHost(unittest.TestCase):
         run, _ = self.commit(dagger=False)
         self.assertEqual(run.returncode, 1)
         self.assertIn("pre-commit: no host test suite ran", run.stderr)
+        self.assertIn("skills/primitive/*/scripts", run.stderr)
+        self.assertIn(" scripts;", run.stderr)
         self.assertFalse(self.ran.exists())
 
 
