@@ -234,20 +234,25 @@ def _goal(lines: list[str], body: list[str]) -> None:
     lines[start_at + 1:end] = ["", *body, *follow_ups, ""]
 
 
-def _drop_final(lines: list[str]) -> None:
-    """Drops Workers rows whose State is FINAL; a row it can't read stays."""
+def _drop_final(lines: list[str]) -> list[str]:
+    """Drops Workers rows whose State is FINAL. A row whose cells don't match the header
+    stays, since its State is a guess, and its Worker cell is returned."""
     if "## Workers" not in lines:
-        return
+        return []
     start_at, end = _section(lines, "Workers")
     table = [i for i in range(start_at + 1, end) if lines[i].startswith("|")]
     header = _cells(lines[table[0]]) if table else []
     if len(table) < 2 or COLUMNS["state"] not in header:
-        return
+        return []
     state = header.index(COLUMNS["state"])
+    unread = []
     for i in reversed(table[2:]):
         cells = _cells(lines[i])
-        if len(cells) == len(header) and FINAL.match(cells[state]):
+        if len(cells) != len(header):
+            unread.insert(0, cells[0] if cells else lines[i])
+        elif FINAL.match(cells[state]):
             del lines[i]
+    return unread
 
 
 def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
@@ -331,6 +336,9 @@ def main(argv: list[str]) -> int:
             archive = _archive(args.dir, snapshot, args.slug)
             phase(lines, archive, args.result, **ends)
             _write(path, "\n".join(lines))
+            if unread := _drop_final(lines):  # phase dropped the rest, so this only names them
+                print(f"kept {len(unread)} Workers rows whose cells don't match the header, so their"
+                      f" State is unread: {', '.join(unread)}. Fix or delete each by hand.", file=sys.stderr)
             print(args.dir / archive)
             print(path)
             return 0

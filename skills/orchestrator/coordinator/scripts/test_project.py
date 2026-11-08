@@ -210,7 +210,9 @@ Proofs:
                 .replace("| done | — | report written |", "| done | report written |")
                 .replace("## Learnings", "## Queue (cards for the user)\n\n- c1\n\n## Learnings"))
         (self.dir / "project.md").write_text(real)
-        self.project("phase", "audit", "--result", "five reports", "--park", "p")
+        ended = self.project("phase", "audit", "--result", "five reports", "--park", "p")
+        self.assertIn("kept 1 Workers rows whose cells don't match the header, so their State is unread:"
+                      " review (pilot).", ended.stderr)
         self.assertIn(f"## Goal\n\nParked {TODAY}: p\nFollow-ups:\n- lockfile risk\n  wraps here\n\n- stray rows\n\n"
                       "## Phases\n", self.text())
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
