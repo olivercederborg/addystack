@@ -9,6 +9,12 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L]
                                     set a Workers row's columns, adding the row if it's new
   project.py DIR listen KEY VALUE   set `- KEY: VALUE` under Listening
+  project.py DIR phase SLUG --result R (--goal G --proof P | --park REASON)
+                                    end the running phase: save project.md to
+                                    phases/<NN>-SLUG.md, add its line under Phases, reset
+                                    the phase's sections, then start the next or park
+  project.py DIR start --goal G --proof P
+                                    start the next phase on a parked project
 
 TEXT or VALUE `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -148,6 +154,34 @@ def listen(lines: list[str], key: str, value: str) -> None:
         lines[found[0]] = line
     else:
         _insert(lines, "Listening", line)
+
+
+FINAL = re.compile(r"(done|dropped)\b|(replaced by|absorbed into) \S")  # the end states in STATE
+SLUG = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*\Z")
+PARKED = "Parked "  # a parked Goal's first line: `Parked <date>: <reason>`
+
+
+def phase(lines: list[str], archive: str, result: str, *,
+          goal: str | None = None, proof: str | None = None, park: str | None = None) -> None:
+    """Ends the running phase whose snapshot is at `archive` (`phases/<NN>-<slug>.md`): adds
+    `- <date> · <NN-slug>: RESULT · ARCHIVE` under Phases, creating it after Goal; empties
+    Decisions and Learnings; removes each Result section; drops Workers rows in a FINAL
+    state; then writes Goal as GOAL and `Proof: PROOF`, or as `Parked <date>: PARK`, keeping
+    its Follow-ups. Refuses a parked project, and needs goal and proof, or park alone."""
+    raise NotImplementedError
+
+
+def start(lines: list[str], goal: str, proof: str) -> None:
+    """Starts the next phase on a parked project: Goal becomes GOAL and `Proof: PROOF`,
+    keeping its Follow-ups. Refuses a project whose phase is running."""
+    raise NotImplementedError
+
+
+def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
+    """Writes `snapshot` to `phases/<NN>-<slug>.md` under `folder`, NN one past the highest
+    there, from 01, never overwriting. A file there that already holds these bytes, left
+    by a run whose project.md write failed, is reused. Returns the path from `folder`."""
+    raise NotImplementedError
 
 
 def _write(path: Path, text: str) -> None:
