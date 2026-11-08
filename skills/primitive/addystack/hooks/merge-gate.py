@@ -4,8 +4,9 @@ command would merge, and deny it unless
 - the PR's own checks ran and passed, or, in a repo with no workflows in
   `.github/workflows`, or whose workflows' path and branch filters skip the PR
   (workflow_triggers.py), the user's latest prompt asks for the merge (`merge on go` in
-  shared/workflow.md), unless the checkout's trust is `gate` (resolved.py), where the
-  fresh Done below is enough,
+  shared/workflow.md); a checkout whose trust is `gate` (resolved.py) needs no go when no
+  workflow exists at the PR's base, head, or default branch, since the fresh Done below
+  is enough,
 - the repo's default branch is green: its latest checks passed, or it has none,
 - a fresh work-verifier's latest verdict for that exact diff is Done (verdicts.py),
 - the PR's base branch gained no commits since the PR branched that touch files the PR
@@ -267,19 +268,27 @@ try:
     # An unresolved policy can still read gate, when every rule is gate, so it never counts.
     policy = resolved.policy(cwd)
     gate = policy.trust == "gate" and "unresolved" not in policy.matched
+    default = data["defaultBranchRef"]
     # Diff locally, as the recorder does: `gh pr diff` shortens blob ids its own way and fails
     # past 300 files or 20,000 lines.
     pulls = [data[f"p{n}"] for n in numbers]
-    # Each base into its remote-tracking ref, even where the clone's fetch refspec doesn't map it.
+    # Each base into its remote-tracking ref, even where the clone's fetch refspec doesn't map it,
+    # and in a gate repo the default branch too, for no_ci.
+    branches = {p["baseRefName"] for p in pulls} | ({default["name"]} if gate else set())
     run("git", "fetch", "--quiet", "--no-tags", "origin",
-        *{f"+refs/heads/{p['baseRefName']}:refs/remotes/origin/{p['baseRefName']}" for p in pulls},
+        *(f"+refs/heads/{branch}:refs/remotes/origin/{branch}" for branch in branches),
         *(f"pull/{n}/head" for n in numbers))
     done = {n: verdicts.find_done(cwd, verdicts.diff(cwd, p["baseRefOid"], p["headRefOid"]))
             for n, p in zip(numbers, pulls)}
+    workflows = lambda oid: bool(run("git", "ls-tree", "-r", "--name-only", oid, "--", ".github/workflows").strip())
     # No checks in a repo with workflows means CI hasn't registered on the head yet, unless
     # every workflow's path and branch filters skip the PR.
-    has_ci = {n: bool(run("git", "ls-tree", "-r", "--name-only", p["baseRefOid"], "--", ".github/workflows").strip())
-              for n, p in zip(numbers, pulls)}
+    has_ci = {n: workflows(p["baseRefOid"]) for n, p in zip(numbers, pulls)}
+    # A gate repo skips the go only where no workflow can run on the PR: none at its base, its
+    # head, or the default branch, whose pull_request_target workflows run on every PR. A PR
+    # its workflows skip still needs the go, since workflow_triggers reads no push triggers.
+    no_ci = {n: gate and not has_ci[n] and not workflows(p["headRefOid"]) and not workflows(default["target"]["oid"])
+             for n, p in zip(numbers, pulls)}
     skipped = {n: has_ci[n] and ci_skips(n, p, data["defaultBranchRef"]) for n, p in zip(numbers, pulls)}
     overlap = {n: base_overlap(p) for n, p in zip(numbers, pulls)}
 except Exception as error:
@@ -303,7 +312,7 @@ for n in numbers:
     state = (commit.get("statusCheckRollup") or {}).get("state")
     if state is None and has_ci[n] and not skipped[n]:
         reasons.append(f"#{n} has no checks yet at {commit['oid'][:8]}: wait for CI to register")
-    elif state is None and not gate:  # a gate repo needs only the Done checked below
+    elif state is None and not no_ci[n]:  # a gate repo with no CI needs only the Done checked below
         if go is None:
             go, note = user_go(numbers[-1], owner, name)
         if not go:

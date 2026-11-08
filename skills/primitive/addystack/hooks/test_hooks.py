@@ -2461,11 +2461,52 @@ class MergeGate(unittest.TestCase):
         for command in ["gh pr merge 12", "gh stack merge --yes"]:
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command))
-        self.workflow(WorkflowTriggers.CI_YML)  # a PR its workflows skip has no checks either
+
+    def test_a_gate_repo_asks_for_the_go_where_a_workflow_could_run(self):
+        # Review round 1: a workflow the PR adds, or a pull_request_target one on the default
+        # branch only, runs on the PR; and one its filters skip may still run on push.
+        self.trust("gate")
+        release = self.main  # a branch with no workflows
+        self.git("push", "-q", "origin", f"{release}:refs/heads/release")
+        self.pr(14, {".github/workflows/ci.yml": WorkflowTriggers.CI_YML})
+        self.scenario(prs={14: None})
+        self.verify(14)
+        self.assertIn("#14 has no checks: this repo runs no CI on PRs", self.reason("gh pr merge 14"))
+        self.workflow(WorkflowTriggers.CI_YML)
         self.pr(30, ["docs/x.md"])
         self.scenario(prs={30: None})
         self.verify(30)
-        self.assertIsNone(self.reason("gh pr merge 30"))
+        self.assertIn("#30 has no checks: this repo's CI skips it", self.reason("gh pr merge 30"))
+        self.assertIsNone(self.reason("gh pr merge 30", said=("merge it",)))
+        self.workflow("on: pull_request_target\n", "target.yml")
+        self.main, self.base = release, "release"  # PRs into release, while main has workflows
+        self.pr(15)
+        self.scenario(prs={15: None})
+        self.verify(15)
+        self.assertIn("#15 has no checks: this repo runs no CI on PRs", self.reason("gh pr merge 15"))
+
+    def test_a_gate_policy_that_didnt_resolve_asks_for_the_go(self):
+        # Every rule is gate, so the strictest value, which an unreadable repo file gets, is too.
+        self.trust("gate")
+        self.scenario(prs={12: None})
+        self.verify(12)
+        pathlib.Path(self.repo, ".agents").mkdir()
+        pathlib.Path(self.repo, ".agents", "addystack.jsonc").write_text('{ "trust": "draft",')
+        self.assertIn("asks for the merge", self.reason("gh pr merge 12"))
+
+    def test_reads_the_checkout_from_every_cd_in_order(self):
+        # `cd <draft worktree> && cd sub` merges from the draft worktree's sub, not the start's.
+        self.trust("gate")
+        self.scenario(prs={12: None})
+        self.verify(12)
+        draft = os.path.join(self.dir, "draft")
+        subprocess.run(["git", "worktree", "add", "-q", "--detach", draft], cwd=self.repo, env=self.env, check=True)
+        pathlib.Path(draft, ".agents").mkdir()
+        pathlib.Path(draft, ".agents", "addystack.jsonc").write_text('{ "trust": "draft" }')
+        for root in (self.repo, draft):
+            os.makedirs(os.path.join(root, "sub"))
+        self.assertIsNone(self.reason("cd sub && gh pr merge 12"))
+        self.assertIn("asks for the merge", self.reason(f"cd {draft} && cd sub && gh pr merge 12"))
 
     def test_a_gate_repo_still_needs_a_fresh_done_and_passing_checks(self):
         self.trust("gate")
@@ -2491,31 +2532,6 @@ class MergeGate(unittest.TestCase):
                 self.assertIsNone(self.reason("gh pr merge 12", said=("merge it",)))
         self.trust("gate", "/origin$")  # this checkout's origin
         self.assertIsNone(self.reason("gh pr merge 12"))
-
-    def test_reads_the_checkout_from_every_cd_in_order(self):
-        # `cd <draft worktree> && cd sub` merges from the draft worktree's sub, not the start's.
-        self.trust("gate")
-        self.scenario(prs={12: None})
-        self.verify(12)
-        draft = os.path.join(self.dir, "draft")
-        subprocess.run(["git", "worktree", "add", "-q", "--detach", draft], cwd=self.repo, env=self.env, check=True)
-        pathlib.Path(draft, ".agents").mkdir()
-        pathlib.Path(draft, ".agents", "addystack.jsonc").write_text('{ "trust": "draft" }')
-        for root in (self.repo, draft):
-            os.makedirs(os.path.join(root, "sub"))
-        self.assertIsNone(self.reason("cd sub && gh pr merge 12"))
-        self.assertIn("asks for the merge", self.reason(f"cd {draft} && cd sub && gh pr merge 12"))
-
-
-    def test_a_gate_policy_that_didnt_resolve_asks_for_the_go(self):
-        # Every rule is gate, so the strictest value, which an unreadable repo file gets, is too.
-        self.trust("gate")
-        self.scenario(prs={12: None})
-        self.verify(12)
-        pathlib.Path(self.repo, ".agents").mkdir()
-        pathlib.Path(self.repo, ".agents", "addystack.jsonc").write_text('{ "trust": "draft",')
-        self.assertIn("asks for the merge", self.reason("gh pr merge 12"))
-
 
     def test_waits_for_ci_a_pr_its_workflows_run_for_or_cant_be_read(self):
         self.workflow(WorkflowTriggers.CI_YML)
