@@ -21,9 +21,9 @@ python3 ~/.agents/skills/addystack/bin/addystack install
    text you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
    `~/.config/addystack/global.md`. Then it builds and runs `doctor`.
 
-If you install for Claude Code alone, the tool is in `~/.claude/skills/addystack/`
-instead of `~/.agents/skills/addystack/`. Below, `addystack` is short for
-`python3 ~/.agents/skills/addystack/bin/addystack`.
+If you install for Claude Code alone, the tool is in `~/.claude/skills/addystack/` by
+default, so use that path in place of `~/.agents/skills/addystack/` in every command here.
+Below, `addystack` is short for `python3 ~/.agents/skills/addystack/bin/addystack`.
 
 Run `addystack doctor` any time to check the install. It names the fix for each problem.
 In an agent session, `/addystack` does all of this for you.
