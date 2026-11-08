@@ -36,7 +36,7 @@ Sync mode, when the description drifted:
  - I (robin) chose inclusive date bounds after talking to finance.
 ```
 
-- **Review**: the new title and description, above. `a` publishes them.
+- **Review**: the new title and description, above. Approval publishes them.
 
 <details><summary>Checked: the title, 3 sections, and the issue link → 3 stale</summary>
 
@@ -45,12 +45,6 @@ Sync mode, when the description drifted:
 - **3** · Stale · "Change outline" shows the JSON branch → update
 
 </details>
-
----
-
-**Next**
-
-- **`a` → update the title and description** · *recommended*
 ````
 
 ## 1. Pin the PRs
@@ -145,8 +139,8 @@ show the test that fails on the base and passes here, or the command output.
 - **Title**: the outcome in the imperative, under 70 characters.
 - **Describe only.** Code review belongs to `verify-work` and `review-loop`. Put known
   gaps in the `[!WARNING]` callout, and move it above the first line when it holds
-  findings still open at a review cap. When no recent `verify-work` verdict exists, add
-  verify-work to the `Next` options.
+  findings still open at a review cap. When no recent `verify-work` verdict exists, recommend
+  running verify-work.
 - **Decisions**, when the repo asks for them (`decisionsSection` in
   `<kit>/bin/addystack policy --repo <checkout>`, as the router's Plan runs it, or the repo's `docs/agents/pull-requests.md`):
   put the output of `scripts/decisions-table.sh <log> <base>` on the run's decision log
@@ -182,9 +176,10 @@ behavior change in the diff, and `check-body.mjs` passes on the body.
 - **Already approved**: when the user's message already asks to open or push the PR,
   or their instructions grant autonomy for it (**Approval**), that is the approval.
   Publish as a draft, then report the link in a ✅ headline, fold the title and body,
-  and offer the `Next` options mark ready for review, and edit.
-- **Otherwise, show the exact title and body first,** once, below a **Review** note. Approval means publish. `Next` options: submit as draft, submit ready,
-  and edit for a new PR; update and edit in sync mode.
+  and offer marking it ready for review, and editing it.
+- **Otherwise, show the exact title and body first,** once, below a **Review** note, and
+  offer submitting as a draft, submitting ready, and editing for a new PR; updating and
+  editing in sync mode. Approval means publish.
 - **Submit with the stacking tool** the repo uses or the user's rules name (for example
   `gh stack submit --auto`, which opens a draft for every layer without a PR, so the
   approval must cover each one; `--auto` skips the editor, which an agent can't answer).
@@ -198,7 +193,7 @@ behavior change in the diff, and `check-body.mjs` passes on the body.
 - **In a stack**, publish only the PRs the user approved, and keep the stacking tool's
   own stack links instead of writing a second copy.
 
-After publishing, end with the `Next` option address-review.
+After publishing, offer address-review as the next step.
 
 **Done when:** every approved PR shows its approved title and body, and the links are
 shared.

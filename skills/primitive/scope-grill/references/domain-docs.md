@@ -7,7 +7,7 @@ Read from scope-grill when an answer touches the glossary or may need an ADR.
 - **Terms**: when an answer settles a domain term, show it inside that question's fold
   as a one-line addition to `CONTEXT.md`, and write it when the user accepts the round. A term never
   gets its own question. `CONTEXT.md` stays a glossary, with no implementation details.
-- **ADRs**: offer one, as an ADR option in that turn's `Next`, only when a decision passes all
+- **ADRs**: offer one, as an ADR option in that turn, only when a decision passes all
   three tests:
   1. It's hard to undo (the winning option's cost line says so).
   2. It's the result of a real trade-off (a losing option has a "becomes worth it when"

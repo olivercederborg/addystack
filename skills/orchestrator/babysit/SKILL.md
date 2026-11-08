@@ -14,8 +14,8 @@ A watch wake is news, not an order. Each wake runs one pass over the PR or stack
 collect every fix, push once, then reply against the pushed head. The pass ends at
 **maintenance done**, or with each unfinished PR watched while CI runs. A wake that
 changes nothing, such as a Vercel, Graphite, or Linear comment, or a green check while
-a required one still runs, with no person's comment, fix, or watch to start, gets only
-the `running` turn block as its reply, with no ⏳ line.
+a required one still runs, with no person's comment, fix, or watch to start, is a quiet
+watch wake: its reply has no ⏳ line, headline, or status report.
 
 `watch_pull_request` wakes the thread when a check fails, the required checks pass,
 someone else comments or reviews, or the branch starts to conflict. Only comments
@@ -35,7 +35,7 @@ Calls here: address-review's **Fix**, **Decline**, **Defer**, **No change**, plu
 ````markdown
 🟡 **#212 maintained: a retried export publishes again.**
 
-- **Review**: my reply declining @sam's per-retry log, below. `a` posts it.
+- **Review**: my reply declining @sam's per-retry log, below. Approval posts it.
 
 > <sub>`AGENT` {model} · on behalf of **{name}**</sub><br>
 > Leaving this out. The task runner already logs each retry with its attempt number.
@@ -50,12 +50,6 @@ Calls here: address-review's **Fix**, **Decline**, **Defer**, **No change**, plu
 Patch-id changed: verify-work done, review-loop clean.
 
 </details>
-
----
-
-**Next**
-
-- **`a` → post the reply to @sam** · *recommended*
 ````
 
 ## 1. Read the wake
@@ -148,7 +142,7 @@ A draft always gets `mergeable: no (draft; …)`. That `no` doesn't count agains
 only its merge state does. A draft whose `required` says `not run (draft; …)` is done
 without CI once its threads are handled and nothing conflicts: its checks line names
 `⚠️ CI not run (draft)`, it's unwatched as at **Done**, since no CI would wake the
-watch, and `Next` offers marking it ready, which starts CI and then needs a watch.
+watch, and the report offers marking it ready, which starts CI and then needs a watch.
 
 - **Not done yet**, such as CI still running after the push: before ending the turn,
   call `watch_pull_request` on each unfinished PR in scope that this thread isn't

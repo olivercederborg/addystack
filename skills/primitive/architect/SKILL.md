@@ -138,16 +138,11 @@ export declare function exportRows(range: DateRange): Effect<Row[], ExportError>
 `export.ts:12` · verified by grounding all three sketches · source: Codex sketched 2, Opus sketched 3
 
 </details>
-
----
-
-**Next**
-
-- **`a` → approve 1 and commit its contract** · *recommended*
-- `b` → approve 3, the smallest: the summary reuses the export's rows
 ````
 
-`Next` offers the recommended shape and the smallest other one. The user can pick any
+Offer the recommended shape and the smallest other one, and wait for the user's pick;
+picking a shape approves it and commits its contract.
+The user can pick any
 shape, or a merge of two, in their own words. Iterate on the user's edits by showing
 only what changed.
 
@@ -177,9 +172,9 @@ before → after line in the plan.
 ## 5. Hand off
 
 The headline names the contract commit, the shape is the approved typed call stack, and
-any open question is a **Decide** note. `Next` offers the next step the router picks
-against the contract (or `build` when the user wants to go step by step), and changing
-the shape. With autonomy, return to the caller instead of offering `Next`.
+any open question is a **Decide** note. Then stop: the user goes on with the next step
+the router picks against the contract (or `build` when they want to go step by step),
+or changes the shape. With autonomy, return to the caller instead of stopping.
 
 **Done when:** the user has the commit and the hand-off.
 

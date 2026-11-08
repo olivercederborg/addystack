@@ -27,7 +27,7 @@ Stop at each stop the user's instructions name, such as the router's **Stops**. 
 none named, stop before anything irreversible (a merge beyond the repo's trust value, a
 production write, a shared migration, a message to a person) and before a step that
 needs a credential the session can't create. When the stop is a credential that needs
-clicks in a web console, such as Apple Developer, `Next` offers handing those steps to a
+clicks in a web console, such as Apple Developer, offer to hand those steps to a
 computer-use agent.
 
 Unless the user's instructions grant autonomy for these three, also stop when the next

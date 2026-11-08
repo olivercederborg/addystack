@@ -187,21 +187,12 @@ queue and the worker's thread:
 **Pick**: yes, keep it one release with a deprecation header.
 
 **Source**: v1's access log, 60 calls a night from the two scripts.
-
----
-
-**Next**
-
-- **`a` → yes, keep v1 for one release** · *recommended*
-- `b` → no, remove v1 now
-
-<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"keep the v1 export endpoint"}],"options":[{"key":"a","class":"decision","text":"yes, keep v1 for one release"},{"key":"b","class":"decision","text":"no, remove v1 now"}]} -->
 ````
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words. In the same reply, show the next card with no recap. When the queue is empty,
-reply with a one-line status: a ⏳ line in turn state `running` while any worker runs,
-else `done`.
+reply with a one-line status: a ⏳ line while any worker runs, else
+a **Done** line.
 
 **Done when:** every answer is sent and recorded, and the reply shows the next card or
 the one-line status.

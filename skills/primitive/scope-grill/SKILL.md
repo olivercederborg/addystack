@@ -56,7 +56,8 @@ Not in scope, so a later run picks it up.
   prerequisites are settled. Recompute it after each answer.
 - **Rounds** have one to three open frontier questions, highest impact first. Ask only
   decisions that need the user's input; don't add a question to fill the round. Each has
-  a recommended option, and `a`, or `a, 2b`, can settle the round.
+  a recommended option, and one answer can settle the round: every pick, or every pick
+  but the ones it overrides by number.
 - **Facts are yours; decisions are the user's.** Look up what the code, config, or
   tools can answer, using sub-agents in parallel if needed. While a lookup runs, only
   the questions that depend on it wait.
@@ -90,9 +91,9 @@ name, such as `+4 more in the fold`:
    a trail on that line, such as `~4 → ~6 files` or `0 → 1 → 0 migrations`. Start a
    trail only from a known count; otherwise write `1 proposed migration`.
 4. **Pick**: number each question and its recommended answer and impact. The fold holds
-   context, options, costs, sources, and the **For architect** list, or `none`. End with **Next**: `a` takes every pick; `b`
-   names an alternative, and `a, 2b` overrides question 2.
-   A user's `confirm` takes the offered picks as `a` does, unless they say otherwise.
+   context, options, costs, sources, and the **For architect** list, or `none`. Then wait: the user takes every pick, names an
+   alternative, or overrides a question by its number.
+   A user's `confirm` takes the offered picks, unless they say otherwise.
 
 Example, when a table is suggested but not agreed:
 
@@ -123,13 +124,6 @@ Not checked: whether old exports keep their account; no export history is availa
 …
 
 </details>
-
----
-
-**Next**
-
-- **`a` → keep serviceData, no migration** · *recommended*
-- `b` → add the table and migration
 ````
 
 Add a decision diagram only when the choice hinges on a fact that's easier to see as a
@@ -226,15 +220,16 @@ When the cross-review is settled, finish with:
   kept, or `clean`.
 
 Use the same round format at plan-ready. List **My additions**: every addition
-agreed by default, not picked by the user, including docs, tests and migrations. `b` drops them; `a` accepts them and saves the plan.
+agreed by default, not picked by the user, including docs, tests and migrations. The user's approval accepts them and saves the
+plan, or they drop them.
 The fold holds the exact text to save, copied verbatim from any draft the session
 already wrote, with every artifact that draft carries, such as an email. Its target is
 the repo's issue tracker (one issue per
 milestone, a sub-issue per PR), or a Markdown file in the repo's plans folder when it
 has no tracker. The saved plan holds the goal, bar, decisions, checks, For architect,
 Not in scope and milestone map. Write nothing before approval. If saving issues wasn't
-requested this session, make `a` continue without saving and `b` drop the additions;
-ask for issue creation separately.
+requested this session, approval continues without saving, and dropping the additions
+stays open; ask for issue creation separately.
 
 After approval, continue to `architect` when decisions add or reshape a module's
 interface or For architect isn't empty; otherwise continue to the next step the router
