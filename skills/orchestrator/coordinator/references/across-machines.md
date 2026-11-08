@@ -6,7 +6,7 @@
   macOS-only checks); otherwise a machine whose `t3_project_list` has the repo and
   whose agent cap fits the units' memory, preferring one other than the laptop the
   user works on.
-- **Starting**: on the wrong machine, offer starting it there as `a` before Start. On
+- **Starting**: on the wrong machine, recommend starting it there before Start. On
   that pick, `t3_thread_launch` there with its `environmentId` and `projectId`, and a
   `message` that runs this skill with all this chat agreed (goal, plan, decisions,
   rules) and the `Mode:` line; reply with its link and stop. Otherwise start here. The
