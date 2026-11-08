@@ -213,7 +213,10 @@ class ClaudeHome(Workspace):
     def test_claude_config_dir_trimmed_and_expanded(self):
         self.assertEqual(self.home(CLAUDE_CONFIG_DIR="/opt/claude"), pathlib.Path("/opt/claude"))
         self.assertEqual(self.home(CLAUDE_CONFIG_DIR=" /opt/claude\n"), pathlib.Path("/opt/claude"))
-        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="~/claude-work"), self.dir / "claude-work")
+        # Like the skills CLI: a `~` stays literal, and a relative path is from the working
+        # directory.
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="~/claude-work"), pathlib.Path.cwd() / "~/claude-work")
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="cc"), pathlib.Path.cwd() / "cc")
 
     def test_unset_or_blank_is_dot_claude_in_home(self):
         self.assertEqual(self.home(), self.dir / ".claude")
