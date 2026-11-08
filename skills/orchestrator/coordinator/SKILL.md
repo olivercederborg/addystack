@@ -19,8 +19,8 @@ The project folder, `~/.local/state/orchestrate/<project>/`, holds `project.md` 
 [project](references/project.md)) and `standing-rules.md`, which follows orchestrate's
 Standing rules convention. You are their only writer. When the user overrides a standing
 rule, rewrite that rule's line in place with their words, so the file holds one current
-rule. **Read `project.md` first** on
-every wake and after any compaction, and write each change to it before the turn ends.
+rule. **Read both files first** on every wake and after any compaction, and write each
+change to `project.md` before the turn ends.
 
 ## 1. Start or resume
 
