@@ -24,7 +24,7 @@ answer. Bring them only preference and product calls.
 - A connected iPhone: `xcrun devicectl device install app` and `… device process launch`.
 
 **Boundary:** credentials, payment, physical steps, and the stops in
-[the router](../router.md#stops) still go to the user.
+[the router](../core/router.md#stops) still go to the user.
 
 **Tell:** an option or **Do** item that starts with "you" and has no `tried:` line
 naming what you tried, or a claim about customers or production that cites only code.
