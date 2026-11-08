@@ -4626,8 +4626,9 @@ class BackgroundTurnEnd(unittest.TestCase):
             else:
                 name, tool_input, output, extra = {
                     "bg": lambda: (step[1], step[2], step[3], {}),
-                    "stopped": lambda: ("TaskStop", {"task_id": step[1]},
-                                        f"Successfully stopped task: {step[1]} (git commit)", {}),
+                    "stopped": lambda: ("TaskStop", {"task_id": step[1]}, json.dumps(
+                        {"message": f"Successfully stopped task: {step[1]} (git commit)", "task_id": step[1],
+                         "task_type": "local_bash"}), {}),
                     "fork": lambda: ("Skill", {"skill": step[1]}, f'Skill "{step[1]}" completed (forked execution).',
                                      {"toolUseResult": {"status": "forked", "agentId": step[2], "result": step[3]}}),
                 }[step[0]]()

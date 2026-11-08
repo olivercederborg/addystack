@@ -146,7 +146,8 @@ def unwatched_push(calls, last_turn):
 BACKGROUND = re.compile(r"\ACommand running in background with ID: (\w+)")
 ASYNC_AGENT = re.compile(r"\AAsync agent launched successfully\..*?\bagentId: (\w+)", re.S)
 NOTICE = re.compile(r"<task-notification>\s*<task-id>(\w+)</task-id>")
-STOPPED = re.compile(r"\ASuccessfully stopped task: (\w+)")
+# TaskStop answers in JSON, as {"message": "Successfully stopped task: <id> (…)", "task_id": …}.
+STOPPED = re.compile(r"Successfully stopped task: (\w+)")
 # A command that serves, such as Metro, a dev preview, or a static server, is meant to outlive
 # the turn: in the 7 days to Nov 8, 2026, every such task among the replay's fires.
 SERVES = re.compile(r"--port\b|\bhttp\.server\b|\bexpo\s+start\b|\b(?:run(?:\s+--cwd\s+\S+)?|lakebed(?:@\S+)?|next|vite)\s+dev\b")
@@ -215,7 +216,7 @@ def background_tasks(path, this_turn):
                 output = part.get("content")
                 output = output if isinstance(output, str) else "\n".join(
                     text(item.get("text")) for item in output if isinstance(item, dict)) if isinstance(output, list) else ""
-                if stopped := STOPPED.match(output) if name in ("TaskStop", "KillShell", "KillBash") else None:
+                if stopped := STOPPED.search(output) if name in ("TaskStop", "KillShell", "KillBash") else None:
                     finished.add(stopped.group(1))
                 elif (launched := BACKGROUND.match(output) if name == "background" else ASYNC_AGENT.match(output)
                       if name in ("Agent", "Task") else None):
