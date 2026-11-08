@@ -163,10 +163,13 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
     # and left out of a Done would hide its survivors. Only a Done reads them, so a Not done
     # still revokes one when the folder won't read.
-    saved = _store(cwd).parent / "evidence"
+    saved, left = _store(cwd).parent / "evidence", []
     try:
-        left = [found for folder in (saved.iterdir() if verdict == "done" and saved.is_dir() else [])
-                if len(folder.name) >= 7 and head.startswith(folder.name)
+        try:
+            folders = list(saved.iterdir()) if verdict == "done" else []
+        except FileNotFoundError:  # no evidence saved yet; any other error could hide a log
+            folders = []
+        left = [found for folder in folders if len(folder.name) >= 7 and head.startswith(folder.name)
                 for found in kinds.left_out_mutants(folder, evidence.get("mutants", []))]
     except OSError as error:
         raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")

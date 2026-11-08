@@ -351,15 +351,29 @@ class Recording(Repo):
         idiom = [self.media("idiom.txt", "none: a fixture\n")]
         hidden = pathlib.Path(self.saved(head, "nested/mutants.log", "survived: behind a locked folder\n")).parent
         evidence_root = hidden.parent.parent
-        for locked in (hidden, evidence_root):
-            with self.subTest(locked=locked.name):
-                locked.chmod(0)
+        # 0 hides names too; 0o644 lists them but can't search, and is_dir() reads that as absent.
+        for locked, mode in [(hidden, 0), (evidence_root, 0), (hidden, 0o644), (hidden.parent, 0o644),
+                             (evidence_root, 0o644)]:
+            with self.subTest(locked=locked.name, mode=oct(mode)):
+                locked.chmod(mode)
                 self.addCleanup(locked.chmod, 0o755)
                 with self.assertRaisesRegex(verdicts.VerdictError, "Done reads every mutant log.*Permission denied"):
                     self.record(head, evidence={"idiom": idiom})
                 self.assertEqual(self.record(head, "not-done", evidence={"idiom": idiom}, findings=["x"]).verdict,
                                  "not-done")
                 locked.chmod(0o755)
+
+    def test_a_mutant_log_behind_a_linked_folder_counts(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        elsewhere = self.dir / "runs"
+        elsewhere.mkdir()
+        (elsewhere / "mutants.log").write_text("survived: hidden regression\n")
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder / "run").symlink_to(elsewhere)
+        (elsewhere / "loop").symlink_to(folder)  # a cycle back to the head's folder
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants\.log in this head's evidence folder.*hidden regression"):
+            self.record(head, evidence={"idiom": idiom})
 
     def test_bad_evidence_is_refused_for_every_verdict(self):
         head = self.change({"README.md": "# app\n\nMore.\n"})

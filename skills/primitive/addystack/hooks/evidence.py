@@ -280,15 +280,18 @@ def left_out_mutants(folder: Path, refs: list[str]) -> list[tuple[str, list[str]
     says mutant or mutation and that holds a survivor or 3 results (`killed:` or `survived:`
     lines), when refs, a Done's mutants evidence, don't name it. Fewer, all killed, hide
     nothing, and `check` wouldn't take them. verify-108-1 saved a log with three survivors
-    there on Nov 8, 2026, and recorded Done without it. Raises OSError for a file or folder
-    it can't read, since that could hide a survivor too."""
+    there on Nov 8, 2026, and recorded Done without it. It follows linked folders, each once,
+    and raises OSError for a file or folder it can't read, since that could hide a survivor
+    too; `is_dir()` and `is_file()` would read one as absent."""
     def fail(error):
         raise error
     given = {Path(ref).resolve() for ref in refs if not ref.startswith(NOT_RUN)}
-    found = []
-    for root, _, names in sorted(os.walk(folder, onerror=fail)) if folder.is_dir() else []:
+    found, walked = [], set()
+    for root, folders, names in os.walk(folder, onerror=fail, followlinks=True):
+        walked.add(os.path.realpath(root))
+        folders[:] = sorted(name for name in folders if os.path.realpath(os.path.join(root, name)) not in walked)
         for path in (Path(root, name) for name in sorted(names) if MUTANT_LOG.search(name)):
-            if not path.is_file() or path.resolve() in given:
+            if path.resolve() in given:
                 continue
             results = MUTANT_LINE.findall(path.read_text(errors="replace"))
             if any(outcome == "survived" for outcome, _ in results) or len(results) >= 3:
