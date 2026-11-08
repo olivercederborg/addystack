@@ -45,10 +45,16 @@ Without push rights, go through a fork:
 
 1. In the clone, `gh repo fork --remote --remote-name fork` forks the repo and adds the
    fork as the `fork` remote, leaving `origin` on the kit's repo.
-2. `git push -u fork <branch>`, even when the policy says gh stack: a stack's later PRs
-   need their base branches in the kit's repo, so the fork carries one branch.
+2. `git push -u fork <branch>`, one branch rather than a stack: a stack's later PRs
+   need their base branches in the kit's repo.
 3. `gh pr create --draft --repo <repo> --head <fork owner>:<branch>`, where the fork
    owner is `gh api user --jq .login`.
+
+When the clone's policy has `pushVia: gh-stack`, these steps are the user's. The kit's
+gh-stack-only hook denies an agent's `git push` and `gh pr create` whenever the working
+folder, a `cd` target, or a `git -C` path has that policy. Give the user the three
+commands, filled in, to run in the clone, and stop, saying the hook blocks them for
+agents.
 
 **Done when:** the draft PR's URL is in the reply, or the reply says what's waiting on
 the user.
