@@ -130,7 +130,7 @@ where: { bookedAt: { gte: from, lte: to } }, // ← every company's rows
 
 - **1** · an export returns every company's rows · `handler.ts:18` → blocking
 - **2** · CSV header order may be a contract · `csv.ts:7` → question
-- **Review**: the two comments below. `a` posts them as one review.
+- **Review**: the two comments below. Approval posts them as one review.
 
 **1** · `exports/handler.ts:18`
 
@@ -151,19 +151,13 @@ where: { bookedAt: { gte: from, lte: to } }, // ← every company's rows
 - ✅ CI · ✅ idioms (the repo's lenses, grounding, taste) · ✅ grounding: re-ran 1's query with two companies · Codex pass: 1 finding, same as 1
 
 </details>
-
----
-
-**Next**
-
-- **`a` → post 1 as blocking and 2 as a question, without approving** · *recommended*
 ````
 When no finding holds the approval, give the approval verdict as a ✅ headline. While
-any kept finding holds it, every `Next` option leaves the PR unapproved: neither `a` nor
-`b` offers approval, including by dropping a finding. The user can still ask to drop a
-finding in their own words.
+any kept finding holds it, nothing you offer approves the PR, including by dropping a
+finding: the recommended step posts the drafts without approving. The user can still
+ask to drop a finding in their own words.
 
-Each finding carries its recommended call, and option `a` takes every one and posts
+Each finding carries its recommended call, and one answer takes every one and posts
 the drafts. The user can also answer by number, as in "post 1 and 2". When challenged,
 re-check, say what changed, and downgrade or drop the finding if the evidence calls for
 it.
@@ -178,7 +172,7 @@ Draft every finding that will be posted, in the same turn as step 3, following t
 will read on GitHub, and give its target: `path:line`, or `path:start-end` for a
 range, for a new inline comment on lines the PR diff shows, or the thread link for a
 reply. Show drafts waiting for approval below a **Review** note, and in every later reply
-whose `a` posts them, show each draft it posts again in full. Run
+whose approval posts them, show each draft it posts again in full. Run
 `scripts/check-mermaid.mjs` on each draft with a Mermaid diagram, which parses it with
 the version GitHub renders, and fix what it rejects. Before showing an inline draft, run
 `scripts/github.sh anchors N drafts.json`: a draft outside the diff can't post, and one
@@ -199,8 +193,8 @@ approves is what posts.
 - Re-check the PR head first. If it moved, re-verify the drafts against the new code
   and show what changed.
 - Post the new inline comments together as one review, and replies to existing threads
-  separately. `a` approves, with `github.sh approve N SHA [drafts.json]`, only when no
-  kept finding holds the approval; otherwise it posts the drafts with `github.sh review
+  separately. The recommended step approves, with `github.sh approve N SHA [drafts.json]`,
+  only when no kept finding holds the approval; otherwise it posts the drafts with `github.sh review
   N SHA drafts.json` (event `COMMENT`, no body) and waits for the push. Approve only on
   the user's pick, and name
   each required check `github.sh required N` lists as `fail` or `cancel`: the author
@@ -209,7 +203,8 @@ approves is what posts.
 
 Then start a T3 watch on the PR yourself, so the author's push or reply wakes this
 thread for step 6. A wake with no new commit and no human comment, such as a bot's edit
-or a check finishing, gets only the `running` turn block as its reply, with no ⏳ line.
+or a check finishing, is a quiet watch wake: its reply has no ⏳ line, headline, or
+status report.
 
 **Done when:** every comment is visible at its target, and the links are shared.
 
@@ -226,7 +221,7 @@ When the author has addressed the comments, or a push dismissed the user's appro
   resolved thread only tells you where to look.
 - Review the new changes as in step 2, and take new findings through steps 3 to 5.
 
-End with a `Next` built from the verdict:
+End by recommending the step the verdict calls for:
 
 - **Approve**: approve.
 - **Approve, with non-blocking style or follow-up ideas left**: approve with them as a follow-up PR; approve.
