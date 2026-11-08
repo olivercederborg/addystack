@@ -195,12 +195,6 @@ This repo pushes through gh stack, so `git push` is blocked: use `gh stack push`
 `git push` in a test run
 
 </details>
-
----
-
-**Next**
-
-- **`a` → rerun the build eval on #212** · *recommended*
 ````
 
 **Done when:** every Accepted and Mechanisms row is applied, skipped by the user, or
