@@ -7,12 +7,12 @@
 //
 // GitHub's docs say to check its Mermaid version with an `info` block. This reads the
 // same version from GitHub's renderer bundle, and falls back to FALLBACK offline.
-// Mermaid and jsdom install once into ~/.cache/skills-mermaid/<version>.
+// Mermaid and jsdom install once into ~/.cache/skills-mermaid/<version>-jsdom<JSDOM>.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const FALLBACK = "12.1.0"; // GitHub's version on 2026-10-12
@@ -37,14 +37,29 @@ async function githubVersion() {
   return FALLBACK;
 }
 
-async function loadMermaid(version) {
-  const dir = join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "skills-mermaid", version);
-  const require = createRequire(join(dir, "package.json"));
-  if (!existsSync(join(dir, "node_modules", "mermaid"))) {
-    execFileSync("npm", ["install", "--prefix", dir, "--no-save", "--silent", `mermaid@${version}`, `jsdom@${JSDOM}`], {
+// npm installs into a fresh sibling folder that is renamed to `dir` only once npm succeeds,
+// so `dir` exists only when complete: an interrupted install leaves just the sibling, and
+// when another run renames its install into place first, that one is used.
+function install(dir, version) {
+  mkdirSync(dirname(dir), { recursive: true });
+  const partial = mkdtempSync(`${dir}.partial-`);
+  try {
+    execFileSync("npm", ["install", "--prefix", partial, "--no-save", "--silent", `mermaid@${version}`, `jsdom@${JSDOM}`], {
       stdio: ["ignore", "ignore", "inherit"],
     });
+    renameSync(partial, dir);
+  } catch (error) {
+    if (!existsSync(dir)) throw error;
+  } finally {
+    rmSync(partial, { recursive: true, force: true });
   }
+}
+
+async function loadMermaid(version) {
+  // The jsdom suffix skips the `<version>` folders older runs could leave half installed.
+  const dir = join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "skills-mermaid", `${version}-jsdom${JSDOM}`);
+  const require = createRequire(join(dir, "package.json"));
+  if (!existsSync(dir)) install(dir, version);
   // Mermaid sanitizes labels with DOMPurify, which needs a window even to parse.
   const { window } = new (require("jsdom").JSDOM)("");
   globalThis.window = window;
