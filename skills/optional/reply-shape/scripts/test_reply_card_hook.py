@@ -15,6 +15,7 @@ SKILL = Path(__file__).resolve().parent.parent
 WRAPPER = SKILL.parents[1] / "primitive" / "addystack" / "hooks" / "reply-card.py"
 URL = (SKILL / "ui" / "renderer.url").read_text().strip()
 REFERENCE = (SKILL / "ui" / "examples" / "reference.json").read_text().strip()
+OLD = re.sub(r"@v[\d.]+/", "@v0.9.0/", URL)  # the renderer at another version
 
 
 def page(payload=REFERENCE, src=URL):
@@ -32,7 +33,7 @@ class Hook(unittest.TestCase):
         self.assertIsNone(run({"title": "t", "height": 400, "html": page()}))
 
     def test_another_version_or_host_is_denied_with_the_pinned_url(self):
-        for src in [URL.replace("@v", "@v0."), URL.replace("@v1.1.0", ""), "https://example.com/reply-ui/reply.js"]:
+        for src in [OLD, re.sub(r"@v[\d.]+", "", URL), "https://example.com/reply-ui/reply.js"]:
             with self.subTest(src):
                 reason = run({"html": page(src=src)})
                 self.assertIn(f"load exactly {URL}", reason)
@@ -48,8 +49,7 @@ class Hook(unittest.TestCase):
 
     def test_the_page_is_read_as_a_browser_reads_it(self):
         good = '{"ui":[{"outcome":{"status":"done","text":"Fixed"}}]}'
-        old = URL.replace("1.1", "1.0")
-        self.assertIn("load exactly", run({"html": f'<script src = "{old}"></script><script type="application/json" id="ui">{good}</script>'}))
+        self.assertIn("load exactly", run({"html": f'<script src = "{OLD}"></script><script type="application/json" id="ui">{good}</script>'}))
         self.assertIn("more than one", run({"html": page() + f'<script type="application/json" id="ui">{good}</script>'}))
         self.assertIn("has no payload", run({"html": f'<script src="{URL}"></script><script type="application/json" id="ui-state">{good}</script>'}))
 
@@ -64,7 +64,7 @@ class Hook(unittest.TestCase):
     def test_a_page_given_by_path_is_read(self):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder, "card.html")
-            path.write_text("<!doctype html>" + page(src=URL.replace("1.1.0", "1.0.0")))
+            path.write_text("<!doctype html>" + page(src=OLD))
             self.assertIn("load exactly", run({"path": str(path)}))
 
     def test_the_wrapper_passes_without_reply_shape(self):
