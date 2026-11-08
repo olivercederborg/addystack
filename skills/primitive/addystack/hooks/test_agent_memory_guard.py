@@ -162,24 +162,33 @@ class Attribution(unittest.TestCase):
         owners.attribute(snapshot(AGENT))
         self.assertEqual(owners.services, set())
 
+    # Info.plist executables, so these tests don't read the apps installed here.
+    BUNDLES = {"/Applications/OrbStack.app": "OrbStack",
+               "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app": "OrbStack Helper",
+               "/Applications/Stremio.app": "Stremio"}
+
+    def attribute_with_bundles(self, *procs):
+        with mock.patch.dict(guard.bundle_executables, self.BUNDLES, clear=True):
+            return Owners().attribute(snapshot(AGENT, *procs))
+
     def test_marked_orphan_from_an_app_bundle_is_left_alone(self):
         vm = "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper"
-        commands = Owners().attribute(snapshot(
-            AGENT, proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr"))))
+        commands = self.attribute_with_bundles(proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr")))
         self.assertEqual(commands, {})
 
     def test_marked_helper_in_an_app_s_group_does_not_claim_it(self):
         app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
-        commands = Owners().attribute(snapshot(
-            AGENT, proc(501, 1, pgid=501, marked=True, argv=(app,)),
-            proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",))))
+        commands = self.attribute_with_bundles(
+            proc(501, 1, pgid=501, marked=True, argv=(app,)),
+            proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",)))
         self.assertEqual(commands, {})
 
     def test_detached_job_on_an_app_s_bundled_cli_is_still_agent_work(self):
-        node = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
-        commands = Owners().attribute(snapshot(
-            AGENT, proc(501, 1, pgid=501, marked=True, argv=(node, "-e", "job"))))
-        self.assertEqual(list(commands), [501])
+        for node in ("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
+                     "/Applications/Stremio.app/Contents/MacOS/node"):
+            commands = self.attribute_with_bundles(
+                proc(501, 1, pgid=501, marked=True, argv=(node, "-e", "job")))
+            self.assertEqual(list(commands), [501], node)
 
     def test_orphaned_python_job_is_still_agent_work(self):
         # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the

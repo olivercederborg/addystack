@@ -40,8 +40,8 @@ Known limits:
   full, and a command Codex starts with a cleared environment and no shell gets the
   allowance. So does a Claude command that `exec`s out of its wrapper shell.
 - An orphan in a process group led by an installed app's own executable (under
-  /Applications/, in an app's Contents/MacOS/) isn't agent work by its environment
-  alone, since an app such as OrbStack starts its VM with the environment of whichever
+  /Applications/, the one its bundle's Info.plist names) isn't agent work by its
+  environment alone, since an app such as OrbStack starts its VM with the environment of whichever
   command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
   counts toward the total.
@@ -49,7 +49,7 @@ Known limits:
   too, and dies after 30 minutes; run it as a background task the agent tracks.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
   saw it."""
-import ctypes, ctypes.util, hashlib, json, os, signal, struct, subprocess, sys, time
+import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
 AGENTS = {"claude", "codex"}
@@ -236,14 +236,30 @@ def is_service(proc, agent):
     return os.path.basename(agent.argv[0]) == "claude" or proc.marked is False
 
 
+bundle_executables = {}
+
+
+def bundle_executable(bundle):
+    """The executable an app bundle's Info.plist names, or None."""
+    if bundle not in bundle_executables:
+        try:
+            with open(os.path.join(bundle, "Contents", "Info.plist"), "rb") as info:
+                bundle_executables[bundle] = plistlib.load(info).get("CFBundleExecutable")
+        except (OSError, ValueError, plistlib.InvalidFileException):
+            bundle_executables[bundle] = None
+    return bundle_executables[bundle]
+
+
 def is_installed_app(proc):
     """An installed app's own process, such as OrbStack's VM, which leads its own process
-    group and inherits the environment of the agent command that woke it. An app's main
-    and helper executables live in Contents/MacOS/; a CLI it bundles elsewhere, such as
-    ChatGPT's node or Xcode's toolchain, stays agent work, and so do Homebrew's Python and
-    Playwright's browsers, which aren't under /Applications/."""
-    return (bool(proc.argv) and proc.argv[0].startswith("/Applications/")
-            and ".app/Contents/MacOS/" in proc.argv[0] and proc.pgid == proc.pid)
+    group and inherits the environment of the agent command that woke it. It's the
+    executable its bundle's Info.plist names, a nested helper app's included; a CLI the
+    app bundles, such as Stremio's node or ChatGPT's, stays agent work, and so do
+    Homebrew's Python and Playwright's browsers, which aren't under /Applications/."""
+    if not proc.argv or proc.pgid != proc.pid or not proc.argv[0].startswith("/Applications/"):
+        return False
+    bundle, marker, name = proc.argv[0].rpartition(".app/Contents/MacOS/")
+    return bool(marker) and "/" not in name and bundle_executable(bundle + ".app") == name
 
 
 class Owners:
