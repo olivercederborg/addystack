@@ -33,11 +33,23 @@ Known limits:
 - Processes are signalled by pid right after their kernel id is rechecked; only a pid
   reused within those microseconds would be hit.
 - A process running as another user (a `sudo` child) isn't seen.
+- An agent's direct child that isn't a shell counts as a service, such as an MCP server:
+  it gets the per-command budgets, and only its use past 1 GB and 10 processes counts
+  toward the total. Under Codex it also needs a readable environment without the agent
+  mark, so a Codex server that's an Apple binary, such as Xcode's mcpbridge, counts in
+  full, and a command Codex starts with a cleared environment and no shell gets the
+  allowance. So does a Claude command that `exec`s out of its wrapper shell.
+- An orphan in a process group led by an installed app's own executable (under
+  /Applications/, the one its bundle's Info.plist names) isn't agent work by its
+  environment alone, since an app such as OrbStack starts its VM with the environment of whichever
+  command woke it.
+- Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
+  counts toward the total.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
   too, and dies after 30 minutes; run it as a background task the agent tracks.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
   saw it."""
-import ctypes, ctypes.util, hashlib, json, os, signal, struct, subprocess, sys, time
+import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
 AGENTS = {"claude", "codex"}
@@ -51,6 +63,10 @@ MAX_FOOTPRINT = 20 * GB
 MAX_TOTAL_PROCESSES = 1500
 MAX_TOTAL_FOOTPRINT = 28 * GB
 INTERVAL_SECONDS = 0.5
+# A service's use past this allowance is work it runs, and counts toward the total. Idle
+# MCP servers measured 0.06 to 0.14 GB and 1 or 2 processes each on Nov 8, 2026.
+SERVICE_IDLE_FOOTPRINT = 1 * GB
+SERVICE_IDLE_PROCESSES = 10
 # An abandoned command is killed once it averages ABANDONED_CORES over the window. A
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
@@ -129,14 +145,16 @@ if sys.platform == "darwin":
     libc.mach_timebase_info(ctypes.byref(timebase))
     NS_PER_TICK = timebase.numer / timebase.denom
 # Environment variables an agent passes to everything it runs: Claude Code sets
-# CLAUDECODE, and T3 Code starts Codex with CODEX_INTERNAL_ORIGINATOR_OVERRIDE.
-AGENT_ENV = (b"CLAUDECODE=", b"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=")
+# CLAUDECODE, T3 Code starts Codex with CODEX_INTERNAL_ORIGINATOR_OVERRIDE, and Codex
+# gives each shell command CODEX_THREAD_ID, however Codex was started.
+AGENT_ENV = (b"CLAUDECODE=", b"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=", b"CODEX_THREAD_ID=")
 command_lines = {}
 
 
 def parse_procargs(raw):
     """KERN_PROCARGS2 is argc, the exec path, NUL padding, argv, then the environment.
-    Returns argv and whether the environment marks the process as agent work."""
+    Returns argv and whether the environment marks the process as agent work, or None
+    when the environment is hidden or empty, as macOS hides Apple binaries'."""
     argc = struct.unpack("i", raw[:4])[0]
     body = raw[4:]
     start = body.find(b"\0")
@@ -144,7 +162,8 @@ def parse_procargs(raw):
         start += 1
     fields = body[start:].split(b"\0") if start >= 0 else []
     args = [arg.decode(errors="replace") for arg in fields[:argc]]
-    return args, any(var.startswith(AGENT_ENV) for var in fields[argc:])
+    env = [var for var in fields[argc:] if var]
+    return args, any(var.startswith(AGENT_ENV) for var in env) if env else None
 
 
 def command_line(pid, ident, version):
@@ -203,6 +222,48 @@ def is_agent(proc):
     return bool(proc.argv) and os.path.basename(proc.argv[0]) in AGENTS
 
 
+SHELLS = {"sh", "bash", "zsh", "dash", "fish"}
+
+
+def is_service(proc, agent):
+    """A server an agent keeps for its session, such as an MCP server: a direct child that
+    isn't a shell. Claude Code runs each command in a compound shell that never execs, and
+    passes CLAUDECODE to its servers. Codex's shell can exec into the program, which keeps
+    the agent mark, while Codex starts its servers with a cleared environment; so under
+    Codex a service also needs a readable environment without the mark."""
+    if not proc.argv or os.path.basename(proc.argv[0]).lstrip("-") in SHELLS:
+        return False
+    return os.path.basename(agent.argv[0]) == "claude" or proc.marked is False
+
+
+bundle_executables = {}
+
+
+def bundle_executable(bundle):
+    """The executable an app bundle's Info.plist names, or None."""
+    if bundle not in bundle_executables:
+        try:
+            with open(os.path.join(bundle, "Contents", "Info.plist"), "rb") as info:
+                bundle_executables[bundle] = plistlib.load(info).get("CFBundleExecutable")
+        except Exception:  # a missing or malformed plist must not fail every tick
+            bundle_executables[bundle] = None
+    return bundle_executables[bundle]
+
+
+def is_installed_app(proc):
+    """An installed app's own process, such as OrbStack's VM, which leads its own process
+    group and inherits the environment of the agent command that woke it. It's the
+    executable its bundle's Info.plist names, a nested helper app's included; a CLI the
+    app bundles, such as Stremio's node or ChatGPT's, stays agent work, and so do
+    Homebrew's Python and Playwright's browsers, which aren't under /Applications/."""
+    if not proc.argv or proc.pgid != proc.pid or not proc.argv[0].startswith("/Applications/"):
+        return False
+    bundle, marker, name = proc.argv[0].rpartition(".app/Contents/MacOS/")
+    # A framework's Python.app is the interpreter /usr/bin/python3 runs, not an app.
+    return (bool(marker) and "/" not in name and ".framework/" not in bundle
+            and bundle_executable(bundle + ".app") == name)
+
+
 class Owners:
     """Which agent command owns each process. A process keeps its owner after its parent
     exits, and a new orphan joins the command whose process group it's in, so
@@ -213,6 +274,7 @@ class Owners:
     def __init__(self):
         self.owner = {}  # process ident -> head: the ident of the command's first process
         self.group = {}  # pgid a command head leads -> head
+        self.services = set()  # heads that are an agent's servers, not its commands
 
     def resolve(self, procs, agents):
         owner = {}
@@ -243,7 +305,11 @@ class Owners:
                 pid = parent.pid
             for proc in reversed(chain):
                 head = head or self.owner.get(proc.ident) or self.group.get(proc.pgid)
-                if head is None and proc.marked:
+                # Not while the group's leader is an app, or unread, so may be one: the
+                # adoption outlives the read.
+                leader = procs.get(proc.pgid)
+                if (head is None and proc.marked and not (
+                        leader is not None and (not leader.argv or is_installed_app(leader)))):
                     head = self.group[proc.pgid] = proc.ident
                 owner[proc.ident] = head
         return owner
@@ -267,6 +333,11 @@ class Owners:
                 commands.setdefault(head, []).append(proc)
                 if proc.ident == head and proc.pgid == proc.pid:
                     self.group[proc.pgid] = head
+                parent = procs.get(proc.ppid)
+                if (proc.ident == head and parent is not None and is_agent(parent)
+                        and parent.ident == proc.parent_ident and is_service(proc, parent)):
+                    self.services.add(head)
+        self.services &= commands.keys()
         return commands
 
 
@@ -274,22 +345,38 @@ def footprint(members):
     return sum(proc.footprint for proc in members)
 
 
-def runaway(commands):
-    """Return (head, reason) for the command to kill, or None."""
+def counted(head, members, services):
+    """What a command adds to the total, as (processes, bytes). A service adds only what
+    it uses past an idle server's allowance, so work it runs, such as a job in Codex's
+    Node REPL, still counts."""
+    if head not in services:
+        return len(members), footprint(members)
+    return (max(0, len(members) - SERVICE_IDLE_PROCESSES),
+            max(0, footprint(members) - SERVICE_IDLE_FOOTPRINT))
+
+
+def runaway(commands, services=frozenset()):
+    """Return (head, reason) for the command to kill, or None. A service gets the
+    per-command budgets, and only its use past the idle allowance counts toward the
+    total: on Nov 8, 2026 one Codex server's 54 sessions kept 19 GB of idle MCP servers,
+    and the total killed real work all evening."""
     for head, members in commands.items():
         if len(members) > MAX_PROCESSES:
             return head, f"{len(members)} processes, over the per-command {MAX_PROCESSES}"
         if footprint(members) > MAX_FOOTPRINT:
             return head, (f"{footprint(members) / GB:.1f} GB, over the per-command "
                           f"{MAX_FOOTPRINT / GB:g} GB")
-    total_processes = sum(len(members) for members in commands.values())
-    total_footprint = sum(footprint(members) for members in commands.values())
+    usage = {head: counted(head, members, services) for head, members in commands.items()}
+    if not usage:
+        return None
+    total_processes = sum(processes for processes, _ in usage.values())
+    total_footprint = sum(size for _, size in usage.values())
     if total_processes > MAX_TOTAL_PROCESSES:
-        head = max(commands, key=lambda h: len(commands[h]))
+        head = max(usage, key=lambda h: usage[h][0])
         return head, (f"agent commands at {total_processes} processes, over the total "
                       f"{MAX_TOTAL_PROCESSES}; this is the biggest")
     if total_footprint > MAX_TOTAL_FOOTPRINT:
-        head = max(commands, key=lambda h: footprint(commands[h]))
+        head = max(usage, key=lambda h: usage[h][1])
         return head, (f"agent commands at {total_footprint / GB:.1f} GB, over the total "
                       f"{MAX_TOTAL_FOOTPRINT / GB:g} GB; this is the biggest")
     return None
@@ -423,7 +510,7 @@ def notify(title, subtitle, text):
 def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.time):
     procs = scan()
     commands = owners.attribute(procs)
-    found = runaway(commands)
+    found = runaway(commands, owners.services)
     if not found and abandoned is not None:
         agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
         found = abandoned.busy(commands, agents, now(), wall())

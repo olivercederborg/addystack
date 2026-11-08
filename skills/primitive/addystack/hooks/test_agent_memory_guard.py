@@ -18,6 +18,7 @@ def snapshot(*procs):
 
 
 AGENT = proc(100, 50, argv=("claude", "--output-format", "stream-json"))
+CODEX = proc(90, 50, argv=("/x/bin/codex", "app-server"))
 # Tests that read real processes through libproc, which only macOS has.
 MACOS = unittest.skipUnless(sys.platform == "darwin", "libproc is macOS-only")
 
@@ -123,6 +124,95 @@ class Attribution(unittest.TestCase):
             AGENT, proc(200, 100), proc(me, 200, pgid=200, marked=True)))
         self.assertEqual([p.pid for p in commands[200]], [200])
 
+    def test_agent_child_that_is_not_a_shell_is_a_service(self):
+        owners = Owners()
+        commands = owners.attribute(snapshot(
+            AGENT, proc(200, 100, argv=("/opt/homebrew/bin/bash", "-c", "make")),
+            proc(300, 100, argv=("npm", "exec", "effect-mcp@latest")),
+            proc(301, 300, pgid=300, argv=("node", "mcp.js"))))
+        self.assertEqual(sorted(commands), [200, 300])
+        self.assertEqual(owners.services, {300})
+
+    def test_claude_mcp_server_is_a_service_though_marked(self):
+        # Claude Code passes CLAUDECODE to its MCP servers.
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(200, 100, marked=True, argv=("node", "mcp.js"))))
+        self.assertEqual(owners.services, {200})
+
+    def test_codex_shell_that_exec_d_into_its_program_is_still_a_command(self):
+        # Codex's `zsh -lc "pnpm typecheck"` becomes node; the agent mark survives the exec.
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("node", "tsc"))))
+        self.assertEqual(owners.services, set())
+
+    def test_codex_child_with_a_hidden_environment_is_a_command(self):
+        # macOS hides an Apple binary's environment, such as git or sandbox-exec.
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=None, argv=("/usr/bin/git",))))
+        self.assertEqual(owners.services, set())
+
+    def test_codex_server_with_a_cleared_environment_is_a_service(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, argv=("npm", "exec", "effect-mcp"))))
+        self.assertEqual(owners.services, {200})
+
+    def test_service_is_forgotten_once_it_exits(self):
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(300, 100, argv=("gt", "mcp"))))
+        owners.attribute(snapshot(AGENT))
+        self.assertEqual(owners.services, set())
+
+    # Info.plist executables, so these tests don't read the apps installed here.
+    BUNDLES = {"/Applications/OrbStack.app": "OrbStack",
+               "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app": "OrbStack Helper",
+               "/Applications/Stremio.app": "Stremio"}
+
+    def attribute_with_bundles(self, *procs):
+        with mock.patch.dict(guard.bundle_executables, self.BUNDLES, clear=True):
+            return Owners().attribute(snapshot(AGENT, *procs))
+
+    def test_marked_orphan_from_an_app_bundle_is_left_alone(self):
+        vm = "/Applications/OrbStack.app/Contents/Frameworks/OrbStack Helper.app/Contents/MacOS/OrbStack Helper"
+        commands = self.attribute_with_bundles(proc(501, 1, pgid=501, marked=True, argv=(vm, "vmgr")))
+        self.assertEqual(commands, {})
+
+    def test_marked_helper_in_an_app_s_group_does_not_claim_it(self):
+        app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
+        commands = self.attribute_with_bundles(
+            proc(501, 1, pgid=501, marked=True, argv=(app,)),
+            proc(502, 501, pgid=501, marked=True, argv=("/Applications/OrbStack.app/Contents/MacOS/node",)))
+        self.assertEqual(commands, {})
+
+    def test_marked_helper_never_claims_a_group_whose_leader_reads_late_as_an_app(self):
+        app = "/Applications/OrbStack.app/Contents/MacOS/OrbStack"
+        helper = proc(502, 501, pgid=501, marked=True, argv=("node",))
+        owners = Owners()
+        with mock.patch.dict(guard.bundle_executables, self.BUNDLES, clear=True):
+            unread = owners.attribute(snapshot(AGENT, proc(501, 1, pgid=501, argv=()), helper))
+            read = owners.attribute(snapshot(
+                AGENT, proc(501, 1, pgid=501, marked=True, argv=(app,)), helper))
+        self.assertEqual((unread, read), ({}, {}))
+
+    def test_detached_job_on_an_app_s_bundled_cli_is_still_agent_work(self):
+        xcode_python = ("/Applications/Xcode.app/Contents/Developer/Library/Frameworks/"
+                        "Python3.framework/Versions/3.9/Resources/Python.app")
+        bundles = {**self.BUNDLES, xcode_python: "Python"}
+        for cli in ("/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node",
+                    "/Applications/Stremio.app/Contents/MacOS/node",
+                    xcode_python + "/Contents/MacOS/Python"):  # what /usr/bin/python3 runs
+            with mock.patch.dict(guard.bundle_executables, bundles, clear=True):
+                commands = Owners().attribute(snapshot(
+                    AGENT, proc(501, 1, pgid=501, marked=True, argv=(cli, "-e", "job"))))
+            self.assertEqual(list(commands), [501], cli)
+
+    def test_orphaned_python_job_is_still_agent_work(self):
+        # Homebrew's python3 re-execs into Python.app; `nohup python3 … &` stays in the
+        # exited command's group.
+        python = "/opt/homebrew/Cellar/python@3.15/3.15.2/Frameworks/Python.framework/Versions/3.15/Resources/Python.app/Contents/MacOS/Python"
+        commands = Owners().attribute(snapshot(
+            AGENT, proc(47025, 1, pgid=47023, marked=True, argv=(python, "-c", "job"))))
+        self.assertEqual(list(commands), [47025])
+
     def test_deep_chain_does_not_overflow_the_stack(self):
         chain = [proc(1000 + i, 999 + i, pgid=1000) for i in range(1, 5000)]
         commands = Owners().attribute(snapshot(AGENT, proc(1000, 100), *chain))
@@ -154,6 +244,28 @@ class Runaway(unittest.TestCase):
         head, reason = guard.runaway(commands)
         self.assertEqual(head, 1)
         self.assertIn("over the total", reason)
+
+    def test_services_stay_out_of_the_total(self):
+        # 19 GB of idle MCP servers plus a 10 GB typecheck passed the 28 GB total.
+        services = dict(self.command(1000 * i, 2, 0.17) for i in range(1, 57))
+        commands = {**services, **dict([self.command(100, 3, 10 / 3)])}
+        self.assertIsNone(guard.runaway(commands, services.keys()))
+        self.assertIsNotNone(guard.runaway(commands))
+
+    def test_work_a_service_runs_counts_past_its_idle_allowance(self):
+        # Codex's Node REPL runs a 16 GB job beside a 14 GB command: 15 GB past the
+        # allowance plus 14 passes 28.
+        repl = [proc(1, 1), proc(2, 1, footprint=16 * GB)]
+        commands = {1: repl, 100: [proc(100, 1, footprint=14 * GB)]}
+        head, _ = guard.runaway(commands, {1})
+        self.assertEqual(head, 1)
+
+    def test_a_service_within_its_allowance_adds_nothing(self):
+        self.assertEqual(guard.counted(1, [proc(1, 1, footprint=0.9 * GB)], {1}), (0, 0))
+
+    def test_a_service_still_gets_the_per_command_budget(self):
+        head, _ = guard.runaway(dict([self.command(1, 3, 7)]), {1})
+        self.assertEqual(head, 1)
 
     def test_storm_split_across_commands_is_caught_by_the_total(self):
         commands = dict(self.command(i * 1000, 400) for i in range(1, 5))
@@ -364,7 +476,14 @@ class CommandLine(unittest.TestCase):
         self.assertTrue(marked)
 
     def test_unmarked_environment(self):
-        self.assertFalse(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1])
+        self.assertIs(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1], False)
+
+    def test_codex_thread_id_marks_a_command(self):
+        env = [b"HOME=/x", b"CODEX_THREAD_ID=t1"]
+        self.assertIs(guard.parse_procargs(self.procargs(b"node", env=env))[1], True)
+
+    def test_hidden_environment_is_unknown(self):
+        self.assertIsNone(guard.parse_procargs(self.procargs(b"node", env=[]))[1])
 
     # Spins until its own CPU clock reads half a second, not for a wall-clock span: on a
     # loaded Mac a second of wall time can hold a fifth of a CPU second.
