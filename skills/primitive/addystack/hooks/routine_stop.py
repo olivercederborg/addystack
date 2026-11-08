@@ -5,7 +5,8 @@ once when it has no valid turn block.
 The router lists the stops, yet agents kept ending turns on steps outside them: the user
 answered a bare "a" 1,287 times in the 14 days to Oct 21, 2026. Telling those steps from
 stops by the reply's English took a dozen regexes and still guessed, so each final reply
-now ends with a turn block (replies.md, Turn block), and this reads it: when the state is
+now ends with a turn block (rules_file(): the Turn block section of the user's reply rules
+file, or the kit's references/turn-block.md), and this reads it: when the state is
 stop, nothing needs the user, and the recommended option's class is routine, the agent does
 that option instead of asking. It stays out of the way when the turn answers their
 question, since the router ends those with options, and after "no autonomy". A reply
@@ -14,7 +15,7 @@ merge-gate.py read nothing without it.
 
 A reply with more than two options goes back too. Of 1,922 replies in three weeks that
 offered a `b`, the user picked it 59 times, and 6 of 538 `c`s; they steered in their
-own words instead (docs/research/2026-10-28-reply-audit.md). So replies.md allows `a`,
+own words instead (docs/research/2026-10-28-reply-audit.md). So the turn block allows `a`,
 and `b` only when the reply stops for their call. The routine check runs first, since a
 reply sent on to do `a` doesn't stop on its options. turn_block.py still reads three, so
 a reply from before the cap keeps its picks for merge-gate.py.
@@ -179,9 +180,17 @@ def project_feedback(reply, project):
 
 
 def rules_file():
-    """The user's reply rules file, which holds the Turn block section, or the kit's replies.md
-    when they keep none, as ~/… under $HOME."""
-    path = resolved.replies().rules or resolved.kit() / "replies.md"
+    """The user's reply rules file when it has a Turn block section, else the kit's own
+    spec, references/turn-block.md, as ~/… under $HOME, so a send-back never cites a section
+    that isn't there."""
+    path = resolved.replies().rules
+    try:
+        if not (path and re.search(r"(?m)^ {0,3}#{1,6}[ \t]+Turn block(?:[ \t]+#+)?[ \t]*$", Path(path).read_text())):
+            path = None
+    except (OSError, UnicodeDecodeError):
+        path = None
+    # Beside this hook, not the kit state records, which can name an older checkout.
+    path = path or Path(__file__).resolve().parent.parent / "references" / "turn-block.md"
     try:
         return "~/" + str(Path(path).relative_to(Path.home()))
     except ValueError:
@@ -233,9 +242,10 @@ def main():
              "message and folds the rest away, so your final reply has to stand on its own: "
              "carry forward what the reply above told the user, with the step's result added.")
     elif len(turn.options) > NEXT_MAX:
-        send(event, f"Your Next offers {len(turn.options)} options; replies.md allows two: `a`, your "
-             "pick, and `b` only when the reply stops for the user's call, as on a decision card's "
-             "no, the smallest option. The user steers in their own words instead of picking a third. Send "
+        send(event, f"Your Next offers {len(turn.options)} options; the turn block allows two "
+             f"({rules_file()}, Turn block section): `a`, your pick, and `b` only when the reply stops for "
+             "the user's call, as on a decision card's no, the smallest option. The user steers in "
+             "their own words instead of picking a third. Send "
              "your whole reply again with at most two options, in Next and in the turn block. T3 "
              "shows only a turn's last message, so the resent reply has to stand on its own. Add "
              "no note about the change.")

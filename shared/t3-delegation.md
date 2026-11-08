@@ -115,7 +115,7 @@ the parent agent holding only these, one line per entry, and leaving out an empt
 9. With a `Project:` line in this brief, a turn block whose `project` is that name
    (the Turn block section of the user's reply rules: the `replies.rules` file
    `<kit>/bin/addystack print-config` names, or their instructions when it's null, or
-   the kit's `replies.md` when neither has one).
+   `<kit>/references/turn-block.md` when neither has one).
 ```
 
 - **`<path>`** is `<home>/.local/state/orchestrate/reports/<clientRequestId>-<six random

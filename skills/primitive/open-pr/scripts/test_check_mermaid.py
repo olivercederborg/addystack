@@ -1,9 +1,11 @@
 """Runs check-mermaid.mjs against a scratch cache with a fake npm on PATH, so its install
-never looks complete after npm fails, and two first runs at once both pass."""
-import os, pathlib, subprocess, tempfile, textwrap, unittest
+never looks complete after npm fails, two first runs at once both pass, and an install
+prunes cache folders unused for 30 days and partials a killed install left."""
+import os, pathlib, subprocess, tempfile, textwrap, time, unittest
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check-mermaid.mjs"
+DAY = 24 * 60 * 60
 
 # Writes stand-in mermaid and jsdom packages into --prefix and logs each call. With
 # FAKE_NPM=fail it leaves mermaid's folder behind and exits 1, like an interrupted install.
@@ -67,6 +69,65 @@ class CheckMermaid(unittest.TestCase):
             self.assertIn("✅ fake", run.stdout)
         self.assertEqual(len(self.installs()), 2)
         self.assertEqual(len(list(self.cache.iterdir())), 1)
+
+    def entry(self, name, days_old):
+        path = self.cache / name
+        path.mkdir(parents=True)
+        when = time.time() - days_old * DAY
+        os.utime(path, (when, when))
+        return path
+
+    def test_install_prunes_unused_folders_and_stale_partials(self):
+        self.entry("0.0.1-jsdom1.0.0", 31)
+        self.entry("0.0.2-jsdom1.0.0", 29)
+        self.entry("0.0.3-jsdom1.0.0.partial-old", 2)
+        self.entry("0.0.3-jsdom1.0.0.partial-new", 0.8)
+        target = self.entry("0.0.4-jsdom1.0.0", 31)
+        (self.cache / "notes.txt").write_text("")
+        os.symlink(target, self.cache / "0.0.5-jsdom1.0.0")
+        when = time.time() - 31 * DAY
+        for name in ("notes.txt", "0.0.5-jsdom1.0.0"):
+            os.utime(self.cache / name, (when, when), follow_symlinks=False)
+        # A run through the link refreshed its target, not the link.
+        os.utime(target, (time.time(), time.time()))
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        names = {path.name for path in self.cache.iterdir()}
+        kept = {"0.0.2-jsdom1.0.0", "0.0.3-jsdom1.0.0.partial-new", "0.0.4-jsdom1.0.0",
+                "notes.txt", "0.0.5-jsdom1.0.0"}
+        self.assertLessEqual(kept, names)
+        used = names - kept
+        self.assertEqual(len(used), 1, used)
+        self.assertTrue(used.pop().endswith("-jsdom30.1.2"))
+
+    def test_each_run_refreshes_the_used_folder(self):
+        self.assertEqual(self.run_check().returncode, 0)
+        [used] = self.cache.iterdir()
+        old = time.time() - 40 * DAY
+        os.utime(used, (old, old))
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(len(self.installs()), 1)
+        self.assertGreater(used.stat().st_mtime, time.time() - DAY)
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes a read-only folder's files")
+    def test_removal_error_does_not_fail_the_check(self):
+        old = self.entry("0.0.1-jsdom1.0.0", 31)
+        stuck = old / "locked"
+        stuck.mkdir()
+        (stuck / "file").write_text("")
+        stuck.chmod(0o500)
+        # Age the folder last: adding to it refreshed its mtime.
+        when = time.time() - 31 * DAY
+        os.utime(old, (when, when))
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("✅ fake", run.stdout)
+        # Moved aside before removal, so no run finds a half-deleted cache at its name; what
+        # the removal couldn't delete waits in a partial for a later install.
+        self.assertFalse(old.exists())
+        [left] = self.cache.glob("0.0.1-jsdom1.0.0.partial-*/old/locked/file")
+        self.addCleanup(left.parent.chmod, 0o700)
 
 
 if __name__ == "__main__":

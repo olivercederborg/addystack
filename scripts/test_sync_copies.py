@@ -1,7 +1,8 @@
 """Tests for sync-copies.py: it writes each copy in copies.txt from its source with a marker
 naming the source, keeps the source's mode and shebang, and --check names a copy that is
 hand-edited, stale, or missing, a symlink left in the kit, a copied script whose sibling it
-needs isn't copied beside it, and a skill with the format pointer that lacks its copies."""
+needs isn't copied beside it, a skill with the format pointer that lacks its copies, and a
+marked copy that no pair lists."""
 import os, pathlib, shutil, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "sync-copies.py"
@@ -33,8 +34,9 @@ class Kit:
         (self.root / path).parent.mkdir(parents=True, exist_ok=True)
         (self.root / path).write_text(text)
 
-    def run(self, *args):
-        return subprocess.run([str(self.root / "scripts" / SCRIPT.name), *args], capture_output=True, text=True)
+    def run(self, *args, **options):
+        return subprocess.run([str(self.root / "scripts" / SCRIPT.name), *args], capture_output=True, text=True,
+                              **options)
 
     def text(self, path):
         return (self.root / path).read_text()
@@ -166,6 +168,55 @@ class SyncCopies(unittest.TestCase):
         result = self.kit.run()
         self.assertEqual(result.returncode, 2)
         self.assertIn("maintainer/copies.txt:1: one/references/notes.md is listed twice", result.stderr)
+
+    def test_check_names_a_marked_copy_no_pair_lists_and_writing_keeps_it(self):
+        self.synced()
+        self.kit.write("scripts/copies.txt", "shared/notes.md one/references/notes.md\n")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        for copy in ("two/references/notes.md", "one/scripts/tool.py"):
+            self.assertIn(f"{copy} (a copy no pair lists: delete it, or list it in scripts/copies.txt)",
+                          result.stdout)
+        self.assertNotIn("one/references/notes.md", result.stdout)
+        result = self.kit.run()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("two/references/notes.md (a copy no pair lists", result.stdout)
+        self.assertTrue((self.kit.root / "two/references/notes.md").is_file())
+        self.assertTrue((self.kit.root / "one/scripts/tool.py").is_file())
+
+    def test_a_file_quoting_the_marker_below_its_top_is_not_a_copy(self):
+        self.synced()
+        marker = "Copy of shared/notes.md, written by scripts/sync-copies.py: edit the source, then run the script."
+        self.kit.write("docs/about.md", f"# About\n\n<!-- {marker} -->\n")
+        self.kit.write("docs/about.py", f"#!/usr/bin/env python3\n\"\"\"About.\"\"\"\n# {marker}\n")
+        self.kit.write("node_modules/pkg/notes.md", f"<!-- {marker} -->\n")
+        result = self.check()
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_a_listed_destination_spelled_with_dot_slash_is_not_an_orphan(self):
+        self.kit.write("scripts/copies.txt", LISTED.replace(" one/references/notes.md", " ./one/references/notes.md"))
+        self.assertEqual(self.kit.run().returncode, 0)
+        result = self.check()
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_an_absolute_listed_destination_is_not_an_orphan(self):
+        absolute = str(self.kit.root.resolve() / "one/references/notes.md")
+        self.kit.write("scripts/copies.txt", LISTED.replace(" one/references/notes.md", " " + absolute))
+        self.assertEqual(self.kit.run().returncode, 0)
+
+    def test_the_scan_skips_a_pipe(self):
+        self.synced()
+        os.mkfifo(self.kit.root / "worker.fifo")
+        result = self.kit.run("--check", timeout=10)
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_check_names_an_unlisted_copy_whose_suffix_differs_from_its_source(self):
+        self.kit.write("scripts/copies.txt", LISTED + "shared/notes.md one/references/notes.txt\n")
+        self.assertEqual(self.kit.run().returncode, 0)
+        self.kit.write("scripts/copies.txt", LISTED)
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("one/references/notes.txt (a copy no pair lists", result.stdout)
 
     def test_rejects_a_destination_listed_twice(self):
         self.kit.write("scripts/copies.txt", LISTED + "hooks/tool.py one/references/notes.md\n")

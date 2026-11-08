@@ -4,7 +4,7 @@ a missing taste file drop out, paths render under ~ only inside $HOME, and the c
 templates still render today's router.md and principles/index.md."""
 from __future__ import annotations
 
-import os, pathlib, re, shutil, subprocess, sys, tempfile, unittest
+import os, pathlib, re, shutil, subprocess, sys, tempfile, unittest, unittest.mock
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 KIT = REPO / "skills" / "primitive" / "addystack"
@@ -27,10 +27,12 @@ class Render(unittest.TestCase):
         self.dir = pathlib.Path(folder.name).resolve()
         for name, text in [("addystack.jsonc", USER), ("global.md", GLOBAL), ("taste.md", "taste")]:
             (self.dir / name).write_text(text)
-        for module, name, path in [(resolved, "STATE", "state/resolved.json"), (render, "CLAUDE", "CLAUDE.md"),
-                                   (render, "CODEX", "AGENTS.md")]:
+        for module, name, path in [(resolved, "STATE", "state/resolved.json"), (render, "CODEX", "AGENTS.md")]:
             self.addCleanup(setattr, module, name, getattr(module, name))
             setattr(module, name, self.dir / path)
+        claude_md = unittest.mock.patch.dict(os.environ, {"ADDYSTACK_CLAUDE_MD": str(self.dir / "CLAUDE.md")})
+        claude_md.start()
+        self.addCleanup(claude_md.stop)
         self.resolved = config.resolve(self.dir / "addystack.jsonc")
 
     def render(self, **changes):
@@ -119,6 +121,14 @@ class Render(unittest.TestCase):
         self.assertIn("The shell is zsh on macOS", codex)
         self.assertNotIn("Bash tool's timeout", codex)
         self.assertEqual(codex.count("- Sam's own action."), 1)
+
+    def test_claudes_file_is_in_claude_config_dir_unless_addystack_claude_md_names_one(self):
+        # Claude Code reads its user CLAUDE.md from its config folder.
+        folder = self.dir / "claude-config"
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": str(folder)}):
+            self.assertIn(self.dir / "CLAUDE.md", self.render())
+            del os.environ["ADDYSTACK_CLAUDE_MD"]
+            self.assertIn(folder / "CLAUDE.md", self.render())
 
     def test_a_disabled_host_gets_no_file(self):
         files = self.render(hosts={**self.resolved["hosts"], "codex": False})

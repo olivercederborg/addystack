@@ -2,7 +2,7 @@
 check whether it denies."""
 import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
 
-import bare_references, hook_parity, merge_go, reply_budget, transcripts, turn_block, verdicts, workflow_triggers
+import bare_references, hook_parity, merge_go, reply_budget, resolved, routine_stop, transcripts, turn_block, verdicts, workflow_triggers
 
 try:
     from markdown_it import MarkdownIt
@@ -321,7 +321,8 @@ def fake_home(folder, drop=()):
     """A home under folder with a kit at ~/kit whose hooks link to this checkout's, a
     resolved.json in ~/state that selects every hook, and settings.json and hooks.json
     holding every manifest entry with `{{kit}}` as ~/kit, less the commands in drop.
-    Returns its env: HOME, as the resolved path, and ADDYSTACK_STATE."""
+    Returns its env: HOME, as the resolved path, ADDYSTACK_STATE, and CLAUDE_CONFIG_DIR as
+    ~/.claude, so a caller's own Claude Code folder isn't read."""
     home = pathlib.Path(folder).resolve()
     kit_hooks = home / "kit" / "hooks"
     kit_hooks.mkdir(parents=True, exist_ok=True)
@@ -341,10 +342,10 @@ def fake_home(folder, drop=()):
                     **({"onFailure": entry["onFailure"]} if "onFailure" in entry else {})}
             config["hooks"].setdefault(entry["event"], []).append(
                 {**({"matcher": entry["matcher"]} if entry["matcher"] else {}), "hooks": [hook]})
-        path = pathlib.Path(home, hook_parity.PATHS[runtime].removeprefix("~/"))
+        path = home / {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[runtime]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(config))
-    return {"HOME": str(home), "ADDYSTACK_STATE": str(home / "state")}
+    return {"HOME": str(home), "ADDYSTACK_STATE": str(home / "state"), "CLAUDE_CONFIG_DIR": str(home / ".claude")}
 
 
 @unittest.skipUnless(sys.platform == "darwin", "the guard only runs on macOS")
@@ -1817,6 +1818,19 @@ class ReplyShapeContext(unittest.TestCase):
 
     def output(self, skill, source="startup", args=(), db="/nonexistent/statev2.sqlite", config=REPLY_SHAPE):
         return json.loads(self.run_hook(skill, source, args, db, config))
+
+    def test_without_an_override_it_loads_from_claude_config_dir(self):
+        with tempfile.TemporaryDirectory() as folder:
+            skill = pathlib.Path(folder, "profile", "skills", "reply-shape", "SKILL.md")
+            skill.parent.mkdir(parents=True)
+            skill.write_text("PROFILE SKILL")
+            env = {key: value for key, value in resolved_state(folder, self.REPLY_SHAPE).items()
+                   if key != "REPLY_SHAPE_SKILL"}
+            out = subprocess.run(
+                [str(HOOKS / self.HOOK)], input=json.dumps({"session_id": self.SESSION, "source": "startup"}),
+                capture_output=True, text=True, check=True,
+                env={**env, "CLAUDE_CONFIG_DIR": str(skill.parents[2]), "T3_STATE_DB": "/nonexistent"}).stdout
+            self.assertIn("PROFILE SKILL", out)
 
     def test_an_old_path_argument_loads_the_rules_file(self):
         # Settings rendered before --rules pass a path; that entry must still load the rules.
@@ -5490,12 +5504,12 @@ class RoutineStop(unittest.TestCase):
     REPLY = ("✅ **Committed.**\n\n---\n\n**Next**\n\n"
              "- **`a` → run verify-work on PR #87 in a fresh verifier** · *recommended*\n\n" + block(TURN))
 
-    def run_on(self, reply, said=("fix the header",), **event):
+    def run_on(self, reply, said=("fix the header",), env=None, **event):
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
             for text in said:  # Codex's rollout shape when the event is Codex's
                 transcript.write(json.dumps(codex_said(text) if "turn_id" in event else claude_said(text)) + "\n")
             transcript.flush()
-            out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, input=json.dumps(
+            out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, env=env, input=json.dumps(
                 {"last_assistant_message": reply, "transcript_path": transcript.name, **event})).stdout
         return json.loads(out) if out else None
 
@@ -5531,7 +5545,7 @@ class RoutineStop(unittest.TestCase):
                     found = self.feedback(reply, **event)
                     self.assertIn(f"Your reply has no valid turn block: {reason}", found)
                     self.assertIn("Send your whole reply again", found)
-                    self.assertIn("replies.md, Turn block section)", found)
+                    self.assertIn(f"({routine_stop.rules_file()}, Turn block section)", found)
         # Codex as decision: block, Claude Code as additionalContext.
         self.assertEqual(set(self.run_on("Done.", turn_id="t1")), {"decision", "reason"})
         self.assertEqual(self.run_on("Done.")["hookSpecificOutput"]["hookEventName"], "Stop")
@@ -5549,7 +5563,7 @@ class RoutineStop(unittest.TestCase):
         for event in [{}, {"turn_id": "t1"}]:
             with self.subTest(event=event):
                 found = self.feedback(reply, **event)
-                self.assertIn("Your Next offers 3 options; replies.md allows two", found)
+                self.assertIn("Your Next offers 3 options; the turn block allows two", found)
                 self.assertIn("Send your whole reply again", found)
         self.assertIsNone(self.run_on(reply, stop_hook_active=True))
         # Two options is an ordinary stop, and a reply from before the cap still parses.
@@ -5558,6 +5572,32 @@ class RoutineStop(unittest.TestCase):
         # A routine `a` with nothing waiting is sent on, not back: the agent does it instead.
         routine = self.with_turn(options=[self.ROUTINE, *three[1:]], needs=[])
         self.assertIn("isn't a stop", self.feedback(routine))
+
+    def test_send_backs_cite_a_turn_block_spec_that_exists(self):
+        """With a reply rules file that has a Turn block section, that file; with none, or
+        one without the section, the kit's own spec."""
+        need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
+        three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
+                                                    for key in "abc"])
+        for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n",
+                     "# Replies\n\n## Turn block ##\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
+            with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
+                rules = pathlib.Path(folder, "replies.md")
+                if text:
+                    rules.write_text(text)
+                env = resolved_state(folder, json.dumps({"replies": {"style": "reply-shape",
+                                                                     "rules": str(rules) if text else None,
+                                                                     "turnBlock": True}}))
+                with unittest.mock.patch.object(resolved, "STATE", pathlib.Path(folder, "resolved.json")):
+                    cited = routine_stop.rules_file()
+                spec = pathlib.Path(cited).expanduser()
+                if text and "Turn block" in text:
+                    self.assertEqual(spec.resolve(), rules.resolve())
+                else:
+                    self.assertEqual(spec.resolve(), (HOOKS.parent / "references" / "turn-block.md").resolve())
+                    self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
+                self.assertIn(f"({cited}, Turn block section)", self.feedback("Done.", env=env))
+                self.assertIn(f"({cited}, Turn block section)", self.feedback(three, env=env))
 
     def test_sends_an_issue_option_in_a_teammate_review_back_once(self):
         def load(name):

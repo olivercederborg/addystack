@@ -325,6 +325,59 @@ class Agent(Home):
         self.assertIn(f"would leave {self.link} (agent)", self.ok("install", "--dry-run").stdout)
 
 
+class ClaudeConfigDir(Home):
+    """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so
+    install writes Claude Code's hooks, agent link, and CLAUDE.md there; unset or blank,
+    ~/.claude."""
+    linked = False
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.home / "claude-config"
+        self.env["CLAUDE_CONFIG_DIR"] = str(self.folder)
+        for skills in (self.folder / "skills", self.home / ".agents/skills"):
+            skills.mkdir(parents=True)
+            for name, path in SKILLS.items():
+                (skills / name).symlink_to(path)
+
+    def test_install_writes_claude_codes_files_in_the_folder_it_names(self):
+        out = self.ok("install").stdout
+        self.assertTrue(self.commands(self.folder / "settings.json"))
+        link = self.folder / "agents/work-verifier.md"
+        self.assertEqual(os.readlink(link), str(self.folder / "skills/verify-work/agents/work-verifier.md"))
+        self.assertTrue((self.folder / "CLAUDE.md").read_text().startswith("<!-- Built by addystack build"))
+        self.assertFalse((self.home / ".claude").exists())
+        # Install's doctor run checked the skill folder, the agent, and the hooks there.
+        self.assertIn("ok    agent: ~/claude-config/agents/work-verifier.md is the work-verifier agent", out)
+        self.assertIn("ok    hooks: match the selection", out)
+
+    def test_doctor_checks_the_folder_it_names(self):
+        self.ok("install")
+        (self.folder / "skills/build").unlink()
+        (self.folder / "skills/build").symlink_to(self.home / "gone")
+        (self.folder / "agents/work-verifier.md").unlink()
+        out = self.cli("doctor").stdout
+        self.assertIn("FAIL  skill links: ~/claude-config/skills/build is a dangling link", out)
+        self.assertIn("FAIL  agent: ~/claude-config/agents/work-verifier.md is missing", out)
+
+    def test_unset_or_blank_uses_dot_claude(self):
+        for name, value in {"unset": None, "blank": "  "}.items():
+            with self.subTest(name):
+                shutil.rmtree(self.home / ".claude", ignore_errors=True)
+                self.env.pop("CLAUDE_CONFIG_DIR", None)
+                if value is not None:
+                    self.env["CLAUDE_CONFIG_DIR"] = value
+                # Claude Code's skill folder is ~/.claude/skills now.
+                (self.home / ".claude").mkdir()
+                (self.folder / "skills").rename(self.home / ".claude/skills")
+                self.ok("install")
+                self.assertTrue(self.commands(self.settings))
+                self.assertTrue((self.home / ".claude/agents/work-verifier.md").is_symlink())
+                self.assertTrue(self.claude_md.is_file())
+                self.assertFalse((self.folder / "settings.json").exists())
+                (self.home / ".claude/skills").rename(self.folder / "skills")
+
+
 class DryRun(Home):
     def test_prints_every_change_and_writes_nothing(self):
         self.write(self.config, '{ "identity": { "name": "Sam" } }')

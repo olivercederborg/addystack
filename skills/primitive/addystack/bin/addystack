@@ -21,7 +21,7 @@ Private overrides, for tests and dry runs; each defaults to the value after it:
 
     ADDYSTACK_CONFIG     the user's config     ~/.config/addystack/addystack.jsonc
     ADDYSTACK_STATE      the state folder      ~/.local/state/addystack
-    ADDYSTACK_CLAUDE_MD  Claude Code's file    ~/.claude/CLAUDE.md
+    ADDYSTACK_CLAUDE_MD  Claude Code's file    CLAUDE.md in $CLAUDE_CONFIG_DIR, else ~/.claude
     ADDYSTACK_CODEX_MD   Codex's file          ~/.codex/AGENTS.md
     ADDYSTACK_SKILLS_CLI update's skills CLI   npx -y skills
     ADDYSTACK_SCHEMA_URL init's schema URL     none until the kit's repo is public

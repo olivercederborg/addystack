@@ -20,6 +20,8 @@ TOOL = "skills/primitive/addystack"
 HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies.md",
                f"{TOOL}/scripts/check-body.mjs", f"{TOOL}/scripts/check-mermaid.mjs", f"{TOOL}/scripts/stack.sh",
                f"{TOOL}/lib", f"{TOOL}/addystack.defaults.jsonc", f"{TOOL}/schema",
+               # routine_stop.py cites it when the user keeps no reply rules file.
+               f"{TOOL}/references/turn-block.md",
                # ReadyGate records through review-loop's copy.
                "skills/primitive/review-loop/scripts/verdicts.py"]
 # The kit's Python modules other suites import, without the hook tests.
@@ -220,7 +222,7 @@ class Skills:
     @function
     @check
     async def reply_budget(self, kit: source("skills/optional/reply-shape/SKILL.md", "replies.md",
-                                             "scripts/check-reply-budget.py", *HOOK_MODULES)) -> None:
+                                             "scripts/check-reply-budget.py", f"{TOOL}/lib/config.py", *HOOK_MODULES)) -> None:
         """scripts/check-reply-budget.py"""
         await run(kit, "scripts/check-reply-budget.py")
 

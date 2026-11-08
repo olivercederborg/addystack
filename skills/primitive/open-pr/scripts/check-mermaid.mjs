@@ -7,9 +7,20 @@
 //
 // GitHub's docs say to check its Mermaid version with an `info` block. This reads the
 // same version from GitHub's renderer bundle, and falls back to FALLBACK offline.
-// Mermaid and jsdom install once into ~/.cache/skills-mermaid/<version>-jsdom<JSDOM>.
+// Mermaid and jsdom install once into ~/.cache/skills-mermaid/<version>-jsdom<JSDOM>, and
+// each install removes the folders there no run has used for 30 days.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  utimesSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,6 +29,8 @@ import { pathToFileURL } from "node:url";
 const FALLBACK = "12.1.0"; // GitHub's version on 2026-10-12
 const JSDOM = "30.1.2";
 const VIEWER = "https://viewscreen.githubusercontent.com";
+const UNUSED_DAYS = 30;
+const DAY = 24 * 60 * 60 * 1000;
 
 const files = process.argv.slice(2);
 if (files.length === 0) {
@@ -53,13 +66,48 @@ function install(dir, version) {
   } finally {
     rmSync(partial, { recursive: true, force: true });
   }
+  prune(dir);
+}
+
+// Each folder is ~200 MB and a new Mermaid or jsdom version makes a new one, so after an
+// install this removes siblings no run has used for UNUSED_DAYS (each run refreshes its
+// folder's mtime) and partials older than a day, which only a killed install leaves.
+// Offline runs use FALLBACK and online runs GitHub's version, so more than one stays in use.
+// A fresh partial may be another run's install in progress. Cleanup never fails the check.
+function prune(dir) {
+  const now = Date.now();
+  const parent = dirname(dir);
+  let names = [];
+  try {
+    names = readdirSync(parent);
+  } catch {}
+  for (const name of names) {
+    const path = join(parent, name);
+    if (path === dir) continue;
+    try {
+      // Only real folders: a link's own mtime doesn't change when a run refreshes its target.
+      const stat = lstatSync(path);
+      const days = name.includes(".partial-") ? 1 : UNUSED_DAYS;
+      if (!stat.isDirectory() || now - stat.mtimeMs < days * DAY) continue;
+      // Moved aside first, so a removal that stops partway never leaves a half-deleted cache
+      // at a name a run trusts; a stopped one is a stale partial the next install removes.
+      const doomed = name.includes(".partial-") ? path : mkdtempSync(`${path}.partial-`);
+      if (doomed !== path) renameSync(path, join(doomed, "old"));
+      rmSync(doomed, { recursive: true, force: true });
+    } catch {}
+  }
 }
 
 async function loadMermaid(version) {
   // The jsdom suffix skips the `<version>` folders older runs could leave half installed.
   const dir = join(process.env.XDG_CACHE_HOME ?? join(homedir(), ".cache"), "skills-mermaid", `${version}-jsdom${JSDOM}`);
   const require = createRequire(join(dir, "package.json"));
-  if (!existsSync(dir)) install(dir, version);
+  if (existsSync(dir)) {
+    try {
+      const now = new Date();
+      utimesSync(dir, now, now);
+    } catch {}
+  } else install(dir, version);
   // Mermaid sanitizes labels with DOMPurify, which needs a window even to parse.
   const { window } = new (require("jsdom").JSDOM)("");
   globalThis.window = window;

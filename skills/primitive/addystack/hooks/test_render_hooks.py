@@ -42,14 +42,15 @@ class RenderedHome:
     def __init__(self, test, profile):
         self.home = pathlib.Path(tempfile.mkdtemp())
         test.addCleanup(shutil.rmtree, self.home)
-        patch = unittest.mock.patch.dict(os.environ, {"HOME": str(self.home)})
+        patch = unittest.mock.patch.dict(os.environ, {"HOME": str(self.home),
+                                                      "CLAUDE_CONFIG_DIR": str(self.home / ".claude")})
         patch.start()
         test.addCleanup(patch.stop)
-        for runtime in hook_parity.PATHS:
+        for runtime in hook_parity.RUNTIMES:
             self.write(runtime, render_hooks.render(runtime, profile))
 
     def path(self, runtime):
-        return self.home / hook_parity.PATHS[runtime].removeprefix("~/")
+        return self.home / {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[runtime]
 
     def write(self, runtime, hooks):
         self.path(runtime).parent.mkdir(parents=True, exist_ok=True)
@@ -92,7 +93,7 @@ class Render(unittest.TestCase):
         self.assertNotIn("matcher", hooks["Stop"][0])
 
     def test_each_event_runs_in_manifest_order(self):
-        for runtime in hook_parity.PATHS:
+        for runtime in hook_parity.RUNTIMES:
             for profile in hook_parity.PROFILES:
                 with self.subTest(runtime=runtime, profile=profile):
                     hooks = render_hooks.render(runtime, profile)

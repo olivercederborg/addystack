@@ -62,13 +62,14 @@ class Cli(unittest.TestCase):
         (home / ".claude/agents").mkdir()
         (home / ".claude/agents/work-verifier.md").symlink_to(KIT.parent / "verify-work/agents/work-verifier.md")
         # Under the scratch HOME, as doctor runs, so a kit path renders the same way.
-        with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(home), "CLAUDE_CONFIG_DIR": str(home / ".claude")}):
             value = config.resolve(self.config)
-            for runtime, path in hookset.PATHS.items():
-                target = home / path.removeprefix("~/")
+            for runtime in hookset.RUNTIMES:
+                target = hookset.settings_path(runtime)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(json.dumps({"hooks": hookset.render(hookset.select(value, runtime))}))
         self.env.update({"HOME": str(home), "XDG_STATE_HOME": str(home / ".local/state"),
+                         "CLAUDE_CONFIG_DIR": str(home / ".claude"),
                          "PATH": f"{stubs}{os.pathsep}{os.environ.get('PATH', '')}"})
 
     def run_cli(self, *args):

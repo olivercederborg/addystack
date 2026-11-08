@@ -8,8 +8,8 @@ is a dangling link and each installed core skill has its SKILL.md, from an `npx 
 add` install or a link into a maintainer's checkout, while a core skill that isn't
 installed is a note, since a user may install some with `--skill` and update leaves a
 removed one removed; with the claude host enabled and verify-work in its skill folder,
-~/.claude/agents/work-verifier.md is the work-verifier agent, as install links it
-(reconcile.AGENT), or a file holding verify-work's copy's text; the installed hooks match the selection
+agents/work-verifier.md in Claude Code's folder is the work-verifier agent, as install links
+it (reconcile.agent()), or a file holding verify-work's copy's text; the installed hooks match the selection
 (hookset.drift); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
@@ -144,7 +144,7 @@ def _skill_links(value: Optional[Resolved]) -> Check:
     source = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
     problems, notes, missing = [], [], set()
     for host in _enabled(value):
-        folder = Path(skills_cli.FOLDERS[host]).expanduser()
+        folder = skills_cli.folder(host)
         dangling = [name for name in release if (folder / name).is_symlink() and not (folder / name).exists()]
         # Installed, as a folder or a link that resolves, without its SKILL.md.
         broken = [name for name in core if (folder / name).exists() and not (folder / name / "SKILL.md").is_file()]
@@ -189,7 +189,7 @@ def _agent(value: Optional[Resolved]) -> Check:
         return Check("agent", True, _SKIPPED, None)
     if not value["hosts"].get("claude"):
         return Check("agent", True, "not needed: the claude host is off", None)
-    link, source = reconcile.AGENT.expanduser(), reconcile.AGENT_SOURCE.expanduser()
+    link, source = reconcile.agent(), reconcile.agent_source()
     regular = os.path.lexists(link) and not link.is_symlink()
     # A link counts only when it's install's, to the copy verify-work ships: one to an older
     # copy, such as a kit checkout's repo root, would run that copy's instructions. A file

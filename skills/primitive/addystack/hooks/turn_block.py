@@ -6,8 +6,8 @@ routine, or whether a prompt asked for a merge. The stakes are the user's typing
 answered a bare `a` 1,636 times in October 2026 (36.7% of their typed messages), and 66% of
 1,726 `a` picks since Sep 28 were routine. A typed block makes "is `a` a stop?" and "did
 they pick a merge?" lookups instead of guesses. The block is prefrontal-turns' base, which
-Prefrontal reads, plus the extensions in the "Turn block" section of replies.md, which
-points to that spec.
+Prefrontal reads, plus addystack's extensions, which the kit's references/turn-block.md
+spells out, or the Turn block section of the user's reply rules file when they keep one.
 
 The block is an HTML comment so the user never sees it: T3 Code renders markdown through
 rehype-raw, then rehype-sanitize, which drops comment nodes, and an unclosed `<!--` while

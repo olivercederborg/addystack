@@ -36,9 +36,15 @@ def skips_rules(session_id):
 
 
 def skill_path():
-    """Where reply-shape's SKILL.md loads from."""
-    return pathlib.Path(os.environ.get("REPLY_SHAPE_SKILL",
-                                       "~/.claude/skills/reply-shape/SKILL.md")).expanduser()
+    """Where reply-shape's SKILL.md loads from: REPLY_SHAPE_SKILL, else Claude Code's
+    skill folder (config.claude_home())."""
+    override = os.environ.get("REPLY_SHAPE_SKILL")
+    if override:
+        return pathlib.Path(override).expanduser()
+    # Imported here: a check that loads this file for its other functions copies hooks/ alone.
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "lib"))
+    import config
+    return config.claude_home() / "skills" / "reply-shape" / "SKILL.md"
 
 
 def context(path):
