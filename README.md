@@ -6,7 +6,7 @@ the kit builds your agents' global instructions and hooks from it.
 
 ## Install
 
-You need Node.js with npm, Python 3.9 or later, and git.
+You need Node.js 22.20 or later with npm, Python 3.9 or later, and git.
 
 ```sh
 npx skills add olivercederborg/addystack -g
@@ -21,7 +21,9 @@ python3 ~/.agents/skills/addystack/bin/addystack install
    text you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
    `~/.config/addystack/global.md`. Then it builds and runs `doctor`.
 
-Below, `addystack` is short for `python3 ~/.agents/skills/addystack/bin/addystack`.
+If you install for Claude Code alone, the tool is in `~/.claude/skills/addystack/`
+instead of `~/.agents/skills/addystack/`. Below, `addystack` is short for
+`python3 ~/.agents/skills/addystack/bin/addystack`.
 
 Run `addystack doctor` any time to check the install. It names the fix for each problem.
 In an agent session, `/addystack` does all of this for you.
