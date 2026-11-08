@@ -140,7 +140,8 @@ export declare function exportRows(range: DateRange): Effect<Row[], ExportError>
 </details>
 ````
 
-Offer the recommended shape and the smallest other one, and wait for the user's pick.
+Offer the recommended shape and the smallest other one, and wait for the user's pick;
+picking a shape approves it and commits its contract.
 The user can pick any
 shape, or a merge of two, in their own words. Iterate on the user's edits by showing
 only what changed.
