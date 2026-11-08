@@ -14,16 +14,17 @@ python3 ~/.agents/skills/addystack/bin/addystack init
 python3 ~/.agents/skills/addystack/bin/addystack install
 ```
 
-1. `npx skills add` installs the skills. Add `--skill <names>` to install only some, and
-   keep `addystack` among them, since the next steps run its tool.
-2. `init` writes your config from what it detects, such as the agents on your PATH.
-3. `install` adds the kit's hooks beside yours. For each agent `init` found, it moves any
-   text you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
-   `~/.config/addystack/global.md`. Then it builds and runs `doctor`.
+1. `npx skills add` installs the skills. To install only some, pass `--skill <names>`
+   and keep `addystack`, whose tool the next steps run.
+2. `init` writes your config, including the agents it finds on your PATH. Run it first:
+   `install` works only on those agents.
+3. `install` adds the kit's hooks beside yours and moves text you wrote in
+   `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into `~/.config/addystack/global.md`,
+   where your own instructions live from now on. Then it builds and runs `doctor`.
 
-If you install for Claude Code alone, the tool is in `~/.claude/skills/addystack/` by
-default, so use that path in place of `~/.agents/skills/addystack/` in every command here.
-Below, `addystack` is short for `python3 ~/.agents/skills/addystack/bin/addystack`.
+After a Claude-only install, the tool is in `~/.claude/skills/addystack/` by default, so
+use that path in place of `~/.agents/skills/addystack/` in every command here. Below,
+`addystack` is short for `python3 ~/.agents/skills/addystack/bin/addystack`.
 
 Run `addystack doctor` any time to check the install. It names the fix for each problem.
 In an agent session, `/addystack` does all of this for you.
@@ -37,7 +38,7 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 |---|---|
 | primitive: one job each | `scope-grill`, `architect`, `build`, `review-loop`, `verify-work`, `open-pr`, `address-review`, `review-teammate-pr`, `grounding`, `tidy`, `blast-radius`, `show-me-your-work`, `orchestrate`, `unslop`, `correct`, `reflect`, `addystack` |
 | orchestrator: runs primitives as steps | `autopilot` builds an approved plan to a verified PR stack, `babysit` keeps a watched PR moving, `coordinator` runs a project from one thread |
-| optional: not core, so `update` never adds or removes them | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
+| optional: extras `update` never adds or removes | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
 
 ## Config
 
@@ -51,9 +52,9 @@ applies an edit, policy, and notes.
 python3 ~/.agents/skills/addystack/bin/addystack update
 ```
 
-This updates the skills, adds skills that became core, removes core skills the release
-dropped, and runs `install` again. `/addystack update` also summarizes
-[`CHANGELOG.md`](CHANGELOG.md) and flags notes whose skill changed.
+It updates the skills, adds skills that became core, removes core skills it dropped, and
+reruns `install`. `/addystack update` also summarizes [`CHANGELOG.md`](CHANGELOG.md) and
+flags notes whose skill changed.
 
 ## Working on the kit
 
@@ -63,8 +64,8 @@ Once per clone:
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook runs the lints and tests, through `dagger check` when Dagger can reach
-an engine. `dagger check -l` lists the checks.
+The pre-commit hook runs the lints and tests, through Dagger when it can reach an engine
+(`dagger check -l` lists them).
 
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run
