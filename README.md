@@ -93,12 +93,10 @@ symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), 
 
 ## Credits
 
-A skill that adapts or copies an MIT skill carries its license in a `NOTICE` file.
-
 - [Matt Pocock's skills](https://github.com/mattpocock/skills): `scope-grill` adapts `grilling`, `reflect` adds checks from `retro`, and the kit uses `codebase-design`, `domain-modeling`, `tdd`, and `diagnosing-bugs` when installed.
-- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT): the source of `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and the rules in `autopilot` and `orchestrate`.
-- [Ben Holmes's skills](https://github.com/bholmesdev/skills) (MIT): `tidy` adapts `simplify`.
-- [Ayoub Ghriss's i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT): `reply-shape` adapts it.
+- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT, see each skill's `NOTICE`): the source of `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and the rules in `autopilot` and `orchestrate`.
+- [Ben Holmes's skills](https://github.com/bholmesdev/skills) (MIT, see its `NOTICE`): `tidy` adapts `simplify`.
+- [Ayoub Ghriss's i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT, see its `NOTICE`): `reply-shape` adapts it.
 - [HumanLayer's skills](https://github.com/humanlayer/skills): `open-pr`'s default body follows `visual-pr`.
 - `use-lakebed` started in a team's skill registry and pins Lakebed 0.0.41.
 
