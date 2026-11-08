@@ -39,7 +39,8 @@ records the verdict the merge gate reads. It reports; the caller fixes.
   claims no behavior change, contract for a shared format, deploy for a claim that it's
   live, toolchain for a new bundler plugin or dev-server dependency.
 
-When `target`'s last line shows an earlier verdict for this branch, go to step 4 now.
+When `target`'s last line shows an earlier verdict for this branch, go to step 4 now,
+unless the user asked for a full pass.
 
 **Done when:** the diff, its base, the intended outcome, and the evidence kinds are known.
 
@@ -175,18 +176,17 @@ and needs no new verdict, since the patch-id doesn't cover PR text.
 A run after an earlier verdict ("anything else?", "is it done now?", after fixes or a
 restack) checks the **delta**: what changed since the head that verdict checked. Take
 that verdict's base, head, and findings from the verifier's record, the last line of
-`scripts/github.sh target`, never from the caller's account. With `last: none`, or when
-the user asks for a full pass, run steps 1 to 3. When the line has `known`, the verdict
-stands: say why and stop there, reading no new code and recording nothing, unless it's a
-Not verified whose run can now happen.
+`scripts/github.sh target`, never from the caller's account. When the line has `known`,
+the verdict stands: say why and stop there, reading no new code and recording nothing,
+unless it's a Not verified whose run can now happen.
 
 1. **Delta**: pin the base and head as step 1 does. On the recorded base, with the
    recorded head an ancestor, read `git diff <last head> <head>`. On a new base, read
    `git range-diff <last base>..<last head> <base>..<head>`: each new or changed commit
    is in the delta, including ones the new base brings in. Read the code the delta
-   calls, with the lenses it matches. Run steps 1 to 3 instead when neither holds, or
-   when range-diff can't see the change: a dropped commit (`<`), a merge commit in
-   either range (`git rev-list --merges`), or a binary file (`-` in
+   calls, with the lenses it matches. Run steps 2 and 3 on the whole diff instead when
+   neither holds, or when range-diff can't see the change: a dropped commit (`<`), a
+   merge commit in either range (`git rev-list --merges`), or a binary file (`-` in
    `git diff --numstat`).
 2. **Checks**: the Verification checks, a trial merge with the base branch's tip
    (`git merge-tree --write-tree <tip> <head>` exits 0; the tip is `origin/<base branch>`
