@@ -25,9 +25,10 @@ its own background test run and handed back "I'll wait for the result notificati
 verdict. A task counts as finished once a task notification or a TaskStop names it.
 `t3_background_wait` doesn't count: it only keeps the thread marked Working, and R76 ended
 on its commit after calling it. The send-back says to wait on a command rather than rerun
-it, since a second `git commit` started during the first one's pre-commit fails on HEAD's lock. Monitors don't count, since one often outlives the event it
-was waiting for. Codex is a no-op: its exec sessions never promise to wake the agent, and
-no Codex child was seen ending a turn this way."""
+it, since a second `git commit` started during the first one's pre-commit fails on HEAD's
+lock. Monitors don't count, since one often outlives the event it was waiting for. Codex is
+a no-op: its exec sessions never promise to wake the agent, and no Codex child was seen
+ending a turn this way."""
 import json, os, re, subprocess, sys
 from pathlib import Path
 
