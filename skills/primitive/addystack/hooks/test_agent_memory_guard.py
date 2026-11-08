@@ -430,6 +430,10 @@ class CommandLine(unittest.TestCase):
     def test_unmarked_environment(self):
         self.assertIs(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1], False)
 
+    def test_codex_thread_id_marks_a_command(self):
+        env = [b"HOME=/x", b"CODEX_THREAD_ID=t1"]
+        self.assertIs(guard.parse_procargs(self.procargs(b"node", env=env))[1], True)
+
     def test_hidden_environment_is_unknown(self):
         self.assertIsNone(guard.parse_procargs(self.procargs(b"node", env=[]))[1])
 

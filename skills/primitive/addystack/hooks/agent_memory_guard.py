@@ -41,6 +41,8 @@ Known limits:
 - An orphan from an installed app (under /Applications/) that leads its own process
   group isn't agent work by its environment alone, since an app such as OrbStack starts
   its VM with the environment of whichever command woke it.
+- Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
+  counts toward the total.
 - A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
   too, and dies after 30 minutes; run it as a background task the agent tracks.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
@@ -137,8 +139,9 @@ if sys.platform == "darwin":
     libc.mach_timebase_info(ctypes.byref(timebase))
     NS_PER_TICK = timebase.numer / timebase.denom
 # Environment variables an agent passes to everything it runs: Claude Code sets
-# CLAUDECODE, and T3 Code starts Codex with CODEX_INTERNAL_ORIGINATOR_OVERRIDE.
-AGENT_ENV = (b"CLAUDECODE=", b"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=")
+# CLAUDECODE, T3 Code starts Codex with CODEX_INTERNAL_ORIGINATOR_OVERRIDE, and Codex
+# gives each shell command CODEX_THREAD_ID, however Codex was started.
+AGENT_ENV = (b"CLAUDECODE=", b"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=", b"CODEX_THREAD_ID=")
 command_lines = {}
 
 
