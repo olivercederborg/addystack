@@ -18,8 +18,9 @@ python3 ~/.agents/skills/addystack/bin/addystack install
 2. `init` writes your config from what it detects, such as the agents on your PATH.
 3. `install` adds the kit's hooks beside yours and moves any text you wrote in
    `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into `~/.config/addystack/global.md`.
-   Then it builds and runs `doctor`, which names the fix for each problem.
+   Then it builds and runs `doctor`.
 
+Run `addystack doctor` any time to check the install. It names the fix for each problem.
 In an agent session, `/addystack` does all of this for you.
 
 ## Skills
@@ -31,7 +32,7 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 |---|---|
 | primitive: one job each | `scope-grill`, `architect`, `build`, `review-loop`, `verify-work`, `open-pr`, `address-review`, `review-teammate-pr`, `grounding`, `tidy`, `blast-radius`, `show-me-your-work`, `orchestrate`, `unslop`, `correct`, `reflect`, `addystack` |
 | orchestrator: runs primitives as steps | `autopilot` builds an approved plan to a verified PR stack, `babysit` keeps a watched PR moving, `coordinator` runs a project from one thread |
-| optional: not core, so `update` leaves them alone | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
+| optional: not core, so `update` never adds or removes them | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
 
 ## Config
 
@@ -45,10 +46,12 @@ Your settings live in `~/.config/addystack/`, which you can keep in your dotfile
 - `notes/` holds steps you add to core skills.
 
 After an edit, run `addystack build`, or `addystack install` if you changed `hosts`,
-`hooks`, or `replies`. `addystack print-config` prints the merged config.
+`hooks`, or `replies`. The build overwrites `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`,
+so keep your own instructions in `global.md`. `addystack print-config` prints the merged
+config.
 
 `policy.defaults` sets how agents work everywhere, and `policy.repos` rules override it
-for checkouts matched by `path` or `remote`. Defaults come first:
+for checkouts matched by `path` or `remote`. The first value listed is the default:
 
 - `planning`: `gated` waits for your approval of the plan, `autonomous` doesn't.
 - `trust`: `draft` stops at draft PRs, `gate` merges once the merge gate allows it, and
@@ -90,7 +93,7 @@ symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), 
 
 ## Credits
 
-Each adapted skill's `NOTICE` carries its license.
+A skill that adapts or copies an MIT skill carries its license in a `NOTICE` file.
 
 - [Matt Pocock's skills](https://github.com/mattpocock/skills): `scope-grill` adapts `grilling`, `reflect` adds checks from `retro`, and the kit uses `codebase-design`, `domain-modeling`, `tdd`, and `diagnosing-bugs` when installed.
 - [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT): the source of `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and the rules in `autopilot` and `orchestrate`.
