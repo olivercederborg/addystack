@@ -66,6 +66,15 @@ class Problems(unittest.TestCase):
         self.assertEqual(problems({"decision": {"options": [{"key": "A", "text": "x"}]}}),
                          ['$.ui[0].decision.options[0].key: "A" doesn\'t match ^[a-z]$'])
 
+    def test_indexes_keys_and_picks_must_fit_their_lists(self):
+        self.assertEqual(problems({"table": {"columns": ["N"], "rows": [["A"]], "pick": 1}}),
+                         ["$.ui[0].table.pick: no row 1; rows count from 0"])
+        self.assertEqual(problems({"flow": {"steps": ["a", "b"], "mark": 2}}),
+                         ["$.ui[0].flow.mark: no step 2; steps count from 0"])
+        options = [{"key": "a", "text": "x", "rec": True}, {"key": "a", "text": "y", "rec": True}]
+        self.assertEqual(problems({"decision": {"options": options}}),
+                         ["$.ui[0].decision.options: each key once, got a, a", "$.ui[0].decision.options: at most one rec"])
+
     def test_an_unsupported_schema_keyword_fails_loudly(self):
         with self.assertRaisesRegex(ValueError, "unsupported schema keyword 'format'"):
             card.check("x", {"type": "string", "format": "uri"})

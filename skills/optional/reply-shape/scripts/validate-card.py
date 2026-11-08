@@ -21,6 +21,7 @@ import json
 import pathlib
 import re
 import sys
+from html.parser import HTMLParser
 
 SCHEMA = pathlib.Path(__file__).resolve().parent.parent / "ui" / "catalog.schema.json"
 ANNOTATIONS = {"$schema", "$id", "$defs", "title", "description"}
@@ -28,8 +29,8 @@ KEYWORDS = {"$ref", "oneOf", "type", "enum", "required", "additionalProperties",
             "items", "prefixItems", "minItems", "maxItems", "minLength", "maxLength", "pattern",
             "minimum", "maximum"} | ANNOTATIONS
 RENDERER = SCHEMA.with_name("renderer.url")
-SCRIPT_SRC = re.compile(r'<script\b[^>]*\bsrc=["\']?([^"\'\s>]*(?:reply-ui|/reply\.js)[^"\'\s>]*)', re.I)
-PAYLOAD = re.compile(r'<script\b[^>]*\bid=["\']?ui["\']?[^>]*>(.*?)</script>', re.S | re.I)
+# A script src that loads the renderer, from any host or version.
+RENDERER_SRC = re.compile(r"reply-ui|/reply\.js(?:[?#]|$)", re.I)
 
 
 def is_type(value, name):
@@ -128,17 +129,73 @@ class Validator:
         return [f"{path}: unknown block {keys}; a block has one key of {', '.join(names)}"]
 
 
+class Scripts(HTMLParser):
+    """A page's script srcs, and the text of each script whose id is exactly "ui", parsed as
+    the browser does: attribute spacing and quotes vary, and script text is never markup."""
+
+    def __init__(self, html):
+        super().__init__()
+        self.srcs, self.payloads, self._open = [], [], None
+        self.feed(html)
+        self.close()
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            attrs = dict(attrs)
+            if attrs.get("src"):
+                self.srcs.append(attrs["src"].strip())
+            self._open = [] if attrs.get("id") == "ui" else None
+
+    def handle_data(self, data):
+        if self._open is not None:
+            self._open.append(data)
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self._open is not None:
+            self.payloads.append("".join(self._open))
+            self._open = None
+
+
+def _no_constant(name):
+    raise ValueError(f"{name} isn't JSON")
+
+
+def parse(text):
+    """JSON as the browser's JSON.parse reads it, so NaN and Infinity fail."""
+    return json.loads(text, parse_constant=_no_constant)
+
+
 def load(text):
-    """The payload: the page's last <script id="ui">, since an inlined reply.js names that tag
-    in its own comment, or the whole text as JSON."""
-    found = PAYLOAD.findall(text)
-    return json.loads(found[-1] if found else text)
+    """The payload: the first <script id="ui"> of a page, the one the renderer reads, or the
+    whole text as JSON."""
+    found = Scripts(text).payloads
+    return parse(found[0] if found else text)
+
+
+def references(payload):
+    """Problems the schema can't express: an index past its list, and decision keys or picks
+    that clash."""
+    found = []
+    for i, block in enumerate(payload.get("ui", []) if isinstance(payload, dict) else []):
+        (kind, body), = block.items()
+        path = f"$.ui[{i}].{kind}"
+        if kind == "table" and body.get("pick", 0) >= len(body["rows"]):
+            found.append(f"{path}.pick: no row {body['pick']}; rows count from 0")
+        if kind == "flow" and body.get("mark", 0) >= len(body["steps"]):
+            found.append(f"{path}.mark: no step {body['mark']}; steps count from 0")
+        if kind == "decision":
+            keys = [o["key"] for o in body["options"]]
+            if len(set(keys)) < len(keys):
+                found.append(f"{path}.options: each key once, got {', '.join(keys)}")
+            if sum(1 for o in body["options"] if o.get("rec")) > 1:
+                found.append(f"{path}.options: at most one rec")
+    return found
 
 
 def check(payload, schema=None):
     """The problems in payload, as `<path>: <message>` lines; none when it's valid."""
     schema = schema or json.loads(SCHEMA.read_text())
-    return Validator(schema).errors(payload, schema)
+    return Validator(schema).errors(payload, schema) or references(payload)
 
 
 def pinned():
@@ -148,19 +205,21 @@ def pinned():
 
 def refusal(html):
     """Why html_render should refuse this page, with the fix, or None when it passes."""
-    sources = SCRIPT_SRC.findall(html)
+    page = Scripts(html)
+    sources = [src for src in page.srcs if RENDERER_SRC.search(src)]
     if not sources:
         return None
     url = pinned()
     wrong = [src for src in sources if src != url]
     if wrong:
         return f"Reply card loads {wrong[0]}; load exactly {url} (reply-shape's ui/renderer.url)."
+    if len(page.payloads) > 1:
+        return 'Reply card has more than one <script id="ui">; keep one, since the renderer reads only the first.'
+    if not page.payloads:
+        return 'Reply card has no payload; add <script type="application/json" id="ui">{"ui":[...]}</script> after reply.js.'
     try:
-        found = PAYLOAD.findall(html)
-        if not found:
-            return 'Reply card has no payload; add <script type="application/json" id="ui">{"ui":[...]}</script> after reply.js.'
-        problems = check(json.loads(found[-1]))
-    except json.JSONDecodeError as error:
+        problems = check(parse(page.payloads[0]))
+    except ValueError as error:
         problems = [f"$: not JSON: {error}"]
     if not problems:
         return None
@@ -195,7 +254,7 @@ def main(argv):
     text = sys.stdin.read() if source == "-" else pathlib.Path(source).read_text()
     try:
         payload = load(text)
-    except json.JSONDecodeError as error:
+    except ValueError as error:
         print(f"$: not JSON: {error}")
         return 1
     problems = check(payload)
