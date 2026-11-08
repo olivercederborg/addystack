@@ -49,7 +49,8 @@ class Cli(unittest.TestCase):
     def installed_home(self):
         """A scratch HOME where doctor's host, skill, hook, and tool checks pass: stub
         `claude`, `codex`, and `gh` first on PATH, both skill folders linked to the kit as a
-        maintainer's are, and the selected hooks in both hosts' settings."""
+        maintainer's are, Claude Code's work-verifier agent linked to verify-work's, and the
+        selected hooks in both hosts' settings."""
         home, stubs = self.dir / "home", self.dir / "stubs"
         stubs.mkdir()
         for name in ("claude", "codex", "gh"):
@@ -58,6 +59,8 @@ class Cli(unittest.TestCase):
         for folder in (".claude/skills", ".agents/skills"):
             (home / folder).parent.mkdir(parents=True, exist_ok=True)
             (home / folder).symlink_to(KIT)
+        (home / ".claude/agents").mkdir()
+        (home / ".claude/agents/work-verifier.md").symlink_to(KIT.parent / "verify-work/agents/work-verifier.md")
         # Under the scratch HOME, as doctor runs, so a kit path renders the same way.
         with unittest.mock.patch.dict(os.environ, {"HOME": str(home)}):
             value = config.resolve(self.config)
@@ -205,7 +208,7 @@ class Doctor(Cli):
         result = self.run_cli("doctor")
         self.assertEqual(result.returncode, 0, result.stdout)
         self.assertIn("ok    built files: match the config", result.stdout)
-        for name in ("hosts", "skill links", "hooks", "policy tools"):
+        for name in ("hosts", "skill links", "agent", "hooks", "policy tools"):
             self.assertRegex(result.stdout, rf"(?m)^ok    {name}: ")
 
     def test_fails_when_the_built_files_are_stale(self):

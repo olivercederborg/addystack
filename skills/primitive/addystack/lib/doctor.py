@@ -7,7 +7,9 @@ enables; in each enabled host's skill folder, no skill the release lists (core/s
 is a dangling link and each installed core skill has its SKILL.md, from an `npx skills
 add` install or a link into a maintainer's checkout, while a core skill that isn't
 installed is a note, since a user may install some with `--skill` and update leaves a
-removed one removed; the installed hooks match the selection
+removed one removed; with the claude host enabled and verify-work in its skill folder,
+~/.claude/agents/work-verifier.md is the work-verifier agent, as install links it
+(reconcile.AGENT); the installed hooks match the selection
 (hookset.drift); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -27,6 +30,7 @@ from typing import Dict, List, Optional
 import config
 import hookset
 import notes
+import reconcile
 import render
 import resolved as _resolved
 import skill_layer
@@ -161,6 +165,44 @@ def _skill_links(value: Optional[Resolved]) -> Check:
                  f"{fix}run npx skills add {source} -g -y --skill {names}, or link each from your checkout")
 
 
+def _is_verifier(path: Path) -> bool:
+    """Whether path reads as an agent whose frontmatter names it work-verifier."""
+    try:
+        lines = path.read_text().split("\n")
+    except (OSError, UnicodeDecodeError):
+        return False
+    if lines[0] != "---" or "---" not in lines[1:]:
+        return False
+    return any(re.fullmatch(r"name:\s*(['\"]?)work-verifier\1\s*", line) for line in lines[1:lines.index("---", 1)])
+
+
+def _agent(value: Optional[Resolved]) -> Check:
+    if value is None:
+        return Check("agent", True, _SKIPPED, None)
+    if not value["hosts"].get("claude"):
+        return Check("agent", True, "not needed: the claude host is off", None)
+    link, source = reconcile.AGENT.expanduser(), reconcile.AGENT_SOURCE.expanduser()
+    if _is_verifier(link):
+        return Check("agent", True, f"{render._home(link)} is the work-verifier agent"
+                     + (f", through {render._home(Path(os.readlink(link)))}" if link.is_symlink() else ""), None)
+    if not os.path.lexists(source.parents[1]):
+        return Check("agent", True, f"not needed: verify-work isn't in {render._home(source.parents[2])}", None)
+    if link.is_symlink():
+        problem = f"{render._home(link)} links to {os.readlink(link)}, which isn't the work-verifier agent"
+    elif os.path.lexists(link):
+        problem = f"{render._home(link)} isn't the work-verifier agent"
+    else:
+        problem = f"{render._home(link)} is missing"
+    if os.path.lexists(link) and not link.is_symlink():
+        fix = f"move {render._home(link)} aside, then run addystack install"
+    elif not source.is_file():
+        kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
+        fix = f"run npx skills add {kit} -g -y --skill verify-work, then addystack install"
+    else:
+        fix = "addystack install"
+    return Check("agent", False, f"{problem}; verify-work's fork needs it to record a Done verdict", fix)
+
+
 def _hooks(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("hooks", True, _SKIPPED, None)
@@ -190,4 +232,4 @@ def run(resolved: Optional[Resolved]) -> List[Check]:
     """Every check. With resolved None, the config didn't resolve, so the config check
     fails with its issues and the checks that need a resolved config are skipped."""
     return [_config(resolved), _fresh(resolved), _notes(resolved), _hosts(resolved), _skill_links(resolved),
-            _hooks(resolved), _policy_tools(resolved)]
+            _agent(resolved), _hooks(resolved), _policy_tools(resolved)]

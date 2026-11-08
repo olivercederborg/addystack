@@ -1,4 +1,4 @@
-"""Tests for doctor's hosts, skill links, hooks, and policy tools checks in a scratch HOME:
+"""Tests for doctor's hosts, skill links, agent, hooks, and policy tools checks in a scratch HOME:
 each passes on a working install and fails with a fix line naming what to run."""
 from __future__ import annotations
 
@@ -100,6 +100,52 @@ class SkillLinks(Doctor):
         self.assertEqual(line, "FAIL  skill links: ~/.claude/skills/build is a dangling link")
         self.assertEqual(fix, "fix: remove each dangling link, then run npx skills add <the addystack repo> -g -y "
                               "--skill build, or link each from your checkout")
+
+
+class Agent(Doctor):
+    def setUp(self):
+        super().setUp()
+        self.link = self.home / ".claude/agents/work-verifier.md"
+        self.link.parent.mkdir(parents=True)
+
+    def test_passes_once_install_links_it(self):
+        line, fix = self.check("agent")
+        self.assertEqual(line, "FAIL  agent: ~/.claude/agents/work-verifier.md is missing; verify-work's fork needs it "
+                               "to record a Done verdict")
+        self.assertEqual(fix, "fix: addystack install")
+        self.cli("install")
+        self.assertEqual(self.check("agent"),
+                         ("ok    agent: ~/.claude/agents/work-verifier.md is the work-verifier agent, through "
+                          "~/.claude/skills/verify-work/agents/work-verifier.md", None))
+
+    def test_a_link_to_the_old_repo_root_path_fails(self):
+        self.link.symlink_to("/old/kit/agents/work-verifier.md")
+        line, fix = self.check("agent")
+        self.assertTrue(line.startswith("FAIL  agent: ~/.claude/agents/work-verifier.md links to "
+                                        "/old/kit/agents/work-verifier.md, which isn't the work-verifier agent"), line)
+        self.assertEqual(fix, "fix: addystack install")
+
+    def test_a_file_that_isnt_the_agent_fails_and_one_that_is_passes(self):
+        self.link.write_text("---\nname: my-reviewer\n---\n")
+        self.assertEqual(self.check("agent")[1], "fix: move ~/.claude/agents/work-verifier.md aside, then run "
+                                                 "addystack install")
+        self.link.write_text((SKILLS["verify-work"] / "agents/work-verifier.md").read_text())
+        self.assertEqual(self.check("agent"),
+                         ("ok    agent: ~/.claude/agents/work-verifier.md is the work-verifier agent", None))
+
+    def test_a_verify_work_without_the_agent_fails_with_its_install_command(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        self.assertEqual(self.check("agent")[1], "fix: run npx skills add <the addystack repo> -g -y --skill "
+                                                 "verify-work, then addystack install")
+
+    def test_without_verify_work_nothing_needs_the_agent(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.assertEqual(self.check("agent"), ("ok    agent: not needed: verify-work isn't in ~/.claude/skills", None))
+
+    def test_a_disabled_claude_host_needs_none(self):
+        self.write(self.config, '{ "hosts": { "claude": false } }')
+        self.assertEqual(self.check("agent"), ("ok    agent: not needed: the claude host is off", None))
 
 
 class Hooks(Doctor):

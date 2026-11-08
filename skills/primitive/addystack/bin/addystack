@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """addystack: install, configure, build, and check the addystack skills kit.
 
-    addystack install [--dry-run]      merge hooks, adopt instruction files, build, doctor; never a skill
+    addystack install [--dry-run]      merge hooks, adopt instruction files, link the work-verifier agent,
+                                       build, doctor; never a skill
     addystack update [--to TAG]        update the kit and its skills, then install
     addystack init [--yes] [--force]   write ~/.config/addystack/addystack.jsonc
     addystack build [--check|--dry-run]
@@ -53,8 +54,8 @@ import skills_cli  # noqa: E402
 
 
 def install(args: argparse.Namespace) -> int:
-    """Validates the config, reconciles hooks and instruction files, builds, then runs
-    doctor (D10). --dry-run prints each change, and build's diffs from the state those
+    """Validates the config, reconciles hooks, instruction files, and Claude Code's
+    work-verifier agent link, builds, then runs doctor (D10). --dry-run prints each change, and build's diffs from the state those
     changes would leave, and writes nothing."""
     value = _resolve()
     if value is None:
@@ -69,11 +70,13 @@ def install(args: argparse.Namespace) -> int:
         print(f"addystack: {error}", file=sys.stderr)
         return 1
     for change in changes:
-        print(f"{'would change' if args.dry_run else 'changed'} {change.target} ({change.kind})")
+        verb = ("would leave" if args.dry_run else "left") if change.left else \
+            "would change" if args.dry_run else "changed"
+        print(f"{verb} {change.target} ({change.kind})")
         print(*(f"  {line}" for line in change.detail.splitlines()), sep="\n")
     if args.dry_run:
         if not changes:
-            print("addystack install would change no hooks or instruction files")
+            print("addystack install would change no hooks, instruction files, or agent link")
         # Build's diffs from the state install would leave: the adopted global.md, and the
         # config naming it.
         with config.planned(writes):
@@ -431,7 +434,7 @@ def parser() -> argparse.ArgumentParser:
     commands = argparse.ArgumentParser(prog="addystack", description=__doc__.splitlines()[0],
                                        formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = commands.add_subparsers(dest="command", required=True)
-    sub.add_parser("install", help="merge hooks, adopt instruction files, build, doctor").add_argument(
+    sub.add_parser("install", help="merge hooks, adopt instruction files, link the agent, build, doctor").add_argument(
         "--dry-run", action="store_true", help="print each change and write nothing")
     sub.add_parser("update", help="update the kit and its skills, then install").add_argument(
         "--to", metavar="TAG", help="in a git checkout, the tag to check out instead of the newest")

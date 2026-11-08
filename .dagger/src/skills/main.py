@@ -239,9 +239,10 @@ class Skills:
         # import the tool's hooks/, and the addystack tests run the whole tool (bin/addystack,
         # its schema, lib/, defaults, example config, core templates, and principles) and
         # compare the core templates with the router and principles index they copy.
-        # test_sync_copies runs each copied skill script beside its source.
+        # test_sync_copies runs each copied skill script beside its source. The install tests
+        # link the work-verifier agent from verify-work's folder.
         kit: source("scripts", "skills/*/*/scripts", "shared/scripts", ".githooks/pre-commit", TOOL,
-                    f"-{TOOL}/hooks/README.md", "skills/*/*/SKILL.md", "replies.md",
+                    f"-{TOOL}/hooks/README.md", "skills/*/*/SKILL.md", "skills/*/*/agents/*.md", "replies.md",
                     "skills/optional/reply-shape/references/*.md", "router.md", "principles/index.md"),
     ) -> None:
         """scripts/test_*.py"""
