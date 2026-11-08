@@ -247,7 +247,7 @@ class Drift(unittest.TestCase):
             mine = pathlib.Path(legacy, "merge-gate.py")
             mine.write_text("#!/bin/sh\n")
             self.hooks["Stop"].append({"hooks": [{"type": "command", "command": str(mine)}]})
-            with unittest.mock.patch.object(hookset, "_LEGACY_DIRS", (legacy,)):
+            with unittest.mock.patch.object(hookset, "_legacy_dirs", lambda: (legacy,)):
                 self.assertEqual(self.drift(), [])
 
     def test_an_older_link_to_a_kit_script_is_ours_even_under_another_name(self):
@@ -255,7 +255,7 @@ class Drift(unittest.TestCase):
             link = pathlib.Path(legacy, "session-start.sh")
             link.symlink_to(KIT / "hooks" / "reply-shape-context.py")
             self.hooks.setdefault("SessionStart", []).append({"hooks": [{"type": "command", "command": str(link)}]})
-            with unittest.mock.patch.object(hookset, "_LEGACY_DIRS", (legacy,)):
+            with unittest.mock.patch.object(hookset, "_legacy_dirs", lambda: (legacy,)):
                 drift = self.drift()
         self.assertEqual(drift, [f"claude: extra SessionStart {link}"])
 
@@ -268,6 +268,20 @@ class Drift(unittest.TestCase):
         self.resolved["replies"]["turnBlock"] = False
         self.assertEqual(self.drift(), [f"claude: extra Stop {hookset._kit(self.resolved)}/hooks/{name}"
                                         for name in ("routine_stop.py", "reply_budget.py")])
+
+
+class ClaudeConfigDir(unittest.TestCase):
+    """Claude Code's settings and the older installs' link folder are in the folder
+    CLAUDE_CONFIG_DIR names, looked up on each call."""
+
+    def test_claudes_settings_and_older_link_folder_follow_claude_config_dir(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": folder}):
+            self.assertEqual(hookset.settings_path("claude"), pathlib.Path(folder, "settings.json"))
+            link = pathlib.Path(folder, "hooks", "merge-gate.py")
+            link.parent.mkdir()
+            link.symlink_to(KIT / "hooks" / "merge-gate.py")
+            self.assertTrue(hookset._ours(str(link), MANIFEST, "~/kit"))
 
 
 if __name__ == "__main__":

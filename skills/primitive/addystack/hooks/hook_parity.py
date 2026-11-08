@@ -33,7 +33,7 @@ sys.path[:0] = [str(HOOKS), str(HOOKS.parent / "lib")]
 import config  # noqa: E402
 import hookset  # noqa: E402
 import resolved  # noqa: E402
-from hookset import PATHS, PROFILES, applies, host_profile  # noqa: E402,F401
+from hookset import PROFILES, RUNTIMES, applies, host_profile  # noqa: E402,F401
 
 MANIFEST = HOOKS / "manifest.json"
 TRUST_TIMEOUT = 20  # seconds to wait for each codex app-server reply
@@ -48,7 +48,7 @@ def resolved_config():
         # and kit can't be missing or null here.
         data = resolved._state()
         _check_selection_fields(data)
-        for runtime in PATHS:
+        for runtime in RUNTIMES:
             hookset._select([], data)
             for entry in json.loads(MANIFEST.read_text())[runtime]:
                 hookset._chosen(entry, data)
@@ -154,8 +154,8 @@ def _codex_trust():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--claude", help=f"default {PATHS['claude']}")
-    parser.add_argument("--codex", help=f"default {PATHS['codex']}")
+    parser.add_argument("--claude", help=f"default {hookset.settings_path('claude')}")
+    parser.add_argument("--codex", help=f"default {hookset.settings_path('codex')}")
     parser.add_argument("--codex-trust", action="store_true",
                         help="also ask codex app-server which hooks it trusts")
     parser.add_argument("--profile", default="auto", choices=("auto", *PROFILES),

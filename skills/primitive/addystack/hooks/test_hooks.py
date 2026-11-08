@@ -321,7 +321,8 @@ def fake_home(folder, drop=()):
     """A home under folder with a kit at ~/kit whose hooks link to this checkout's, a
     resolved.json in ~/state that selects every hook, and settings.json and hooks.json
     holding every manifest entry with `{{kit}}` as ~/kit, less the commands in drop.
-    Returns its env: HOME, as the resolved path, and ADDYSTACK_STATE."""
+    Returns its env: HOME, as the resolved path, ADDYSTACK_STATE, and CLAUDE_CONFIG_DIR as
+    ~/.claude, so a caller's own Claude Code folder isn't read."""
     home = pathlib.Path(folder).resolve()
     kit_hooks = home / "kit" / "hooks"
     kit_hooks.mkdir(parents=True, exist_ok=True)
@@ -341,10 +342,10 @@ def fake_home(folder, drop=()):
                     **({"onFailure": entry["onFailure"]} if "onFailure" in entry else {})}
             config["hooks"].setdefault(entry["event"], []).append(
                 {**({"matcher": entry["matcher"]} if entry["matcher"] else {}), "hooks": [hook]})
-        path = pathlib.Path(home, hook_parity.PATHS[runtime].removeprefix("~/"))
+        path = home / {"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[runtime]
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(config))
-    return {"HOME": str(home), "ADDYSTACK_STATE": str(home / "state")}
+    return {"HOME": str(home), "ADDYSTACK_STATE": str(home / "state"), "CLAUDE_CONFIG_DIR": str(home / ".claude")}
 
 
 @unittest.skipUnless(sys.platform == "darwin", "the guard only runs on macOS")

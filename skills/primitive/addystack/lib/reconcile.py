@@ -5,8 +5,8 @@ It never installs or links a skill: skills install with `npx skills add`, and do
 accepts that install or a maintainer's linked checkout.
 
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
-hookset.merge into Claude Code's ~/.claude/settings.json `hooks` key and Codex's
-~/.codex/hooks.json (hookset.PATHS), so every hook addystack didn't install stays where it
+hookset.merge into Claude Code's settings.json `hooks` key and Codex's
+~/.codex/hooks.json (hookset.settings_path), so every hook addystack didn't install stays where it
 is. A hook addystack installed is one the ledger records, at installed.json in the state
 folder (`ADDYSTACK_STATE`), or one a manifest entry renders for this kit, or one that runs
 a manifest script from the kit path the last build recorded, when the checkout has moved
@@ -25,12 +25,12 @@ instructions file, install sets `"instructions": "global.md"` in it, so the buil
 the text; with no config yet, the build reads `global.md` beside where it would be
 (config.load_layers), and `addystack init` names it.
 
-Agent: Claude Code reads subagents from ~/.claude/agents/, and only a `work-verifier`
-subagent can record a Done verdict, but `npx skills add` installs the agent inside
-verify-work's folder. So when the claude host is enabled, install links AGENT to that copy
-in Claude's skill folder (AGENT_SOURCE), replacing a link or filling a missing path. A file
+Agent: Claude Code reads subagents from the agents/ folder in its own folder, and only a
+`work-verifier` subagent can record a Done verdict, but `npx skills add` installs the agent
+inside verify-work's folder. So when the claude host is enabled, install links agent() to
+that copy in Claude's skill folder (agent_source()), replacing a link or filling a missing path. A file
 or folder there is the user's, so install leaves it and reports it; so does a verify-work
-without AGENT_SOURCE, since a link to it would dangle. Without verify-work, nothing forks
+without agent_source(), since a link to it would dangle. Without verify-work, nothing forks
 into the agent, so install does nothing, and a disabled host's link stays too. No ledger
 entry: a link is always install's to replace and anything else never is.
 """
@@ -52,10 +52,17 @@ import skills_cli
 from config import Resolved
 
 LEDGER = _resolved.STATE.parent / "installed.json"
-# Where Claude Code finds the verify-work fork's subagent, and the copy the skills CLI
-# installs with verify-work.
-AGENT = Path("~/.claude/agents/work-verifier.md")
-AGENT_SOURCE = Path(skills_cli.FOLDERS["claude"], "verify-work", "agents", "work-verifier.md")
+
+
+def agent() -> Path:
+    """Where Claude Code finds the verify-work fork's subagent."""
+    return config.claude_home() / "agents" / "work-verifier.md"
+
+
+def agent_source() -> Path:
+    """The agent's copy the skills CLI installs with verify-work, in Claude Code's skill folder."""
+    return skills_cli.folder("claude") / "verify-work" / "agents" / "work-verifier.md"
+
 
 # The first line of a file addystack built: `addystack build`'s, and scripts/build-global.py's
 # before it.
@@ -81,7 +88,7 @@ def run(resolved: Resolved) -> List[Change]:
         _write(path, text)
     for change in changes:
         if change.kind == "agent" and not change.left:
-            _link(change.target, AGENT_SOURCE.expanduser())
+            _link(change.target, agent_source())
     return changes
 
 
@@ -93,7 +100,7 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     changes = _adopt(resolved, writes)
     ledger = _ledger()
     recorded: Dict[str, List[List[str]]] = {}
-    for runtime in hookset.PATHS:
+    for runtime in hookset.RUNTIMES:
         change, pairs = _hooks(resolved, runtime, ledger.get(runtime, []), writes)
         changes += [change] if change else []
         if pairs:
@@ -108,7 +115,7 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
 def _agent(resolved: Resolved) -> Optional[Change]:
     """The agent link's change, or None when it's in place, the claude host is off, or
     verify-work isn't installed for Claude Code, so nothing forks into it."""
-    link, source = AGENT.expanduser(), AGENT_SOURCE.expanduser()
+    link, source = agent(), agent_source()
     if not resolved["hosts"].get("claude") or not os.path.lexists(source.parents[1]):
         return None
     if not link.is_symlink() and os.path.lexists(link):
@@ -207,7 +214,7 @@ def _ledger() -> Dict[str, List[Tuple[str, str]]]:
 def _hooks(resolved: Resolved, runtime: hookset.Runtime, earlier: List[Tuple[str, str]],
            writes: Dict[Path, str]) -> Tuple[Optional[Change], List[List[str]]]:
     """The change to runtime's settings file, queued in writes, and the pairs it installs."""
-    path = Path(hookset.PATHS[runtime]).expanduser()
+    path = hookset.settings_path(runtime)
     enabled = bool(resolved["hosts"].get(runtime))
     if not enabled and not path.exists():
         return None, []

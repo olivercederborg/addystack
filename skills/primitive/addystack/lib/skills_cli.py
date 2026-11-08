@@ -15,12 +15,17 @@ import shlex
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import config
+
 DEFAULT = "npx -y skills"
 # The skill that carries the tool, whose lock entry names the kit's source.
 KIT_SKILL = "addystack"
-# Each enabled host's skill folder: Claude Code's, and the one Codex and the skills CLI's
-# universal install share.
-FOLDERS = {"claude": "~/.claude/skills", "codex": "~/.agents/skills"}
+
+
+def folder(host: str) -> Path:
+    """An enabled host's skill folder: Claude Code's, in config.claude_home(), or for codex
+    the one Codex and the skills CLI's universal install share."""
+    return config.claude_home() / "skills" if host == "claude" else Path("~/.agents/skills").expanduser()
 
 
 def command() -> List[str]:

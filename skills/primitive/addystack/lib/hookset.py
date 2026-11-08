@@ -27,12 +27,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Literal, Optional, Tuple
 
+import config
 from config import Resolved
 
 Runtime = Literal["claude", "codex"]
 
 MANIFEST = Path(__file__).resolve().parent.parent / "hooks" / "manifest.json"
-PATHS = {"claude": "~/.claude/settings.json", "codex": "~/.codex/hooks.json"}
+RUNTIMES: Tuple[Runtime, ...] = ("claude", "codex")
 PRESETS = {"recommended": {"safety", "workflow"}, "all": {"safety", "workflow", "replies", "machine"}}
 PROFILES = {"darwin": {"darwin"}, "linux": {"linux"}, "sandbox": {"linux", "sandbox"}}
 _FIELDS = ("matcher", "timeout", "onFailure")
@@ -47,6 +48,14 @@ class HookEntry:
     command: str
     timeout: int
     onFailure: Optional[str]
+
+
+def settings_path(runtime: Runtime) -> Path:
+    """The settings file runtime reads its hooks from: Claude Code's settings.json in
+    config.claude_home(), or Codex's ~/.codex/hooks.json."""
+    if runtime == "claude":
+        return config.claude_home() / "settings.json"
+    return Path("~/.codex/hooks.json").expanduser()
 
 
 def host_profile(name: str = "auto") -> str:
@@ -226,8 +235,10 @@ def _script(command: str) -> str:
     return os.path.expanduser(words[0]) if words else ""
 
 
-# Where installs before addystack linked the kit's hook scripts.
-_LEGACY_DIRS = ("~/.claude/hooks", "~/.codex/hooks")
+def _legacy_dirs() -> Tuple[str, ...]:
+    """Where installs before addystack linked the kit's hook scripts: the hooks folder in
+    Claude Code's folder and in ~/.codex."""
+    return str(config.claude_home() / "hooks"), os.path.expanduser("~/.codex/hooks")
 
 
 def _words(command: str) -> Tuple[str, ...]:
@@ -243,7 +254,7 @@ def _words(command: str) -> Tuple[str, ...]:
 def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> bool:
     """Whether addystack installed this command, for an install with no ledger entry for it:
     it's a manifest entry's command as rendered for this kit, any runtime's, or it runs an
-    older install's link (a symlink or a missing path, never a regular file) in ~/.claude/hooks or ~/.codex/hooks
+    older install's link (a symlink or a missing path, never a regular file) in _legacy_dirs()
     whose name, or whose target's name, is a script the manifest runs. A user's own hook on
     another script in the kit's hooks folder isn't, nor one elsewhere that shares a name,
     such as /opt/my-hooks/merge-gate.py."""
@@ -253,7 +264,7 @@ def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> 
     script = _script(command)
     folder = os.path.dirname(script)
     scripts = {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows}
-    if folder not in {os.path.expanduser(legacy) for legacy in _LEGACY_DIRS}:
+    if folder not in {os.path.expanduser(legacy) for legacy in _legacy_dirs()}:
         return False
     # A link, or a leftover entry whose link is gone. A regular file there is the user's
     # own hook, whatever its name.
@@ -275,7 +286,7 @@ def _drift(manifest: Dict[str, List[Dict[str, Any]]], resolved: Resolved, runtim
     """drift() over a manifest, for a host profile. A missing file is drift only when
     required. A hook the manifest declares for other hosts only isn't drift when present."""
     profile = host_profile(host)
-    path = Path(path or PATHS[runtime]).expanduser()
+    path = Path(path).expanduser() if path else settings_path(runtime)
     try:
         config = json.loads(path.read_text())
     except FileNotFoundError:

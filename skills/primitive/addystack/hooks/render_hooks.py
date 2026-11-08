@@ -38,7 +38,7 @@ def dumps(document):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--runtime", required=True, choices=sorted(hook_parity.PATHS))
+    parser.add_argument("--runtime", required=True, choices=sorted(hook_parity.RUNTIMES))
     parser.add_argument("--profile", default="auto", choices=("auto", *hook_parity.PROFILES))
     parser.add_argument("--into", help="a JSON file whose `hooks` key to replace, such as ~/.claude/settings.json")
     parser.add_argument("--out", help="write here instead of stdout")

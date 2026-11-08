@@ -47,6 +47,13 @@ CONFIG = Path(os.environ.get("ADDYSTACK_CONFIG", "~/.config/addystack/addystack.
 GLOBAL = "global.md"
 
 
+def claude_home() -> Path:
+    """Claude Code's folder: $CLAUDE_CONFIG_DIR, trimmed, when it isn't blank, else ~/.claude,
+    with `~` expanded, as Claude Code and the skills CLI (v1.7.6 `claudeHome`) read it. Read
+    on each call, so the environment of the moment counts."""
+    return Path(os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or "~/.claude").expanduser()
+
+
 # Absolute path -> text, set by planned() for a dry run.
 _PLANNED: Dict[str, str] = {}
 

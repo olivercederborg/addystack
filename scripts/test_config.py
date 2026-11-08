@@ -3,7 +3,7 @@ order, validation names each bad key's dotted path, and merge applies the docstr
 rules, including policy.unresolved's strictest values."""
 from __future__ import annotations
 
-import json, pathlib, sys, tempfile, unittest
+import json, os, pathlib, sys, tempfile, unittest, unittest.mock
 
 KIT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "primitive" / "addystack"
 sys.path.insert(0, str(KIT / "lib"))
@@ -198,6 +198,27 @@ class Validate(unittest.TestCase):
     def test_an_unknown_keyword_stops_validation(self):
         with self.assertRaises(ValueError):
             list(config._check("x", {"pattern": "y"}, [], {}))
+
+
+class ClaudeHome(Workspace):
+    """claude_home() is Claude Code's folder as Claude Code and the skills CLI read it:
+    $CLAUDE_CONFIG_DIR when it isn't blank, else ~/.claude, looked up on each call."""
+
+    def home(self, **env):
+        with unittest.mock.patch.dict(os.environ, {"HOME": str(self.dir), **env}):
+            if "CLAUDE_CONFIG_DIR" not in env:
+                os.environ.pop("CLAUDE_CONFIG_DIR", None)
+            return config.claude_home()
+
+    def test_claude_config_dir_trimmed_and_expanded(self):
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="/opt/claude"), pathlib.Path("/opt/claude"))
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR=" /opt/claude\n"), pathlib.Path("/opt/claude"))
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="~/claude-work"), self.dir / "claude-work")
+
+    def test_unset_or_blank_is_dot_claude_in_home(self):
+        self.assertEqual(self.home(), self.dir / ".claude")
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR=""), self.dir / ".claude")
+        self.assertEqual(self.home(CLAUDE_CONFIG_DIR="  "), self.dir / ".claude")
 
 
 class KitFiles(unittest.TestCase):
