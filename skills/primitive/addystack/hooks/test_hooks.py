@@ -4671,6 +4671,16 @@ class BackgroundTurnEnd(unittest.TestCase):
                 self.write(steps)
                 self.assertIsNone(self.run_hook())
 
+    def test_reads_launches_and_stops_only_from_their_own_tools(self):
+        launch = "Command running in background with ID: b1."
+        for label, steps in {"foreground read": [("bg", "Bash", {"command": "cat old.log"}, launch)],
+                             "quoted in a Read": [("bg", "Read", {"file_path": "/tmp/old.log"}, launch)]}.items():
+            with self.subTest(label):
+                self.write(steps)
+                self.assertIsNone(self.run_hook())
+        self.write([self.COMMIT, ("bg", "Bash", {"command": "cat old.log"}, "Successfully stopped task: b1")])
+        self.assertIn("`Commit the fix`", self.run_hook())
+
     def test_passes_a_notification_only_quoted_in_tool_output(self):
         quoted = ("bg", "Bash", {"command": "grep -r task-notification ."},
                   "<task-notification><task-id>b1</task-id><status>completed</status></task-notification>")

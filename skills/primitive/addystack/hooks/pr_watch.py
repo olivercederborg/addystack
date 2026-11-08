@@ -140,7 +140,9 @@ def unwatched_push(calls, last_turn):
     return None
 
 
-BACKGROUND = re.compile(r"\bbackground with ID: (\w+)")
+# A launch result opens with this line, and only for a Bash call that asked for the background;
+# a foreground command whose output quotes it launched nothing.
+BACKGROUND = re.compile(r"\ACommand running in background with ID: (\w+)")
 ASYNC_AGENT = re.compile(r"\AAsync agent launched successfully\..*?\bagentId: (\w+)", re.S)
 NOTICE = re.compile(r"<task-notification>\s*<task-id>(\w+)</task-id>")
 STOPPED = re.compile(r"\ASuccessfully stopped task: (\w+)")
@@ -202,16 +204,19 @@ def background_tasks(path, this_turn):
             if part.get("type") == "tool_use":
                 tool_input = part.get("input") if isinstance(part.get("input"), dict) else {}
                 command, about = text(tool_input.get("command")), text(tool_input.get("description"))
-                uses[text(part.get("id"))] = (text(part.get("name")), about or command[:60] or text(tool_input.get("skill")),
+                name = text(part.get("name"))
+                # Bash's own launch line comes only with run_in_background; any other tool's output only quotes it.
+                kind = "background" if name == "Bash" and tool_input.get("run_in_background") is True else name
+                uses[text(part.get("id"))] = (kind, about or command[:60] or text(tool_input.get("skill")),
                                               text(tool_input.get("skill")), bool(SERVES.search(command) or LONG_LIVED.search(about)))
             elif part.get("type") == "tool_result":
                 name, label, skill, serves = uses.get(text(part.get("tool_use_id")), ("", "", "", False))
                 output = part.get("content")
                 output = output if isinstance(output, str) else "\n".join(
                     text(item.get("text")) for item in output if isinstance(item, dict)) if isinstance(output, list) else ""
-                if stopped := STOPPED.match(output):
+                if stopped := STOPPED.match(output) if name in ("TaskStop", "KillShell", "KillBash") else None:
                     finished.add(stopped.group(1))
-                elif (launched := BACKGROUND.search(output) if name == "Bash" else ASYNC_AGENT.match(output)
+                elif (launched := BACKGROUND.match(output) if name == "background" else ASYNC_AGENT.match(output)
                       if name in ("Agent", "Task") else None):
                     started[launched.group(1)] = (label or launched.group(1), serves)
                 elif isinstance(entry.get("toolUseResult"), dict) and name in ("Agent", "Task", "Skill"):
