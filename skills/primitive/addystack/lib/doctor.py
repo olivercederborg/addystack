@@ -187,19 +187,15 @@ def _agent(value: Optional[Resolved]) -> Check:
                      + (f", through {render._home(Path(os.readlink(link)))}" if link.is_symlink() else ""), None)
     if not os.path.lexists(source.parents[1]):
         return Check("agent", True, f"not needed: verify-work isn't in {render._home(source.parents[2])}", None)
-    if link.is_symlink():
-        problem = f"{render._home(link)} links to {os.readlink(link)}, which isn't the work-verifier agent"
-    elif os.path.lexists(link):
-        problem = f"{render._home(link)} isn't the work-verifier agent"
-    else:
-        problem = f"{render._home(link)} is missing"
-    if os.path.lexists(link) and not link.is_symlink():
-        fix = f"move {render._home(link)} aside, then run addystack install"
-    elif not source.is_file():
+    if not link.is_symlink() and os.path.lexists(link):
+        return Check("agent", False, f"{render._home(link)} isn't the work-verifier agent; verify-work's fork needs "
+                     "it to record a Done verdict", f"move {render._home(link)} aside, then run addystack install")
+    problem = (f"{render._home(link)} links to {os.readlink(link)}, which isn't the work-verifier agent"
+               if link.is_symlink() else f"{render._home(link)} is missing")
+    fix = "addystack install"
+    if not source.is_file():
         kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
         fix = f"run npx skills add {kit} -g -y --skill verify-work, then addystack install"
-    else:
-        fix = "addystack install"
     return Check("agent", False, f"{problem}; verify-work's fork needs it to record a Done verdict", fix)
 
 

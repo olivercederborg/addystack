@@ -55,8 +55,8 @@ import skills_cli  # noqa: E402
 
 def install(args: argparse.Namespace) -> int:
     """Validates the config, reconciles hooks, instruction files, and Claude Code's
-    work-verifier agent link, builds, then runs doctor (D10). --dry-run prints each change, and build's diffs from the state those
-    changes would leave, and writes nothing."""
+    work-verifier agent link, builds, then runs doctor (D10). --dry-run prints each change,
+    and build's diffs from the state those changes would leave, and writes nothing."""
     value = _resolve()
     if value is None:
         return 1
