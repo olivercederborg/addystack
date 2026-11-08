@@ -412,16 +412,25 @@ class BranchCheckout(Update):
         self.assertEqual(self.branch(), "work")
         self.assert_left(result, head, "work has no upstream")
 
-    def test_leaves_a_branch_whose_upstream_the_fetch_pruned(self):
-        self.git(self.upstream, "branch", "feature")
+    def test_leaves_a_branch_whose_upstream_was_deleted(self):
+        # The remote-tracking branch outlives it, since the fetch doesn't prune.
+        self.git(self.upstream, "checkout", "-q", "-b", "feature")
+        self.commit(self.upstream, "feature-2")
+        self.git(self.upstream, "checkout", "-q", "main")
         self.git(self.checkout, "fetch", "-q")
-        self.git(self.checkout, "checkout", "-q", "-b", "feature", "--track", "origin/feature")
-        self.git(self.checkout, "config", "fetch.prune", "true")
-        self.git(self.upstream, "branch", "-D", "feature")
+        self.git(self.checkout, "checkout", "-q", "-b", "feature", "--track", "origin/main")
+        self.git(self.checkout, "branch", "-q", "--set-upstream-to", "origin/feature")
+        self.git(self.upstream, "branch", "-q", "-D", "feature")
         head = self.git(self.checkout, "rev-parse", "HEAD")
         result = self.ok("update", bin_=self.bin)
         self.assertEqual(self.branch(), "feature")
-        self.assert_left(result, head, "feature's upstream isn't there after git fetch")
+        self.assert_left(result, head, "git fetch failed")
+
+    def test_fast_forwards_an_upstream_the_fetch_refspec_leaves_out(self):
+        self.git(self.checkout, "config", "--add", "remote.origin.fetch", "^refs/heads/main")
+        self.commit(self.upstream, "main-2")
+        self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
 
     def test_fast_forwards_a_branch_a_tag_shares_its_name_with(self):
         self.git(self.checkout, "tag", "main")
@@ -429,6 +438,16 @@ class BranchCheckout(Update):
         result = self.ok("update", bin_=self.bin)
         self.assertEqual((self.checkout / "VERSION").read_text(), "main-2")
         self.assertIn("fast-forwarded main to origin/main", result.stdout)
+
+    def test_leaves_the_checkout_when_its_branch_changes_during_the_fetch(self):
+        self.git(self.checkout, "branch", "-q", "work")
+        self.commit(self.upstream, "main-2")
+        git = shutil.which("git")
+        self.stub("git", f'"{git}" "$@" || exit\nif [ "$3" = fetch ]; then "{git}" -C "{self.checkout}" checkout -q work; fi')
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual(self.git(self.checkout, "rev-parse", "main"), head)
+        self.assert_left(result, head, "moved off main during the fetch")
 
     def test_leaves_the_branch_when_the_fetch_fails(self):
         self.commit(self.upstream, "main-2")

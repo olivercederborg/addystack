@@ -148,24 +148,28 @@ def _update_branch(branch: str) -> int:
     stays as it is. Either way it installs from what's on disk."""
     if _dirty():
         return _left(f"{KIT} has uncommitted changes on {branch}")
-    if not _git("config", "--get", f"branch.{branch}.merge").stdout.strip():
+    remote = _git("config", "--get", f"branch.{branch}.remote").stdout.strip()
+    merge = _git("config", "--get", f"branch.{branch}.merge").stdout.strip()
+    if not remote or not merge:
         return _left(f"{branch} has no upstream")
-    fetched = _git("fetch", "--quiet")
+    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", f"{branch}@{{upstream}}").stdout.strip() \
+        or f"{merge} on {remote}"
+    # The configured upstream itself, as git pull fetches it, so neither a stale
+    # remote-tracking branch nor a fetch refspec that leaves it out stands in for it.
+    fetched = _git("fetch", "--quiet", remote, merge)
     if fetched.returncode:
         return _left(f"git fetch failed in {KIT}: {' '.join(fetched.stderr.split())}")
-    # Resolved after the fetch, which can prune it or leave it unfetched.
-    tip = _git("rev-parse", "--verify", "--quiet", "@{upstream}").stdout
-    if not tip:
-        return _left(f"{branch}'s upstream isn't there after git fetch")
-    upstream = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}").stdout.strip()
-    if _git("rev-parse", "HEAD").stdout == tip:
+    tip = _git("rev-parse", "FETCH_HEAD").stdout.strip()
+    if _git("symbolic-ref", "--quiet", "HEAD").stdout.strip() != f"refs/heads/{branch}":
+        return _left(f"{KIT} moved off {branch} during the fetch")
+    if _git("rev-parse", "HEAD").stdout.strip() == tip:
         print(f"{branch} is up to date with {upstream}")
-    elif _git("merge-base", "--is-ancestor", "HEAD", "@{upstream}").returncode == 0:
-        merged = _git("merge", "--ff-only", "--no-overwrite-ignore", "--quiet", "@{upstream}")
+    elif _git("merge-base", "--is-ancestor", "HEAD", tip).returncode == 0:
+        merged = _git("merge", "--ff-only", "--no-overwrite-ignore", "--quiet", tip)
         if merged.returncode:
             return _left(f"git merge --ff-only {upstream} failed: {' '.join(merged.stderr.split())}")
         print(f"fast-forwarded {branch} to {upstream} in {KIT}")
-    elif _git("merge-base", "--is-ancestor", "@{upstream}", "HEAD").returncode == 0:
+    elif _git("merge-base", "--is-ancestor", tip, "HEAD").returncode == 0:
         return _left(f"{branch} is ahead of {upstream}")
     else:
         return _left(f"{branch} has diverged from {upstream}")
