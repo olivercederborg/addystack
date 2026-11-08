@@ -12,7 +12,7 @@ child's turn ends as its result, so a child can't end its turn to wait on a back
 
 Known limit: loops written inside a script file or heredoc that the command runs aren't
 seen."""
-import json, re, sys
+import json, os, re, sys
 from pathlib import Path
 
 payload = json.load(sys.stdin)
@@ -61,7 +61,8 @@ if not reason:
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import t3_child  # noqa: E402
 
-if t3_child.delegated_brief(payload.get("session_id")) is not None:
+# A child's session resumed outside T3 has no parent, so T3 must be running it too.
+if os.environ.get("T3CODE_CLI_PATH") and t3_child.delegated_brief(payload.get("session_id")) is not None:
     # A child's parent takes each turn end as its result, so pr_watch.py sends back a turn that
     # ends on background work; R76's child moved its commit to the background on this advice.
     advice = ("Wait in counted loops whose sleeps add up to under 2 minutes each, such as "

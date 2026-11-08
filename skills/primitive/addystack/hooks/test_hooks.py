@@ -2021,13 +2021,14 @@ class NoForegroundWaits(unittest.TestCase):
         self.assertFalse(self.bash("until grep -q EXIT /tmp/b.log; do sleep 15; done", background=True))
 
     def test_points_a_delegated_child_at_counted_loops(self):
-        def reason(brief, thread="thread:delegated-task:x", creator="agent"):
+        def reason(brief, thread="thread:delegated-task:x", creator="agent", t3="/t3"):
             with tempfile.TemporaryDirectory() as folder, \
                     tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
                 transcript.write(json.dumps({"type": "user", "message": {"content": brief}}) + "\n")
                 transcript.flush()
                 out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
-                                     env={**os.environ, "T3_STATE_DB": state_db(folder, thread, brief, creator)},
+                                     env={**os.environ, "T3_STATE_DB": state_db(folder, thread, brief, creator),
+                                          "T3CODE_CLI_PATH": t3},
                                      input=json.dumps({"tool_name": "Bash", "session_id": "s",
                                                        "tool_input": {"command": "while pgrep make; do sleep 5; done"},
                                                        "transcript_path": transcript.name})).stdout
@@ -2036,6 +2037,7 @@ class NoForegroundWaits(unittest.TestCase):
         self.assertIn("counted loops", child)
         self.assertNotIn("run_in_background", child)
         self.assertIn("run_in_background", reason("Build it.", thread="thread:top", creator="user"))
+        self.assertIn("run_in_background", reason("Act as the implementation sub-agent for this task.", t3=""))
         self.assertIn("run_in_background", reason(
             "Act as the implementation sub-agent for this task.\n\nBuild it.", thread="thread:top", creator="user"))
 
@@ -4708,6 +4710,7 @@ class BackgroundTurnEnd(unittest.TestCase):
             self.write([self.COMMIT], brief=brief)
             self.assertIsNone(self.run_hook(env={"T3_STATE_DB": state_db(self.folder.name, "thread:top", brief, "user")}))
         self.assertIsNone(self.run_hook(env={"T3_STATE_DB": "/nonexistent"}))
+        self.assertIsNone(self.run_hook(env={"T3CODE_CLI_PATH": ""}))  # resumed outside T3
         self.assertIsNone(self.run_hook({"stop_hook_active": True}))
         self.assertIsNone(self.run_hook({"turn_id": "t"}))
 

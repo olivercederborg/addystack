@@ -284,9 +284,10 @@ def main():
     if event.get("stop_hook_active") or "turn_id" in event:
         return
     if bare_references.delegated_child(event):
-        # Only T3's database names a child here: a top-level thread whose first prompt reads like
-        # a brief may leave background work running.
-        if t3_child.delegated_brief(event.get("session_id")) is not None and (feedback := background_feedback(event)):
+        # Only T3's database names a child here, and only while T3 runs it: a top-level thread whose
+        # first prompt reads like a brief, or a child's session resumed outside T3, has no parent.
+        if (os.environ.get("T3CODE_CLI_PATH") and t3_child.delegated_brief(event.get("session_id")) is not None
+                and (feedback := background_feedback(event))):
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": feedback}}))
         return
     if not os.environ.get("T3CODE_CLI_PATH"):
