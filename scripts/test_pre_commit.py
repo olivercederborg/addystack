@@ -203,9 +203,9 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
 
-    def test_inherited_nullglob_still_runs_the_host_suites(self):
+    def test_inherited_glob_settings_still_run_the_host_suites(self):
         startup = pathlib.Path(self.folder.name, "bash-env")
-        startup.write_text("shopt -s nullglob\n")
+        startup.write_text("shopt -s nullglob\nGLOBIGNORE='*test_host.py'\n")
         os.environ["BASH_ENV"] = str(startup)
         self.addCleanup(os.environ.pop, "BASH_ENV")
         run, _ = self.commit(dagger=False)

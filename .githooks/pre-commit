@@ -10,6 +10,9 @@
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 set -euo pipefail
+# Globs behave the same whatever a BASH_ENV file set before this line ran.
+unset GLOBIGNORE
+shopt -u nullglob failglob nocaseglob dotglob
 root="$(git rev-parse --show-toplevel)"
 "$root/scripts/check-frontmatter.sh"
 "$root/scripts/check-skill-size.sh"
