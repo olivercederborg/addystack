@@ -176,7 +176,7 @@ behavior change in the diff, and `check-body.mjs` passes on the body.
 - **Already approved**: when the user's message already asks to open or push the PR,
   or their instructions grant autonomy for it (**Approval**), that is the approval.
   Publish as a draft, then report the link in a ✅ headline, fold the title and body,
-  and stop: marking it ready for review, or editing it, waits for the user.
+  and offer marking it ready for review, and editing it.
 - **Otherwise, show the exact title and body first,** once, below a **Review** note, and
   wait. Approval means publish: a new PR as a draft, or ready when the user says so; in
   sync mode, the update.
@@ -193,8 +193,7 @@ behavior change in the diff, and `check-body.mjs` passes on the body.
 - **In a stack**, publish only the PRs the user approved, and keep the stacking tool's
   own stack links instead of writing a second copy.
 
-After publishing, stop and hand back the links; address-review takes the PR's review
-comments when they come.
+After publishing, offer address-review as the next step.
 
 **Done when:** every approved PR shows its approved title and body, and the links are
 shared.
