@@ -2003,6 +2003,22 @@ class NoForegroundWaits(unittest.TestCase):
     def test_allows_background_runs(self):
         self.assertFalse(self.bash("until grep -q EXIT /tmp/b.log; do sleep 15; done", background=True))
 
+    def test_points_a_delegated_child_at_counted_loops(self):
+        def reason(brief):
+            with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+                transcript.write(json.dumps({"type": "user", "message": {"content": brief}}) + "\n")
+                transcript.flush()
+                out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
+                                     env={**os.environ, "T3_STATE_DB": "/nonexistent"},
+                                     input=json.dumps({"tool_name": "Bash", "session_id": "s",
+                                                       "tool_input": {"command": "while pgrep make; do sleep 5; done"},
+                                                       "transcript_path": transcript.name})).stdout
+            return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
+        child = reason("Act as the implementation sub-agent for this task.\n\nBuild it.")
+        self.assertIn("counted loops", child)
+        self.assertNotIn("run_in_background", child)
+        self.assertIn("run_in_background", reason("Build it."))
+
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
