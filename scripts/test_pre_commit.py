@@ -188,6 +188,13 @@ class DaggerOrHost(unittest.TestCase):
         self.assertTrue(skill_ran.exists())
         self.assertTrue(self.ran.exists())
 
+    def test_no_host_suite_blocks_the_commit(self):
+        (self.repo / "scripts" / "test_host.py").unlink()
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("pre-commit: no host test suite ran", run.stderr)
+        self.assertFalse(self.ran.exists())
+
 
 class MacosOnly(unittest.TestCase):
     def test_finds_the_keychain_guard(self):
