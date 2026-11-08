@@ -220,6 +220,11 @@ Proofs:
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
         self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
 
+    def test_a_running_goal_that_starts_with_parked_is_running(self):
+        self.project("phase", "audit", "--result", "five reports", "--goal", "Parked work is ready.", "--proof", "p")
+        self.project("start", *NEXT, code=1)
+        self.project("phase", "review", "--result", "r", "--park", "later")
+
     def test_an_archive_is_no_wider_than_its_source(self):
         (self.dir / "project.md").chmod(0o600)
         self.project("phase", "audit", "--result", "five reports", *NEXT)
