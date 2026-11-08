@@ -45,8 +45,8 @@ The bare call, nothing around it, with the URL exactly as written here:
 <script type="application/json" id="ui">{"ui":[{"outcome":{"status":"done","text":"Tick CPU spike fixed"}},{"change":{"pr":108,"state":"merged","checks":["verified"]}}]}</script>
 ```
 
-Give it a short `title`, and a `height` at least the card's desktop height, such as 160 px
-per block: T3 measures the card at each width and fits the frame to it, while a `height`
-under the desktop height caps every frame there, so phones scroll the rest. The
+Give it a short `title` and `height: 2000`, the tool's maximum: T3 measures the card at
+each width and fits the frame to it, and only a smaller `height` caps it, so phones would
+scroll the rest. A card taller than 2,000 px is too long: split the reply. The
 `reply-card` hook refuses a call whose URL or payload is wrong and names the fix;
 `scripts/validate-card.py page.html` lists every problem at once.
