@@ -449,7 +449,7 @@ class BranchCheckout(Update):
         self.assertEqual((self.checkout / "VERSION").read_text(), "v0.1.0")
         self.assertEqual(self.branch(), "")
         self.assertIn("checked out v0.1.0", result.stdout)
-        self.assertIn("git checkout main", result.stdout)
+        self.assertIn(f"git -C {self.checkout} checkout main returns to main", result.stdout)
 
 
 if __name__ == "__main__":

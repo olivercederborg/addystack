@@ -36,6 +36,7 @@ import difflib
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -199,7 +200,8 @@ def _update_checkout(tag: Optional[str]) -> int:
     if checkout.returncode:
         print(f"addystack: git checkout {tag} failed: {checkout.stderr.strip()}", file=sys.stderr)
         return 1
-    print(f"checked out {tag} in {KIT}" + (f"; git checkout {branch} returns to your branch" if branch else ""))
+    back = f"; git -C {shlex.quote(str(KIT))} checkout {shlex.quote(branch)} returns to {branch}" if branch else ""
+    print(f"checked out {tag} in {KIT}{back}")
     return _install_from_kit()
 
 
