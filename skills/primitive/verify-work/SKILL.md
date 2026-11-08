@@ -114,8 +114,9 @@ it breaks. Anything weaker is Optional.
 
 Lead with the verdict: 🔴 **Not done** with any Blocker, 🟡 **Not done** with only
 Cleanups, 🟡 **Not verified** when the only gap is a real run that can't happen here, and
-✅ **Done** when nothing, or only Optional findings, remain. Say what breaks in plain
-words, and show the worst finding's code as the reply's one snippet.
+✅ **Done** when nothing, or only Optional findings, remain. The headline opens with that
+marker and its bold words, even when the question asked whether it's "ready". Say what
+breaks in plain words, and show the worst finding's code as the reply's one snippet.
 
 The fold holds what a reader and a re-run need: the base and head checked, the checks,
 one evidence line per finding, the fix diffs, and every artifact itself (each image,
