@@ -74,5 +74,6 @@ addystack adds the two-option cap and each option's class.
     read-only question.
   - `routine`: anything else outside the stops, such as fix, verify, review, push the
     user's own branch, open a draft PR, or watch. When the state is `stop`, nothing is in
-    `needs`, and `a` is `routine`, `routine_stop.py` sends the agent on to do it, unless
-    the turn answers the user's question or they said "no autonomy".
+    `needs`, and `a` is `routine`, `routine_stop.py` sends the agent on to do it, whatever
+    `standing` holds, unless the turn answers the user's question or a read-only request
+    such as "show me …", or they said "no autonomy".
