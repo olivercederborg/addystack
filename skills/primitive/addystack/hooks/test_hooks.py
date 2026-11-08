@@ -2492,6 +2492,21 @@ class MergeGate(unittest.TestCase):
         self.trust("gate", "/origin$")  # this checkout's origin
         self.assertIsNone(self.reason("gh pr merge 12"))
 
+    def test_reads_the_checkout_from_every_cd_in_order(self):
+        # `cd <draft worktree> && cd sub` merges from the draft worktree's sub, not the start's.
+        self.trust("gate")
+        self.scenario(prs={12: None})
+        self.verify(12)
+        draft = os.path.join(self.dir, "draft")
+        subprocess.run(["git", "worktree", "add", "-q", "--detach", draft], cwd=self.repo, env=self.env, check=True)
+        pathlib.Path(draft, ".agents").mkdir()
+        pathlib.Path(draft, ".agents", "addystack.jsonc").write_text('{ "trust": "draft" }')
+        for root in (self.repo, draft):
+            os.makedirs(os.path.join(root, "sub"))
+        self.assertIsNone(self.reason("cd sub && gh pr merge 12"))
+        self.assertIn("asks for the merge", self.reason(f"cd {draft} && cd sub && gh pr merge 12"))
+
+
     def test_waits_for_ci_a_pr_its_workflows_run_for_or_cant_be_read(self):
         self.workflow(WorkflowTriggers.CI_YML)
         prs = {32: ["apps/web/x.ts", "docs/x.md"],  # a code file runs CI

@@ -72,9 +72,8 @@ if not match or {"-h", "--help", "--disable-auto"} & set(args):
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-cds = re.findall(r"\bcd\s+(\S+)", code[:match.start()])
-if cds:
-    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(cds[-1])))
+for folder in re.findall(r"\bcd\s+(\S+)", code[:match.start()]):  # in order: `cd a && cd b` lands in a/b
+    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(folder)))
 
 def deny(*reasons):
     if DRY_RUN:
