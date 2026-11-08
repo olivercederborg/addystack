@@ -190,7 +190,7 @@ class Skills:
     @check
     async def fresh_install(self, kit: source(*TRACKED)) -> None:
         """scripts/check-fresh-install.py: a fresh Linux user installs this tree with npx skills add,
-        then runs addystack install, init, build, and doctor (plan check 9)"""
+        then runs addystack init, install, and doctor (plan check 9)"""
         await run(kit, "scripts/check-fresh-install.py", suite="fresh-install")
 
     @function

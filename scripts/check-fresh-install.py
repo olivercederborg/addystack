@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Plan check 9: a fresh user, who already has a CLAUDE.md, an AGENTS.md, and a hook of
 their own in each host, installs the kit as the README says, in a temporary HOME. It runs
-`npx skills add SOURCE -g -y -a claude-code codex`, then the installed tool's `install`,
-`init --yes`, `build`, and `doctor`, and exits 1 naming each of these that fails:
+`npx skills add SOURCE -g -y -a claude-code codex`, then the installed tool's `init --yes`,
+`install`, and `doctor`, and exits 1 naming each of these that fails:
 
 - doctor passes;
 - the old CLAUDE.md and AGENTS.md text is in ~/.config/addystack/global.md;
@@ -180,7 +180,7 @@ def main(argv):
             print(add.stdout, add.stderr, f"npx skills add {source} installed no {kit}/bin/addystack", sep="\n")
             return 1
         tool = [sys.executable, str(kit / "bin/addystack")]
-        for step in (["install"], ["init", "--yes"], ["build"], ["doctor"]):
+        for step in (["init", "--yes"], ["install"], ["doctor"]):
             done = run([*tool, *step], env, home)
             if done.returncode:
                 print(done.stdout, done.stderr, f"addystack {' '.join(step)} failed", sep="\n")
