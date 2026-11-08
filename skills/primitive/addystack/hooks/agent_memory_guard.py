@@ -33,10 +33,11 @@ Known limits:
 - Processes are signalled by pid right after their kernel id is rechecked; only a pid
   reused within those microseconds would be hit.
 - A process running as another user (a `sudo` child) isn't seen.
-- An agent's direct child that isn't a shell and has a readable environment without the
-  agent mark counts as a service, such as an MCP server: it gets the per-command budgets
-  but not the total. A command an agent starts with a cleared environment and no shell
-  does too.
+- An agent's direct child that isn't a shell counts as a service, such as an MCP server:
+  it gets the per-command budgets but not the total. Under Codex it also needs a readable
+  environment without the agent mark, so a Codex server that's an Apple binary, such as
+  Xcode's mcpbridge, counts toward the total, and a command Codex starts with a cleared
+  environment and no shell doesn't.
 - An orphan from an installed app (under /Applications/) that leads its own process
   group isn't agent work by its environment alone, since an app such as OrbStack starts
   its VM with the environment of whichever command woke it.
@@ -215,13 +216,15 @@ def is_agent(proc):
 SHELLS = {"sh", "bash", "zsh", "dash", "fish"}
 
 
-def is_service(proc):
+def is_service(proc, agent):
     """A server an agent keeps for its session, such as an MCP server: a direct child that
-    isn't a shell and whose readable environment lacks the agent mark. A command keeps the
-    mark after its shell execs into the program, and Codex starts its MCP servers with a
-    cleared environment. A hidden environment counts as a command."""
-    return (bool(proc.argv) and proc.marked is False
-            and os.path.basename(proc.argv[0]).lstrip("-") not in SHELLS)
+    isn't a shell. Claude Code runs each command in a compound shell that never execs, and
+    passes CLAUDECODE to its servers. Codex's shell can exec into the program, which keeps
+    the agent mark, while Codex starts its servers with a cleared environment; so under
+    Codex a service also needs a readable environment without the mark."""
+    if not proc.argv or os.path.basename(proc.argv[0]).lstrip("-") in SHELLS:
+        return False
+    return os.path.basename(agent.argv[0]) == "claude" or proc.marked is False
 
 
 def is_installed_app(proc):
@@ -299,7 +302,7 @@ class Owners:
                     self.group[proc.pgid] = head
                 parent = procs.get(proc.ppid)
                 if (proc.ident == head and parent is not None and is_agent(parent)
-                        and parent.ident == proc.parent_ident and is_service(proc)):
+                        and parent.ident == proc.parent_ident and is_service(proc, parent)):
                     self.services.add(head)
         self.services &= commands.keys()
         return commands

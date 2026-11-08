@@ -18,6 +18,7 @@ def snapshot(*procs):
 
 
 AGENT = proc(100, 50, argv=("claude", "--output-format", "stream-json"))
+CODEX = proc(90, 50, argv=("/x/bin/codex", "app-server"))
 # Tests that read real processes through libproc, which only macOS has.
 MACOS = unittest.skipUnless(sys.platform == "darwin", "libproc is macOS-only")
 
@@ -132,17 +133,28 @@ class Attribution(unittest.TestCase):
         self.assertEqual(sorted(commands), [200, 300])
         self.assertEqual(owners.services, {300})
 
-    def test_shell_that_exec_d_into_its_program_is_still_a_command(self):
+    def test_claude_mcp_server_is_a_service_though_marked(self):
+        # Claude Code passes CLAUDECODE to its MCP servers.
+        owners = Owners()
+        owners.attribute(snapshot(AGENT, proc(200, 100, marked=True, argv=("node", "mcp.js"))))
+        self.assertEqual(owners.services, {200})
+
+    def test_codex_shell_that_exec_d_into_its_program_is_still_a_command(self):
         # Codex's `zsh -lc "pnpm typecheck"` becomes node; the agent mark survives the exec.
         owners = Owners()
-        owners.attribute(snapshot(AGENT, proc(200, 100, marked=True, argv=("node", "tsc"))))
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("node", "tsc"))))
         self.assertEqual(owners.services, set())
 
-    def test_hidden_environment_is_a_command(self):
+    def test_codex_child_with_a_hidden_environment_is_a_command(self):
         # macOS hides an Apple binary's environment, such as git or sandbox-exec.
         owners = Owners()
-        owners.attribute(snapshot(AGENT, proc(200, 100, marked=None, argv=("/usr/bin/git",))))
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=None, argv=("/usr/bin/git",))))
         self.assertEqual(owners.services, set())
+
+    def test_codex_server_with_a_cleared_environment_is_a_service(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, argv=("npm", "exec", "effect-mcp"))))
+        self.assertEqual(owners.services, {200})
 
     def test_service_is_forgotten_once_it_exits(self):
         owners = Owners()
