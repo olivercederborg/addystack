@@ -1,10 +1,11 @@
 # Duties
 
-Read when the user asks for a recurring check, such as "check bug reports every hour",
-"watch production for a week after the cutover", or "daily security review", and on
-each duty tick. A duty is a scheduled, read-only probe of one source. Its new findings
-become units. It runs through phase ends and while the project is parked, and ends at
-its `until` or on the user's word.
+Read when the user starts, changes, or stops a recurring check, such as "check bug
+reports every hour", "watch production for a week after the cutover", or "daily
+security review", and on each duty tick or probe result. A duty is a scheduled,
+read-only probe of one source. Its new findings become units. It runs through phase
+ends and while the project is parked, and ends at the first tick past its `until` or
+on the user's word.
 
 ## Start a duty
 
@@ -12,7 +13,7 @@ In the turn the user asks:
 
 1. **Name** it with a short slug, such as `bug-reports`. When Listening already has a
    live `Duty <name>` line, this request changes that duty: delete its scheduled task
-   first, then go on.
+   first, then go on, keeping its `last` time in step 3 unless the source changed.
 2. **Schedule** it: a `schedule_task` bound to this thread at the user's cadence, whose
    prompt names `project.md`'s path to read first and says `Duty <name> tick`.
 3. **Write its line** under Listening with the task id `schedule_task` returned:
@@ -35,19 +36,23 @@ Listening holds its `Duty <name>` line with a `last` time.
    - the window: from the line's `last` time to now, or to the duty's end date when
      that comes first;
    - what counts as new: a finding the window holds that isn't in
-     `duties/<name>.md` in the project folder, a Workers row, or a Follow-up;
+     `duties/<name>.md` in the project folder, a Workers row, or a Follow-up, with
+     `project.md`'s absolute path to read;
    - that it reads only, and returns each finding with a stable identity, such as an
      issue id or an error fingerprint, its evidence, and a proposed proof;
-   - `standing-rules.md` and `duties/<name>.md`, pasted in full.
+   - `standing-rules.md` and `duties/<name>.md`, pasted in full, a missing history
+     being empty.
 
    Record it in Workers as `duty <name>` with its link and `taskId`, reusing that row
    each tick. When the last tick's probe still runs, let this tick pass; the next
    window starts at the line's `last` time.
 2. **Handle the result**, on the wake its `duty <name>` row's result brings, as a worker
-   result (SKILL.md step 4). A failed probe leaves `last` as it was, so the next tick
-   covers its window. Append each new finding's identity and date to `duties/<name>.md`,
-   which outlives phase ends. Each new finding becomes a queued unit, a Workers row
-   with its proof that steps 2 and 3 start, or a Follow-up when it's outside the goal.
+   result (SKILL.md step 4). A result for an ended duty, or one whose `taskId` isn't
+   the row's, is dropped. A failed probe leaves `last` as it was, so the next tick
+   covers its window. Each new finding not already a Workers row or a Follow-up becomes
+   a queued unit, a Workers row with its proof that steps 2 and 3 start, or a Follow-up
+   when it's outside the goal. Then append its identity and date to `duties/<name>.md`,
+   creating the folder, which outlives phase ends.
    On a parked project, a finding worth work reaches the user as a card to start a
    phase for it, which [phases](phases.md)' `start` opens. An issue or a message to a
    person stays a draft and reaches the user as a card through step 5, per the
@@ -55,8 +60,8 @@ Listening holds its `Duty <name>` line with a `last` time.
 3. **Record the tick**: rewrite the line with `listen`, keeping its value and ending it
    `· last <window end, ISO time>, <n> new`, so the next window starts there. Set the
    `duty <name>` row to `done`.
-4. **Check the end**: when the end date is the window's end or the condition holds,
-   end the duty (below).
+4. **Check the end**: when this successful probe's window reached the end date, or the
+   condition holds, end the duty (below).
 
 A tick with nothing new posts nothing: end the turn with only the turn block.
 
@@ -66,7 +71,8 @@ new finding is in `duties/<name>.md` and is a Workers row, a Follow-up, or a que
 ## End a duty
 
 A duty ends at its `until`, on the user's word, or at close. Delete its scheduled task
-with `delete_scheduled_task`, and rewrite its line with `listen` to `none (ended
-<date>: <reason>)`.
+with `delete_scheduled_task`, `task_cancel` a probe still running on its row, and
+rewrite its line with `listen` to `none (ended <date>: <reason>)`.
 
-**Done when:** the duty's scheduled task is gone and its line reads `none`.
+**Done when:** the duty's scheduled task is gone, no probe of it runs, and its line
+reads `none`.

@@ -145,8 +145,8 @@ inputs or one of Parallel by default's three reasons.
   whose prompt names `project.md`'s path to read first. Each tick posts only changes.
   Delete it with `delete_scheduled_task` when none is, and record its id under
   Listening.
-- **A duty tick**, a `duty <name>` row's result, or the user asking for a recurring
-  check: follow [duties](references/duties.md).
+- **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
+  stopping a recurring check: follow [duties](references/duties.md).
 
 **Stuck**: a running worker with no new side effect since the last tick: no commit,
 push, or PR activity from a worker with a branch, and no growth in a report-only
