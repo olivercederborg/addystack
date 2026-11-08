@@ -31,7 +31,7 @@ records the verdict the merge gate reads. It reports; the caller fixes.
   review `<parent>...HEAD`, and the verdict covers the PR only once that head is pushed
   unchanged. For a branch with no PR, review the `base_sha...head_sha` that
   `target --branch B --parent P` prints. Never check anything out. Only this diff is in
-  scope; other code is context.
+  scope, plus the **Nearby** lens; other code is context.
 - **Intent**: the linked issue or spec, the PR description, and the arguments, with any
   **Not in scope** list. Missing intent is a finding.
 - **Evidence kinds**: `scripts/verdicts.py classify <base-sha> <head-sha>`, plus what the
