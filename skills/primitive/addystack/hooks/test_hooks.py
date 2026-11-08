@@ -5563,8 +5563,9 @@ class RoutineStop(unittest.TestCase):
 
     def run_on(self, reply, said=("fix the header",), env=None, **event):
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
-            for text in said:  # Codex's rollout shape when the event is Codex's
-                transcript.write(json.dumps(codex_said(text) if "turn_id" in event else claude_said(text)) + "\n")
+            for text in said:  # Codex's rollout shape when the event is Codex's; a dict is a raw entry
+                entry = text if isinstance(text, dict) else codex_said(text) if "turn_id" in event else claude_said(text)
+                transcript.write(json.dumps(entry) + "\n")
             transcript.flush()
             out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, env=env, input=json.dumps(
                 {"last_assistant_message": reply, "transcript_path": transcript.name, **event})).stdout
@@ -5588,6 +5589,46 @@ class RoutineStop(unittest.TestCase):
         # The class decides, not the words: a routine push goes on, in any repo.
         push = {"key": "a", "class": "routine", "text": "push v2/catalog and open it as a draft PR"}
         self.assertIn("push v2/catalog", self.feedback(self.with_turn(options=[push])))
+
+    def test_standing_items_dont_hold_a_routine_step(self):
+        """tower-app's Nov 1 21:58 reply: a Keychain to-do carried from earlier replies made the
+        routine step a stop. In `standing` it doesn't; only `needs` holds the step."""
+        keychain = {"id": 1, "kind": "do", "name": "Delete the old Clearance Keychain item"}
+        step = {"key": "a", "class": "routine", "text": "diagnose and fix tower-app's \"30 wait\" count"}
+        reply = self.with_turn(options=[step], standing=[keychain])
+        self.assertIn('"diagnose and fix tower-app\'s "30 wait" count" isn\'t a stop: nothing needs the user',
+                      self.feedback(reply))
+        self.assertEqual(self.run_on(reply, turn_id="t1")["decision"], "block")
+        self.assertIsNone(self.run_on(reply, stop_hook_active=True))
+        for case, turn in [
+            ("a need beside it", {"needs": [{"id": 2, "kind": "do", "name": "plug in the Dell display"}]}),
+            ("the same item as a need", {"needs": [keychain], "standing": []}),
+            ("a decision option", {"options": [{**step, "class": "decision"}]}),
+            ("a merge option", {"options": [{**step, "class": "stop:merge", "text": "merge #27"}]}),
+        ]:
+            with self.subTest(case=case):
+                self.assertIsNone(self.run_on(self.with_turn(**{"options": [step], "standing": [keychain], **turn})))
+        # Ported from suite-audit R83: a routine option that waits on the user, by a condition or
+        # by speaking to or as them, is held by listing what it waits on in needs, not standing;
+        # the hook reads the lists, not the option's words.
+        for text in ["run #30 captures once the monitor is connected", "capture #30 if the monitor is in",
+                     "run #87's on-screen check when you step away", "re-verify #26 with your check",
+                     "I'll step away; run it then", "we've connected it; verify #30"]:
+            waited = {"id": 3, "kind": "do", "name": "connect the monitor and step away"}
+            with self.subTest(text=text):
+                self.assertIsNone(self.run_on(self.with_turn(options=[{**step, "text": text}], needs=[waited],
+                                                             standing=[keychain])))
+                self.assertIsNotNone(self.run_on(self.with_turn(options=[{**step, "text": text}], standing=[waited])))
+
+    def test_reads_only_the_latest_replys_block(self):
+        """Ported from suite-audit R83: the reply that ends the turn decides, whatever an
+        earlier reply's block listed."""
+        need = {"id": 1, "kind": "do", "name": "Delete the old Clearance Keychain item"}
+        earlier = claude_wrote("✅ **#27 is merged.**\n\n" + block({"state": "stop", "needs": [need], "options": [self.ROUTINE]}))
+        said = ("fix the header", earlier, "a")
+        self.assertIsNotNone(self.run_on(self.with_turn(), said=said))
+        self.assertIsNotNone(self.run_on(self.with_turn(standing=[need]), said=said))
+        self.assertIsNone(self.run_on(self.with_turn(needs=[need]), said=("fix the header", claude_wrote("Done."), "a")))
 
     def test_sends_a_reply_without_a_valid_block_back_once(self):
         for reply, reason in [
