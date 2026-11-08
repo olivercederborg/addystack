@@ -207,7 +207,8 @@ the one-line status.
 
 The PR's worker gets each PR merge-ready: restacked, verify-work Done, and checks green,
 or not run on a draft whose CI starts on ready. It fixes what
-`~/.claude/hooks/merge-gate.py --dry-run '<line>'` names on the line
+`<kit>/hooks/merge-gate.py --dry-run '<line>'` (`<kit>`: the addystack skill's folder)
+names on the line
 `scripts/stack.sh where #N` prints until only a go or that CI is left. You run the line,
 since merge-gate takes a go only from the user's own latest prompt in the transcript
 that merges, never a worker's. Run it once the repo's trust value in
