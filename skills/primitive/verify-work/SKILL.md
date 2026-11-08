@@ -203,7 +203,8 @@ Not verified whose run can now happen.
 4. **Earlier findings**: each one marked fix is gone at the head, with every other
    instance of its class the change caused, searched across the repo. Name each fixed one
    as gone, and keep one still there as a finding line under its old number. Ones it
-   marked follow-up or skip stay settled, and aren't raised again.
+   marked follow-up or skip stay settled, unless the delta changes the reason given,
+   such as by exposing what was unreachable.
 
 Report the re-check's verdict as step 3 does, with its numbered finding lines and receipt.
 
