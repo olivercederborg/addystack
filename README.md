@@ -14,11 +14,14 @@ python3 ~/.agents/skills/addystack/bin/addystack init
 python3 ~/.agents/skills/addystack/bin/addystack install
 ```
 
-1. `npx skills add` installs every skill. Add `--skill <name>` to install only some.
+1. `npx skills add` installs the skills. Add `--skill <names>` to install only some, and
+   keep `addystack` among them, since the next steps run its tool.
 2. `init` writes your config from what it detects, such as the agents on your PATH.
-3. `install` adds the kit's hooks beside yours and moves any text you wrote in
-   `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into `~/.config/addystack/global.md`.
-   Then it builds and runs `doctor`.
+3. `install` adds the kit's hooks beside yours. For each agent `init` found, it moves any
+   text you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
+   `~/.config/addystack/global.md`. Then it builds and runs `doctor`.
+
+Below, `addystack` is short for `python3 ~/.agents/skills/addystack/bin/addystack`.
 
 Run `addystack doctor` any time to check the install. It names the fix for each problem.
 In an agent session, `/addystack` does all of this for you.
@@ -42,7 +45,9 @@ Your settings live in `~/.config/addystack/`, which you can keep in your dotfile
   `$schema` documents each key, and
   [`examples/addystack.jsonc`](skills/primitive/addystack/examples/addystack.jsonc) shows
   them in use.
-- `global.md` holds your own global instructions. The build adds them to the kit's.
+- `global.md` holds your own global instructions. The build adds them to the kit's when
+  your config sets `"instructions": "global.md"`, which `install` does when it moves text
+  there.
 - `notes/` holds steps you add to core skills.
 
 After an edit, run `addystack build`, or `addystack install` if you changed `hosts`,
@@ -94,7 +99,7 @@ symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), 
 ## Credits
 
 - [Matt Pocock's skills](https://github.com/mattpocock/skills): `scope-grill` adapts `grilling`, `reflect` adds checks from `retro`, and the kit uses `codebase-design`, `domain-modeling`, `tdd`, and `diagnosing-bugs` when installed.
-- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT, see each skill's `NOTICE`): the source of `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and the rules in `autopilot` and `orchestrate`.
+- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT): `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, and `in-your-own-words` come from it (see each one's `NOTICE`), and `autopilot` and `orchestrate` take rules from its playbooks.
 - [Ben Holmes's skills](https://github.com/bholmesdev/skills) (MIT, see its `NOTICE`): `tidy` adapts `simplify`.
 - [Ayoub Ghriss's i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT, see its `NOTICE`): `reply-shape` adapts it.
 - [HumanLayer's skills](https://github.com/humanlayer/skills): `open-pr`'s default body follows `visual-pr`.
