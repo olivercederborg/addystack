@@ -192,8 +192,12 @@ def _agent(value: Optional[Resolved]) -> Check:
     if not link.is_symlink() and os.path.lexists(link):
         return Check("agent", False, f"{render._home(link)} isn't the work-verifier agent; verify-work's fork needs "
                      "it to record a Done verdict", f"move {render._home(link)} aside, then run addystack install")
-    problem = (f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
-               if link.is_symlink() else f"{render._home(link)} is missing")
+    if not link.is_symlink():
+        problem = f"{render._home(link)} is missing"
+    elif os.readlink(link) == str(source):
+        problem = f"{render._home(link)} links to {render._home(source)}, which is missing"
+    else:
+        problem = f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
     fix = "addystack install"
     if not source.is_file():
         kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
