@@ -7,8 +7,9 @@ has its own goal and proof, and ends here. The project closes only on the user's
    unmerged PRs, and record its result and the heads it ran at under Decisions. With no
    unmerged PRs, skip it.
 2. **Promote**: copy each decision and learning that binds the next phase into
-   `standing-rules.md`. `phase` empties Decisions and Learnings into the archive, and a
-   wake reads standing rules, never the archive.
+   `standing-rules.md`, and write each follow-up whose detail lives in Decisions or
+   Learnings into Goal's Follow-ups. `phase` empties Decisions and Learnings into the
+   archive, which a wake doesn't read; only close reads it.
 3. **One card**: bring the user one decision card, as in step 5, with three options:
    start the next phase, park, or close. Make the next phase option `a` when
    `project.md` or the user already named it, with its goal and proof.
@@ -28,6 +29,6 @@ sections ([project](project.md#phase-end)). A user message on a parked project t
 names new work starts the next phase: run `project.py <folder> start --goal G --proof
 P`, then return to SKILL.md step 2.
 
-**Done when:** the integrated check passed or had no PRs, every binding decision and
-learning is in `standing-rules.md`, and the project is in step 2 of its next phase,
+**Done when:** the integrated check passed or had no unmerged PRs, every binding decision
+and learning is in `standing-rules.md`, every follow-up is in Goal's Follow-ups, and the project is in step 2 of its next phase,
 parked (its heartbeat deleted once no worker runs), or in close.
