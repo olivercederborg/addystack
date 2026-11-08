@@ -14,8 +14,8 @@ each number needs its own name, or one parenthetical names them all in order, "i
 and 3 (undo delete, full-text search)". A number the same reply defines on a visible
 line ("**1** · Blocker · …", "| 1 | …") is on screen already. PR numbers pass: they're
 real names, and most are the thread's own PR. The turn block (turn_block.py) is a
-comment, so it isn't read as text, but a number that is one of its needs' ids gets that
-need's name in the feedback, so the fix is a copy.
+comment, so it isn't read as text, but a number that is the id of one of its needs or
+standing items gets that item's name in the feedback, so the fix is a copy.
 
 Claude Code and Codex both pass the reply as `last_assistant_message`, and both
 continue the turn with the feedback. T3 delegated children pass, since their parent
@@ -142,7 +142,7 @@ def defined(lines):
 
 def problems(text, names={}):
     """One line per bare number in the reply's Next, Needs you, and Done lines. A number
-    that is a need's id in names, from the turn block, gets that need's name beside it:
+    that is an item's id in names, from the turn block, gets that item's name beside it:
     "'fix 3' (3 → currency column) in: …"."""
     lines = visible(text)
     known = defined(lines)
@@ -210,7 +210,7 @@ def main():
         return
     reply = event.get("last_assistant_message") or ""
     try:
-        names = {need.id: need.name for need in turn_block.parse(reply).needs}
+        names = {need.id: need.name for need in turn_block.parse(reply).items}
     except turn_block.Malformed:
         names = {}  # routine_stop.py sends a reply without a valid block back
     found = problems(reply, names)
@@ -222,7 +222,7 @@ def main():
         "without scrolling up:\n" + listing + "\nSend your whole reply again, unchanged except "
         "that each of these numbers gets its short name in parentheses after it, as in \"keep "
         "48 (optional email variables)\"; where a line shows \"3 → currency column\", that's "
-        "the name your turn block gives need 3. T3 shows only a turn's last message and folds the "
+        "the name your turn block gives item 3. T3 shows only a turn's last message and folds the "
         "rest away, so the resent reply has to stand on its own. Add no note about the "
         "change. A number from a brief, a standing rule, or before a compaction needs its "
         "name too: look it up rather than guess.")

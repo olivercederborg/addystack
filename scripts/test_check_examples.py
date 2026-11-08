@@ -123,6 +123,10 @@ class CheckExamplesTest(unittest.TestCase):
         bad = GOOD.replace("`a` → publish", "`a` → fix 3").replace("*recommended*\n````", f"*recommended*\n\n{turn}\n````")
         self.assertEqual(problems(bad), ["'fix 3' (3 → currency column) needs its short name beside it, "
                                          "as in \"48 (optional email variables)\""])
+        # A standing item's id is named the same way.
+        standing = turn.replace('"needs":[', '"needs":[],"standing":[')
+        self.assertEqual(problems(bad.replace(turn, standing)), ["'fix 3' (3 → currency column) needs its short name "
+                                                                 "beside it, as in \"48 (optional email variables)\""])
 
     def test_every_skill_passes(self):
         root = pathlib.Path(__file__).resolve().parent.parent

@@ -1,5 +1,8 @@
 """Parses the turn block every final reply ends with: `<!-- turn {json} -->`, the
 reply's state, what it needs from the user, and its Next options with each one's class.
+An optional `standing` list, in the same item shape, holds the user's items still open
+from earlier replies that don't block this turn's next step; ids are unique across both
+lists, and nothing that reads attention or a stop counts it.
 
 Hooks used to read the reply's English with regexes to decide whether option `a` was
 routine, or whether a prompt asked for a merge. The stakes are the user's typing: they
@@ -90,10 +93,18 @@ class Turn:
     eta: str | None  # running only, and only when measured
     elapsed: str | None  # running only
     project: str | None = None  # 1-40 characters; threads that share it group into one row
+    # Items still open from earlier replies that don't block this turn's next step. They
+    # never count as needing the user: attention and the routine-stop rule read needs only.
+    standing: tuple[Need, ...] = ()
 
     @property
     def recommended(self) -> Option | None:
         return self.options[0] if self.options else None
+
+    @property
+    def items(self) -> tuple[Need, ...]:
+        """Every user item the reply lists, needs then standing, for naming an id."""
+        return self.needs + self.standing
 
 
 class Malformed(ValueError):
@@ -241,15 +252,18 @@ def read_list(value, where):
     return value
 
 
-def read_need(value, at, ids):
-    where = f"needs[{at}]"
+def read_need(value, at, ids, field="needs"):
+    """An item of field, needs or standing; ids maps each id read so far to its list, since
+    an id is unique across both."""
+    where = f"{field}[{at}]"
     value = read_fields(value, where, ("id", "kind", "name"))
     number = value["id"]
     if type(number) is not int or number < 1:
         raise Malformed(f"{where}.id {show(number)} is not a whole number of 1 or more")
     if number in ids:
-        raise Malformed(f"{where}.id {number} repeats an earlier need")
-    ids.add(number)
+        earlier = "an earlier need" if ids[number] == "needs" else "an earlier standing item"
+        raise Malformed(f"{where}.id {number} repeats {earlier}")
+    ids[number] = field
     return Need(number, one_of(value["kind"], get_args(Kind), f"{where}.kind"),
                 read_text(value["name"], f"{where}.name", 80, WORD))
 
@@ -272,10 +286,12 @@ def parse(reply: str) -> Turn:
         raise
     except (ValueError, RecursionError) as error:  # Python 3.9 recurses on deep nesting
         raise Malformed(f"not JSON: {' '.join(str(error).split())}") from None
-    value = read_fields(value, "", ("state", "needs", "options"), ("eta", "elapsed", "project"))
+    value = read_fields(value, "", ("state", "needs", "options"), ("eta", "elapsed", "project", "standing"))
     state = one_of(value["state"], get_args(State), "state")
-    ids = set()
+    ids = {}
     needs = tuple(read_need(item, at, ids) for at, item in enumerate(read_list(value["needs"], "needs")))
+    standing = tuple(read_need(item, at, ids, "standing")
+                     for at, item in enumerate(read_list(value.get("standing", []), "standing")))
     listed = read_list(value["options"], "options")
     if len(listed) > 3:
         raise Malformed(f"options has {len(listed)} items, at most 3")
@@ -294,9 +310,10 @@ def parse(reply: str) -> Turn:
         raise Malformed("state running carries options")
     if state == "done" and (options or needs):
         raise Malformed(f"state done carries {'options' if options else 'needs'}")
+    # standing is allowed with every state, and alone it doesn't make a stop.
     if state == "stop" and not (options or needs):
         raise Malformed("state stop has no options or needs")
-    return Turn(state, needs, options, value.get("eta"), value.get("elapsed"), value.get("project"))
+    return Turn(state, needs, options, value.get("eta"), value.get("elapsed"), value.get("project"), standing)
 
 
 def certain(view):

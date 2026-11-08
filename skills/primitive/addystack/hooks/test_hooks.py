@@ -4559,6 +4559,10 @@ class BareReferences(unittest.TestCase):
         self.assertIn("'fix 3' in:", reason)
         self.assertNotIn("turn block:", reason)
         self.assertEqual(self.bounce("**Next**\n\n- `a` → keep 48 (optional email variables)"), "")
+        # A standing item, open from an earlier reply, is named the same way.
+        standing = block({"state": "stop", "needs": needs[:1], "options": [{"key": "a", "class": "routine", "text": "fix 3"}],
+                          "standing": [{"id": 7, "kind": "do", "name": "delete the old Keychain item"}]})
+        self.assertIn("'fix 7' (7 → delete the old Keychain item) in:", self.bounce(reply + standing))
 
     def test_reads_neither_the_turn_block_nor_any_code_block(self):
         # The block's JSON holds the options' text; one quote in it would leave "item 48" bare.
@@ -5035,6 +5039,59 @@ class TurnBlock(unittest.TestCase):
             with self.subTest(project=bad):
                 self.assertEqual(self.reason(block({**self.STOP, "project": bad})),
                                  "project must be text of 1-40 characters")
+
+    def test_reads_standing_items_with_every_state(self):
+        """`standing`: the user's items still open from earlier replies that don't block this
+        turn's next step, in needs' shape, with ids unique across both lists."""
+        keychain = {"id": 5, "kind": "do", "name": "delete the old Keychain item"}
+        read = turn_block.Need(5, "do", "delete the old Keychain item")
+        running = {"state": "running", "needs": [], "options": [], "elapsed": "2 min"}
+        for value in [{**self.STOP, "standing": [keychain]}, {**self.STOP, "needs": [], "standing": [keychain]},
+                      {**self.STOP, "options": [], "standing": [keychain]},
+                      {"state": "done", "needs": [], "options": [], "standing": [keychain]},
+                      {**running, "standing": [keychain]}, {**running, "needs": self.STOP["needs"], "standing": [keychain]}]:
+            with self.subTest(value=value):
+                turn = turn_block.parse(block(value))
+                self.assertEqual(turn.standing, (read,))
+                self.assertEqual(turn.needs, turn_block.parse(block({**value, "standing": []})).needs)
+                self.assertEqual(turn.items, (*turn.needs, read))
+        # Old blocks read exactly as before, and an empty list is the same as none.
+        old = turn_block.parse(block(self.STOP))
+        self.assertEqual((old.standing, old.items), ((), old.needs))
+        self.assertEqual(turn_block.parse(block({**self.STOP, "standing": []})), old)
+        self.assertEqual(old, turn_block.Turn("stop", old.needs, old.options, None, None))
+        # A pick reads the same, so merge-gate's go doesn't depend on it.
+        self.assertEqual(turn_block.picked(self.REPLY + block({**self.STOP, "standing": [keychain]}), "a").cls, "stop:merge")
+        # standing alone doesn't make a stop, and done still carries no needs.
+        self.assertEqual(self.reason(block({"state": "stop", "needs": [], "options": [], "standing": [keychain]})),
+                         "state stop has no options or needs")
+        self.assertEqual(self.reason(block({"state": "done", "needs": self.STOP["needs"], "options": [],
+                                            "standing": [keychain]})), "state done carries needs")
+        need = self.STOP["needs"][0]
+        for value, reason in [
+            ({**self.STOP, "standing": [{**keychain, "id": 3}]}, "standing[0].id 3 repeats an earlier need"),
+            ({**self.STOP, "standing": [keychain, {**keychain, "name": "sign in again"}]},
+             "standing[1].id 5 repeats an earlier standing item"),
+            ({**self.STOP, "standing": {}}, "standing is not a list"),
+            ({**self.STOP, "standing": None}, "standing is not a list"),
+            ({**self.STOP, "standing": [3]}, "standing[0] is not a JSON object"),
+            ({**self.STOP, "standing": [{**keychain, "label": "x"}]}, 'unknown field "standing[0].label"'),
+            ({**self.STOP, "standing": [{"id": 5, "kind": "do"}]}, 'missing field "standing[0].name"'),
+            ({**self.STOP, "standing": [{**keychain, "kind": "wait"}]},
+             'standing[0].kind "wait" is not one of decide, review, do'),
+            ({**self.STOP, "standing": [{**keychain, "id": 0}]}, "standing[0].id 0 is not a whole number of 1 or more"),
+            ({**self.STOP, "standing": [{**keychain, "name": "12 34"}]},
+             "standing[0].name must be text of 1-80 characters with a word of 3+ letters"),
+            ({**self.STOP, "standing": [keychain, keychain], "needs": [need, need]}, "needs[1].id 3 repeats an earlier need"),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(self.reason(block(value)), reason)
+        for bad in malformed({**self.STOP, "standing": [keychain]}):
+            with self.subTest(bad=bad):
+                try:
+                    turn_block.parse(block(bad))
+                except turn_block.Malformed as error:
+                    self.assertNotIn("\n", str(error))
 
     def test_the_block_is_last_outside_code_blocks_and_alone(self):
         valid = block(self.STOP)

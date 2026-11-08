@@ -46,6 +46,9 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
   `name` is 1-80 characters with a word of 3+ letters, as the visible item names it. A
   screenshot or recording waiting for the user's look is a `review`. A Do from an earlier
   reply that's still open stays listed.
+- **`standing`** (optional): items still open from earlier replies that don't block this
+  turn's next step, in `needs`' item shape. An `id` is unique across both lists, any state
+  may carry it, and alone it doesn't make a `stop`; only `needs` counts as needing the user.
 - **`options`**: the Next options in order, as `{"key", "class", "text"}`, with `text` 1-400
   characters, not blank. The first is the recommended one.
 - **`project`** (optional): 1-40 characters, not blank; threads that share it group into one row.
