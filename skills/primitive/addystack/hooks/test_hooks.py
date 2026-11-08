@@ -2507,6 +2507,16 @@ class MergeGate(unittest.TestCase):
         self.assertIn("asks for the merge", self.reason(f"cd {draft} && cd sub && gh pr merge 12"))
 
 
+    def test_a_gate_policy_that_didnt_resolve_asks_for_the_go(self):
+        # Every rule is gate, so the strictest value, which an unreadable repo file gets, is too.
+        self.trust("gate")
+        self.scenario(prs={12: None})
+        self.verify(12)
+        pathlib.Path(self.repo, ".agents").mkdir()
+        pathlib.Path(self.repo, ".agents", "addystack.jsonc").write_text('{ "trust": "draft",')
+        self.assertIn("asks for the merge", self.reason("gh pr merge 12"))
+
+
     def test_waits_for_ci_a_pr_its_workflows_run_for_or_cant_be_read(self):
         self.workflow(WorkflowTriggers.CI_YML)
         prs = {32: ["apps/web/x.ts", "docs/x.md"],  # a code file runs CI

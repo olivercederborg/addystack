@@ -264,8 +264,9 @@ try:
     data = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]
 
     import resolved, verdicts  # here, so a broken module blocks only merges
-    # A checkout whose policy can't be read gets the strictest trust, so this never fails open.
-    gate = resolved.policy(cwd).trust == "gate"
+    # An unresolved policy can still read gate, when every rule is gate, so it never counts.
+    policy = resolved.policy(cwd)
+    gate = policy.trust == "gate" and "unresolved" not in policy.matched
     # Diff locally, as the recorder does: `gh pr diff` shortens blob ids its own way and fails
     # past 300 files or 20,000 lines.
     pulls = [data[f"p{n}"] for n in numbers]
