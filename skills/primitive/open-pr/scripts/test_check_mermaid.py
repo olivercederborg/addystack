@@ -82,10 +82,21 @@ class CheckMermaid(unittest.TestCase):
         self.entry("0.0.2-jsdom1.0.0", 2)
         self.entry("0.0.3-jsdom1.0.0.partial-old", 2)
         self.entry("0.0.3-jsdom1.0.0.partial-new", 0)
+        target = self.entry("0.0.4-jsdom1.0.0", 31)
+        (self.cache / "notes.txt").write_text("")
+        os.symlink(target, self.cache / "0.0.5-jsdom1.0.0")
+        when = time.time() - 31 * DAY
+        for name in ("notes.txt", "0.0.5-jsdom1.0.0"):
+            os.utime(self.cache / name, (when, when), follow_symlinks=False)
+        # A run through the link refreshed its target, not the link.
+        os.utime(target, (time.time(), time.time()))
         run = self.run_check()
         self.assertEqual(run.returncode, 0, run.stderr)
-        used = {path.name for path in self.cache.iterdir()} - {
-            "0.0.2-jsdom1.0.0", "0.0.3-jsdom1.0.0.partial-new"}
+        names = {path.name for path in self.cache.iterdir()}
+        kept = {"0.0.2-jsdom1.0.0", "0.0.3-jsdom1.0.0.partial-new", "0.0.4-jsdom1.0.0",
+                "notes.txt", "0.0.5-jsdom1.0.0"}
+        self.assertLessEqual(kept, names)
+        used = names - kept
         self.assertEqual(len(used), 1, used)
         self.assertTrue(used.pop().endswith("-jsdom30.1.2"))
 
@@ -99,12 +110,17 @@ class CheckMermaid(unittest.TestCase):
         self.assertEqual(len(self.installs()), 1)
         self.assertGreater(used.stat().st_mtime, time.time() - DAY)
 
+    @unittest.skipIf(os.geteuid() == 0, "root removes a read-only folder's files")
     def test_removal_error_does_not_fail_the_check(self):
-        stuck = self.entry("0.0.1-jsdom1.0.0", 31) / "locked"
+        old = self.entry("0.0.1-jsdom1.0.0", 31)
+        stuck = old / "locked"
         stuck.mkdir()
         (stuck / "file").write_text("")
         stuck.chmod(0o500)
         self.addCleanup(stuck.chmod, 0o700)
+        # Age the folder last: adding to it refreshed its mtime.
+        when = time.time() - 31 * DAY
+        os.utime(old, (when, when))
         run = self.run_check()
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("✅ fake", run.stdout)

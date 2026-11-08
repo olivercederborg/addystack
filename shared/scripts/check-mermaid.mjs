@@ -84,8 +84,10 @@ function prune(dir) {
     const path = join(parent, name);
     if (path === dir) continue;
     try {
+      // Only real folders: a link's own mtime doesn't change when a run refreshes its target.
+      const stat = lstatSync(path);
       const days = name.includes(".partial-") ? 1 : UNUSED_DAYS;
-      if (now - lstatSync(path).mtimeMs > days * DAY) rmSync(path, { recursive: true, force: true });
+      if (stat.isDirectory() && now - stat.mtimeMs >= days * DAY) rmSync(path, { recursive: true, force: true });
     } catch {}
   }
 }
