@@ -420,6 +420,19 @@ class BranchCheckout(Update):
         self.assertEqual(self.branch(), "main")
         self.assert_left(result, head, "git fetch failed")
 
+    def test_leaves_the_branch_when_the_fast_forward_would_overwrite_an_ignored_file(self):
+        self.write(self.upstream / ".gitignore", "local.txt\n")
+        self.commit(self.upstream, "main-2")
+        self.git(self.checkout, "pull", "-q", "--ff-only")
+        (self.checkout / "local.txt").write_text("mine")
+        (self.upstream / ".gitignore").unlink()
+        (self.upstream / "local.txt").write_text("theirs")
+        self.commit(self.upstream, "main-3")
+        head = self.git(self.checkout, "rev-parse", "HEAD")
+        result = self.ok("update", bin_=self.bin)
+        self.assertEqual((self.checkout / "local.txt").read_text(), "mine")
+        self.assert_left(result, head, "git merge --ff-only origin/main failed")
+
     def test_to_checks_out_that_tag_and_says_how_to_return(self):
         result = self.ok("update", "--to", "v0.1.0", bin_=self.bin)
         self.assertEqual((self.checkout / "VERSION").read_text(), "v0.1.0")

@@ -156,7 +156,7 @@ def _update_branch(branch: str) -> int:
     if _git("rev-parse", "HEAD").stdout == _git("rev-parse", "@{upstream}").stdout:
         print(f"{branch} is up to date with {upstream}")
     elif _git("merge-base", "--is-ancestor", "HEAD", "@{upstream}").returncode == 0:
-        merged = _git("merge", "--ff-only", "--quiet", "@{upstream}")
+        merged = _git("merge", "--ff-only", "--no-overwrite-ignore", "--quiet", "@{upstream}")
         if merged.returncode:
             return _left(f"git merge --ff-only {upstream} failed: {' '.join(merged.stderr.split())}")
         print(f"fast-forwarded {branch} to {upstream} in {KIT}")
@@ -191,7 +191,7 @@ def _update_checkout(tag: Optional[str]) -> int:
     if tag is None or tag not in tags:
         print(f"addystack: {KIT} has no tag {tag}" if tag else f"addystack: {KIT} has no v* tag", file=sys.stderr)
         return 1
-    checkout = _git("checkout", "--quiet", "--detach", f"refs/tags/{tag}")
+    checkout = _git("checkout", "--quiet", "--no-overwrite-ignore", "--detach", f"refs/tags/{tag}")
     if checkout.returncode:
         print(f"addystack: git checkout {tag} failed: {checkout.stderr.strip()}", file=sys.stderr)
         return 1
