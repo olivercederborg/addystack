@@ -270,6 +270,7 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
     numbered = [(m, p) for p in phases.iterdir() if (m := re.match(r"(\d+)-(.+)\.md\Z", p.name))]
     for match, path in numbered:
         if match.group(2) == slug and path.read_bytes() == snapshot:
+            os.chmod(path, path.stat().st_mode & (folder / "project.md").stat().st_mode)
             return f"phases/{path.name}"
     name = f"{max((int(m.group(1)) for m, _ in numbered), default=0) + 1:02d}-{slug}.md"
     handle, tmp = tempfile.mkstemp(dir=phases, prefix=".phase.")

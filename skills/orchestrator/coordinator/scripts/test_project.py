@@ -237,6 +237,14 @@ Proofs:
         self.project("phase", "audit", "--result", "five reports", *NEXT)
         self.assertEqual((self.dir / "phases/01-audit.md").stat().st_mode & 0o777, 0o600)
 
+    def test_a_reused_archive_narrows_to_its_source(self):
+        (self.dir / "phases").mkdir()
+        (self.dir / "phases/01-audit.md").write_text(PROJECT)
+        (self.dir / "phases/01-audit.md").chmod(0o644)
+        (self.dir / "project.md").chmod(0o600)
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertEqual((self.dir / "phases/01-audit.md").stat().st_mode & 0o777, 0o600)
+
     def test_a_refused_phase_leaves_every_file_untouched(self):
         for args, code in [(["Bad_Slug", "--result", "r", *NEXT], 1),
                            (["audit", "--result", "two\nlines", *NEXT], 1),
