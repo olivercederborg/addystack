@@ -109,24 +109,27 @@ def symlinks(root):
 
 def orphans(root, destinations):
     """Each file under root, outside SKIPPED folders, that carries a marker line where copied()
-    puts it (first, or second after a shebang) but isn't one of destinations: a copy whose
-    pair was dropped from the list. A file quoting the marker further down isn't one."""
-    patterns = {}
-    for suffix, comment in COMMENT.items():
+    puts it (first, or second after a shebang), in any COMMENT syntax, since copied() takes
+    the syntax from the source and a destination may have another suffix, but isn't one of
+    destinations: a copy whose pair was dropped from the list. A file quoting the marker
+    further down isn't one."""
+    listed = {os.path.normpath(destination) for destination in destinations}
+    patterns = []
+    for comment in set(COMMENT.values()):
         head, tail = comment.format(MARKER).split("{}")
-        patterns[suffix] = re.compile(re.escape(head) + r"\S+" + re.escape(tail))
+        patterns.append(re.compile(re.escape(head) + r"\S+" + re.escape(tail)))
     found = []
     for folder, _, files in walk(root):
         for name in files:
             path = os.path.join(folder, name)
-            pattern = patterns.get(os.path.splitext(name)[1])
-            if pattern is None or os.path.islink(path) or os.path.relpath(path, root) in destinations:
+            if os.path.islink(path) or os.path.relpath(path, root) in listed:
                 continue
             with open(path, "rb") as file:
-                line = file.readline()
+                line = file.readline(4096)
                 if line.startswith(b"#!"):
-                    line = file.readline()
-            if pattern.fullmatch(line.decode("utf-8", "replace").rstrip("\r\n")):
+                    line = file.readline(4096)
+            text = line.decode("utf-8", "replace").rstrip("\r\n")
+            if any(pattern.fullmatch(text) for pattern in patterns):
                 found.append(os.path.relpath(path, root))
     return sorted(found)
 

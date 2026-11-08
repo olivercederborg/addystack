@@ -192,6 +192,20 @@ class SyncCopies(unittest.TestCase):
         result = self.check()
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
+    def test_a_listed_destination_spelled_with_dot_slash_is_not_an_orphan(self):
+        self.kit.write("scripts/copies.txt", LISTED.replace(" one/references/notes.md", " ./one/references/notes.md"))
+        self.assertEqual(self.kit.run().returncode, 0)
+        result = self.check()
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_check_names_an_unlisted_copy_whose_suffix_differs_from_its_source(self):
+        self.kit.write("scripts/copies.txt", LISTED + "shared/notes.md one/references/notes.txt\n")
+        self.assertEqual(self.kit.run().returncode, 0)
+        self.kit.write("scripts/copies.txt", LISTED)
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("one/references/notes.txt (a copy no pair lists", result.stdout)
+
     def test_rejects_a_destination_listed_twice(self):
         self.kit.write("scripts/copies.txt", LISTED + "hooks/tool.py one/references/notes.md\n")
         result = self.kit.run()
