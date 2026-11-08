@@ -119,6 +119,8 @@ follow-up finding with why.
 - **Headline first**, with the round number: 🔴 with what breaks in plain words when
   there's a Blocker, 🟡 with only Cleanups, and ✅ **Clean** when nothing needs fixing,
   including a round with no findings.
+  A round with findings to fix recommends fixing them, one commit each, and
+  re-reviewing until Clean.
   A clean round ends by recommending verify-work, then open-pr, leaving out a step
   that already ran on the current head.
 - **Shape**: the worst finding's fix as a `diff` of the enclosing code.
