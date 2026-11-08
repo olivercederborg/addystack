@@ -5,8 +5,7 @@ has its own goal and proof, and ends here. The project closes only on the user's
 
 1. **Integrated check**: run [close](close.md)'s integrated check on this phase's
    unmerged PRs, and record its result, the heads, and the trunk SHA it ran at under
-   Decisions. With no
-   unmerged PRs, skip it.
+   Decisions. With no unmerged PRs, skip it.
 2. **Promote**: copy each decision and learning that binds the next phase into
    `standing-rules.md`, and write each follow-up whose detail lives in Decisions or
    Learnings into Goal's Follow-ups. `phase` empties Decisions and Learnings into the
