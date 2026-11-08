@@ -4557,6 +4557,123 @@ class PrWatch(unittest.TestCase):
         self.assertIsNone(self.run_on([("say", "a"), ("bash", "gh stack push")], env={"T3CODE_CLI_PATH": ""}))
 
 
+class BackgroundTurnEnd(unittest.TestCase):
+    """pr_watch.py's check that a delegated child doesn't end its turn on its own unfinished
+    background work."""
+    HOOK = HOOKS / "pr_watch.py"
+    BRIEF = "Act as the implementation sub-agent for this task.\n\nDo the thing."
+    COMMIT = ("bg", "Bash", {"command": "git commit -m x", "description": "Commit the fix", "run_in_background": True},
+              "Command running in background with ID: b1. Output is being written to: /tmp/b1.output. "
+              "You will be notified when it completes.")
+    AGENT = ("bg", "Agent", {"description": "Review the diff", "prompt": "review", "run_in_background": True},
+             "Async agent launched successfully. (This tool result is internal metadata.)\nagentId: a7 (internal ID)")
+    DONE_B1 = ("notice", "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>")
+    STOP = ("stop",)
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.path = pathlib.Path(self.folder.name, "s1.jsonl")
+
+    def write(self, steps, path=None, brief=BRIEF):
+        """steps: ("bg", tool, input, result text), ("notice", text) for a queued notification,
+        ("stopped", task id) for a TaskStop, ("fork", skill, agent id, handed back), or
+        ("stop",) for an earlier Stop hook run."""
+        lines = [{"type": "user", "message": {"role": "user", "content": brief}}] if brief else []
+        for n, step in enumerate(steps):
+            use = f"t{n}"
+            if step[0] == "stop":
+                lines.append({"type": "system", "subtype": "stop_hook_summary"})
+            elif step[0] == "notice":
+                lines.append({"type": "queue-operation", "operation": "enqueue", "content": step[1]})
+            else:
+                name, tool_input, output, extra = {
+                    "bg": lambda: (step[1], step[2], step[3], {}),
+                    "stopped": lambda: ("TaskStop", {"task_id": step[1]},
+                                        f"Successfully stopped task: {step[1]} (git commit)", {}),
+                    "fork": lambda: ("Skill", {"skill": step[1]}, f'Skill "{step[1]}" completed (forked execution).',
+                                     {"toolUseResult": {"status": "forked", "agentId": step[2], "result": step[3]}}),
+                }[step[0]]()
+                lines.append({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": use, "name": name, "input": tool_input}]}})
+                lines.append({"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": use, "content": [{"type": "text", "text": output}]}]}, **extra})
+        (path or self.path).parent.mkdir(parents=True, exist_ok=True)
+        (path or self.path).write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+    def fork(self, agent, steps):
+        self.write(steps, self.path.parent / "s1" / "subagents" / f"agent-{agent}.jsonl", brief=None)
+
+    def run_hook(self, event=None, env=None):
+        out = subprocess.run([str(self.HOOK)], capture_output=True, text=True, check=True,
+                             env={**os.environ, "T3CODE_CLI_PATH": "/t3", "T3_STATE_DB": "/nonexistent", **(env or {})},
+                             input=json.dumps({"transcript_path": str(self.path), "session_id": "s1",
+                                               "cwd": self.folder.name, **(event or {})})).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else None
+
+    def test_sends_back_unfinished_background_command(self):
+        self.write([self.COMMIT])
+        feedback = self.run_hook()
+        self.assertIn("`Commit the fix`", feedback)
+        self.assertIn("in the foreground", feedback)
+        self.assertIn("counted loops of under 2 minutes", feedback)
+
+    def test_sends_back_unfinished_background_subagent(self):
+        self.write([self.AGENT])
+        self.assertIn("`Review the diff`", self.run_hook())
+
+    def test_passes_finished_or_stopped_work(self):
+        done_a7 = ("notice", "<task-notification>\n<task-id>a7</task-id>\n<status>completed</status>\n</task-notification>")
+        for label, steps in {"notified": [self.COMMIT, self.DONE_B1], "stopped": [self.COMMIT, ("stopped", "b1")],
+                             "agent notified": [self.AGENT, done_a7]}.items():
+            with self.subTest(label):
+                self.write(steps)
+                self.assertIsNone(self.run_hook())
+
+    def test_passes_a_notification_only_quoted_in_tool_output(self):
+        quoted = ("bg", "Bash", {"command": "grep -r task-notification ."},
+                  "<task-notification><task-id>b1</task-id><status>completed</status></task-notification>")
+        self.write([self.COMMIT, quoted])
+        self.assertIn("`Commit the fix`", self.run_hook())
+
+    def test_passes_work_started_before_this_turn(self):
+        self.write([self.COMMIT, self.STOP])
+        self.assertIsNone(self.run_hook())
+
+    def test_passes_a_server(self):
+        for command, about in [("bunx expo start --dev-client --port 8095 > /tmp/m.log", "Start Metro"),
+                               ("bun run --cwd apps/web dev > /tmp/web.log", "Run web dev server"),
+                               ("./serve.sh", "Start the Lakebed dev preview")]:
+            with self.subTest(command):
+                self.write([("bg", "Bash", {"command": command, "description": about, "run_in_background": True},
+                             "Command running in background with ID: b9.")])
+                self.assertIsNone(self.run_hook())
+
+    def test_passes_outside_a_delegated_child_already_sent_back_or_codex(self):
+        self.write([self.COMMIT], brief="Fix the bug.")
+        self.assertIsNone(self.run_hook())
+        self.write([self.COMMIT])
+        self.assertIsNone(self.run_hook({"stop_hook_active": True}))
+        self.assertIsNone(self.run_hook({"turn_id": "t"}))
+
+    def test_sends_back_a_fork_that_returned_on_its_own_background_work(self):
+        self.write([("fork", "verify-work", "f1", "I'll wait for the result notification.")])
+        self.fork("f1", [("bg", "Bash", {"command": "python3 -m unittest", "description": "Run the suite",
+                                         "run_in_background": True}, "Command running in background with ID: b5.")])
+        self.assertIn("`Run the suite` in verify-work's run", self.run_hook())
+
+    def test_passes_a_fork_that_reported_or_was_run_again(self):
+        verdict = "Done: " + "checked " * 60
+        for label, steps in {"reported": [("fork", "verify-work", "f1", verdict)],
+                             "run again": [("fork", "verify-work", "f1", "Still running."),
+                                           ("fork", "verify-work", "f2", verdict)]}.items():
+            with self.subTest(label):
+                self.write(steps)
+                self.fork("f1", [("bg", "Bash", {"command": "make", "run_in_background": True},
+                                  "Command running in background with ID: b5.")])
+                self.assertIsNone(self.run_hook())
+
+
 class ExistingWork(unittest.TestCase):
     HOOK = HOOKS / "existing_work.py"
     SESSION = "5ba1b6b8-31b4-45fa-a466-ee92b89ec497"
