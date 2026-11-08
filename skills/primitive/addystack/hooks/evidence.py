@@ -25,6 +25,7 @@ changes inside exported classes and functions, and exports in languages other th
 JS and TS."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path, PurePosixPath
@@ -81,7 +82,7 @@ MEDIA = {suffix: re.compile(magic, re.S) for suffixes, magic in [
     ((".png",), rb"\x89PNG\r\n\x1a\n"), ((".jpg", ".jpeg"), rb"\xff\xd8\xff"), ((".gif",), rb"GIF8"),
     ((".webp",), rb"RIFF.{4}WEBP"), ((".mp4", ".mov"), rb".{4}ftyp"), ((".webm",), rb"\x1a\x45\xdf\xa3")]
     for suffix in suffixes}
-MUTANT_LINE = re.compile(r"^(killed|survived):\s*(.+)$", re.M)
+MUTANT_LINE = re.compile(r"^(killed|survived):[ \t]*(\S.*)$", re.M)  # `\s*` would take the next line as the mutant
 MUTANT_LOG = re.compile(r"mutant|mutation", re.I)  # a file name; a test log can quote `survived:` too
 SOURCE_URL = re.compile(r"https?://[^\s<>()\[\]]+")
 NO_PATTERN = re.compile(r"none:\s*\S")
@@ -274,23 +275,24 @@ def survivors(refs: list[str]) -> str | None:
     return f"{len(found)} survived ({'; '.join(found)})" if found else None
 
 
-def left_out_mutants(folder: Path, refs: list[str]) -> list[str]:
-    """Each file under folder, a head's evidence folder, whose name says mutant or mutation
-    and that holds a survivor or 3 results (`killed:` or `survived:` lines), when refs, a
-    Done's mutants evidence, don't name it. Fewer, all killed, hide nothing, and `check`
-    wouldn't take them. verify-108-1 saved a log with three survivors there on Nov 8, 2026,
-    and recorded Done without it."""
+def left_out_mutants(folder: Path, refs: list[str]) -> list[tuple[str, list[str]]]:
+    """(path, survivors) for each file under folder, a head's evidence folder, whose name
+    says mutant or mutation and that holds a survivor or 3 results (`killed:` or `survived:`
+    lines), when refs, a Done's mutants evidence, don't name it. Fewer, all killed, hide
+    nothing, and `check` wouldn't take them. verify-108-1 saved a log with three survivors
+    there on Nov 8, 2026, and recorded Done without it. Raises OSError for a file or folder
+    it can't read, since that could hide a survivor too."""
+    def fail(error):
+        raise error
     given = {Path(ref).resolve() for ref in refs if not ref.startswith(NOT_RUN)}
     found = []
-    for path in sorted(folder.rglob("*")) if folder.is_dir() else []:
-        if not (MUTANT_LOG.search(path.name) and path.is_file()) or path.resolve() in given:
-            continue
-        try:
-            results = [outcome for outcome, _ in MUTANT_LINE.findall(path.read_text(errors="replace"))]
-        except OSError:
-            continue
-        if "survived" in results or len(results) >= 3:
-            found.append(str(path))
+    for root, _, names in sorted(os.walk(folder, onerror=fail)) if folder.is_dir() else []:
+        for path in (Path(root, name) for name in sorted(names) if MUTANT_LOG.search(name)):
+            if not path.is_file() or path.resolve() in given:
+                continue
+            results = MUTANT_LINE.findall(path.read_text(errors="replace"))
+            if any(outcome == "survived" for outcome, _ in results) or len(results) >= 3:
+                found.append((str(path), [mutant for outcome, mutant in results if outcome == "survived"]))
     return found
 
 

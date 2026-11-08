@@ -161,13 +161,21 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     if "mutants" not in required and (survived := kinds.survivors(evidence.get("mutants", []))):
         gaps.append(("mutants", survived, ["supplied"]))  # a survivor the verifier found refuses Done on any path
     # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
-    # and left out would hide its survivors.
+    # and left out of a Done would hide its survivors. Only a Done reads them, so a Not done
+    # still revokes one when the folder won't read.
     saved = _store(cwd).parent / "evidence"
-    folders = [path for path in saved.iterdir() if len(path.name) >= 7 and head.startswith(path.name)] \
-        if saved.is_dir() else []
-    if left := [path for folder in folders for path in kinds.left_out_mutants(folder, evidence.get("mutants", []))]:
-        gaps.append(("mutants", f"{_shown([Path(path).name for path in left])} in this head's evidence folder "
-                                "isn't passed, and a Done passes every mutant log", ["run here"]))
+    try:
+        left = [found for folder in (saved.iterdir() if verdict == "done" and saved.is_dir() else [])
+                if len(folder.name) >= 7 and head.startswith(folder.name)
+                for found in kinds.left_out_mutants(folder, evidence.get("mutants", []))]
+    except OSError as error:
+        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+    if left:
+        survived = [mutant for _, mutants in left for mutant in mutants]
+        gaps.append(("mutants", f"{_shown([Path(path).name for path, _ in left])} in this head's evidence folder "
+                                "isn't passed, and a Done passes every mutant log"
+                     + (f"; it shows {len(survived)} survived ({'; '.join(survived)}), so record Not done naming "
+                        "each" if survived else ""), ["run here"]))
     if verdict == "done" and gaps:
         raise VerdictError("Done needs evidence: " + "; ".join(
             f"{kind} ({_shown(reasons)}){'' if gap == 'no evidence' else f': {gap}'}"

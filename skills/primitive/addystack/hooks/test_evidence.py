@@ -311,7 +311,9 @@ class Recording(Repo):
                                               "survived: tick-follows-not-fresh (107 tests passed)\n"
                                               "survived: no-server-backstop (38 tests passed)\n")
         with self.assertRaisesRegex(verdicts.VerdictError, r"^Done needs evidence: mutants \(run here\): mutants\.log in "
-                                                           r"this head's evidence folder isn't passed.* → --evidence mutants=<log>$"):
+                                                           r"this head's evidence folder isn't passed.*; it shows 2 survived "
+                                                           r"\(tick-follows-not-fresh .*; no-server-backstop .*\), so record "
+                                                           r"Not done naming each → --evidence mutants=<log>$"):
             self.record(head, evidence={"idiom": idiom})
         with self.assertRaisesRegex(verdicts.VerdictError, r"mutants \(supplied\): 2 survived"):
             self.record(head, evidence={"idiom": idiom, "mutants": [log]})
@@ -336,9 +338,28 @@ class Recording(Repo):
         self.saved(head, "tests.log", "survived: a test log that quotes a result\n")  # not named for mutants
         self.saved(head, "mutants.log", "killed: one probe\nkilled: and another\n")  # hides nothing, and too few to pass
         self.assertEqual(self.record(head, evidence={"idiom": idiom}).verdict, "done")
-        self.saved(head, "mutants-2.log", "survived: one is enough\n")
-        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants-2\.log in this head's evidence folder"):
+        self.saved(head, "mutants-2.log", "killed:\nsurvived: one is enough\n")  # `killed:` alone doesn't take the next line
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants-2\.log in this head's evidence folder.*1 survived \(one is enough\)"):
             self.record(head, evidence={"idiom": idiom})
+        # A Not done reads no folder, so it records with neither log passed.
+        self.assertEqual(self.record(head, "not-done", evidence={"idiom": idiom}, findings=["one survives"]).verdict,
+                         "not-done")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_a_mutant_log_done_cannot_read_refuses_done_but_not_a_not_done(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        hidden = pathlib.Path(self.saved(head, "nested/mutants.log", "survived: behind a locked folder\n")).parent
+        evidence_root = hidden.parent.parent
+        for locked in (hidden, evidence_root):
+            with self.subTest(locked=locked.name):
+                locked.chmod(0)
+                self.addCleanup(locked.chmod, 0o755)
+                with self.assertRaisesRegex(verdicts.VerdictError, "Done reads every mutant log.*Permission denied"):
+                    self.record(head, evidence={"idiom": idiom})
+                self.assertEqual(self.record(head, "not-done", evidence={"idiom": idiom}, findings=["x"]).verdict,
+                                 "not-done")
+                locked.chmod(0o755)
 
     def test_bad_evidence_is_refused_for_every_verdict(self):
         head = self.change({"README.md": "# app\n\nMore.\n"})
