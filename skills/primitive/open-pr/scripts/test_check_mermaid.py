@@ -1,9 +1,11 @@
 """Runs check-mermaid.mjs against a scratch cache with a fake npm on PATH, so its install
-never looks complete after npm fails, and two first runs at once both pass."""
-import os, pathlib, subprocess, tempfile, textwrap, unittest
+never looks complete after npm fails, two first runs at once both pass, and an install
+prunes cache folders unused for 30 days and partials a killed install left."""
+import os, pathlib, subprocess, tempfile, textwrap, time, unittest
 from concurrent.futures import ThreadPoolExecutor
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check-mermaid.mjs"
+DAY = 24 * 60 * 60
 
 # Writes stand-in mermaid and jsdom packages into --prefix and logs each call. With
 # FAKE_NPM=fail it leaves mermaid's folder behind and exits 1, like an interrupted install.
@@ -67,6 +69,46 @@ class CheckMermaid(unittest.TestCase):
             self.assertIn("✅ fake", run.stdout)
         self.assertEqual(len(self.installs()), 2)
         self.assertEqual(len(list(self.cache.iterdir())), 1)
+
+    def entry(self, name, days_old):
+        path = self.cache / name
+        path.mkdir(parents=True)
+        when = time.time() - days_old * DAY
+        os.utime(path, (when, when))
+        return path
+
+    def test_install_prunes_unused_folders_and_stale_partials(self):
+        self.entry("0.0.1-jsdom1.0.0", 31)
+        self.entry("0.0.2-jsdom1.0.0", 2)
+        self.entry("0.0.3-jsdom1.0.0.partial-old", 2)
+        self.entry("0.0.3-jsdom1.0.0.partial-new", 0)
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        used = {path.name for path in self.cache.iterdir()} - {
+            "0.0.2-jsdom1.0.0", "0.0.3-jsdom1.0.0.partial-new"}
+        self.assertEqual(len(used), 1, used)
+        self.assertTrue(used.pop().endswith("-jsdom30.1.2"))
+
+    def test_each_run_refreshes_the_used_folder(self):
+        self.assertEqual(self.run_check().returncode, 0)
+        [used] = self.cache.iterdir()
+        old = time.time() - 40 * DAY
+        os.utime(used, (old, old))
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(len(self.installs()), 1)
+        self.assertGreater(used.stat().st_mtime, time.time() - DAY)
+
+    def test_removal_error_does_not_fail_the_check(self):
+        stuck = self.entry("0.0.1-jsdom1.0.0", 31) / "locked"
+        stuck.mkdir()
+        (stuck / "file").write_text("")
+        stuck.chmod(0o500)
+        self.addCleanup(stuck.chmod, 0o700)
+        run = self.run_check()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertIn("✅ fake", run.stdout)
+        self.assertTrue((stuck / "file").exists())
 
 
 if __name__ == "__main__":
