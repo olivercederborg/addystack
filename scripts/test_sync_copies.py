@@ -1,8 +1,9 @@
 """Tests for sync-copies.py: it writes each copy in copies.txt from its source with a marker
 naming the source, keeps the source's mode and shebang, and --check names a copy that is
 hand-edited, stale, or missing, a symlink left in the kit, a copied script whose sibling it
-needs isn't copied beside it, and a skill with the format pointer that lacks its copies."""
-import os, pathlib, shutil, subprocess, tempfile, unittest
+needs isn't copied beside it, a skill with the format pointer that lacks its copies, and a
+marked copy that no pair lists."""
+import importlib.util, os, pathlib, shutil, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "sync-copies.py"
 POINTER = "<!-- toolkit-format:start -->\nread references/format.md\n<!-- toolkit-format:end -->\n"
@@ -167,6 +168,30 @@ class SyncCopies(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("maintainer/copies.txt:1: one/references/notes.md is listed twice", result.stderr)
 
+    def test_check_names_a_marked_copy_no_pair_lists_and_writing_keeps_it(self):
+        self.synced()
+        self.kit.write("scripts/copies.txt", "shared/notes.md one/references/notes.md\n")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        for copy in ("two/references/notes.md", "one/scripts/tool.py"):
+            self.assertIn(f"{copy} (a copy no pair lists: delete it, or list it in scripts/copies.txt)",
+                          result.stdout)
+        self.assertNotIn("one/references/notes.md", result.stdout)
+        result = self.kit.run()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("two/references/notes.md (a copy no pair lists", result.stdout)
+        self.assertTrue((self.kit.root / "two/references/notes.md").is_file())
+        self.assertTrue((self.kit.root / "one/scripts/tool.py").is_file())
+
+    def test_a_file_quoting_the_marker_below_its_top_is_not_a_copy(self):
+        self.synced()
+        marker = "Copy of shared/notes.md, written by scripts/sync-copies.py: edit the source, then run the script."
+        self.kit.write("docs/about.md", f"# About\n\n<!-- {marker} -->\n")
+        self.kit.write("docs/about.py", f"#!/usr/bin/env python3\n\"\"\"About.\"\"\"\n# {marker}\n")
+        self.kit.write("node_modules/pkg/notes.md", f"<!-- {marker} -->\n")
+        result = self.check()
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
     def test_rejects_a_destination_listed_twice(self):
         self.kit.write("scripts/copies.txt", LISTED + "hooks/tool.py one/references/notes.md\n")
         result = self.kit.run()
@@ -187,6 +212,16 @@ def copied_scripts():
         if len(words) == 2 and "/scripts/" in words[1]:
             pairs.append((KIT / words[0], KIT / words[1]))
     return pairs
+
+
+class RealTree(unittest.TestCase):
+    def test_every_marked_copy_in_this_checkout_is_listed(self):
+        # Imported, not run with --check: Dagger's suite holds only part of the tree, so its
+        # listed copies can be missing, but any marked copy it holds must still be listed.
+        spec = importlib.util.spec_from_file_location("sync_copies", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertEqual(module.orphans(KIT, {destination for _, destination in module.listed(KIT)}), [])
 
 
 class CopiedScriptsRun(unittest.TestCase):

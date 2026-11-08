@@ -11,8 +11,10 @@ It keeps the source's mode. Edit the source, then run this script, never the cop
 
 --check writes nothing and exits 1 naming each copy that differs from its source or is
 missing, each symlink left in the kit, each copied script without a sibling it needs
-(NEEDS), and each skill with the chat format pointer (scripts/sync-format.sh) whose
-references/format.md and views.md aren't listed.
+(NEEDS), each skill with the chat format pointer (scripts/sync-format.sh) whose
+references/format.md and views.md aren't listed, and each file carrying a marker line
+where a copy carries it that no pair lists as its destination, such as a copy whose pair
+was dropped: delete it or list it. Writing reports that file too, but never deletes it.
 
 Usage: scripts/sync-copies.py          # write every copy
        scripts/sync-copies.py --check  # exit 1 naming what's out of sync
@@ -20,6 +22,7 @@ Usage: scripts/sync-copies.py          # write every copy
 
 import os
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -39,6 +42,8 @@ NEEDS = {
 POINTER = "<!-- toolkit-format:start"
 FORMAT = ["shared/format.md", "shared/views.md"]
 COMMENT = {".md": "<!-- {} -->", ".py": "# {}", ".sh": "# {}", ".mjs": "// {}"}
+# The marker line each copy carries, inside its file type's COMMENT syntax; {} is the source.
+MARKER = "Copy of {}, written by scripts/sync-copies.py: edit the source, then run the script."
 # Folders the symlink scan skips: git's, and tools' untracked environments.
 SKIPPED = {".git", "node_modules", ".venv", "__pycache__", ".dagger/sdk"}
 
@@ -74,25 +79,54 @@ def copied(root, source):
     suffix = pathlib.PurePath(source).suffix
     if suffix not in COMMENT:
         fail(f"{source}: no comment syntax for {suffix or 'a file without a suffix'}; add one to COMMENT")
-    marker = COMMENT[suffix].format(f"Copy of {source}, written by scripts/sync-copies.py:"
-                                    " edit the source, then run the script.") + "\n"
+    marker = COMMENT[suffix].format(MARKER.format(source)) + "\n"
     if text.startswith("#!"):
         shebang, _, rest = text.partition("\n")
         return f"{shebang}\n{marker}{rest}"
     return marker + text
 
 
+def walk(root):
+    """os.walk over root, leaving out SKIPPED folders."""
+    for folder, dirs, files in os.walk(root):
+        # A skipped folder is left out whether or not it's a link; os.walk doesn't descend
+        # into a linked folder, which symlinks() reports.
+        dirs[:] = [d for d in dirs
+                   if d not in SKIPPED and os.path.relpath(os.path.join(folder, d), root) not in SKIPPED]
+        yield folder, dirs, files
+
+
 def symlinks(root):
     """Each symlink under root, outside SKIPPED folders."""
     found = []
-    for folder, dirs, files in os.walk(root):
-        # A skipped folder is left out whether or not it's a link; os.walk doesn't descend
-        # into a linked folder, which is reported below.
-        dirs[:] = [d for d in dirs
-                   if d not in SKIPPED and os.path.relpath(os.path.join(folder, d), root) not in SKIPPED]
+    for folder, dirs, files in walk(root):
         for name in [*dirs, *files]:
             path = os.path.join(folder, name)
             if os.path.islink(path):
+                found.append(os.path.relpath(path, root))
+    return sorted(found)
+
+
+def orphans(root, destinations):
+    """Each file under root, outside SKIPPED folders, that carries a marker line where copied()
+    puts it (first, or second after a shebang) but isn't one of destinations: a copy whose
+    pair was dropped from the list. A file quoting the marker further down isn't one."""
+    patterns = {}
+    for suffix, comment in COMMENT.items():
+        head, tail = comment.format(MARKER).split("{}")
+        patterns[suffix] = re.compile(re.escape(head) + r"\S+" + re.escape(tail))
+    found = []
+    for folder, _, files in walk(root):
+        for name in files:
+            path = os.path.join(folder, name)
+            pattern = patterns.get(os.path.splitext(name)[1])
+            if pattern is None or os.path.islink(path) or os.path.relpath(path, root) in destinations:
+                continue
+            with open(path, "rb") as file:
+                line = file.readline()
+                if line.startswith(b"#!"):
+                    line = file.readline()
+            if pattern.fullmatch(line.decode("utf-8", "replace").rstrip("\r\n")):
                 found.append(os.path.relpath(path, root))
     return sorted(found)
 
@@ -159,6 +193,9 @@ def main(argv):
             os.chmod(path, mode)
     problems = rules(ROOT, pairs)
     problems += [f"{link} (a symlink: list its target in {LIST} instead)" for link in symlinks(ROOT)]
+    # Reported, never deleted: an unlisted copy may be one whose pair was dropped by mistake.
+    problems += [f"{orphan} (a copy no pair lists: delete it, or list it in {LIST})"
+                 for orphan in orphans(ROOT, {destination for _, destination in pairs})]
     if check and stale:
         problems = [*stale, *problems]
     if problems:
