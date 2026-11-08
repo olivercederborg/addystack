@@ -24,6 +24,19 @@ T3 session on Oct 30, 2026).
   Oct 20 to 30 wrote or patched F earlier in the same command; 16 of the 208 bodies posted
   then fail it, and 335 of 558 edits ran no check. `--body` text and `--body-file -` aren't
   checked.
+- **Verifier builds and tests.** In a work-verifier fork, a build or test (BUILD_OR_TEST)
+  runs with a 600000 ms timeout, the most Bash allows, and one sent to the background with
+  `&` is denied, unless the command `wait`s for it. Any command but a server (pr_watch.py's
+  SERVES) asked to run with `run_in_background` is denied too: matching runners by name
+  missed 86 of a week's backgrounded checks, such as typechecks and pre-commit runs. Bash
+  moves a command past its timeout (2 minutes by default) to the background, and a fork's
+  background work stops when it hands back, so the work and the verdict waiting on it are
+  lost. That cost tower-app three verdicts on Nov 7 to 8, 2026 (verify-102-2,
+  verify-102-4, verify-105-1). pr_watch.py sends a T3 child back for it, but only after the
+  fork's run is over, so verify-work starts again, and not at all when the fork's hand-back
+  runs to 40 words, as verify-102-2's 56 did; a top-level session's forks get no check.
+  Work past 10 minutes still moves, as verify-107-1's and verify-107-4's did, so each note
+  says to split it.
 
 In bypass permissions mode the fixed command is allowed; in any other mode it's asked, so
 the hook never approves a command the permission rules would have asked about. A deny from
@@ -145,6 +158,126 @@ def modifier_fixes(command):
     return edits, list(notes.values())
 
 
+# A build or test runner in command position, after any `NAME=value` assignments or a wrapper
+# that runs it, such as `taskpolicy -b` or `time`. A repo's own script counts when it's named
+# by a relative scripts/ path and its name says build, test, or bench. A path after the
+# runner's word (`bun test/server.ts`) runs a file, not the runner.
+RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
+          r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:--cwd[=\s]\S+\s+|--filter[=\s]\S+\s+|-C\s+\S+\s+)*(?:test|build|typecheck)"
+          r"|(?:cargo|go|dotnet)\s+(?:build|test)"
+          # A tool run through a package manager (`bun turbo run`, `pnpm exec vitest`, `npx tsc`) or by path.
+          r"|(?:(?:bun|pnpm|yarn|npm)\s+(?:(?:x|exec|dlx|run)\s+)?|bunx\s+|npx\s+|\S*/)?"
+          r"(?:vitest|jest|playwright\s+test|pytest|tsc|turbo\s+run|storybook\s+build)"
+          r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+(?:call|check)"
+          r"|\S*\.githooks/pre-commit"
+          # A verifier's own mutant or pre-commit script, by name, wherever it lives.
+          r"|(?:(?:ba|z)?sh\s+|python3?\s+)?\S*?[\w.-]*(?:mutants?|mutate|-mut|pre-?commit)[\w.-]*\.(?:sh|py)"
+          r"|(?:(?:ba|z)?sh\s+)?(?:\.\.?/)*[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")
+WRAPPER = (r"(?:(?:\w+=\S*|taskpolicy\s+-\w+|nice(?:\s+-n\s*-?\d+)?|(?:/usr/bin/)?time(?:\s+-p)?|env|nohup|exec|command"
+           r"|caffeinate(?:\s+-\w+)*)\s+)*")
+# `swift test --help` or `xcodebuild -version` asks about the tool and runs nothing.
+INSPECTS = r"(?![^;&|\n]*\s(?:--?help|-h|--?version|-list|-showsdks|-showBuildSettings)(?=\s|$))"
+BUILD_OR_TEST = re.compile(LEAD + WRAPPER + RUNNER + INSPECTS)
+# The script `sh -c`, `bash -lc`, or `zsh -fc` runs, quoted, when the shell runs as a command
+# (after `--`, as in `infisical run -- sh -c '…'`, too); `echo sh -c '…'` only prints one.
+SCRIPT = re.compile(r"((?:^|[;&|({\n]|\s--)\s*" + WRAPPER + r"(?:\S*/)?(?:ba|z)?sh\s+(?:-[a-z]+\s+)*-[a-z]*c\s+)"
+                    r"(['\"])(.*?)(?<!\\)\2", re.S)
+# A `$(…)` with up to one `$(…)` nested in it, and a variable, which double quotes leave code.
+SUBSTITUTION = r"\$\((?:[^()]|\([^()]*\))*\)|\$\{?\w+\}?|\$!"
+# What opens and closes a group, ends a list item, or waits, in masked code.
+TOKEN = re.compile(r"\(|\)|\{|\}|;;?|\n|&&|\|\||&|(?<![\w-])(?:do|then|done|fi|esac|wait)(?![\w-])")
+KEYWORD_AFTER = re.compile(r"(?:^|[;\n&|({)}]|(?<![\w-])(?:do|then|else|done|fi|esac))\s*\Z")
+VERIFIER = "work-verifier"
+# Bash's most; a command past it moves to the background however long its timeout.
+LONG = 600000
+LOST = ("A work-verifier fork's background work stops when the fork hands back, so this work and the "
+        "verdict waiting on it would be lost. ")
+SPLIT = ("If it could take longer than 10 minutes, split it into batches that each finish under that, "
+         "such as by test filter, since Bash moves a longer command to the background too.")
+
+
+def run_code(command):
+    """command as the shell runs it: shell_code's masking, but the script `sh -c` runs, as a
+    group of its own, and each `$(…)` and variable in double quotes stay code. Offsets shift."""
+    code = SCRIPT.sub(lambda m: f"{m.group(1)}( {m.group(3)} )", mask_heredocs(command, quoted_only=False))
+    keep = lambda m: m.group() if m.group().startswith("$") and len(m.group()) > 1 else blank(m.group())
+    # A `$(…)` inside double quotes may hold quotes of its own: `"$(cd "$(pwd)" && swift test)"`.
+    code = re.sub(r"'[^']*'|\"(?:\\.|" + SUBSTITUTION + r"|[^\"\\])*\"", lambda m: "'" + (
+        re.sub(SUBSTITUTION + r"|[^$]+|\$", keep, m.group()[1:-1]) if m.group()[0] == '"' else blank(m.group()[1:-1]))
+        + "'", code)
+    code = re.sub(r"(?:(?<=[\s;&|(])|^)#[^\n]*", lambda m: ";" * len(m.group()), code, flags=re.M)
+    return re.sub(r"\d?>&\d?|&>", lambda m: m.group().replace("&", "_"), code)
+
+
+def unwaited(code):
+    """The text of each command, a whole `&&` list, loop, or group included, that a lone `&`
+    sends to the background with no `wait` for it later in code. A `wait` counts when it
+    starts a list item in the same shell, outside any branch, loop body, or guarded group,
+    and isn't piped; `(wait)`, `false && wait`, `then wait`, and `wait | cat` don't, since
+    each may leave the job running. With arguments it covers only the job whose `pid=$!` it
+    names, or the last job for `$!`. A keyword counts only where a command starts, so `echo
+    done` closes nothing. Known limits: a quoted runner word or test path (`python3
+    "test_x.py"`) and a quoted `--help` read as text, and `$(…)` nests one level deep;
+    none was among 25,365 verifier commands from Nov 1 to 8, 2026. Neither is an `sh -c`
+    passed through a shell function (`run() { "$@"; }; run sh -c '…'`), nor quotes inside
+    a quoted `$(…)` with parentheses of their own; both ran in the foreground when seen."""
+    # Each frame: [start of its current list item, shell, steady (no branch, loop body, or guard around it)].
+    frames, shells, jobs, after = [[0, 0, True]], 0, [], "\n"
+    for token in TOKEN.finditer(code):
+        text, frame = token.group(), frames[-1]
+        if text[0].isalpha() and not KEYWORD_AFTER.search(code[:token.start()]):
+            continue
+        if text == "(":
+            shells += 1
+            frames.append([token.end(), shells, True])
+        elif text in ("{", "do", "then"):
+            frames.append([token.end(), frame[1], frame[2] and text == "{" and after not in ("&&", "||")])
+        elif text in (")", "}", "done", "fi", "esac"):
+            if len(frames) > 1:
+                frames.pop()
+        elif text in (";", ";;", "\n"):
+            frame[0] = token.end()
+        elif text == "&":
+            pid = re.match(r"\s*(\w+)=\$!", code[token.end():])
+            jobs.append((code[frame[0]:token.start()], frame[1], pid and pid.group(1)))
+            frame[0] = token.end()
+        elif text == "wait" and frame[2] and after in (";", ";;", "\n", "&", "{", "("):
+            args = re.match(r"[^;&|\n)}]*(\|(?!\|))?", code[token.end():])
+            if not args.group(1):
+                names = set(re.findall(r"\$\{?(\w+)", args.group()))
+                mine = [job for job in jobs if job[1] == frame[1]]
+                covered = mine if not args.group().strip() else [job for job in mine if job[2] in names] + (
+                    mine[-1:] if "$!" in args.group() else [])
+                jobs = [job for job in jobs if job not in covered]
+        after = text
+    return [job for job, _, _ in jobs]
+
+
+def verifier_fix(payload, tool_input, command):
+    """(deny reason, None) when a work-verifier fork would background a build or test,
+    (None, note) when its build or test needs the long timeout, else (None, None)."""
+    if payload.get("agent_type") != VERIFIER:
+        return None, None
+    if tool_input.get("run_in_background"):
+        import pr_watch  # here, so only a verifier's background call loads it
+        if pr_watch.SERVES.search(command) or pr_watch.LONG_LIVED.search(str(tool_input.get("description") or "")):
+            return None, None
+        return (f"{LOST}Run it in the foreground with `timeout: {LONG}`; only a server, such as a dev server on a "
+                "port, runs with run_in_background here. Start another helper you stop yourself, such as a log "
+                f"recorder, with `nohup … > <log> 2>&1 &`. {SPLIT}"), None
+    code = run_code(command)
+    if not BUILD_OR_TEST.search(code):
+        return None, None
+    if any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
+        return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None
+    timeout = tool_input.get("timeout")
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout >= LONG:
+        return None, None
+    return None, (f"raised the timeout to {LONG} ms, since Bash moves a build or test past its timeout to the "
+                  "background, and a work-verifier fork's background work stops when it hands back. "
+                  + SPLIT.rstrip("."))  # main() ends each note with its own period
+
+
 def apply(command, edits):
     for at, _, text in sorted(edits, key=lambda e: (e[0], e[1]), reverse=True):
         command = command[:at] + text + command[at:]
@@ -163,16 +296,18 @@ def main():
     pipe_edits, pipe_notes, heads = pipefail_fixes(command)
     zsh_edits, zsh_notes = modifier_fixes(command)
     body_edits, body_notes = body_check_fixes(command)
+    refused, timeout_note = verifier_fix(payload, tool_input, command)
     if heads:
-        reason = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
-                  "kills it with SIGPIPE, and the `&&` chain runs on with head's status. Pipe it into "
-                  "`tail` instead, or run the git step on its own.")
+        refused = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
+                   "kills it with SIGPIPE, and the `&&` chain runs on with head's status. Pipe it into "
+                   "`tail` instead, or run the git step on its own.")
+    if refused:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": reason}}))
+                                                 "permissionDecisionReason": refused}}))
         return
-    if not pipe_edits and not zsh_edits and not body_edits:
+    if not pipe_edits and not zsh_edits and not body_edits and not timeout_note:
         return
-    notes = "; ".join(pipe_notes + zsh_notes + body_notes)
+    notes = "; ".join(pipe_notes + zsh_notes + body_notes + ([timeout_note] if timeout_note else []))
     if "record-verdict.sh" in command and payload.get("agent_id"):
         # verdict-stamp.py rewrites a subagent's recording too, and only the last rewrite applies.
         reason = f"verdict-stamp.py also rewrites this command, and only one rewrite applies, so fix it yourself: {notes}."
@@ -183,7 +318,8 @@ def main():
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if payload.get("permission_mode") == "bypassPermissions" else "ask",
         "permissionDecisionReason": f"bash-rewrite.py {notes}.",
-        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits)},
+        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits),
+                         **({"timeout": LONG} if timeout_note else {})},
         "additionalContext": f"bash-rewrite.py changed the command before it ran: it {notes}. Write it that way next time.",
     }}))
 

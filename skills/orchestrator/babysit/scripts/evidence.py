@@ -16,7 +16,8 @@ copy can't break the merge gate's reads.
   it's the library's intended use, or a single `none: <why>` line for a change with none.
 
 A ref `not-run:<reason>` names a check that couldn't run here: it's allowed for any kind,
-but never backs Done.
+but never backs Done. A Done also passes every mutant log the head's evidence folder holds
+(left_out_mutants), so a survivor in one refuses it whether or not the kind was required.
 
 Known limits: classify is a text heuristic and a floor, not a parser, and the verifier
 adds the kinds it misses with `--require`. Contract reads `-U0` hunk headers, so it
@@ -25,7 +26,9 @@ changes inside exported classes and functions, and exports in languages other th
 JS and TS."""
 from __future__ import annotations
 
+import os
 import re
+import stat
 import subprocess
 from pathlib import Path, PurePosixPath
 from urllib.parse import urlsplit
@@ -81,7 +84,8 @@ MEDIA = {suffix: re.compile(magic, re.S) for suffixes, magic in [
     ((".png",), rb"\x89PNG\r\n\x1a\n"), ((".jpg", ".jpeg"), rb"\xff\xd8\xff"), ((".gif",), rb"GIF8"),
     ((".webp",), rb"RIFF.{4}WEBP"), ((".mp4", ".mov"), rb".{4}ftyp"), ((".webm",), rb"\x1a\x45\xdf\xa3")]
     for suffix in suffixes}
-MUTANT_LINE = re.compile(r"^(killed|survived):\s*(.+)$", re.M)
+MUTANT_LINE = re.compile(r"^(killed|survived):[ \t]*(\S.*)$", re.M)  # `\s*` would take the next line as the mutant
+MUTANT_LOG = re.compile(r"mutant|mutation", re.I)  # a file name; a test log can quote `survived:` too
 SOURCE_URL = re.compile(r"https?://[^\s<>()\[\]]+")
 NO_PATTERN = re.compile(r"none:\s*\S")
 
@@ -271,6 +275,48 @@ def survivors(refs: list[str]) -> str | None:
     found = [mutant for ref in refs if not ref.startswith(NOT_RUN)
              for outcome, mutant in MUTANT_LINE.findall(Path(ref).read_text(errors="replace")) if outcome == "survived"]
     return f"{len(found)} survived ({'; '.join(found)})" if found else None
+
+
+def left_out_mutants(folders: list[Path], refs: list[str]) -> list[tuple[str, list[str]]]:
+    """(path, survivors) for each regular file under folders, a head's evidence folders,
+    whose name says mutant or mutation and that holds a survivor or 3 results (`killed:` or
+    `survived:` lines), when refs, a Done's mutants evidence, don't name that file. Fewer, all
+    killed, hide nothing, and `check` wouldn't take them. verify-108-1 saved a log with three
+    survivors there on Nov 8, 2026, and recorded Done without it. Files and folders compare
+    by device and inode, so a case-variant path, a hard link, or a linked folder counts once.
+    It raises OSError for a file or folder it can't read, since that could hide a survivor
+    too; `is_dir()` and `is_file()` would read one as absent."""
+    def fail(error):
+        raise error
+    def identity(path):
+        info = os.stat(path)
+        return info.st_dev, info.st_ino
+    given = {identity(ref) for ref in refs if not ref.startswith(NOT_RUN)}
+    found, walked, read = [], set(), set()
+    for folder in folders:
+        if not stat.S_ISDIR(os.stat(folder).st_mode) or identity(folder) in walked:
+            continue  # a file named like the head isn't an evidence folder
+        walked.add(identity(folder))
+        for root, subfolders, names in os.walk(folder, onerror=fail, followlinks=True):
+            kept = []
+            for name in sorted(subfolders):
+                if (key := identity(os.path.join(root, name))) not in walked:
+                    walked.add(key)
+                    kept.append(name)
+            subfolders[:] = kept
+            for name in sorted(names):
+                path = os.path.join(root, name)
+                os.lstat(path)  # raises where root lists names it can't search, so a link there isn't skipped
+                if not MUTANT_LOG.search(name):
+                    continue
+                info = os.stat(path)
+                if not stat.S_ISREG(info.st_mode) or (key := (info.st_dev, info.st_ino)) in given | read:
+                    continue  # reading a FIFO would wait for a writer
+                read.add(key)
+                results = MUTANT_LINE.findall(Path(path).read_text(errors="replace"))
+                if any(outcome == "survived" for outcome, _ in results) or len(results) >= 3:
+                    found.append((path, [mutant for outcome, mutant in results if outcome == "survived"]))
+    return found
 
 
 def dev_cost_growth(refs: list[str]) -> str | None:

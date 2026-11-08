@@ -158,13 +158,32 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     for kind in require or []:
         required.setdefault(kind, []).append("--require: the intent implies it")
     required = {kind: required[kind] for kind in kinds.KINDS if kind in required}
-    gaps = [(kind, gap) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
+    gaps = [(kind, gap, required[kind]) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
     if "mutants" not in required and (survived := kinds.survivors(evidence.get("mutants", []))):
-        gaps.append(("mutants", survived))  # a survivor the verifier found refuses Done on any path
+        gaps.append(("mutants", survived, ["supplied"]))  # a survivor the verifier found refuses Done on any path
+    # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
+    # and left out of a Done would hide its survivors. Only a Done reads them, so a Not done
+    # still revokes one when the folder won't read.
+    saved, left = _store(cwd).parent / "evidence", []
+    try:
+        try:
+            folders = list(saved.iterdir()) if verdict == "done" else []
+        except FileNotFoundError:  # no evidence saved yet; any other error could hide a log
+            folders = []
+        left = kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
+                                       and head.startswith(folder.name)], evidence.get("mutants", []))
+    except OSError as error:
+        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+    if left:
+        survived = [mutant for _, mutants in left for mutant in mutants]
+        gaps.append(("mutants", f"{_shown([Path(path).name for path, _ in left])} in this head's evidence folder "
+                                "isn't passed, and a Done passes every mutant log"
+                     + (f"; it shows {len(survived)} survived ({'; '.join(survived)}), so record Not done naming "
+                        "each" if survived else ""), ["run here"]))
     if verdict == "done" and gaps:
         raise VerdictError("Done needs evidence: " + "; ".join(
-            f"{kind} ({_shown(required.get(kind, ['supplied']))}){'' if gap == 'no evidence' else f': {gap}'}"
-            f" → --evidence {kind}={kinds.PLACEHOLDER[kind]}" for kind, gap in gaps))
+            f"{kind} ({_shown(reasons)}){'' if gap == 'no evidence' else f': {gap}'}"
+            f" → --evidence {kind}={kinds.PLACEHOLDER[kind]}" for kind, gap, reasons in gaps))
     receipt = Receipt(patch_id, ReviewTarget(base, head), datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                       verifier, verdict, evidence, findings, required)
     store = _store(cwd)

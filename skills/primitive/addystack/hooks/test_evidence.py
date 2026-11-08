@@ -295,6 +295,137 @@ class Recording(Repo):
         kills = self.media("kills.log", "killed: flip a\nkilled: drop b\nkilled: drop the pad\n")
         self.assertEqual(list(self.record(head, evidence={"mutants": [kills], "idiom": idiom}).required), ["idiom"])
 
+    def saved(self, head, name, text):
+        """A file in head's evidence folder, where verify-work's evidence.md says to save it."""
+        common = self.git("rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+        path = pathlib.Path(common, "verify-work", "evidence", head, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return str(path)
+
+    def test_a_mutant_log_left_out_of_done_refuses_it(self):
+        """verify-108-1, Nov 8, 2026: three survivors in mutants.log, and a Done that passed only idiom."""
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = self.saved(head, "mutants.log", "killed: stale-revision-key by ReviewsTests\n"
+                                              "survived: tick-follows-not-fresh (107 tests passed)\n"
+                                              "survived: no-server-backstop (38 tests passed)\n")
+        with self.assertRaisesRegex(verdicts.VerdictError, r"^Done needs evidence: mutants \(run here\): mutants\.log in "
+                                                           r"this head's evidence folder isn't passed.*; it shows 2 survived "
+                                                           r"\(tick-follows-not-fresh .*; no-server-backstop .*\), so record "
+                                                           r"Not done naming each → --evidence mutants=<log>$"):
+            self.record(head, evidence={"idiom": idiom})
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants \(supplied\): 2 survived"):
+            self.record(head, evidence={"idiom": idiom, "mutants": [log]})
+        self.record(head, "not-done", evidence={"idiom": idiom}, findings=["tick-follows-not-fresh survives"])
+
+    def test_a_left_out_log_with_every_mutant_killed_backs_done_once_passed(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = self.saved(head[:10], "nested/Mutants-delta.txt", "killed: a\nkilled: b\nkilled: c\n")
+        with self.assertRaisesRegex(verdicts.VerdictError, r"Mutants-delta\.txt in this head's evidence folder"):
+            self.record(head, evidence={"idiom": idiom})
+        self.assertEqual(self.record(head, evidence={"idiom": idiom, "mutants": [log]}).verdict, "done")
+
+    def test_only_a_mutant_log_with_results_for_this_head_counts(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        other = self.change({"src/other.ts": "x\n"})
+        self.git("checkout", "-q", head)
+        self.saved(other, "mutants.log", "survived: on another head\n")  # another head's folder
+        self.saved(head[:6], "mutants.log", "survived: too short a prefix to name the head\n")
+        self.saved(head, "mutants-run.log", "Building for debugging...\nmutant 1 of 3\n")  # no results in it
+        self.saved(head, "tests.log", "survived: a test log that quotes a result\n")  # not named for mutants
+        self.saved(head, "mutants.log", "killed: one probe\nkilled: and another\n")  # hides nothing, and too few to pass
+        self.assertEqual(self.record(head, evidence={"idiom": idiom}).verdict, "done")
+        self.saved(head, "mutants-2.log", "killed:\nsurvived: one is enough\n")  # `killed:` alone doesn't take the next line
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants-2\.log in this head's evidence folder.*1 survived \(one is enough\)"):
+            self.record(head, evidence={"idiom": idiom})
+        # A Not done reads no folder, so it records with neither log passed.
+        self.assertEqual(self.record(head, "not-done", evidence={"idiom": idiom}, findings=["one survives"]).verdict,
+                         "not-done")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_a_mutant_log_done_cannot_read_refuses_done_but_not_a_not_done(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        hidden = pathlib.Path(self.saved(head, "nested/mutants.log", "survived: behind a locked folder\n")).parent
+        evidence_root = hidden.parent.parent
+        # 0 hides names too; 0o644 lists them but can't search, and is_dir() reads that as absent.
+        for locked, mode in [(hidden, 0), (evidence_root, 0), (hidden, 0o644), (hidden.parent, 0o644),
+                             (evidence_root, 0o644)]:
+            with self.subTest(locked=locked.name, mode=oct(mode)):
+                locked.chmod(mode)
+                self.addCleanup(locked.chmod, 0o755)
+                with self.assertRaisesRegex(verdicts.VerdictError, "Done reads every mutant log.*Permission denied"):
+                    self.record(head, evidence={"idiom": idiom})
+                self.assertEqual(self.record(head, "not-done", evidence={"idiom": idiom}, findings=["x"]).verdict,
+                                 "not-done")
+                locked.chmod(0o755)
+
+    def test_a_mutant_log_behind_a_linked_folder_counts(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        elsewhere = self.dir / "runs"
+        elsewhere.mkdir()
+        (elsewhere / "mutants.log").write_text("survived: hidden regression\n")
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder / "run").symlink_to(elsewhere)
+        (elsewhere / "loop").symlink_to(folder)  # a cycle back to the head's folder
+        with self.assertRaisesRegex(verdicts.VerdictError, r"mutants\.log in this head's evidence folder.*hidden regression"):
+            self.record(head, evidence={"idiom": idiom})
+
+    def test_each_mutant_log_counts_once_by_identity(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        log = pathlib.Path(self.saved(head, "runs/mutants.log", "survived: real regression\n"))
+        folder = log.parent.parent
+        (folder / "a").symlink_to(log.parent)
+        (folder / "b").symlink_to(log.parent)
+        short = pathlib.Path(self.saved(head[:8], "notes.txt", "x\n")).parent
+        (short / "runs").symlink_to(log.parent)
+        with self.assertRaisesRegex(verdicts.VerdictError, r"it shows 1 survived \(real regression\)"):
+            self.record(head, evidence={"idiom": idiom})
+        os.link(log, folder / "mutants-again.log")
+        (log.parent / "x").mkdir()
+        (log.parent / "x" / "y").symlink_to(log.parent / "z")
+        (log.parent / "z").mkdir()
+        (log.parent / "z" / "x").symlink_to(log.parent / "x")  # a cycle below the head's folder
+        for name in ("p1", "p2"):  # a branching one, which a walk that revisits folders takes 2^40 steps through
+            (log.parent / "x" / name).symlink_to(log.parent)
+        with self.assertRaisesRegex(verdicts.VerdictError, r"it shows 1 survived \(real regression\)"):
+            self.record(head, evidence={"idiom": idiom})
+        os.unlink(folder / "mutants-again.log")
+        kills =pathlib.Path(self.saved(head, "runs/mutants.log", "killed: a\nkilled: b\nkilled: c\n"))
+        os.link(kills, folder / "mutants-copy.log")  # a hard link is the same file
+        variant = str(kills).replace("mutants.log", "MUTANTS.log")
+        same_case = os.path.exists(variant) and os.path.samefile(variant, kills)
+        for ref in [str(kills), str(folder / "mutants-copy.log")] + ([variant] if same_case else []):
+            with self.subTest(ref=ref):
+                self.assertEqual(self.record(head, evidence={"idiom": idiom, "mutants": [ref]}).verdict, "done")
+
+    def test_a_file_named_for_the_head_or_a_fifo_is_no_log(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder.parent / head[:8]).write_text("not a folder\n")
+        os.mkfifo(folder / "mutants.fifo")  # reading one would wait for a writer
+        self.assertEqual(self.record(head, evidence={"idiom": idiom}).verdict, "done")
+
+    @unittest.skipIf(os.geteuid() == 0, "root reads any file")
+    def test_a_link_in_a_folder_done_cannot_search_refuses_done(self):
+        head = self.change({"src/format.ts": "x\n"})
+        idiom = [self.media("idiom.txt", "none: a fixture\n")]
+        elsewhere = self.dir / "runs"
+        elsewhere.mkdir()
+        (elsewhere / "mutants.log").write_text("survived: real regression\n")
+        folder = pathlib.Path(self.saved(head, "idiom.txt", "none: x\n")).parent
+        (folder / "run").symlink_to(elsewhere)
+        folder.chmod(0o644)
+        self.addCleanup(folder.chmod, 0o755)
+        with self.assertRaisesRegex(verdicts.VerdictError, "Done reads every mutant log.*Permission denied"):
+            self.record(head, evidence={"idiom": idiom})
+
     def test_bad_evidence_is_refused_for_every_verdict(self):
         head = self.change({"README.md": "# app\n\nMore.\n"})
         for verdict in verdicts.VERDICTS:
