@@ -120,7 +120,8 @@ words, and show the worst finding's code as the reply's one snippet.
 The fold holds what a reader and a re-run need: the base and head checked, the checks,
 one evidence line per finding, the fix diffs, and every artifact itself (each image,
 table, or log, as [evidence](references/evidence.md) shows its kind), never a path,
-folder, or count in its place. A Done shows its proof the same way.
+folder, or count in its place, so the reader sees the proof without opening a file. A
+Done shows its proof the same way, since that proof is what the reader trusts.
 
 ````markdown
 🔴 **Not done: a retry after finalizing never publishes the export.**
