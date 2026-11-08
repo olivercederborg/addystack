@@ -75,6 +75,13 @@ class Problems(unittest.TestCase):
         self.assertEqual(problems({"decision": {"options": options}}),
                          ["$.ui[0].decision.options: each key once, got a, a", "$.ui[0].decision.options: at most one rec"])
 
+    def test_a_pattern_end_anchor_ends_the_string_as_in_javascript(self):
+        self.assertEqual(problems({"change": {"pr": 1, "state": "open", "sha": "3fa9c01\n"}}),
+                         ['$.ui[0].change.sha: "3fa9c01\\n" doesn\'t match ^[0-9a-f]{7,40}$'])
+        self.assertEqual(len(problems({"decision": {"options": [{"key": "a\n", "text": "x"}]}})), 1)
+        self.assertEqual(problems({"change": {"pr": 1, "state": "open", "sha": "3fa9c01"}},
+                                  {"decision": {"options": [{"key": "a", "text": "x"}]}}), [])
+
     def test_a_ui_that_isnt_a_list_is_named(self):
         for value, shown in ((None, "null"), (3, "3"), (True, "true")):
             with self.subTest(value):

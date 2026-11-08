@@ -84,7 +84,9 @@ class Validator:
                 found.append(f"{path}: shorter than {schema['minLength']} characters")
             if "maxLength" in schema and len(value) > schema["maxLength"]:
                 found.append(f"{path}: longer than {schema['maxLength']} characters")
-            if "pattern" in schema and not re.search(schema["pattern"], value):
+            # ECMA-262's `$`, which JSON Schema patterns use, ends the string; Python's also
+            # matches before a final newline, so it becomes `\Z`.
+            if "pattern" in schema and not re.search(re.sub(r"(?<!\\)\$", r"\\Z", schema["pattern"]), value):
                 found.append(f"{path}: {json.dumps(value)} doesn't match {schema['pattern']}")
         if is_type(value, "number"):
             if "minimum" in schema and value < schema["minimum"]:
