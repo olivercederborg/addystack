@@ -160,6 +160,18 @@ class Agent(Doctor):
                           "fix: run npx skills add <the addystack repo> -g -y --skill verify-work, then addystack "
                           "install"))
 
+    def test_a_link_to_verify_works_corrupt_copy_says_to_reinstall_verify_work(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        self.write(self.home / ".claude/skills/verify-work/agents/work-verifier.md", "corrupt agent\n")
+        self.link.symlink_to(self.home / ".claude/skills/verify-work/agents/work-verifier.md")
+        self.assertEqual(self.check("agent"),
+                         ("FAIL  agent: ~/.claude/agents/work-verifier.md links to ~/.claude/skills/verify-work/agents/"
+                          "work-verifier.md, which isn't the work-verifier agent; verify-work's fork needs it to "
+                          "record a Done verdict",
+                          "fix: run npx skills add <the addystack repo> -g -y --skill verify-work, then addystack "
+                          "install"))
+
     def test_a_file_that_differs_from_verify_works_copy_fails(self):
         self.link.write_text("---\nname: work-verifier\n---\nAn older copy.\n")
         self.assertEqual(self.check("agent"),

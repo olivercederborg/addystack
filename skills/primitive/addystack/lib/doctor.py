@@ -199,11 +199,14 @@ def _agent(value: Optional[Resolved]) -> Check:
                      + ("" if regular else f", through {render._home(source)}"), None)
     if not os.path.lexists(source.parents[1]):
         return Check("agent", True, f"not needed: verify-work isn't in {render._home(source.parents[2])}", None)
+    # verify-work's own copy is missing, or there but not the agent: only reinstalling
+    # verify-work restores it, since install links to it as it is.
+    restore = not _is_verifier(source)
     install = "addystack install"
-    if not source.is_file():
+    if restore:
         kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
         install = f"npx skills add {kit} -g -y --skill verify-work, then addystack install"
-    fix = install if source.is_file() else f"run {install}"
+    fix = f"run {install}" if restore else install
     if regular:
         if not _is_verifier(link):
             problem = f"{render._home(link)} isn't the work-verifier agent"
@@ -216,7 +219,8 @@ def _agent(value: Optional[Resolved]) -> Check:
     elif not link.is_symlink():
         problem = f"{render._home(link)} is missing"
     elif os.readlink(link) == str(source):
-        problem = f"{render._home(link)} links to {render._home(source)}, which is missing"
+        problem = (f"{render._home(link)} links to {render._home(source)}, which "
+                   + ("isn't the work-verifier agent" if source.is_file() else "is missing"))
     else:
         problem = f"{render._home(link)} links to {os.readlink(link)}, not {render._home(source)}"
     return Check("agent", False, f"{problem}; verify-work's fork needs it to record a Done verdict", fix)
