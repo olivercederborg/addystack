@@ -3,9 +3,12 @@
 With `replies.turnBlock` on, every final reply ends with one turn block: a line of JSON in
 an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
 `hooks/routine_stop.py` reads it to tell a routine step from a stop, and
-`hooks/merge-gate.py` reads which option a key picked. A reply whose block is missing or
+`hooks/merge-gate.py` reads which option a key picked. With the routine-stop hook
+installed (the `replies` hooks, as in the `all` preset), a reply whose block is missing or
 malformed goes back once with the reason. A user's own reply rules file (`replies.rules`)
-may restate this section; the hooks then cite that file instead.
+may restate this section; the hooks then cite that file instead. `turn_block.py`'s
+docstring holds the parser's exact limits: which code blocks and spans hide an example
+block, and which replies' picks count as a merge go.
 
 ````markdown
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"which export fixes"}],"options":[{"key":"a","class":"routine","text":"yes: fix the currency column and null dates, one commit each"},{"key":"b","class":"routine","text":"no: fix only the currency column"}]} -->
