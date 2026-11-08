@@ -5642,6 +5642,7 @@ class RoutineStop(unittest.TestCase):
         # A bare verb asks for a change, as does a request that goes on to one; words that
         # only start like one send on too.
         for said in ["show reply images inline, the way T3 loads them", "show me the error and fix it",
+                     "show me the error\nand fix it", "please show me the error; fix it", "tell me why. Then fix it",
                      "explain it to the reviewer, then push", "list the open PRs in the README", "showcase it", "do it"]:
             for turn in [{}, standing]:
                 with self.subTest(said=said, turn=turn):
