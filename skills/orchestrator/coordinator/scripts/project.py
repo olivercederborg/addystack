@@ -265,7 +265,7 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
     try:
         with os.fdopen(handle, "wb") as f:
             f.write(snapshot)
-        os.chmod(tmp, 0o644)
+        os.chmod(tmp, (folder / "project.md").stat().st_mode)  # no wider than its source
         os.link(tmp, phases / name)  # fails if the name exists, where os.replace would overwrite it
     finally:
         os.unlink(tmp)

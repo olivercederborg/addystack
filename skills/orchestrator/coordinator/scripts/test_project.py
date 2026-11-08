@@ -216,6 +216,11 @@ Proofs:
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
         self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
 
+    def test_an_archive_is_no_wider_than_its_source(self):
+        (self.dir / "project.md").chmod(0o600)
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertEqual((self.dir / "phases/01-audit.md").stat().st_mode & 0o777, 0o600)
+
     def test_a_refused_phase_leaves_every_file_untouched(self):
         for args, code in [(["Bad_Slug", "--result", "r", *NEXT], 1),
                            (["audit", "--result", "two\nlines", *NEXT], 1),
