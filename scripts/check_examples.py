@@ -85,7 +85,7 @@ def check_block(start, block):
                if not fenced and turn_block.carriers(line)]
     if carried:
         try:
-            names = {need.id: need.name for need in turn_block.parse("\n".join(block)).needs}
+            names = {need.id: need.name for need in turn_block.parse("\n".join(block)).items}
         except turn_block.Malformed as error:
             problems.append((start + carried[0], f"turn block: {error}"))
     text = "\n".join(block)

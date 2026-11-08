@@ -4559,6 +4559,10 @@ class BareReferences(unittest.TestCase):
         self.assertIn("'fix 3' in:", reason)
         self.assertNotIn("turn block:", reason)
         self.assertEqual(self.bounce("**Next**\n\n- `a` → keep 48 (optional email variables)"), "")
+        # A standing item, open from an earlier reply, is named the same way.
+        standing = block({"state": "stop", "needs": needs[:1], "options": [{"key": "a", "class": "routine", "text": "fix 3"}],
+                          "standing": [{"id": 7, "kind": "do", "name": "delete the old Keychain item"}]})
+        self.assertIn("'fix 7' (7 → delete the old Keychain item) in:", self.bounce(reply + standing))
 
     def test_reads_neither_the_turn_block_nor_any_code_block(self):
         # The block's JSON holds the options' text; one quote in it would leave "item 48" bare.
@@ -5036,6 +5040,59 @@ class TurnBlock(unittest.TestCase):
                 self.assertEqual(self.reason(block({**self.STOP, "project": bad})),
                                  "project must be text of 1-40 characters")
 
+    def test_reads_standing_items_with_every_state(self):
+        """`standing`: the user's items still open from earlier replies that don't block this
+        turn's next step, in needs' shape, with ids unique across both lists."""
+        keychain = {"id": 5, "kind": "do", "name": "delete the old Keychain item"}
+        read = turn_block.Need(5, "do", "delete the old Keychain item")
+        running = {"state": "running", "needs": [], "options": [], "elapsed": "2 min"}
+        for value in [{**self.STOP, "standing": [keychain]}, {**self.STOP, "needs": [], "standing": [keychain]},
+                      {**self.STOP, "options": [], "standing": [keychain]},
+                      {"state": "done", "needs": [], "options": [], "standing": [keychain]},
+                      {**running, "standing": [keychain]}, {**running, "needs": self.STOP["needs"], "standing": [keychain]}]:
+            with self.subTest(value=value):
+                turn = turn_block.parse(block(value))
+                self.assertEqual(turn.standing, (read,))
+                self.assertEqual(turn.needs, turn_block.parse(block({**value, "standing": []})).needs)
+                self.assertEqual(turn.items, (*turn.needs, read))
+        # Old blocks read exactly as before, and an empty list is the same as none.
+        old = turn_block.parse(block(self.STOP))
+        self.assertEqual((old.standing, old.items), ((), old.needs))
+        self.assertEqual(turn_block.parse(block({**self.STOP, "standing": []})), old)
+        self.assertEqual(old, turn_block.Turn("stop", old.needs, old.options, None, None))
+        # A pick reads the same, so merge-gate's go doesn't depend on it.
+        self.assertEqual(turn_block.picked(self.REPLY + block({**self.STOP, "standing": [keychain]}), "a").cls, "stop:merge")
+        # standing alone doesn't make a stop, and done still carries no needs.
+        self.assertEqual(self.reason(block({"state": "stop", "needs": [], "options": [], "standing": [keychain]})),
+                         "state stop has no options or needs")
+        self.assertEqual(self.reason(block({"state": "done", "needs": self.STOP["needs"], "options": [],
+                                            "standing": [keychain]})), "state done carries needs")
+        need = self.STOP["needs"][0]
+        for value, reason in [
+            ({**self.STOP, "standing": [{**keychain, "id": 3}]}, "standing[0].id 3 repeats an earlier need"),
+            ({**self.STOP, "standing": [keychain, {**keychain, "name": "sign in again"}]},
+             "standing[1].id 5 repeats an earlier standing item"),
+            ({**self.STOP, "standing": {}}, "standing is not a list"),
+            ({**self.STOP, "standing": None}, "standing is not a list"),
+            ({**self.STOP, "standing": [3]}, "standing[0] is not a JSON object"),
+            ({**self.STOP, "standing": [{**keychain, "label": "x"}]}, 'unknown field "standing[0].label"'),
+            ({**self.STOP, "standing": [{"id": 5, "kind": "do"}]}, 'missing field "standing[0].name"'),
+            ({**self.STOP, "standing": [{**keychain, "kind": "wait"}]},
+             'standing[0].kind "wait" is not one of decide, review, do'),
+            ({**self.STOP, "standing": [{**keychain, "id": 0}]}, "standing[0].id 0 is not a whole number of 1 or more"),
+            ({**self.STOP, "standing": [{**keychain, "name": "12 34"}]},
+             "standing[0].name must be text of 1-80 characters with a word of 3+ letters"),
+            ({**self.STOP, "standing": [keychain, keychain], "needs": [need, need]}, "needs[1].id 3 repeats an earlier need"),
+        ]:
+            with self.subTest(value=value):
+                self.assertEqual(self.reason(block(value)), reason)
+        for bad in malformed({**self.STOP, "standing": [keychain]}):
+            with self.subTest(bad=bad):
+                try:
+                    turn_block.parse(block(bad))
+                except turn_block.Malformed as error:
+                    self.assertNotIn("\n", str(error))
+
     def test_the_block_is_last_outside_code_blocks_and_alone(self):
         valid = block(self.STOP)
         START = "the turn block must start at the beginning of its own line"
@@ -5506,8 +5563,9 @@ class RoutineStop(unittest.TestCase):
 
     def run_on(self, reply, said=("fix the header",), env=None, **event):
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
-            for text in said:  # Codex's rollout shape when the event is Codex's
-                transcript.write(json.dumps(codex_said(text) if "turn_id" in event else claude_said(text)) + "\n")
+            for text in said:  # Codex's rollout shape when the event is Codex's; a dict is a raw entry
+                entry = text if isinstance(text, dict) else codex_said(text) if "turn_id" in event else claude_said(text)
+                transcript.write(json.dumps(entry) + "\n")
             transcript.flush()
             out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True, env=env, input=json.dumps(
                 {"last_assistant_message": reply, "transcript_path": transcript.name, **event})).stdout
@@ -5531,6 +5589,64 @@ class RoutineStop(unittest.TestCase):
         # The class decides, not the words: a routine push goes on, in any repo.
         push = {"key": "a", "class": "routine", "text": "push v2/catalog and open it as a draft PR"}
         self.assertIn("push v2/catalog", self.feedback(self.with_turn(options=[push])))
+
+    def test_standing_items_dont_hold_a_routine_step(self):
+        """tower-app's Nov 1 21:58 reply: a Keychain to-do carried from earlier replies made the
+        routine step a stop. In `standing` it doesn't; only `needs` holds the step."""
+        keychain = {"id": 1, "kind": "do", "name": "Delete the old Clearance Keychain item"}
+        step = {"key": "a", "class": "routine", "text": "diagnose and fix tower-app's \"30 wait\" count"}
+        reply = self.with_turn(options=[step], standing=[keychain])
+        self.assertIn('"diagnose and fix tower-app\'s "30 wait" count" isn\'t a stop: nothing needs the user',
+                      self.feedback(reply))
+        self.assertEqual(self.run_on(reply, turn_id="t1")["decision"], "block")
+        self.assertIsNone(self.run_on(reply, stop_hook_active=True))
+        for case, turn in [
+            ("a need beside it", {"needs": [{"id": 2, "kind": "do", "name": "plug in the Dell display"}]}),
+            ("the same item as a need", {"needs": [keychain], "standing": []}),
+            ("a decision option", {"options": [{**step, "class": "decision"}]}),
+            ("a merge option", {"options": [{**step, "class": "stop:merge", "text": "merge #27"}]}),
+        ]:
+            with self.subTest(case=case):
+                self.assertIsNone(self.run_on(self.with_turn(**{"options": [step], "standing": [keychain], **turn})))
+        # Ported from suite-audit R83: a routine option that waits on the user, by a condition or
+        # by speaking to or as them, is held by listing what it waits on in needs, not standing;
+        # the hook reads the lists, not the option's words.
+        for text in ["run #30 captures once the monitor is connected", "capture #30 if the monitor is in",
+                     "run #87's on-screen check when you step away", "re-verify #26 with your check",
+                     "I'll step away; run it then", "we've connected it; verify #30"]:
+            waited = {"id": 3, "kind": "do", "name": "connect the monitor and step away"}
+            with self.subTest(text=text):
+                self.assertIsNone(self.run_on(self.with_turn(options=[{**step, "text": text}], needs=[waited],
+                                                             standing=[keychain])))
+                self.assertIsNotNone(self.run_on(self.with_turn(options=[{**step, "text": text}], standing=[waited])))
+
+    def test_reads_only_the_latest_replys_block(self):
+        """Ported from suite-audit R83: the reply that ends the turn decides, whatever an
+        earlier reply's block listed."""
+        need = {"id": 1, "kind": "do", "name": "Delete the old Clearance Keychain item"}
+        earlier = claude_wrote("✅ **#27 is merged.**\n\n" + block({"state": "stop", "needs": [need], "options": [self.ROUTINE]}))
+        said = ("fix the header", earlier, "a")
+        self.assertIsNotNone(self.run_on(self.with_turn(), said=said))
+        self.assertIsNotNone(self.run_on(self.with_turn(standing=[need]), said=said))
+        self.assertIsNone(self.run_on(self.with_turn(needs=[need]), said=("fix the header", claude_wrote("Done."), "a")))
+
+    def test_a_read_only_request_is_answered_like_a_question(self):
+        """Ported from suite-audit R83: "show me …" asks for an answer, so the turn that gives
+        it ends on its options."""
+        standing = {"standing": [{"id": 1, "kind": "do", "name": "delete the old Keychain item"}]}
+        for said in ["show me the project file for this coordinator thread", "please show me the project file",
+                     "explain the 30 wait count", "tell me what's left", "walk me through the stack"]:
+            for turn in [{}, standing]:
+                with self.subTest(said=said, turn=turn):
+                    self.assertIsNone(self.run_on(self.with_turn(**turn), said=("fix the header", said)))
+        # A bare verb asks for a change, as does a request that goes on to one; words that
+        # only start like one send on too.
+        for said in ["show reply images inline, the way T3 loads them", "show me the error and fix it",
+                     "show me the error\nand fix it", "please show me the error; fix it", "tell me why. Then fix it",
+                     "explain it to the reviewer, then push", "list the open PRs in the README", "showcase it", "do it"]:
+            for turn in [{}, standing]:
+                with self.subTest(said=said, turn=turn):
+                    self.assertIsNotNone(self.run_on(self.with_turn(**turn), said=(said,)))
 
     def test_sends_a_reply_without_a_valid_block_back_once(self):
         for reply, reason in [

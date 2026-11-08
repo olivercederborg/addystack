@@ -46,6 +46,9 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
   `name` is 1-80 characters with a word of 3+ letters, as the visible item names it. A
   screenshot or recording waiting for the user's look is a `review`. A Do from an earlier
   reply that's still open stays listed.
+- **`standing`** (optional): items still open from earlier replies that don't block this
+  turn's next step, in `needs`' item shape. An `id` is unique across both lists, any state
+  may carry it, and alone it doesn't make a `stop`; only `needs` counts as needing the user.
 - **`options`**: the Next options in order, as `{"key", "class", "text"}`, with `text` 1-400
   characters, not blank. The first is the recommended one.
 - **`project`** (optional): 1-40 characters, not blank; threads that share it group into one row.
@@ -71,5 +74,6 @@ addystack adds the two-option cap and each option's class.
     read-only question.
   - `routine`: anything else outside the stops, such as fix, verify, review, push the
     user's own branch, open a draft PR, or watch. When the state is `stop`, nothing is in
-    `needs`, and `a` is `routine`, `routine_stop.py` sends the agent on to do it, unless
-    the turn answers the user's question or they said "no autonomy".
+    `needs`, and `a` is `routine`, `routine_stop.py` sends the agent on to do it, whatever
+    `standing` holds, unless the turn answers the user's question or a read-only request
+    such as "show me …", or they said "no autonomy".

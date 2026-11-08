@@ -8,8 +8,10 @@ stops by the reply's English took a dozen regexes and still guessed, so each fin
 now ends with a turn block (rules_file(): the Turn block section of the user's reply rules
 file, or the kit's references/turn-block.md), and this reads it: when the state is
 stop, nothing needs the user, and the recommended option's class is routine, the agent does
-that option instead of asking. It stays out of the way when the turn answers their
-question, since the router ends those with options, and after "no autonomy". A reply
+that option instead of asking, whatever the block's `standing` list holds: those items, still
+open from earlier replies, don't block the step. It stays out of the way when the turn
+answers their question or a read-only request such as "show me …", since the router ends
+those with options, and after "no autonomy". A reply
 whose block is missing or malformed goes back once with the reason, since this hook and
 merge-gate.py read nothing without it.
 
@@ -62,12 +64,20 @@ REVIEW_SKILL = "review-teammate-pr"
 # The router's workflow skills: the review is over once one of these loads after it.
 WORKFLOWS = {REVIEW_SKILL, "address-review", "architect", "autopilot", "babysit", "build", "coordinator", "correct",
              "diagnosing-bugs", "open-pr", "review-loop", "scope-grill", "tdd", "verify-work"}
-QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who)\b", re.I)
+# A question, or a read-only request the router answers the same way, in one clause: "show
+# me the project file". A bare verb ("show reply images inline", "list the PRs in the README")
+# asks for a change, and so does a request that goes on to one ("show me the error and fix
+# it", "…; fix it"). Known limits, each sent on as before: "list the open PRs", "describe
+# the fix", and "explain the gap between A and B".
+QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who)\b"
+                      r"|^(?:please\s+)?(?:show me|tell me|explain|walk me through)\b"
+                      r"(?!.*(?:\b(?:and|then)\b|[;.!]\s*\S))", re.I | re.S)
 
 
 def should_continue(turn, messages):
     """The routine option to just do, or None when the turn may end on its question."""
     option = turn.recommended
+    # needs only: a standing item is open from an earlier reply and doesn't block this step.
     if turn.state != "stop" or turn.needs or not option or option.cls != "routine":
         return None
     if not messages or QUESTION.search(messages[-1]):
