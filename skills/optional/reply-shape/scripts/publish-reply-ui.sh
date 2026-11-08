@@ -7,7 +7,9 @@
 # IP addresses, plus the extended regex in REPLY_UI_DENY (names you keep out of public
 # repos), and the push stops on a match. A tag is never moved: jsDelivr caches a tag's
 # files for good, so a change gets a new version. After the push, the script fetches the
-# pinned URL until it serves the same bytes.
+# pinned URL until it serves the same bytes, then pins it: it writes the URL to
+# ui/renderer.url, the one source the reply-card hook and test_reply_card_hook.py read,
+# and to every reply-shape doc that names the old one. Commit those files after.
 #
 # Run from a kit checkout, since the LICENSE is the kit's.
 # Usage: REPLY_UI_DENY='regex' publish-reply-ui.sh <owner/repo> <vX.Y.Z>
@@ -59,6 +61,12 @@ echo "pushed $repo $tag"
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
   if curl -fsSL "$url" -o "$work/served.js" && cmp -s "$work/served.js" reply.js; then
     echo "serves: $url"
+    old="$(cat "$here/../ui/renderer.url")"
+    printf '%s\n' "$url" > "$here/../ui/renderer.url"
+    { grep -rlF "$old" "$here/.." --include='*.md' || true; } | while read -r doc; do
+      OLD="$old" NEW="$url" perl -pi -e 's/\Q$ENV{OLD}\E/$ENV{NEW}/g' "$doc"
+    done
+    echo "pinned: ui/renderer.url and the reply-shape docs now name $url; commit them"
     exit 0
   fi
   sleep $((attempt * 3))

@@ -35,7 +35,8 @@ SKILL_SUITES = {
     "skills/primitive/review-loop": ["skills/primitive/review-loop/references/review-lenses.md"],
     # github.sh in shared/scripts runs the tool's hooks/verdicts.py, as it has no copy beside it.
     "shared": [f"{TOOL}/hooks/verdicts.py", f"{TOOL}/hooks/evidence.py"],
-    "skills/optional/reply-shape": [],
+    # The html_render hook tests run the kit's wrapper, which finds reply-shape beside it.
+    "skills/optional/reply-shape": [f"{TOOL}/hooks/reply-card.py"],
     "skills/primitive/show-me-your-work": [],
     "skills/primitive/verify-work": [],
 }

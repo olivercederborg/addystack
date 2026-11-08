@@ -8,7 +8,13 @@ Reads a JSON payload ({"ui": [...]}) or an HTML page holding it in
 Only the JSON Schema keywords the catalog uses are supported, and an unknown one is an
 error, so the schema can't quietly grow a rule this check skips.
 
+With --hook it's a PreToolUse hook on html_render (the kit's hooks/reply-card.py runs it):
+it reads the call from stdin and denies a page that loads reply.js from any URL but
+ui/renderer.url's, or whose card is missing or invalid, naming the fix. A page that
+doesn't load reply.js passes.
+
 Usage: validate-card.py [payload.json | page.html | -]
+       validate-card.py --hook < pretooluse.json
 """
 
 import json
@@ -21,6 +27,8 @@ ANNOTATIONS = {"$schema", "$id", "$defs", "title", "description"}
 KEYWORDS = {"$ref", "oneOf", "type", "enum", "required", "additionalProperties", "properties",
             "items", "prefixItems", "minItems", "maxItems", "minLength", "maxLength", "pattern",
             "minimum", "maximum"} | ANNOTATIONS
+RENDERER = SCHEMA.with_name("renderer.url")
+SCRIPT_SRC = re.compile(r'<script\b[^>]*\bsrc=["\']?([^"\'\s>]*(?:reply-ui|/reply\.js)[^"\'\s>]*)', re.I)
 PAYLOAD = re.compile(r'<script\b[^>]*\bid=["\']?ui["\']?[^>]*>(.*?)</script>', re.S | re.I)
 
 
@@ -133,7 +141,56 @@ def check(payload, schema=None):
     return Validator(schema).errors(payload, schema)
 
 
+def pinned():
+    """The one URL a card may load reply.js from."""
+    return RENDERER.read_text().strip()
+
+
+def refusal(html):
+    """Why html_render should refuse this page, with the fix, or None when it passes."""
+    sources = SCRIPT_SRC.findall(html)
+    if not sources:
+        return None
+    url = pinned()
+    wrong = [src for src in sources if src != url]
+    if wrong:
+        return f"Reply card loads {wrong[0]}; load exactly {url} (reply-shape's ui/renderer.url)."
+    try:
+        found = PAYLOAD.findall(html)
+        if not found:
+            return 'Reply card has no payload; add <script type="application/json" id="ui">{"ui":[...]}</script> after reply.js.'
+        problems = check(json.loads(found[-1]))
+    except json.JSONDecodeError as error:
+        problems = [f"$: not JSON: {error}"]
+    if not problems:
+        return None
+    more = f" (and {len(problems) - 1} more)" if len(problems) > 1 else ""
+    return (f"Reply card is invalid: {problems[0]}{more}. Fix the payload to match reply-shape's "
+            "ui/catalog.schema.json; scripts/validate-card.py page.html lists every problem.")
+
+
+def hook(stdin):
+    """The PreToolUse output for one html_render call, or "" when it passes."""
+    try:
+        tool_input = json.load(stdin).get("tool_input") or {}
+        html = tool_input.get("html")
+        if not isinstance(html, str) and isinstance(tool_input.get("path"), str):
+            html = pathlib.Path(tool_input["path"]).read_text()
+    except (OSError, ValueError, AttributeError):
+        return ""
+    reason = refusal(html) if isinstance(html, str) else None
+    if not reason:
+        return ""
+    return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                              "permissionDecisionReason": reason}})
+
+
 def main(argv):
+    if argv[1:] == ["--hook"]:
+        out = hook(sys.stdin)
+        if out:
+            print(out)
+        return 0
     source = argv[1] if len(argv) > 1 else "-"
     text = sys.stdin.read() if source == "-" else pathlib.Path(source).read_text()
     try:
