@@ -61,6 +61,22 @@ class Hooks(Home):
         self.assertNotIn(old, commands)
         self.assertIn("~/bin/my-guard.sh", commands)
 
+    def test_re_points_hooks_rendered_for_the_kit_path_the_last_build_recorded(self):
+        """A maintainer's kit checkout moved, and no install ever wrote a ledger: hooks that
+        run a manifest script from the old kit's hooks folder are replaced, not doubled."""
+        old, mine = "/old/kit/hooks/merge-gate.py", "/old/kit/hooks/my-personal-hook.sh"
+        self.write(self.settings, json.dumps({"hooks": {"PreToolUse": [
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": old}]},
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": mine}]}, UNRELATED]}}))
+        self.write(self.state / "resolved.json", json.dumps({"kit": "/old/kit"}))
+        self.ok("install")
+        commands = self.commands(self.settings)["PreToolUse"]
+        self.assertNotIn(old, commands)
+        self.assertIn(f"{KIT}/hooks/merge-gate.py", commands)
+        self.assertEqual([c for c in commands if c.endswith("/merge-gate.py")], [f"{KIT}/hooks/merge-gate.py"])
+        self.assertIn(mine, commands)
+        self.assertIn("~/bin/my-guard.sh", commands)
+
     def test_a_disabled_host_gets_no_hooks_and_loses_the_ones_it_had(self):
         self.ok("install")
         self.write(self.config, '{ "hosts": { "codex": false } }')

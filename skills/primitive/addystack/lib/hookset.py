@@ -127,14 +127,19 @@ def merge(document: Dict[str, Any], entries: List[HookEntry], owned: Callable[[s
     return {**document, "hooks": merged}
 
 
-def owner(resolved: Resolved, earlier: Iterable[Tuple[str, str]] = ()) -> Callable[[str, str], bool]:
+def owner(resolved: Resolved, earlier: Iterable[Tuple[str, str]] = (),
+          moved: Iterable[str] = ()) -> Callable[[str, str], bool]:
     """owned(event, command) for merge(): True for a hook addystack installed, which is one in
     earlier, the (event, command) pairs an install recorded, or one a manifest entry renders
-    for this kit or an older install's link to a manifest script runs (see _ours). Any
-    other hook on a script in the kit's hooks folder is the user's."""
+    for this kit or an older install's link to a manifest script runs (see _ours), or one
+    that runs a manifest script in the hooks folder of a kit in moved, the paths the kit
+    was built from before, so moving the kit's checkout re-points its hooks instead of
+    adding a second copy. Any other hook on a script in the kit's hooks folder is the user's."""
     manifest = _manifest(MANIFEST)
     recorded = set(earlier)
-    return lambda event, command: (event, command) in recorded or _ours(command, manifest, _kit(resolved))
+    folders = {os.path.join(os.path.expanduser(kit), "hooks") for kit in moved}
+    return lambda event, command: ((event, command) in recorded or _ours(command, manifest, _kit(resolved))
+                                   or _moved(command, manifest, folders))
 
 
 def drift(resolved: Resolved, runtime: Runtime, path: Optional[Path] = None) -> List[str]:
@@ -255,6 +260,14 @@ def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> 
     if os.path.lexists(script) and not os.path.islink(script):
         return False
     return os.path.basename(script) in scripts or os.path.basename(os.path.realpath(script)) in scripts
+
+
+def _moved(command: str, manifest: Dict[str, List[Dict[str, Any]]], folders: Iterable[str]) -> bool:
+    """Whether command runs a script the manifest runs, from one of folders, an earlier
+    kit's hooks folder."""
+    script = _script(command)
+    scripts = {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows}
+    return os.path.dirname(script) in set(folders) and os.path.basename(script) in scripts
 
 
 def _drift(manifest: Dict[str, List[Dict[str, Any]]], resolved: Resolved, runtime: Runtime,
