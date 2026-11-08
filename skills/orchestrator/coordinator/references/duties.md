@@ -13,8 +13,8 @@ In the turn the user asks:
 
 1. **Name** it with a short slug, such as `bug-reports`. When Listening already has a
    live `Duty <name>` line, this request changes that duty: delete its scheduled task,
-   `task_cancel` a probe still running on its row, and set the row `done` with its
-   Thread cell's `taskId` set to none (`worker --state done --thread`). Then go on,
+   `task_cancel` a probe still running on its row, and set the row `done` with
+   `worker "duty <name>" --state done --thread "<its link> · task none"`. Then go on,
    keeping its `last` time in step 3 unless the source changed.
 2. **Schedule** it: a `schedule_task` bound to this thread at the user's cadence, whose
    prompt names `project.md`'s path to read first and says `Duty <name> tick`.
@@ -51,8 +51,8 @@ Listening holds its `Duty <name>` line with a `last` time.
    pass; the next window starts at the line's `last` time.
 2. **Handle the result**, on the wake its `duty <name>` row's result brings, as a worker
    result (SKILL.md step 4). A result for an ended duty, or one whose `taskId` isn't
-   the row's, is dropped. A failed probe leaves `last` as it was, so the next tick
-   covers its window. Each new finding not already a Workers row or a Follow-up becomes
+   the row's, is dropped. A failed probe sets the row `done` and leaves `last` as it
+   was, so the next tick covers its window. Each new finding not already a Workers row or a Follow-up becomes
    a queued unit, a Workers row with its proof that steps 2 and 3 start, or a Follow-up
    when it's outside the goal. Then append its identity and date to `duties/<name>.md`,
    creating the folder, which outlives phase ends.
