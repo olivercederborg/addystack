@@ -4,10 +4,15 @@ The coordinator's memory for one project, at
 `~/.local/state/orchestrate/<project>/project.md`. The coordinator is its only writer.
 Start it with `scripts/project.py <folder> init`, and write decisions, learnings,
 Workers rows, and Listening lines with `project.py` (`decide`, `learn`, `worker`,
-`listen`; `--help` shows each). Its sections:
+`listen`; `--help` shows each). End a phase with `phase`, and start the next on a parked
+project with `start` ([phases](phases.md) says when). Its sections:
 
-- **Goal**: one sentence a stranger could act on, its `Proof:`, and `Follow-ups:`,
-  scope drift a worker found, kept out of the goal.
+- **Goal**: the current phase's goal, one sentence a stranger could act on, its
+  `Proof:`, and `Follow-ups:`, scope drift a worker found, kept out of the goal. A
+  parked project's Goal is `Parked <date>: <reason>` and its Follow-ups, with no
+  `Proof:`.
+- **Phases**: one line per finished phase, `- <date> · <NN-slug>: <result> · <archive>`,
+  added by `phase`.
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.
@@ -28,6 +33,14 @@ Workers rows, and Listening lines with `project.py` (`decide`, `learn`, `worker`
 - **Last side effect**: the newest commit, push, or PR event seen, with its time, or for
   a report-only worker its thread's `itemCount`. The heartbeat compares against it to
   find a stuck worker.
+
+## Phase end
+
+`phase` saves `project.md` byte for byte to `phases/<NN>-<slug>.md` in the project
+folder, so a wake reads only the current phase and the archive holds the rest. It then
+empties Decisions and Learnings, removes each Result section, drops Workers rows in a
+final state (`done`, `dropped`, `replaced by`, `absorbed into`), and writes the new Goal
+or the parked one, keeping Follow-ups. Every other section and line carries over.
 
 ## Close
 

@@ -26,7 +26,8 @@ every wake and after any compaction, and write each change to it before the turn
 
 - **Resume**: when this thread's title is `◆ <project>`, even behind a status emoji an
   older run put in front, or the folder already exists, read `project.md` and pick up
-  from its Workers table.
+  from its Workers table. A parked project wakes on the user's message, as
+  [phases](references/phases.md) says.
 - **Start**: on the machine [across machines](references/across-machines.md) picks,
   pin this thread (`t3_thread_organize` `pin`), rename it `◆ <project>` with
   `t3_thread_update`, and take its id from the `currentThreadId` that `t3_thread_list`
@@ -221,11 +222,12 @@ merge-gate wants a go.
 
 **Done when:** each merged PR's state is `MERGED` in `gh pr view` and recorded in Workers.
 
-## 7. Close
+## 7. End the phase
 
-When the goal's proof holds, follow [close](references/close.md).
+When the phase's proof holds, follow [phases](references/phases.md): start the next
+phase, park, or, on the user's word only, [close](references/close.md).
 
-**Done when:** close's **Done when** holds.
+**Done when:** phases' **Done when** holds.
 
 Inspired by Cursor Projects and Claude Code Projects, with rules from Lauren Tan's
 pstack Orchestrate playbook, agentbox's hyperfocus inbox, and Johan's
