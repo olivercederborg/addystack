@@ -188,6 +188,14 @@ class DaggerOrHost(unittest.TestCase):
         self.assertTrue(skill_ran.exists())
         self.assertTrue(self.ran.exists())
 
+    def test_a_checkout_path_with_glob_characters_runs_its_suites(self):
+        moved = pathlib.Path(self.folder.name, "re[p]o")
+        self.repo.rename(moved)
+        self.repo = moved
+        run, _ = self.commit(dagger=False)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+
     def test_no_host_suite_blocks_the_commit(self):
         (self.repo / "scripts" / "test_host.py").unlink()
         run, _ = self.commit(dagger=False)
