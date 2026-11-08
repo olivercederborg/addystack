@@ -3,7 +3,7 @@ naming the source, keeps the source's mode and shebang, and --check names a copy
 hand-edited, stale, or missing, a symlink left in the kit, a copied script whose sibling it
 needs isn't copied beside it, a skill with the format pointer that lacks its copies, and a
 marked copy that no pair lists."""
-import importlib.util, os, pathlib, shutil, subprocess, tempfile, unittest
+import os, pathlib, shutil, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "sync-copies.py"
 POINTER = "<!-- toolkit-format:start -->\nread references/format.md\n<!-- toolkit-format:end -->\n"
