@@ -41,7 +41,7 @@ as an interface with its call site or a diff.
 The bare call, nothing around it, with the URL exactly as written here:
 
 ```html
-<script src="https://cdn.jsdelivr.net/gh/olivercederborg/reply-ui@v1.1.2/reply.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/olivercederborg/reply-ui@v1.1.3/reply.js"></script>
 <script type="application/json" id="ui">{"ui":[{"outcome":{"status":"done","text":"Tick CPU spike fixed"}},{"change":{"pr":108,"state":"merged","checks":["verified"]}}]}</script>
 ```
 
