@@ -90,7 +90,8 @@ For code the change adds or edits outside tests. Ground each non-trivial pattern
 introduces, such as a library API, a framework hook, or an error-handling or
 concurrency construct, with [grounding](grounding.md): is it how the library's authors
 intend it at the installed version? Repo precedent shows consistency, not idiom. A
-pattern that doesn't hold is a finding. Write one line per pattern, with a URL source:
+pattern that doesn't hold is a finding. Write one line per pattern, as
+`<pattern> · <how verified> · source: <URL>`:
 
 ```text
 `Effect.retry` with `Schedule.exponential` · verified by the retry test · source: https://effect.website/docs/error-management/retrying/
