@@ -228,6 +228,90 @@ class Instructions(Home):
         self.assertEqual(self.codex_md.read_text(), "Codex only.\n")
 
 
+class Agent(Home):
+    """With the claude host enabled, install links ~/.claude/agents/work-verifier.md to
+    verify-work's copy in Claude's skill folder, the only place npx skills add puts it."""
+
+    def setUp(self):
+        super().setUp()
+        self.link = self.home / ".claude/agents/work-verifier.md"
+        self.source = self.home / ".claude/skills/verify-work/agents/work-verifier.md"
+
+    def test_links_a_missing_path_and_a_second_install_leaves_it(self):
+        out = self.ok("install").stdout
+        self.assertIn(f"changed {self.link} (agent)\n  links it to ~/.claude/skills/verify-work/agents/"
+                      "work-verifier.md\n", out)
+        self.assertEqual(os.readlink(self.link), str(self.source))
+        self.assertIn("name: work-verifier", self.link.read_text())
+        self.assertNotIn(str(self.link), self.ok("install").stdout)
+
+    def test_replaces_a_link_to_the_old_repo_root_path(self):
+        self.link.parent.mkdir(parents=True)
+        self.link.symlink_to("/old/kit/agents/work-verifier.md")
+        out = self.ok("install").stdout
+        self.assertIn("links it to ~/.claude/skills/verify-work/agents/work-verifier.md, not "
+                      "/old/kit/agents/work-verifier.md", out)
+        self.assertEqual(os.readlink(self.link), str(self.source))
+
+    def test_keeps_files_at_the_old_fixed_temporary_names(self):
+        # Install once renamed through `.<name>.addystack-tmp`, deleting whatever was there.
+        self.write(self.config, '{ "hosts": { "codex": false } }')
+        self.write(self.settings, "{}")
+        kept = [self.link.with_name(".work-verifier.md.addystack-tmp"),
+                self.settings.with_name(f".{self.settings.name}.addystack-tmp")]
+        for path in kept:
+            self.write(path, "mine\n")
+        self.ok("install")
+        self.assertEqual(os.readlink(self.link), str(self.source))
+        self.assertEqual([path.read_text() for path in kept], ["mine\n", "mine\n"])
+        self.assertEqual(sorted(p.name for p in self.link.parent.iterdir()), sorted([self.link.name, kept[0].name]))
+
+    def test_leaves_a_regular_file_and_reports_it(self):
+        self.write(self.link, "my own agent\n")
+        result = self.cli("install")
+        self.assertIn(f"left {self.link} (agent)\n  a file addystack didn't link, left as is; move it aside",
+                      result.stdout)
+        self.assertFalse(self.link.is_symlink())
+        self.assertEqual(self.link.read_text(), "my own agent\n")
+        # Install still builds, and its doctor run names the file.
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("FAIL  agent: ~/.claude/agents/work-verifier.md isn't the work-verifier agent", result.stdout)
+        self.assertTrue(self.claude_md.read_text().startswith("<!-- Built by addystack build"))
+
+    def test_a_verify_work_without_the_agent_links_nothing_and_says_how_to_install_it(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.write(self.home / ".claude/skills/verify-work/SKILL.md", (SKILLS["verify-work"] / "SKILL.md").read_text())
+        out = self.cli("install").stdout
+        self.assertIn(f"left {self.link} (agent)\n  not linked: verify-work has no ~/.claude/skills/verify-work/agents/"
+                      "work-verifier.md; run npx skills add <the addystack repo> -g -y --skill verify-work", out)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_without_verify_work_for_claude_nothing_needs_the_agent(self):
+        (self.home / ".claude/skills/verify-work").unlink()
+        self.assertNotIn("(agent)", self.ok("install").stdout)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_a_disabled_claude_host_touches_nothing(self):
+        self.write(self.config, '{ "hosts": { "claude": false } }')
+        self.ok("install")
+        self.assertFalse(os.path.lexists(self.link))
+        self.link.parent.mkdir(parents=True)
+        self.link.symlink_to("/old/kit/agents/work-verifier.md")
+        self.assertNotIn("(agent)", self.ok("install").stdout)
+        self.assertEqual(os.readlink(self.link), "/old/kit/agents/work-verifier.md")
+
+    def test_dry_run_previews_the_link_and_writes_nothing(self):
+        self.link.parent.mkdir(parents=True)
+        self.link.symlink_to("/old/kit/agents/work-verifier.md")
+        before = self.snapshot()
+        out = self.ok("install", "--dry-run").stdout
+        self.assertEqual(self.snapshot(), before)
+        self.assertIn(f"would change {self.link} (agent)", out)
+        self.link.unlink()
+        self.write(self.link, "my own agent\n")
+        self.assertIn(f"would leave {self.link} (agent)", self.ok("install", "--dry-run").stdout)
+
+
 class DryRun(Home):
     def test_prints_every_change_and_writes_nothing(self):
         self.write(self.config, '{ "identity": { "name": "Sam" } }')

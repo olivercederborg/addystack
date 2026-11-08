@@ -49,8 +49,8 @@ proposal.
 
 On the user's okay, keep the old config as `addystack.jsonc.bak` and move the proposal
 over it. Then show `<kit>/bin/addystack install --dry-run`: the hooks it merges into each
-host's settings, the instruction files it moves into `global.md`, and the built files'
-diffs. That preview is the approval for `<kit>/bin/addystack install`, which builds and
+host's settings, the instruction files it moves into `global.md`, the work-verifier agent
+link, and the built files' diffs. That preview is the approval for `<kit>/bin/addystack install`, which builds and
 runs `doctor`. On a doctor failure, report the failing check and its `fix:` line, and
 stop.
 

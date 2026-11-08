@@ -7,6 +7,8 @@ their own in each host, installs the kit as the README says, in a temporary HOME
 - doctor passes;
 - the old CLAUDE.md and AGENTS.md text is in ~/.config/addystack/global.md;
 - the user's own hooks, and the other keys of their settings, are still there;
+- ~/.claude/agents/work-verifier.md resolves to the work-verifier agent the CLI installed in
+  Claude Code's verify-work folder;
 - every other hook command runs a script in the installed addystack skill's hooks/, and
   each PreToolUse Bash hook, run on a plain `ls`, exits 0 and allows it.
 
@@ -126,6 +128,9 @@ def checks(home, env, kit):
     problems += [f"{global_md} lacks the old {name}"
                  for name, old in (("CLAUDE.md", CLAUDE_TEXT), ("AGENTS.md", CODEX_TEXT))
                  if old.strip().splitlines()[-1] not in text]
+    agent, installed = home / ".claude/agents/work-verifier.md", home / ".claude/skills" / check_install.AGENT
+    if not installed.is_file() or agent.resolve() != installed.resolve():
+        problems.append(f"{agent} doesn't resolve to {installed}")
     settings, codex = home / ".claude/settings.json", home / ".codex/hooks.json"
     if json.loads(settings.read_text()).get("theme") != "dark":
         problems.append(f"{settings} lost the user's theme")
@@ -190,7 +195,8 @@ def main(argv):
         print("A fresh install from", source, "went wrong:", *problems, sep="\n  ")
         return 1
     print(f"a fresh user installed {source}: doctor passes, global.md keeps the old instructions, their own hooks "
-          f"stay, and the kit's {found_kit} hooks run from the installed addystack skill ({ran} run on `ls`)")
+          f"stay, the work-verifier agent is linked, and the kit's {found_kit} hooks run from the installed "
+          f"addystack skill ({ran} run on `ls`)")
     return 0
 
 

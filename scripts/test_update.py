@@ -16,7 +16,8 @@ TOOL = ["bin", "lib", "hooks", "schema", "core", "addystack.defaults.jsonc"]
 # --skill NAME…` copies each skill from SOURCE's HEAD, or with SOURCE#REF from REF, into
 # ~/.agents/skills, links Claude Code's folder to it, and records it in the lock with its
 # ref; `update -g -y` recopies every locked skill its source, at its ref, still has, and
-# for a source it can't read prints `✗ Failed to check skills from SOURCE` and still exits 0;
+# for a source it can't read prints `✗ Failed to check skills from SOURCE` in grey, SOURCE
+# being the lock entry's `source`, and still exits 0;
 # `remove NAME… -g -y` deletes them. It logs each call. A file named fail-add in HOME makes
 # the next add fail, once.
 STUB = r'''
@@ -197,8 +198,21 @@ class SkillsInstall(Update):
         result = self.cli("update", bin_=self.kit / "bin" / "addystack")
         self.assertEqual(result.returncode, 1)
         self.assertIn(f"Failed to check skills from {self.repo}", result.stdout)
-        self.assertIn("skills update couldn't check every source", result.stderr)
+        self.assertIn(f"skills update couldn't check the kit's source, {self.repo}", result.stderr)
         self.assertEqual(self.calls(), [["update", "-g", "-y"]])
+        self.assertEqual(self.installed(".agents/skills"), ["addystack", "alpha", "beta", "extra", "mine"])
+
+    def test_another_source_the_skills_cli_couldnt_check_only_warns(self):
+        # The user's own repo is unreachable; the kit's release still adds gamma and drops beta.
+        self.release(self.repo, {"alpha": "primitive", "gamma": "primitive", "extra": "optional"}, "v0.2.0")
+        self.mine.rename(self.home / "offline")
+        result = self.ok("update", bin_=self.kit / "bin" / "addystack")
+        self.assertIn(f"Failed to check skills from {self.mine}", result.stdout)
+        self.assertIn(f"skills update couldn't check {self.mine}", result.stderr)
+        self.assertEqual(self.calls(), [["update", "-g", "-y"], ["add", str(self.repo), "-g", "-y", "--skill", "gamma"],
+                                        ["remove", "beta", "-g", "-y"]])
+        self.assertEqual(self.installed(".agents/skills"), ["addystack", "alpha", "extra", "gamma", "mine"])
+        self.assertIn("ok    hooks: match the selection", result.stdout)
 
     def test_a_release_with_no_change_only_updates(self):
         self.ok("update", bin_=self.kit / "bin" / "addystack")

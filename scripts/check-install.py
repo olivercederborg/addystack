@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Plan check 11 (D17): installs every skill in this kit with the skills CLI, the way a user
 runs `npx skills add <repo> -g`, into a temporary HOME, and exits 1 naming each file a
-skill's checkout folder has that its installed copy lacks or holds with other bytes. The
-CLI skips a symlink that leaves the skill's folder, so a link shows up here as lost.
+skill's checkout folder has that its installed copy lacks or holds with other bytes, or
+when verify-work's work-verifier agent (AGENT) isn't installed. The CLI skips a symlink
+that leaves the skill's folder, so a link shows up here as lost.
 
 Needs node with npm and the npm registry (the Dagger check `install` runs it in Linux).
 
@@ -19,6 +20,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 CLI = "skills@1.7.6"
 # What a checkout holds that git doesn't track, so an install never carries it.
 UNTRACKED = {"__pycache__", ".DS_Store"}
+# The work-verifier agent, in a skill folder so the CLI installs it, which `addystack
+# install` links into ~/.claude/agents/. Named here so moving it out of every skill fails.
+AGENT = "verify-work/agents/work-verifier.md"
 
 
 def files(tree):
@@ -77,6 +81,8 @@ def main():
                 problems.append(f"{skill.name}: not installed")
                 continue
             problems += [f"{skill.name}/{path}" for path in lost(skill, installed)]
+        if not pathlib.Path(home, ".claude/skills", AGENT).is_file():
+            problems.append(f"{AGENT}: not installed, so addystack install has no work-verifier agent to link")
     if problems:
         print(f"npx {CLI} add lost files from {len(skills)} skills:", *problems, sep="\n  ")
         return 1

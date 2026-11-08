@@ -1,6 +1,6 @@
 """Tests for check-fresh-install.py's checks on a finished install: a good one passes, and
-each kind of damage is named. The full run, with npx and the registry, is the Dagger check
-fresh-install."""
+each kind of damage, such as a missing agent link, is named. The full run, with npx and
+the registry, is the Dagger check fresh-install."""
 import importlib.util, json, os, pathlib, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check-fresh-install.py"
@@ -21,6 +21,12 @@ class Checks(unittest.TestCase):
         self.write(".config/addystack/global.md", fresh.CLAUDE_TEXT + fresh.CODEX_TEXT)
         self.add(".claude/settings.json", "PreToolUse", "Bash", "~/.agents/skills/addystack/hooks/guard.py")
         self.add(".codex/hooks.json", "Stop", None, "~/.agents/skills/addystack/hooks/guard.py")
+        self.write(".agents/skills/verify-work/agents/work-verifier.md", "---\nname: work-verifier\n---\n")
+        (self.home / ".claude/skills").mkdir()
+        (self.home / ".claude/skills/verify-work").symlink_to("../../.agents/skills/verify-work")
+        self.agent = self.home / ".claude/agents/work-verifier.md"
+        self.agent.parent.mkdir()
+        self.agent.symlink_to(self.home / ".claude/skills/verify-work/agents/work-verifier.md")
 
     def write(self, name, text):
         (self.home / name).parent.mkdir(parents=True, exist_ok=True)
@@ -50,6 +56,12 @@ class Checks(unittest.TestCase):
         problems = self.problems()
         self.assertTrue(any("lacks the old AGENTS.md" in p for p in problems), problems)
         self.assertTrue(any("lost the user's hook my-codex-hook.sh" in p for p in problems), problems)
+
+    def test_a_missing_or_stale_agent_link_fails(self):
+        self.agent.unlink()
+        self.assertTrue(any(f"{self.agent} doesn't resolve to" in p for p in self.problems()))
+        self.agent.symlink_to("/old/kit/agents/work-verifier.md")
+        self.assertTrue(any(f"{self.agent} doesn't resolve to" in p for p in self.problems()))
 
     def test_a_hook_outside_the_installed_skill_fails(self):
         self.add(".claude/settings.json", "Stop", None, "~/kit/hooks/guard.py")

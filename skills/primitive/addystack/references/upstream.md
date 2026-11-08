@@ -19,7 +19,7 @@ machines, or team. Write the change that way.
   Otherwise the `source` of the `addystack` entry in the skills CLI's lock file
   (`$XDG_STATE_HOME/skills/.skill-lock.json`, or `~/.agents/.skill-lock.json`).
 - **Push rights.** `gh repo view <repo> --json viewerPermission`. Without `WRITE` or
-  above, work from a fork (`gh repo fork <repo> --clone=false`).
+  above, the branch goes through a fork (step 4).
 - **Its rules.** In a fresh clone (`gh repo clone <repo> <scratch>/kit`), read its
   README and contributing notes, run `git config core.hooksPath .githooks` when the repo
   has one, and run `<clone>/skills/primitive/addystack/bin/addystack policy --repo <clone>`
@@ -38,8 +38,17 @@ Opening a PR sends it to a person, so the user's okay on this preview is require
 
 ## 4. Open the draft
 
-Commit, push the branch (to the fork without push rights), and open it as a draft:
+Commit, push the branch the way the policy says, and open it as a draft:
 `gh pr create --draft --repo <repo>`.
+
+Without push rights, go through a fork:
+
+1. In the clone, `gh repo fork --remote --remote-name fork` forks the repo and adds the
+   fork as the `fork` remote, leaving `origin` on the kit's repo.
+2. `git push -u fork <branch>`, even when the policy says gh stack: a stack's later PRs
+   need their base branches in the kit's repo, so the fork carries one branch.
+3. `gh pr create --draft --repo <repo> --head <fork owner>:<branch>`, where the fork
+   owner is `gh api user --jq .login`.
 
 **Done when:** the draft PR's URL is in the reply, or the reply says what's waiting on
 the user.

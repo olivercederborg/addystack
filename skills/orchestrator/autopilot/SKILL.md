@@ -192,8 +192,8 @@ layer passes with evidence.
 Push the stack and open draft PRs with `open-pr`, bottom first, each listing its checks
 and evidence. The top layer also marks the milestone built in the plan. Merge only when
 the repo's trust value allows it (`gate`, or `merge on go` with a go that names
-merging), `~/.claude/hooks/merge-gate.py --dry-run` says `would pass` on the line
-`scripts/stack.sh where` prints, and `scripts/github.sh mergeable N`
+merging), `<kit>/hooks/merge-gate.py --dry-run` (`<kit>`: the addystack skill's folder)
+says `would pass` on the line `scripts/stack.sh where` prints, and `scripts/github.sh mergeable N`
 ([GitHub commands](references/github.md)) says `mergeable: yes` on each PR. Check what
 the merge starts, such as a release workflow or a store build, and that its needs are
 in place: signing, capabilities, and secrets.

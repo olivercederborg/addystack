@@ -24,11 +24,21 @@ its source, so it doesn't join the file's last section. When the config names no
 instructions file, install sets `"instructions": "global.md"` in it, so the build carries
 the text; with no config yet, the build reads `global.md` beside where it would be
 (config.load_layers), and `addystack init` names it.
+
+Agent: Claude Code reads subagents from ~/.claude/agents/, and only a `work-verifier`
+subagent can record a Done verdict, but `npx skills add` installs the agent inside
+verify-work's folder. So when the claude host is enabled, install links AGENT to that copy
+in Claude's skill folder (AGENT_SOURCE), replacing a link or filling a missing path. A file
+or folder there is the user's, so install leaves it and reports it; so does a verify-work
+without AGENT_SOURCE, since a link to it would dangle. Without verify-work, nothing forks
+into the agent, so install does nothing, and a disabled host's link stays too. No ledger
+entry: a link is always install's to replace and anything else never is.
 """
 from __future__ import annotations
 
 import json
 import os
+import secrets
 import stat
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,9 +48,14 @@ import config
 import hookset
 import render
 import resolved as _resolved
+import skills_cli
 from config import Resolved
 
 LEDGER = _resolved.STATE.parent / "installed.json"
+# Where Claude Code finds the verify-work fork's subagent, and the copy the skills CLI
+# installs with verify-work.
+AGENT = Path("~/.claude/agents/work-verifier.md")
+AGENT_SOURCE = Path(skills_cli.FOLDERS["claude"], "verify-work", "agents", "work-verifier.md")
 
 # The first line of a file addystack built: `addystack build`'s, and scripts/build-global.py's
 # before it.
@@ -50,10 +65,12 @@ _GLOBAL = config.GLOBAL
 
 @dataclass(frozen=True)
 class Change:
-    """One change run() makes, or plan() would make."""
-    kind: Literal["hooks", "adopt-instructions"]
+    """One change run() makes, or plan() would make; with left, a path it reports but
+    won't touch."""
+    kind: Literal["hooks", "adopt-instructions", "agent"]
     target: Path
     detail: str
+    left: bool = False
 
 
 def run(resolved: Resolved) -> List[Change]:
@@ -62,6 +79,9 @@ def run(resolved: Resolved) -> List[Change]:
     changes, writes = plan(resolved)
     for path, text in writes.items():
         _write(path, text)
+    for change in changes:
+        if change.kind == "agent" and not change.left:
+            _link(change.target, AGENT_SOURCE.expanduser())
     return changes
 
 
@@ -81,7 +101,44 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     wanted = {"version": 1, "hooks": recorded}
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
-    return changes, writes
+    agent = _agent(resolved)
+    return changes + ([agent] if agent else []), writes
+
+
+def _agent(resolved: Resolved) -> Optional[Change]:
+    """The agent link's change, or None when it's in place, the claude host is off, or
+    verify-work isn't installed for Claude Code, so nothing forks into it."""
+    link, source = AGENT.expanduser(), AGENT_SOURCE.expanduser()
+    if not resolved["hosts"].get("claude") or not os.path.lexists(source.parents[1]):
+        return None
+    if not link.is_symlink() and os.path.lexists(link):
+        return Change("agent", link, f"a file addystack didn't link, left as is; move it aside, then run addystack "
+                      f"install to link {render._home(source)}", left=True)
+    if not source.is_file():
+        kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
+        return Change("agent", link, f"not linked: verify-work has no {render._home(source)}; run npx skills add "
+                      f"{kit} -g -y --skill verify-work, then addystack install", left=True)
+    if link.is_symlink():
+        earlier = os.readlink(link)
+        if earlier == str(source):
+            return None
+        return Change("agent", link, f"links it to {render._home(source)}, not {earlier}")
+    return Change("agent", link, f"links it to {render._home(source)}")
+
+
+def _link(path: Path, source: Path) -> None:
+    """Points path at source by renaming a link made beside it, so path never goes
+    missing."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = _beside(path)
+    partial.symlink_to(source)
+    os.replace(partial, path)
+
+
+def _beside(path: Path) -> Path:
+    """A new name beside path for a file or link to rename over it. Random, so it never
+    names a file someone else keeps there, and created exclusively by the caller."""
+    return path.with_name(f".{path.name}.{secrets.token_hex(6)}.addystack-tmp")
 
 
 def _write(path: Path, text: str) -> None:
@@ -100,8 +157,7 @@ def _replace(path: Path, text: str) -> None:
     except OSError:
         mode = None
     path.parent.mkdir(parents=True, exist_ok=True)
-    partial = path.with_name(f".{path.name}.addystack-tmp")
-    partial.unlink(missing_ok=True)
+    partial = _beside(path)
     # Created private when it replaces a file, so its text is never readable by more than
     # the old file's was, then given that file's mode.
     descriptor = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600 if mode is not None else 0o666)

@@ -67,8 +67,9 @@ untrusts it on every machine. Each entry lands under its event in this shape:
 
 Every command runs its script from the kit, so no hook needs a link. Links an older
 install made into `~/.claude/hooks/` and `~/.codex/hooks/` show as extra entries until the
-file is rendered again; Codex then asks to trust each changed entry once. Symlink the kit
-repo's `agents/work-verifier.md` into `~/.claude/agents/`. Then check the machine:
+file is rendered again; Codex then asks to trust each changed entry once. `addystack
+install` also links `~/.claude/agents/work-verifier.md`, which `verdict-stamp.py` needs,
+to verify-work's copy. Then check the machine:
 
 ```sh
 python3 <kit>/hooks/hook_parity.py --codex-trust   # <kit>: the addystack skill's folder
