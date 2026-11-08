@@ -19,8 +19,8 @@ import line, without a taste file. A path renders as
 `~/…` when it's under $HOME. It renders no policy table or reply rules: the router runs
 `addystack policy` per checkout, and a SessionStart hook loads the reply rules.
 
-`ADDYSTACK_CLAUDE_MD` and `ADDYSTACK_CODEX_MD` override CLAUDE and CODEX, for tests and
-dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
+`ADDYSTACK_CLAUDE_MD` and `ADDYSTACK_CODEX_MD` override claude_md() and CODEX, for tests
+and dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
 """
 from __future__ import annotations
 
@@ -34,8 +34,15 @@ import hookset
 import resolved as _resolved
 from config import Resolved
 
-CLAUDE = Path(os.environ.get("ADDYSTACK_CLAUDE_MD", "~/.claude/CLAUDE.md"))
 CODEX = Path(os.environ.get("ADDYSTACK_CODEX_MD", "~/.codex/AGENTS.md"))
+
+
+def claude_md() -> Path:
+    """Claude Code's user instructions file: CLAUDE.md in config.claude_home(), which is
+    where Claude Code reads it, unless ADDYSTACK_CLAUDE_MD names another."""
+    override = os.environ.get("ADDYSTACK_CLAUDE_MD")
+    return Path(override).expanduser() if override else config.claude_home() / "CLAUDE.md"
+
 
 _HEADER = ("<!-- Built by addystack build from the kit's core/ and your addystack config. Edit those and "
            "rerun addystack build. -->")
@@ -165,7 +172,7 @@ def instructions(resolved: Resolved) -> Dict[Path, str]:
         def imported(name: str) -> str:
             return f"@{_home(state / name)}"
 
-        files[CLAUDE.expanduser()] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
+        files[claude_md()] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
         for name, text in parts.items():
             files[state / name] = _expand(text, parts, imported)
     if resolved["hosts"]["codex"]:

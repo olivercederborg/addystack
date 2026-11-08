@@ -327,7 +327,8 @@ class Agent(Home):
 
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so
-    install writes Claude Code's hooks and agent link there; unset or blank, ~/.claude."""
+    install writes Claude Code's hooks, agent link, and CLAUDE.md there; unset or blank,
+    ~/.claude."""
     linked = False
 
     def setUp(self):
@@ -344,6 +345,8 @@ class ClaudeConfigDir(Home):
         self.assertTrue(self.commands(self.folder / "settings.json"))
         link = self.folder / "agents/work-verifier.md"
         self.assertEqual(os.readlink(link), str(self.folder / "skills/verify-work/agents/work-verifier.md"))
+        self.assertTrue((self.folder / "CLAUDE.md").read_text().startswith("<!-- Built by addystack build"))
+        self.assertFalse((self.home / ".claude").exists())
         # Install's doctor run checked the skill folder, the agent, and the hooks there.
         self.assertIn("ok    agent: ~/claude-config/agents/work-verifier.md is the work-verifier agent", out)
         self.assertIn("ok    hooks: match the selection", out)
@@ -370,6 +373,7 @@ class ClaudeConfigDir(Home):
                 self.ok("install")
                 self.assertTrue(self.commands(self.settings))
                 self.assertTrue((self.home / ".claude/agents/work-verifier.md").is_symlink())
+                self.assertTrue(self.claude_md.is_file())
                 self.assertFalse((self.folder / "settings.json").exists())
                 (self.home / ".claude/skills").rename(self.folder / "skills")
 
