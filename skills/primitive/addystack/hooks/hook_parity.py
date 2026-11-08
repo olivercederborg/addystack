@@ -36,6 +36,17 @@ import resolved  # noqa: E402
 from hookset import PROFILES, RUNTIMES, applies, host_profile  # noqa: E402,F401
 
 MANIFEST = HOOKS / "manifest.json"
+
+
+def __getattr__(name):
+    """PATHS, each runtime's settings file as ~/… under $HOME, as it read before Claude Code's
+    followed CLAUDE_CONFIG_DIR, built on each read. The workshop's env_fingerprint reads it."""
+    if name == "PATHS":
+        home = pathlib.Path.home()
+        paths = {runtime: hookset.settings_path(runtime) for runtime in RUNTIMES}
+        return {runtime: f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
+                for runtime, path in paths.items()}
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 TRUST_TIMEOUT = 20  # seconds to wait for each codex app-server reply
 
 
