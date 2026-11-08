@@ -1,6 +1,6 @@
 ---
 name: build
-description: "Implements an agreed plan in verified steps inside its scope. Use when asked to implement, build, or code up a plan, spec, or ticket, including \"build it\" after a plan was discussed or a lettered pick that implements it."
+description: "Implements an agreed plan in verified steps inside its scope. Use when asked to implement, build, or code up a plan, spec, or ticket, including \"build it\" after a plan was discussed or a pick that implements it."
 compatibility: Requires git.
 metadata:
   layer: primitive
