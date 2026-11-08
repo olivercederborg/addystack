@@ -197,10 +197,11 @@ unless it's a Not verified whose run can now happen. A full pass skips this step
 4. **Earlier findings**: each one marked fix is gone at the head, with every other
    instance of its class the change caused, searched across the repo. Name each fixed one
    as gone, and keep one still there as a finding line under its old number. Ones it
-   marked follow-up or skip stay settled, unless the delta changes the reason given,
-   such as by exposing what was unreachable.
+   marked follow-up or skip stay settled and aren't raised again, unless the delta
+   changes the reason given, such as by exposing what was unreachable.
 
-Report the re-check's verdict as step 3 does, with its numbered finding lines and receipt.
+Report the re-check's verdict as step 3 does, naming the recorded verdict it started
+from, with its numbered finding lines and receipt.
 
 With no Blocker or Cleanup left, new or earlier, and no run owed, say "Nothing further",
 name the delta checked, and record Done for the new head. Optional finds go on one
