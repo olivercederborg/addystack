@@ -213,10 +213,11 @@ def _next(goal: str, proof: str) -> list[str]:
 
 
 def _parked(lines: list[str]) -> bool:
-    """Goal opens with `phase`'s parked line, `Parked <date>: `, and has no `Proof:`, so a
-    running goal that happens to start with the word stays running."""
+    """Goal opens with `phase`'s parked line, `Parked <date>: `, and has no `Proof:` above its
+    Follow-ups, so a running goal that happens to start with the word stays running."""
     start_at, end = _section(lines, "Goal")
     body = lines[start_at + 1:end]
+    body = body[:next((i for i, text in enumerate(body) if text.startswith("Follow-ups:")), len(body))]
     first = next((text for text in body if text.strip()), "")
     return (re.match(rf"{PARKED}\d{{4}}-\d\d-\d\d: ", first) is not None
             and not any(text.startswith("Proof:") for text in body))

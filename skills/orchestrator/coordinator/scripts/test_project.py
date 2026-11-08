@@ -220,6 +220,12 @@ Proofs:
         self.assertIn("| review (pilot) | <t3-thread://v2/e/r> · task t1 | — | done | report written |\n", self.text())
         self.assertIn("## Queue (cards for the user)\n\n- c1\n\n## Learnings\n\n## Listening", self.text())
 
+    def test_a_proof_inside_follow_ups_leaves_a_parked_project_parked(self):
+        (self.dir / "project.md").write_text(PROJECT.replace("Follow-ups: none\n", "Follow-ups:\n- report\nProof: report received\n"))
+        self.project("phase", "audit", "--result", "five reports", "--park", "later")
+        self.project("phase", "again", "--result", "r", "--park", "later", code=1)
+        self.project("start", *NEXT)
+
     def test_a_running_goal_that_starts_with_parked_is_running(self):
         self.project("phase", "audit", "--result", "five reports", "--goal", "Parked work is ready.", "--proof", "p")
         self.project("start", *NEXT, code=1)
