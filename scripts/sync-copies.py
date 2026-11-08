@@ -113,7 +113,7 @@ def orphans(root, destinations):
     the syntax from the source and a destination may have another suffix, but isn't one of
     destinations: a copy whose pair was dropped from the list. A file quoting the marker
     further down isn't one."""
-    listed = {os.path.normpath(destination) for destination in destinations}
+    listed = {os.path.relpath(os.path.join(root, destination), root) for destination in destinations}
     patterns = []
     for comment in set(COMMENT.values()):
         head, tail = comment.format(MARKER).split("{}")
@@ -122,12 +122,13 @@ def orphans(root, destinations):
     for folder, _, files in walk(root):
         for name in files:
             path = os.path.join(folder, name)
-            if os.path.islink(path) or os.path.relpath(path, root) in listed:
+            # Regular files only: a socket can't be opened, and a pipe would block.
+            if os.path.islink(path) or not os.path.isfile(path) or os.path.relpath(path, root) in listed:
                 continue
             with open(path, "rb") as file:
-                line = file.readline(4096)
+                line = file.readline()
                 if line.startswith(b"#!"):
-                    line = file.readline(4096)
+                    line = file.readline()
             text = line.decode("utf-8", "replace").rstrip("\r\n")
             if any(pattern.fullmatch(text) for pattern in patterns):
                 found.append(os.path.relpath(path, root))

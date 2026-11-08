@@ -34,8 +34,9 @@ class Kit:
         (self.root / path).parent.mkdir(parents=True, exist_ok=True)
         (self.root / path).write_text(text)
 
-    def run(self, *args):
-        return subprocess.run([str(self.root / "scripts" / SCRIPT.name), *args], capture_output=True, text=True)
+    def run(self, *args, **options):
+        return subprocess.run([str(self.root / "scripts" / SCRIPT.name), *args], capture_output=True, text=True,
+                              **options)
 
     def text(self, path):
         return (self.root / path).read_text()
@@ -196,6 +197,17 @@ class SyncCopies(unittest.TestCase):
         self.kit.write("scripts/copies.txt", LISTED.replace(" one/references/notes.md", " ./one/references/notes.md"))
         self.assertEqual(self.kit.run().returncode, 0)
         result = self.check()
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+
+    def test_an_absolute_listed_destination_is_not_an_orphan(self):
+        absolute = str(self.kit.root.resolve() / "one/references/notes.md")
+        self.kit.write("scripts/copies.txt", LISTED.replace(" one/references/notes.md", " " + absolute))
+        self.assertEqual(self.kit.run().returncode, 0)
+
+    def test_the_scan_skips_a_pipe(self):
+        self.synced()
+        os.mkfifo(self.kit.root / "worker.fifo")
+        result = self.kit.run("--check", timeout=10)
         self.assertEqual((result.returncode, result.stdout), (0, ""))
 
     def test_check_names_an_unlisted_copy_whose_suffix_differs_from_its_source(self):
