@@ -64,9 +64,13 @@ REVIEW_SKILL = "review-teammate-pr"
 # The router's workflow skills: the review is over once one of these loads after it.
 WORKFLOWS = {REVIEW_SKILL, "address-review", "architect", "autopilot", "babysit", "build", "coordinator", "correct",
              "diagnosing-bugs", "open-pr", "review-loop", "scope-grill", "tdd", "verify-work"}
-# A question, or a read-only request the router answers the same way: "show me the project file".
-QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who"
-                      r"|show|tell me|explain|describe|list|summari[sz]e|walk me through)\b", re.I)
+# A question, or a read-only request the router answers the same way: "show me the project
+# file". A bare verb ("show reply images inline", "list the PRs in the README") asks for a
+# change, and so does a request that goes on to one ("show me the error and fix it"). Known
+# limit: "explain the gap between A and B" reads as going on, so the step is done, as before.
+QUESTION = re.compile(r"\?\s*$|^(?:what|why|how|is|are|does|can|should|which|when|where|who)\b"
+                      r"|^(?:please\s+)?(?:show me|tell me|explain|walk me through)\b(?!.*\b(?:and|then)\b)",
+                      re.I | re.S)
 
 
 def should_continue(turn, messages):

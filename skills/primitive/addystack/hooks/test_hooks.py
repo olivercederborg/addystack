@@ -5633,16 +5633,19 @@ class RoutineStop(unittest.TestCase):
     def test_a_read_only_request_is_answered_like_a_question(self):
         """Ported from suite-audit R83: "show me …" asks for an answer, so the turn that gives
         it ends on its options."""
-        for said in ["show me the project file for this coordinator thread", "explain the 30 wait count",
-                     "tell me what's left", "list the open PRs", "walk me through the stack", "describe the fix",
-                     "summarize the review"]:
-            for turn in [{}, {"standing": [{"id": 1, "kind": "do", "name": "delete the old Keychain item"}]}]:
+        standing = {"standing": [{"id": 1, "kind": "do", "name": "delete the old Keychain item"}]}
+        for said in ["show me the project file for this coordinator thread", "please show me the project file",
+                     "explain the 30 wait count", "tell me what's left", "walk me through the stack"]:
+            for turn in [{}, standing]:
                 with self.subTest(said=said, turn=turn):
                     self.assertIsNone(self.run_on(self.with_turn(**turn), said=("fix the header", said)))
-        # Words that only start like one still send on.
-        for said in ["showcase it", "listen for the error and fix it", "do it"]:
-            with self.subTest(said=said):
-                self.assertIsNotNone(self.run_on(self.REPLY, said=(said,)))
+        # A bare verb asks for a change, as does a request that goes on to one; words that
+        # only start like one send on too.
+        for said in ["show reply images inline, the way T3 loads them", "show me the error and fix it",
+                     "explain it to the reviewer, then push", "list the open PRs in the README", "showcase it", "do it"]:
+            for turn in [{}, standing]:
+                with self.subTest(said=said, turn=turn):
+                    self.assertIsNotNone(self.run_on(self.with_turn(**turn), said=(said,)))
 
     def test_sends_a_reply_without_a_valid_block_back_once(self):
         for reply, reason in [
