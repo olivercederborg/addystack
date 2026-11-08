@@ -75,7 +75,8 @@ it breaks. Anything weaker is Optional.
   toolchain, SDK, or lockfile change: one real build on each hosted builder that uses
   it. UI: the project's `verify-<app>` skill. Cite each run's command and result. A
   boundary with no real run is a Blocker; one that needs what isn't here, such as a
-  physical device or production access, makes the verdict 🟡 **Not verified**.
+  physical device or production access, makes the verdict 🟡 **Not verified**, naming
+  that run.
 - **Evidence**: each kind from step 1 has the proof [evidence](references/evidence.md)
   names, saved for the record.
 - **Decisions**: each behavior change has a matching row in the PR's Decisions table or
@@ -150,8 +151,8 @@ Checked base `a1b2c3d` · head `e4f5a6b`
 
 **Record** every verdict with `scripts/record-verdict.sh <base-sha> <head-sha> --branch
 <branch>` and paste its receipt verbatim in the fold as a `json` block. A Not done adds
-`--verdict not-done`, and a Not verified `--verdict not-verified`, each with one
-`--finding` per finding line. Pass each artifact as `--evidence KIND=REF` and each kind
+`--verdict not-done` with one `--finding` per finding line, and a Not verified
+`--verdict not-verified` with a `--finding` naming the run it couldn't do. Pass each artifact as `--evidence KIND=REF` and each kind
 the intent implies as `--require KIND`: the recorder refuses Done while a needed kind
 lacks a ref. The merge gate reads the latest verdict for the exact diff, so a Not done
 revokes an earlier Done. When the recorder refuses because this isn't a fresh
