@@ -4,8 +4,8 @@ Read when the user asks to close the project, through [phases](phases.md) or any
 message. A phase end also runs the integrated check below.
 
 Run the **integrated check**, which proves the PRs work together, not only one by one.
-Skip it when the last phase end ran it at the PRs' current heads, and copy that result
-from Decisions or the phase's archive.
+Skip it when the last phase end ran it at the PRs' current heads and the trunk's current
+SHA, and copy that result from Decisions or the phase's archive.
 Start a fresh `delegate_task` verifier on this machine, with `isolation: "worktree"`, a new `clientRequestId` for each run, and the goal and its
 proof, every PR's head SHA and base, Decisions, and each worker's verdict. It takes a
 slot, since it builds. In its own worktree it merges every unmerged project PR branch
