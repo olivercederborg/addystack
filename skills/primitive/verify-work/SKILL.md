@@ -39,6 +39,8 @@ records the verdict the merge gate reads. It reports; the caller fixes.
   claims no behavior change, contract for a shared format, deploy for a claim that it's
   live, toolchain for a new bundler plugin or dev-server dependency.
 
+When `target`'s last line shows an earlier verdict for this branch, go to step 4 now.
+
 **Done when:** the diff, its base, the intended outcome, and the evidence kinds are known.
 
 ## 2. Check
@@ -168,21 +170,13 @@ and needs no new verdict, since the patch-id doesn't cover PR text.
 
 **Done when:** the verdict is given and recorded.
 
-## 4. Stop and hand back
-
-verify-work stops at the recorded verdict, with the code as it found it, and hands back
-the verdict, the findings with their calls, and what the caller does next: on Not done,
-each fix, committed on the branch that owns it (the lowest, in a stack), then a
-re-check; on Not verified, the run still owed; on Done, the scope checked and which of
-review-loop and open-pr haven't run on this head.
-
-## 5. Re-check
+## 4. Re-check
 
 A run after an earlier verdict ("anything else?", "is it done now?", after fixes or a
 restack) checks the **delta**: what changed since the head that verdict checked. Take
 that verdict's base, head, and findings from the verifier's record, the last line of
 `scripts/github.sh target`, never from the caller's account. With `last: none`, or when
-the user asks for a full pass, run steps 1 to 4. When the line has `known`, the verdict
+the user asks for a full pass, run steps 1 to 3. When the line has `known`, the verdict
 stands: say why and stop there, reading no new code and recording nothing, unless it's a
 Not verified whose run can now happen.
 
@@ -190,7 +184,7 @@ Not verified whose run can now happen.
    recorded head an ancestor, read `git diff <last head> <head>`. On a new base, read
    `git range-diff <last base>..<last head> <base>..<head>`: each new or changed commit
    is in the delta, including ones the new base brings in. Read the code the delta
-   calls, with the lenses it matches. Run steps 1 to 4 instead when neither holds, or
+   calls, with the lenses it matches. Run steps 1 to 3 instead when neither holds, or
    when range-diff can't see the change: a dropped commit (`<`), a merge commit in
    either range (`git rev-list --merges`), or a binary file (`-` in
    `git diff --numstat`).
@@ -214,3 +208,11 @@ folded line, `Also seen (Optional): <a few words each>`, without numbers or card
 one back as a fix only when it carries a real risk, such as a security gap.
 
 **Done when:** the verdict is given and recorded, or a `known` re-check stopped.
+
+## 5. Stop and hand back
+
+verify-work stops at the recorded verdict, or at a `known` re-check, with the code as it
+found it, and hands back the verdict, the findings with their calls, and what the caller
+does next: on Not done, each fix, committed on the branch that owns it (the lowest, in a
+stack), then a re-check; on Not verified, the run still owed; on Done, the scope checked
+and which of review-loop and open-pr haven't run on this head.
