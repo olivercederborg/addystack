@@ -164,9 +164,12 @@ def modifier_fixes(command):
 # runner's word (`bun test/server.ts`) runs a file, not the runner.
 RUNNER = (r"(?:swift\s+(?:build|test)|xcodebuild|make|(?:\./)?gradlew|gradle|mvn|bazel\s+(?:build|test)"
           r"|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?(?:--cwd[=\s]\S+\s+|--filter[=\s]\S+\s+|-C\s+\S+\s+)*(?:test|build|typecheck)"
-          r"|(?:cargo|go|dotnet)\s+(?:build|test)|(?:npx\s+|bunx\s+|bun\s+(?:x|run)\s+|\S*/)?(?:vitest|jest|playwright\s+test|pytest|tsc)"
+          r"|(?:cargo|go|dotnet)\s+(?:build|test)"
+          # A tool run through a package manager (`bun turbo run`, `pnpm exec vitest`, `npx tsc`) or by path.
+          r"|(?:(?:bun|pnpm|yarn|npm)\s+(?:(?:x|exec|dlx|run)\s+)?|bunx\s+|npx\s+|\S*/)?"
+          r"(?:vitest|jest|playwright\s+test|pytest|tsc|turbo\s+run|storybook\s+build)"
           r"|python3?\s+(?:-\w+\s+)*(?:-m\s+(?:pytest|unittest)|(?:\S*/)?(?:test_\w+|\w+_test)\.py)|dagger\s+(?:call|check)"
-          r"|turbo\s+run|storybook\s+build|\S*\.githooks/pre-commit"
+          r"|\S*\.githooks/pre-commit"
           # A verifier's own mutant or pre-commit script, by name, wherever it lives.
           r"|(?:(?:ba|z)?sh\s+|python3?\s+)?\S*?[\w.-]*(?:mutants?|mutate|-mut|pre-?commit)[\w.-]*\.(?:sh|py)"
           r"|(?:(?:ba|z)?sh\s+)?(?:\.\.?/)*[Ss]cripts/[\w./-]*(?:build|test|bench)[\w.-]*)(?![\w./-])")

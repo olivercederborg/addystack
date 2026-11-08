@@ -1168,6 +1168,9 @@ class BashRewrite(unittest.TestCase):
         "bash /tmp/vw108-scripts/run-mutant.sh stale-key 'a' 'b'",
         "python3 /tmp/vw/mutants.py",
         "turbo run lint",
+        "bun turbo run typecheck lint test:unit:ci --filter=@app/sentry",
+        "pnpm exec vitest run",
+        "npx storybook build",
     ]
 
     def test_denies_any_verifier_background_run_but_a_server(self):
