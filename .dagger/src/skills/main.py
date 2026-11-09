@@ -45,6 +45,9 @@ SKILL_SUITES = {
 # host, in pre-commit's last step.
 SUITE_TESTS = ("skills/primitive/*/scripts/test_*.py", "skills/orchestrator/*/scripts/test_*.py",
                "skills/optional/*/scripts/test_*.py", "shared/scripts/test_*.py")
+# The scripts/ tests that read no skill's Markdown and took 64% of scripts-tests' time,
+# so tool-tests runs them without it, and a SKILL.md edit leaves their result cached.
+TOOL_TESTS = ("test_update", "test_pre_commit")
 
 
 # Every folder and the root files git tracks, not a root file only one checkout keeps, such
@@ -125,6 +128,12 @@ async def run(kit: dagger.Directory, *command: str, suite: str = "lint") -> None
 async def unittests(kit: dagger.Directory, folder: str) -> None:
     await run(kit, "python3", "-m", "unittest", "discover", "-q", "-s", folder, "-p", "test_*.py",
               suite=folder.removesuffix("/scripts").split("/")[-1])
+
+
+async def scripts_unittests(kit: dagger.Directory, suite: str, *modules: str) -> None:
+    """These scripts/test_*.py modules, as unittest discover over scripts/ names them."""
+    container = await toolbox(kit, suite)
+    await container.with_workdir(f"{KIT}/scripts").with_exec(["python3", "-m", "unittest", "-q", *modules]).sync()
 
 
 async def skill_tests(kit: dagger.Directory, skill: str) -> None:
@@ -254,8 +263,21 @@ class Skills:
                     f"-{TOOL}/hooks/README.md", "skills/*/*/SKILL.md", "skills/*/*/agents/*.md", "replies.md",
                     "skills/optional/reply-shape/references/*.md", "router.md", "principles/index.md"),
     ) -> None:
-        """scripts/test_*.py"""
-        await unittests(kit, "scripts")
+        """scripts/test_*.py except TOOL_TESTS"""
+        found = sorted(path.removeprefix("scripts/").removesuffix(".py") for path in await kit.glob("scripts/test_*.py"))
+        await scripts_unittests(kit, "scripts", *(name for name in found if name not in TOOL_TESTS))
+
+    @function
+    @check
+    async def tool_tests(
+        self,
+        # test_update copies the tool's files into a scratch release, and test_pre_commit
+        # runs .githooks/pre-commit and reads the tool's hooks/test_*.py.
+        kit: source(TOOL, f"-{TOOL}/hooks/README.md", ".githooks/pre-commit", "scripts/addystack_home.py",
+                    *(f"scripts/{name}.py" for name in TOOL_TESTS)),
+    ) -> None:
+        """scripts/test_update.py and scripts/test_pre_commit.py"""
+        await scripts_unittests(kit, "tool", *TOOL_TESTS)
 
     @function
     @check
