@@ -14,8 +14,8 @@ So does a work-verifier fork, since its background work stops when it hands back
 2026, verify-102-2's fork took this hook's run_in_background advice for its build and handed
 back without a verdict.
 
-Known limits: loops written inside a script file or heredoc that the command runs aren't
-seen, and with bash-rewrite turned off, a loop it would bound runs without a limit."""
+Known limit: loops written inside a script file or heredoc that the command runs aren't
+seen."""
 import json, os, re, sys
 from pathlib import Path
 

@@ -1050,7 +1050,10 @@ class BashRewrite(unittest.TestCase):
                 ('while true; do echo "$(sleep 30)"; sleep 1; done', {}),
                 ("while true; do sleep 1.5m; done", {}), ("while true; do sleep 1 59; done", {}),
                 ("until curl -s https://gitlab.example/api/v4/projects/1/pipelines/2 | grep -q success; do sleep 5; done", {}),
-                ("until [ -f x ]; do sleep 1; done; while [ -f y ]; do echo idle; done", {})]:
+                ("until [ -f x ]; do sleep 1; done; while [ -f y ]; do echo idle; done", {}),
+                # verify-work: a stray `)` that would hide a piped subshell.
+                ("echo \\); ( true; until [ -f x ]; do sleep 1; done; true ) | cat; echo CONTINUED", {}),
+                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat', {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 

@@ -119,7 +119,7 @@ def _top_level_loops(code):
                     found[frame["start"]] = match.end()
     return {start: end for start, end in found.items()
             if re.search(r"(?:\A|[;\n]|&&|\|\|)\s*(?:!\s*)?\Z", code[:start])
-            and re.match(r"(?:\s*\d*[<>_]{1,3}\s*[^\s;&|()<>]+)*\s*(?:\Z|[;\n]|&&|\|\|)", code[end:])}
+            and re.match(r"(?:\s*\d*(?:_>{1,2}|[<>]{1,3}_?)\s*[^\s;&|()<>]+)*\s*(?:\Z|[;\n]|&&|\|\|)", code[end:])}
 
 
 def _count(pattern, text):
@@ -137,8 +137,11 @@ def bound_waits(command, timeout_ms=None):
     condition of every `until` or `while` loop that sleeps, or none when any such loop
     falls outside the forms it knows; the hooks then deny the command as before."""
     code = shell_code(command)
+    # Parentheses must pair as written, or a subshell's loop can look like it stands alone:
+    # `echo \)`, `${x%)}`, and a `case` pattern's `)` don't.
     if (UNREADABLE.search(command) or CLOCK.search(command) or "`" in code or FUNCTION.search(code)
-            or EVAL.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)):
+            or EVAL.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)
+            or code.count("(") != code.count(")") or re.search(r"\\[()]", code)):
         return [], []
     limit = min(timeout_ms / 1000 if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool)
                 and timeout_ms > 0 else DEFAULT_TIMEOUT, DEFAULT_TIMEOUT) - MARGIN
