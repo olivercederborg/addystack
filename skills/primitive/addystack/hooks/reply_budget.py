@@ -53,7 +53,8 @@ reply-shape's fact table, the two-column table right under the headline, is a sh
 so the word count skips it; it has its own limits instead, which fact_problems checks: at
 most FACT_ROWS rows under the header, each label one of FACT_LABELS, each value within
 FACT_SEND_BACK words (FACT_WORDS is the writing target, as 60 is to 100), and Risk and
-Unsure rows first with ⚠️ leading the value. The limits come from the mockups the user
+Unsure rows first with ⚠️ leading the value, and no unescaped pipe in a value, since
+Markdown ends the cell there and drops the rest. The limits come from the mockups the user
 picked from, whose longest value ran 22 words, and from a trial on Nov 9, 2026: 36 replies
 that fresh agents wrote under the rule, on Fable 5.2 and Opus 5.5, held 191 values with a
 median of 15 words and none past 21. The user's call on Nov 9, 2026, after seeing
@@ -162,7 +163,8 @@ def listed(label, among=FACT_LABELS):
 
 def fact_problems(reply, limit=FACT_SEND_BACK):
     """What breaks the fact table's limits in a reply that has one, one clause each."""
-    table = fact_table(bare_references.visible(reply, blank_code=True))
+    lines = bare_references.visible(reply, blank_code=True)
+    table = fact_table(lines)
     if not table:
         return []
     header, rows = table
@@ -171,6 +173,9 @@ def fact_problems(reply, limit=FACT_SEND_BACK):
         found.append(f"it has {len(rows)} rows under its header, over {FACT_ROWS}")
     for label in dict.fromkeys(label for _, label, _ in rows if not listed(label)):
         found.append(f"\"{label}\" isn't one of its labels")
+    # Markdown ends a cell at a pipe, in inline code too, and drops a third cell.
+    for label in dict.fromkeys(label for n, label, _ in rows if len(cells(lines[n])) > 2):
+        found.append(f"its {label} value holds an unescaped |, which cuts the rest off; write \\|")
     for label, value in [("header", header), *((label, value) for _, label, value in rows)]:
         count = sum(1 for token in value.split() if WORD.search(token))
         if count > limit:

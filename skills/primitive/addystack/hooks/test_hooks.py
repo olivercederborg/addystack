@@ -4621,8 +4621,8 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(self.bounce(self.fact(rows=at_the_limit)), "")
         self.assertEqual(reply_budget.fact_problems(self.fact(rows=at_the_limit), reply_budget.FACT_WORDS),
                          ["its Undo value runs 25 words, over 20"])  # check_examples holds examples to the target
-        piped = (*self.ROWS[:3], "| Undo | Revert `a | b`, then the merge. |")  # a pipe in a value splits no row
-        self.assertEqual(self.bounce(self.fact(rows=piped)), "")
+        escaped = (*self.ROWS[:3], "| Undo | Revert `a \\| b`, then the merge. |")
+        self.assertEqual(self.bounce(self.fact(rows=escaped)), "")
 
     def test_reply_shape_states_the_fact_tables_limits(self):
         # The rules an agent writes to and the limits it's sent back for are one list.
@@ -4641,6 +4641,9 @@ class ReplyBudget(unittest.TestCase):
             "a label off the list": ((self.ROWS[0], "| Cause | Nothing checks the rule. |", "| 3× slower | caught 5 of 5 |"),
                                      '"Cause" isn\'t one of its labels; "3× slower" isn\'t one of its labels'),
             "a long value": ((self.ROWS[0], "| Why | " + "word " * 26 + "|"), "its Why value runs 26 words, over 20"),
+            # Codex review, round 1: Markdown shows this row as "Revert `a" and drops the rest.
+            "a pipe that cuts the value off": ((self.ROWS[0], "| Undo | Revert `a | b`, then the merge. |"),
+                                               "its Undo value holds an unescaped |, which cuts the rest off; write \\|"),
             "a risk below another row": ((self.ROWS[1], self.ROWS[0]), "a Risk or Unsure row sits below another row"),
             "a risk without its sign": (("| Unsure | The count is a text match. |", *self.ROWS[1:]),
                                         "a Risk or Unsure value doesn't start with ⚠️"),
