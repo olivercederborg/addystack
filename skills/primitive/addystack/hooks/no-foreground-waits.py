@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """PreToolUse on Bash: deny a foreground command that holds the turn polling for something
 that can take minutes, and point at run_in_background, Monitor, or watch_pull_request.
-Denies `until`/`while` loops that sleep, counted `for` loops whose sleeps add up to more
+Denies `until`/`while` loops that sleep, unless bash-rewrite.py gives each a time limit
+(shell_syntax.py says which it does), counted `for` loops whose sleeps add up to more
 than the Bash tool's 2-minute default timeout, `sleep N` of a minute or more, and
 `gh pr checks --watch` / `gh run watch`. Short sleeps such as waiting a second for a port,
 and `while read` loops that pause between items, stay allowed. Added after 107 such commands in 43 sessions, counted from
@@ -13,8 +14,8 @@ So does a work-verifier fork, since its background work stops when it hands back
 2026, verify-102-2's fork took this hook's run_in_background advice for its build and handed
 back without a verdict.
 
-Known limit: loops written inside a script file or heredoc that the command runs aren't
-seen."""
+Known limits: loops written inside a script file or heredoc that the command runs aren't
+seen, and with bash-rewrite turned off, a loop it would bound runs without a limit."""
 import json, os, re, sys
 from pathlib import Path
 
@@ -24,14 +25,28 @@ if tool_input.get("run_in_background"):
     sys.exit(0)
 command = tool_input.get("command", "")
 
-code = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", command, flags=re.S)
-code = re.sub(r"'[^']*'", "''", code)
+def unquoted(text):
+    text = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", text, flags=re.S)
+    return re.sub(r"'[^']*'", "''", text)
 
+
+code = unquoted(command)
 LIMIT = 120
+SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
 
 
 def sleeps(text):
     return [float(s) for s in re.findall(r"\bsleep\s+(\d+(?:\.\d+)?)\b", text)]
+
+
+def unbounded_loops():
+    """The sleeping `until`/`while` loops bash-rewrite.py leaves without a time limit."""
+    if not any(sleeps(body) for body in SLEEPING_LOOP.findall(code)):
+        return False
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import shell_syntax
+    bounded = shell_syntax.apply(command, shell_syntax.bound_waits(command)[0])
+    return any(sleeps(body) and shell_syntax.GUARD_NAME not in body for body in SLEEPING_LOOP.findall(unquoted(bounded)))
 
 
 def counted_loop_seconds(text):
@@ -50,8 +65,7 @@ def counted_loop_seconds(text):
 reason = None
 if re.search(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b", code):
     reason = "`gh … watch` holds the turn until CI finishes"
-elif any(sleeps(body) for body in re.findall(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b",
-                                             code, flags=re.S)):
+elif unbounded_loops():
     reason = "a sleeping `until`/`while` loop holds the turn with no upper bound"
 elif any(seconds > LIMIT for seconds in counted_loop_seconds(code)):
     reason = f"this loop can sleep for more than {LIMIT} seconds"

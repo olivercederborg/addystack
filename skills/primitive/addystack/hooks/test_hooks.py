@@ -991,6 +991,28 @@ class BashRewrite(unittest.TestCase):
             if shutil.which(shell):
                 self.assertEqual(subprocess.run([shell, "-n", "-c", command], capture_output=True).returncode, 0, (shell, command))
 
+    def test_bounds_a_sleeping_loop(self):
+        fixed = self.rewrite("until grep -q x /tmp/b.log; do sleep 15; done; tail -4 /tmp/b.log")
+        self.assertEqual(fixed, '{ _wait_end1=$((SECONDS + 95)); until grep -q x /tmp/b.log; do [ "$SECONDS" -lt '
+                                '"$_wait_end1" ] || { echo "gave up waiting after 95s, the limit bash-rewrite.py set" >&2; '
+                                'exit 124; }; sleep 15; done; }; tail -4 /tmp/b.log')
+        for command in [
+            "git push | tail -1 && while ! [ -f /tmp/x ]; do sleep 0.5; done 2>&1 | tail -1",
+            "for f in a b; do\n  until [ -s $f ]; do\n    sleep 2\n  done\ndone",
+            "x=$(while pgrep -f build >/dev/null; do sleep 5; done; echo ok) && echo $x",
+            "while true; do grep -q done /tmp/o && break; sleep 10; done &",
+        ]:
+            with self.subTest(command=command):
+                fixed = self.rewrite(command)
+                self.assertIn("_wait_end1", fixed)
+                self.assert_parses(fixed)
+        # Loops no-foreground-waits.py keeps denying stay as written.
+        for command in ["until gh pr checks 1 | grep -q pass; do sleep 20; done", "until [ -f x ]; do sleep 60; done",
+                        "while read f; do sleep 1; done < list", 'bash -c "until [ -f x ]; do sleep 1; done"',
+                        "until [ -f x ]; do :; done"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.run_on(command))
+
     def test_runs_a_piped_git_write_that_chains_on_under_pipefail(self):
         for command, fixed in [
             ("git rebase main | tail -3 && git push", "(set -o pipefail; git rebase main | tail -3) && git push"),
@@ -2152,8 +2174,13 @@ class NoForegroundWaits(unittest.TestCase):
 
     def test_denies_long_foreground_waits(self):
         for command in [
-            "until grep -q 'BUILD EXIT' /tmp/build.log 2>/dev/null; do sleep 15; done; tail -4 /tmp/build.log",
-            "while pgrep -f 'codex exec' >/dev/null; do sleep 5; done; echo done",
+            # Sleeping loops bash-rewrite.py leaves without a time limit: a PR or CI poll,
+            # a pass that sleeps a minute or more in all, and one in quoted text.
+            "until gh pr checks 133 | grep -q pass; do sleep 20; done",
+            "while true; do gh run view 1 --json status | grep -q completed && break; sleep 15; done",
+            "until grep -q 'BUILD EXIT' /tmp/build.log 2>/dev/null; do sleep 60; done",
+            "while pgrep -f 'codex exec' >/dev/null; do sleep 45; sleep 45; done; echo done",
+            'bash -c "until [ -f /tmp/x ]; do sleep 5; done"',
             'for i in $(seq 1 115); do [ -s "$f" ] && break; sleep 5; done; cat "$f"',
             "for i in {1..30}; do sleep 10; done",
             "sleep 60; tail -3 /tmp/s1-build.log",
@@ -2175,6 +2202,15 @@ class NoForegroundWaits(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertFalse(self.bash(command))
 
+    def test_leaves_loops_bash_rewrite_bounds(self):
+        for command in ["until grep -q 'BUILD EXIT' /tmp/build.log 2>/dev/null; do sleep 15; done; tail -4 /tmp/build.log",
+                        "while pgrep -f 'codex exec' >/dev/null; do sleep 5; done; echo done",
+                        "until curl -sf localhost:3000/up; do sleep 2; done && until [ -s /tmp/o ]; do sleep 1; done"]:
+            with self.subTest(command=command):
+                self.assertFalse(self.bash(command))
+        # A bounded loop still holds a sleep of a minute or more after it.
+        self.assertTrue(self.bash("until grep -q x /tmp/o; do sleep 3; done; sleep 60"))
+
     def test_allows_background_runs(self):
         self.assertFalse(self.bash("until grep -q EXIT /tmp/b.log; do sleep 15; done", background=True))
 
@@ -2188,7 +2224,7 @@ class NoForegroundWaits(unittest.TestCase):
                                      env={**os.environ, "T3_STATE_DB": state_db(folder, thread, brief, creator),
                                           "T3CODE_CLI_PATH": t3},
                                      input=json.dumps({"tool_name": "Bash", "session_id": "s",
-                                                       "tool_input": {"command": "while pgrep make; do sleep 5; done"},
+                                                       "tool_input": {"command": "while pgrep make; do sleep 60; done"},
                                                        "transcript_path": transcript.name})).stdout
             return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
         child = reason("Act as the implementation sub-agent for this task.\n\nBuild it.")
@@ -2205,7 +2241,7 @@ class NoForegroundWaits(unittest.TestCase):
                              env={k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"},
                              input=json.dumps({"tool_name": "Bash", "session_id": "s", "agent_id": "a1",
                                                "agent_type": "work-verifier", "tool_input": {
-                                                   "command": 'until grep -q "exit" /tmp/b.log; do sleep 15; done'}})).stdout
+                                                   "command": 'until grep -q "exit" /tmp/b.log; do sleep 60; done'}})).stdout
         reason = json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"]
         self.assertIn("counted loops", reason)
         self.assertNotIn("run_in_background", reason)
