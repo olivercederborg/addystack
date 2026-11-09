@@ -47,7 +47,22 @@ stop_hook_active keeps it to one send per stop. T3 delegated children pass, sinc
 parent reads them, unless their brief opts in with "Reply rules: on"; so does a session
 where a message of the user's opens by asking for "normal replies".
 A reply whose turn block says `running` passes, since reply-shape makes it one ⏳ line.
-`scripts/check_examples.py` holds the kit's example replies to the 60-word target."""
+`scripts/check_examples.py` holds the kit's example replies to the 60-word target.
+
+reply-shape's fact table, the two-column table right under the headline, is a short table,
+so the word count skips it; it has its own limits instead, which fact_problems checks: at
+most FACT_ROWS rows under the header, each label one of FACT_LABELS, each value within
+FACT_SEND_BACK words (FACT_WORDS is the writing target, as 60 is to 100), and Risk and
+Unsure rows first with ⚠️ leading the value. The user's call on Nov 9, 2026, after seeing
+UI cards in use: every final reply is a headline, one fact table, and the closing. A fact
+table isn't required: a session started before that keeps the old shape until it restarts.
+So a table counts as one only when it has two columns, sits right under the headline (or a
+round's strip), and at least one row's label is on the list: in the 7 days before, 85 of
+7,575 final replies had a two-column table under the headline, a PR list or a status list,
+and one of them had a listed label, the first fact table written. Its Pick and Source rows
+count for the source check, and numbered steps under a table with a Do row are that Do's
+steps, as under a Do note. Known limits: a fact table whose every label is off the list
+reads as a comparison view, as before, and so does one below a lead-in sentence."""
 import json, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -68,6 +83,15 @@ BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#{1,6}\s|`{3,}|~{3,}|([-*_
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 TABLE_ROWS = 6  # the most body rows a table can hold and still be a view
+# reply-shape's fact table: its labels, row cap, and words per value (target, send-back).
+FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Queued",
+               "Pick", "Source", "Cost", "Decide", "Review", "Do")
+WARNED = ("Risk", "Unsure")  # these rows come first, and ⚠️ leads their value
+FACT_ROWS = 5
+FACT_WORDS = 20
+FACT_SEND_BACK = 30
+# A round's strip, the one line that may sit between the headline and the fact table.
+STRIP = re.compile(r"[🟡⬜✅]\s*·")
 OPT_OUT = re.compile(r"^\W*(?:(?:use|back to|switch to|give me)\s+)?normal replies\b", re.I)
 WORD = re.compile(r"\w", re.U)
 
@@ -108,6 +132,68 @@ def views(lines):
     return {n for start, end, rows in tables(lines) if rows <= TABLE_ROWS for n in range(start, end)}
 
 
+def fact_table(lines):
+    """reply-shape's fact table in a reply's lines, code blanked: its header's value and
+    its rows as (line index, label, value), or None without one. It's the first table, when
+    that has two columns, only the headline and a round's strip above it, and a row whose
+    label is on the list, as the module docstring says."""
+    first = next(tables(lines), None)
+    if not first:
+        return None
+    start, end, _ = first
+    above = [line for line in lines[:start] if line.strip()]
+    if len(cells(lines[start])) != 2 or len(above) > 2 or (len(above) == 2 and not STRIP.search(above[1])):
+        return None
+    rows = []
+    for n in range(start + 2, end):
+        label, *value = cells(lines[n])
+        rows.append((n, label.strip().strip("*").strip(), "|".join(value).strip()))
+    if not any(listed(label) for _, label, _ in rows):
+        return None
+    return cells(lines[start])[1].strip(), rows
+
+
+def listed(label, among=FACT_LABELS):
+    return label.casefold() in {name.casefold() for name in among}
+
+
+def fact_problems(reply, limit=FACT_SEND_BACK):
+    """What breaks the fact table's limits in a reply that has one, one clause each."""
+    table = fact_table(bare_references.visible(reply, blank_code=True))
+    if not table:
+        return []
+    header, rows = table
+    found = []
+    if len(rows) > FACT_ROWS:
+        found.append(f"it has {len(rows)} rows under its header, over {FACT_ROWS}")
+    for label in dict.fromkeys(label for _, label, _ in rows if not listed(label)):
+        found.append(f"\"{label}\" isn't one of its labels")
+    for label, value in [("header", header), *((label, value) for _, label, value in rows)]:
+        count = sum(1 for token in value.split() if WORD.search(token))
+        if count > limit:
+            found.append(f"its {label} value runs {count} words, over {FACT_WORDS}")
+    warned = [listed(label, WARNED) for _, label, _ in rows]
+    if warned != sorted(warned, reverse=True):
+        found.append("a Risk or Unsure row sits below another row")
+    if any(not value.lstrip("*_ ").startswith("⚠") for _, label, value in rows if listed(label, WARNED)):
+        found.append("a Risk or Unsure value doesn't start with ⚠️")
+    return found
+
+
+def fact_feedback(reply):
+    """The send-back text for a fact table past its limits, or None."""
+    found = fact_problems(reply)
+    if not found:
+        return None
+    return (f"Your reply's fact table breaks reply-shape's limits: {'; '.join(found)}. The table under the "
+            f"headline holds at most {FACT_ROWS} rows of `label | value` under its header, each label one of "
+            f"{', '.join(FACT_LABELS)}, each value at most {FACT_WORDS} words, with Risk and Unsure rows first "
+            "and ⚠️ leading their value. Send your whole reply again with the table inside those limits: "
+            "merge rows that share a label, give a row no label fits to a view under the table, such as "
+            "its own comparison table, and move the rest to the fold. T3 shows only a turn's last message, so "
+            "the resent reply has to stand on its own. Add no note about the change.")
+
+
 def lead_ins(lines, fenced, short):
     """Indexes of the lead-in lines: a paragraph line at the left margin that ends in ":"
     with only blank lines between it and a code block or a short table. The headline, a
@@ -131,7 +217,7 @@ def lead_ins(lines, fenced, short):
 def glance(reply):
     """The reply's headline and notes: its visible lines above the closing, without
     drafts, images, short tables and the lead-in line before a view, or the numbered steps
-    under a Do note."""
+    under a Do note or a fact table's Do row."""
     raw, fenced = bare_references.shown(reply)
     lines = ["" if code else line for line, code in zip(raw, fenced)]
     cell = {n for start, end, _ in tables(lines) for n in range(start, end)}
@@ -140,11 +226,15 @@ def glance(reply):
                                         if CLOSING.match(line.strip()) and n not in cell), len(lines))
     short = views(lines[:end])
     short |= lead_ins(lines[:end], fenced[:end], short)
+    fact = fact_table(lines[:end])
+    do_rows = {row for row, label, _ in fact[1] if listed(label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
     column = 0  # the open Do item's text column: a table left of it ends the item
     for n, line in enumerate(lines[:end]):
         if n in short:
-            if len(line) - len(line.lstrip()) < column:
+            if n in do_rows:  # the numbered steps under the fact table are this Do's
+                do, step, column = True, 0, 0
+            elif len(line) - len(line.lstrip()) < column:
                 do, step = False, 0
             continue
         if not line.strip() or DRAFT.match(line):
@@ -398,7 +488,8 @@ SOURCE_FEEDBACK = ("This decision card's **Pick** cites no source. Add a **Sourc
 def unsourced(reply):
     """True when the reply is a decision card, its recommended option a decision, with a
     visible **Pick** that cites nothing itself and no **Source** label above the closing.
-    A ship gate, post, or push passes, since its view carries the checks."""
+    A fact table's Pick and Source rows count as those labels. A ship gate, post, or push
+    passes, since its view carries the checks."""
     try:
         turn = turn_block.parse(reply)
     except turn_block.Malformed:
@@ -407,7 +498,12 @@ def unsourced(reply):
         return False
     shown = bare_references.visible(reply, blank_code=True)
     picks = [n for n, line in enumerate(shown) if PICK.match(line)]
-    if not picks:
+    fact = fact_table(shown)
+    rows = {name: [value for _, label, value in fact[1] if listed(label, (name,))] if fact else []
+            for name in ("Pick", "Source")}
+    if not picks and not rows["Pick"]:
+        return False
+    if rows["Source"] or any(CITES.search(value) for value in rows["Pick"]):
         return False
     text = turn_block.lines_ended(reply)
     lines = text[:text.rfind("<!--")].split("\n")
@@ -452,8 +548,9 @@ def main():
     reply = event.get("last_assistant_message") or ""
     if running(reply) or opted_out(event):
         return
-    # One send per stop, so a missing source rides along with any other problem.
-    feedback = " ".join(filter(None, (problem(event, reply), SOURCE_FEEDBACK if unsourced(reply) else None)))
+    # One send per stop, so a fact table's limits and a missing source ride along with any other problem.
+    feedback = " ".join(filter(None, (problem(event, reply), fact_feedback(reply),
+                                      SOURCE_FEEDBACK if unsourced(reply) else None)))
     if feedback:
         send_back(event, feedback)
 

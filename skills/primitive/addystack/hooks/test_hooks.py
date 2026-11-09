@@ -4595,6 +4595,105 @@ class ReplyBudget(unittest.TestCase):
         self.assertIn("cites no source", reason)
         self.assertEqual(self.bounce(self.card(), stop_hook_active=True), "")
 
+    # reply-shape's fact table, the shape the user picked on Nov 9, 2026: here a merge go.
+    ROWS = ("| Risk | ⚠️ Review stopped at round 2: one kind of finding kept coming back. |",
+            "| Effect | Replayed on 38 routine asks: 5 go on without the user, up from 0. |",
+            "| Proof | verify-work at head · tests 24/24 · old turn blocks parse the same |",
+            "| Undo | Revert the merge. |")
+
+    def fact(self, rows=ROWS, header="| [#32](https://github.com/sam/kit/pull/32) | Standing list in the turn block · draft · +172 −21 |",
+             above="", below="", cls="stop:merge"):
+        options = [{"key": "a", "class": cls, "text": "merge #32"}, {"key": "b", "class": "decision", "text": "no: keep #32 as a draft"}]
+        return ("🟡 **Merge #32, so old to-dos stop blocking routine steps?**\n\n" + above + header + "\n|---|---|\n"
+                + "\n".join(rows) + "\n\n" + below
+                + "<details><summary>Review rounds · report</summary>\n\nTwo rounds.\n\n</details>\n\n"
+                "---\n\n**Next**\n\n- **`a` → merge #32** · *recommended*\n- `b` → no: keep #32 as a draft\n\n"
+                + block({"state": "stop", "needs": [{"id": 1, "kind": "review", "name": "merge #32"}], "options": options}))
+
+    def test_a_fact_table_inside_its_limits_passes(self):
+        self.assertEqual(reply_budget.fact_problems(self.fact()), [])
+        self.assertEqual(self.bounce(self.fact()), "")
+        self.assertEqual(reply_budget.words(self.fact()), 9)  # the table is a view, so only the headline counts
+        self.assertEqual(turn_block.picked(self.fact(), "a").cls, "stop:merge")  # merge-gate still reads the go
+        bold = [row.replace("| Risk |", "| **Risk** |").replace("| Undo |", "| undo |") for row in self.ROWS]
+        self.assertEqual(self.bounce(self.fact(rows=bold)), "")
+        at_the_limit = (*self.ROWS[:3], "| Undo | " + "word " * reply_budget.FACT_SEND_BACK + "|")
+        self.assertEqual(self.bounce(self.fact(rows=at_the_limit)), "")
+        self.assertEqual(reply_budget.fact_problems(self.fact(rows=at_the_limit), reply_budget.FACT_WORDS),
+                         ["its Undo value runs 30 words, over 20"])  # check_examples holds examples to the target
+        piped = (*self.ROWS[:3], "| Undo | Revert `a | b`, then the merge. |")  # a pipe in a value splits no row
+        self.assertEqual(self.bounce(self.fact(rows=piped)), "")
+
+    def test_a_fact_table_past_its_limits_goes_back(self):
+        broken = {
+            "a sixth row": ((*self.ROWS, "| Skipped | The reinstall. |", "| Queued | Two smaller gaps. |"),
+                            "it has 6 rows under its header, over 5"),
+            "a label off the list": ((self.ROWS[0], "| Cause | Nothing checks the rule. |", "| 3× slower | caught 5 of 5 |"),
+                                     '"Cause" isn\'t one of its labels; "3× slower" isn\'t one of its labels'),
+            "a long value": ((self.ROWS[0], "| Why | " + "word " * 31 + "|"), "its Why value runs 31 words, over 20"),
+            "a risk below another row": ((self.ROWS[1], self.ROWS[0]), "a Risk or Unsure row sits below another row"),
+            "a risk without its sign": (("| Unsure | The count is a text match. |", *self.ROWS[1:]),
+                                        "a Risk or Unsure value doesn't start with ⚠️"),
+        }
+        for name, (rows, clause) in broken.items():
+            with self.subTest(name):
+                reason = self.bounce(self.fact(rows=rows))
+                self.assertIn(f"fact table breaks reply-shape's limits: {clause}. ", reason)
+                self.assertIn("each label one of Risk, Unsure, Why, Effect, Proof, Undo, Skipped, Queued, Pick, Source, "
+                              "Cost, Decide, Review, Do, each value at most 20 words", reason)
+        header = self.fact(header="| Problem | " + "word " * 31 + "|")
+        self.assertIn("its header value runs 31 words", self.bounce(header))
+        self.assertIn("isn't one of its labels", self.bounce(self.fact(rows=broken["a label off the list"][0]), turn_id="t1"))
+        both = self.fact(rows=(self.ROWS[1], self.ROWS[0], "| Cause | x |"))
+        self.assertIn("\"Cause\" isn't one of its labels; a Risk or Unsure row sits below another row", self.bounce(both))
+        self.assertEqual(self.bounce(both, stop_hook_active=True), "")
+        running = both[:both.rindex("<!--")] + block({"state": "running", "elapsed": "4 min"})
+        self.assertEqual(self.bounce(running), "")
+
+    def test_a_table_is_a_fact_table_only_under_the_headline_with_a_listed_label(self):
+        # A session started before the fact table keeps the old shape, and isn't sent back for it:
+        # 85 of 7,575 final replies in the 7 days to Nov 9, 2026 had a two-column list under the headline.
+        prs = [f"| #{n} paste fix | merged, at head {n:03d}abc |" for n in range(1, 7)]
+        self.assertEqual(self.bounce(self.fact(rows=prs, header="| PR | State |")), "")
+        # Two real replies that week led in to a two-column table with a Review row.
+        led = self.fact(above="Where the restack stands:\n\n", header="| Item | Result |",
+                        rows=("| `Gallery.swift` conflict | Kept both sides |", "| Review | Skip recorded |", "| Check run | None |"))
+        self.assertEqual(self.bounce(led), "")
+        three = self.fact(header="| Item | Result | Note |", rows=("| Review | Skip recorded | none |", "| Cause | x | y |"))
+        self.assertEqual(self.bounce(three.replace("|---|---|", "|---|---|---|")), "")
+        second = self.fact(below="| Helper | Earns its place |\n|---|---|\n| `toRows` | yes |\n| Review | no |\n\n")
+        self.assertEqual(self.bounce(second), "")  # a comparison view under the fact table keeps its own labels
+        strip = self.fact(above="Group 1 🟡 · 2 ⬜ · 3 ⬜\n\n", rows=(self.ROWS[0], "| Cause | x |"))
+        self.assertIn('"Cause" isn\'t one of its labels', self.bounce(strip))
+        example = "✅ **The rules show one.**\n\n````markdown\n" + self.fact(rows=("| Cause | x |", self.ROWS[0])) + "\n````\n"
+        self.assertEqual(reply_budget.fact_problems(example), [])
+
+    def test_a_fact_tables_pick_and_source_rows_count(self):
+        pick = "| Pick | Yes, so every hook crash gets logged in one place. |"
+        rows = {"no source": ((pick,), True),
+                "a source row": ((pick, "| Source | The runner every other callback goes through. |"), False),
+                "a pick that cites": (("| Pick | Yes, as `apps/server/src/runner.ts:12` does. |",), False),
+                "a proof that cites": ((pick, "| Proof | Logged in `apps/server/src/runner.ts:12`. |"), True),
+                "no pick": ((self.ROWS[1],), False)}
+        for name, (body, sent_back) in rows.items():
+            with self.subTest(name):
+                reply = self.fact(rows=body, header="| Problem | A crash in the sign-in hooks goes unlogged. |", cls="decision")
+                self.assertEqual("**Pick** cites no source" in self.bounce(reply), sent_back)
+        merge = self.fact(rows=(pick,))  # a ship gate's view carries the checks
+        self.assertEqual(self.bounce(merge), "")
+        # A Pick cell in any other table is no label, as before.
+        other = self.fact(above="The options, compared:\n\n", header="| Option | Why |", rows=("| Pick | The shared runner |",), cls="decision")
+        self.assertEqual(self.bounce(other), "")
+
+    def test_steps_under_a_fact_tables_do_row_are_free(self):
+        filler = " ".join(["word"] * 70)
+        steps = (f"🔴 **Layer 2 of 3 stopped: it needs a key.**\n\n| Problem | The export can't sign in. |\n|---|---|\n"
+                 f"| Do | Create an API key: only the owner's account can. |\n| Queued | Layer 3. |\n\n"
+                 f"1. {filler}\n   {filler}\n2. {filler}\n\nAfter it.\n")
+        self.assertEqual(reply_budget.words(steps), 11)
+        no_do = steps.replace("| Do |", "| Why |")
+        self.assertEqual(reply_budget.words(no_do), 11 + 2 + 3 * 70)  # with the two step numbers
+
 
 class BareReferences(unittest.TestCase):
     HOOK = "bare_references.py"
@@ -4723,6 +4822,14 @@ class BareReferences(unittest.TestCase):
         for fence in ["```", "~~~", "  ```"]:  # tilde and indented fences too, as turn_block reads them
             with self.subTest(fence=fence):
                 self.assertEqual(self.bounce(f"**Next**\n\n{fence}\n- `a` → fix 22\n{fence.strip()}\n"), "")
+
+    def test_a_table_row_with_a_reader_label_is_an_item(self):
+        table = "🟡 **Two items wait.**\n\n| Problem | The export is stuck. |\n|---|---|\n"
+        self.assertEqual(bare_references.problems(table + "| Decide | Keep item 48 as it is? |\n"),
+                         ["'item 48' in: | Decide | Keep item 48 as it is? |"])
+        self.assertIn("'item 48' in:", self.bounce(table + "| Do | Apply rule 21, then keep item 48. |\n"))
+        self.assertEqual(self.bounce(table + "| Review | Keep item 48 (optional email variables)? |\n"), "")
+        self.assertEqual(self.bounce(table + "| Effect | Item 48 is committed. |\n"), "")
 
     def test_passes_prose_outside_the_action_lines_and_a_second_stop(self):
         self.assertEqual(self.bounce("Item 48 is committed.\n\n**Needs you**: sign in to Apple."), "")

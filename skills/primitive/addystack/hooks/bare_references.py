@@ -29,7 +29,8 @@ import t3_child, turn_block  # noqa: E402
 
 FOLD = re.compile(r"<details>.*?</details>", re.S)
 ZONE = re.compile(r"^\*\*(Next|Done|Needs you)\*\*")
-LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*")
+# A reader item: a note that opens with its label, or a row of reply-shape's fact table.
+LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*|^\s*\|\s*(Decide|Review|Do)\s*\|")
 NUMS = r"\d+(?!\.\d)(?:\s*(?:[–-]|,|and|or|to|&)\s*\d+)*"
 KEYWORD = re.compile(
     r"\b(?:items?|rules?|findings?|rows?|milestones?|questions?|decisions?|lessons?|nits?|"
@@ -81,7 +82,8 @@ def plain(line):
 
 
 def zone_lines(lines):
-    """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere."""
+    """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere, as a
+    note or as a table row with that label."""
     zone = None
     for line in lines:
         head = ZONE.match(line)
