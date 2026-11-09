@@ -4836,13 +4836,25 @@ class BareReferences(unittest.TestCase):
             with self.subTest(fence=fence):
                 self.assertEqual(self.bounce(f"**Next**\n\n{fence}\n- `a` → fix 22\n{fence.strip()}\n"), "")
 
-    def test_a_table_row_with_a_reader_label_is_an_item(self):
+    def test_a_fact_tables_reader_row_is_an_item(self):
         table = "🟡 **Two items wait.**\n\n| Problem | The export is stuck. |\n|---|---|\n"
         self.assertEqual(bare_references.problems(table + "| Decide | Keep item 48 as it is? |\n"),
                          ["'item 48' in: | Decide | Keep item 48 as it is? |"])
-        self.assertIn("'item 48' in:", self.bounce(table + "| Do | Apply rule 21, then keep item 48. |\n"))
+        # Codex review, round 1: every row reply_budget reads as a Do row is one here too.
+        rows = {"plain": "| Do | Apply rule 21. |", "bold": "| **Do** | Apply rule 21. |", "lowercase": "| do | Apply rule 21. |"}
+        for name, row in rows.items():
+            with self.subTest(name):
+                self.assertIn("'rule 21' in:", self.bounce(table + row + "\n"))
+        bare = "🟡 **Two items wait.**\n\nProblem | The export is stuck.\n---|---\nDo | Apply rule 21.\n"
+        self.assertIn("'rule 21' in:", self.bounce(bare))  # a table without its outer pipes
         self.assertEqual(self.bounce(table + "| Review | Keep item 48 (optional email variables)? |\n"), "")
         self.assertEqual(self.bounce(table + "| Effect | Item 48 is committed. |\n"), "")
+        # A Review cell in any other table is that table's own label, as before the fact table.
+        compared = ("✅ **The restack is done.**\n\nWhere it stands:\n\n| Item | Result |\n|---|---|\n"
+                    "| Review | Item 48 fixed in the callback. |\n")
+        self.assertEqual(self.bounce(compared), "")
+        under = table + "| Why | A key is missing. |\n\n| Item | Result |\n|---|---|\n| Review | Item 48 fixed. |\n"
+        self.assertEqual(self.bounce(under), "")
 
     def test_passes_prose_outside_the_action_lines_and_a_second_stop(self):
         self.assertEqual(self.bounce("Item 48 is committed.\n\n**Needs you**: sign in to Apple."), "")

@@ -29,8 +29,8 @@ import t3_child, turn_block  # noqa: E402
 
 FOLD = re.compile(r"<details>.*?</details>", re.S)
 ZONE = re.compile(r"^\*\*(Next|Done|Needs you)\*\*")
-# A reader item: a note that opens with its label, or a row of reply-shape's fact table.
-LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*|^\s*\|\s*(Decide|Review|Do)\s*\|")
+LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*")
+READER = ("Decide", "Review", "Do")
 NUMS = r"\d+(?!\.\d)(?:\s*(?:[–-]|,|and|or|to|&)\s*\d+)*"
 KEYWORD = re.compile(
     r"\b(?:items?|rules?|findings?|rows?|milestones?|questions?|decisions?|lessons?|nits?|"
@@ -81,17 +81,25 @@ def plain(line):
     return re.sub(r"[*_]{1,2}", "", line)
 
 
+def reader_rows(lines):
+    """Indexes of the Decide, Review, and Do rows of reply-shape's fact table, as
+    reply_budget reads it: the same table, labels, and cells its limits apply to."""
+    import reply_budget  # here, since reply_budget imports this module
+    table = reply_budget.fact_table(lines)
+    return {n for n, label, _ in table[1] if reply_budget.listed(label, READER)} if table else set()
+
+
 def zone_lines(lines):
     """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere, as a
-    note or as a table row with that label."""
-    zone = None
-    for line in lines:
+    note or as a row of the fact table."""
+    zone, rows = None, reader_rows(lines)
+    for n, line in enumerate(lines):
         head = ZONE.match(line)
         if head:
             zone = head.group(1)
         elif zone == "Needs you" and line.strip() and not line.lstrip().startswith(("-", "*")):
             zone = None
-        if zone or LABEL.match(line):
+        if zone or LABEL.match(line) or n in rows:
             yield line
 
 
