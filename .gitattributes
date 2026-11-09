@@ -32,7 +32,10 @@
 /skills/orchestrator/coordinator/references/t3-delegation.md linguist-generated
 /skills/orchestrator/coordinator/references/views.md linguist-generated
 /skills/orchestrator/coordinator/references/workflow.md linguist-generated
+/skills/orchestrator/coordinator/scripts/evidence.py linguist-generated
+/skills/orchestrator/coordinator/scripts/github.sh linguist-generated
 /skills/orchestrator/coordinator/scripts/stack.sh linguist-generated
+/skills/orchestrator/coordinator/scripts/verdicts.py linguist-generated
 /skills/primitive/address-review/references/disclosure.md linguist-generated
 /skills/primitive/address-review/references/format.md linguist-generated
 /skills/primitive/address-review/references/github.md linguist-generated
