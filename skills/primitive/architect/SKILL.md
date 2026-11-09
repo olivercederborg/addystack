@@ -101,7 +101,8 @@ the whole repo.
   one, or fail the build when they disagree.
 
 **Done when:** three screened candidates, or two with the third reported missing,
-differ in structure, and each has usage, signatures, and a typed call stack.
+differ in structure, and each has usage traced from where the flow starts, signatures
+with their precedents, and a typed call stack.
 
 ## 3. Present and decide
 
@@ -130,13 +131,16 @@ yield* download(file)
 
 ```ts
 // 2 · Shared transaction query
-const rows = yield* transactions.query({ from, to }) // caller
-export declare function query(q: TransactionQuery): Effect<Row[], QueryError>
+export declare function query(q: TransactionQuery): Effect<Row[], QueryError> // as transactions.list, transactions.ts:30
+// ExportButton's handler: it builds the query and the CSV itself
+const rows = yield* transactions.query({ from: month.start, to: month.end })
+yield* download(toCsv(rows))
 // summary → query(q) · export → query(q) → toCsv(rows)
 
 // 3 · Summary reads the export's rows
-const rows = yield* exportRows({ from, to }) // caller
-export declare function exportRows(range: DateRange): Effect<Row[], ExportError>
+export declare function exportRows(range: DateRange): Effect<Row[], ExportError> // no repo precedent; follows Effect.fn's docs
+// SummaryCard's loader, the flow's start
+const rows = yield* exportRows({ from: month.start, to: month.end })
 // summary → exportRows(range) · export → exportRows(range) → toCsv(rows)
 ```
 
