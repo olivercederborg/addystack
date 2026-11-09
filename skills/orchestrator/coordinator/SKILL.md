@@ -30,10 +30,12 @@ change to `project.md` before the turn ends.
   [phases](references/phases.md) says.
 - **Start**: on the machine [across machines](references/across-machines.md) picks,
   pin this thread (`t3_thread_organize` `pin`), rename it `◆ <project>` with
-  `t3_thread_update`, and take its id from the `currentThreadId` that `t3_thread_list`
-  returns, with that thread's `link`. Write `project.md` with `scripts/project.py
-  <folder> init`, with the link and the target repo's `Mode:` line from the user's
-  instructions, and write `standing-rules.md` from this chat's rules.
+  `t3_thread_update`, set it to the Project thread row of t3-delegation's Roles table
+  unless the user named this thread's model, and take its id from the
+  `currentThreadId` that `t3_thread_list` returns, with that thread's `link`. Write
+  `project.md` with `scripts/project.py <folder> init`, with the link and the target
+  repo's `Mode:` line from the user's instructions, and write `standing-rules.md` from
+  this chat's rules.
 
 **Done when:** `project.md` names the goal, its proof, and this thread's link, and the
 thread is pinned under its `◆` title.
@@ -58,8 +60,9 @@ now, and make "regenerates on either merge order" part of its proof.
 
 ## 3. Start workers
 
-Start each with `delegate_task`: the title `◇ <project> · <unit>` (a review takes
-t3-delegation's `◎` title), `isolation: "worktree"`, `mode: "async"`, a stable
+Start each with `delegate_task`: the PR owner row of t3-delegation's Roles table as
+`target`, the title `◇ <project> · <unit>` (a review takes t3-delegation's `◎` title
+and Reviewers row), `isolation: "worktree"`, `mode: "async"`, a stable
 `clientRequestId`, and the brief below. Record its thread link and `taskId` in Workers.
 Work on another machine follows [across machines](references/across-machines.md).
 
