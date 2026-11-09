@@ -72,6 +72,8 @@ class Review:
     recorded_at: str  # UTC ISO 8601
     rounds: int  # 0 for a skip
     skipped: str  # the skip's reason, or ""
+    rating: int = 0  # the last round's 1-10 rating, or 0 when none was recorded
+    reason: str = ""  # what cost the rating the most points
 
 
 class VerdictError(Exception):
@@ -110,6 +112,19 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
         return evidence.classify(cwd, base, head)
     except evidence.EvidenceError as error:
         raise VerdictError(str(error))
+
+
+def left_out(cwd: Path, numstat: bytes) -> list[tuple[str, str, str, str]]:
+    """Each row of `git diff --numstat -z --no-renames` as (added, deleted, path, why),
+    where why is lockfile, vendored, generated, or binary for a file a review's size and
+    packet leave out, or "" for one they keep."""
+    raise NotImplementedError
+
+
+def size(cwd: Path, base: str, head: str) -> str:
+    """`git diff base...head`'s size without the files `left_out` names, as `+A −D in F
+    files`, then each left-out file with its why and its own size."""
+    raise NotImplementedError
 
 
 def _shown(reasons: list[str], limit: int = 3) -> str:
@@ -204,7 +219,8 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     return receipt
 
 
-def record_review(cwd: Path, target: ReviewTarget, rounds: int = 0, skipped: str = "") -> Review:
+def record_review(cwd: Path, target: ReviewTarget, rounds: int = 0, skipped: str = "", rating: int = 0,
+                  reason: str = "") -> Review:
     """Records review-loop's result for `git diff base...head`: the rounds it ran, or a
     skip with its reason. Unlike a verdict, any session records one, from any checkout."""
     if (rounds > 0) == bool(skipped.strip()):
