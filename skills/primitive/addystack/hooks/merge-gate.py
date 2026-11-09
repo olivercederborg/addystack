@@ -16,7 +16,8 @@ GitHub can't require checks on these private repos on a free plan (branch protec
 rulesets return HTTP 403), so nothing on GitHub's side stops a red merge. On Oct 11, 2026
 a Strict stack merged 11 minutes after main went red, and a noyer PR merged with no CI,
 no review, and no verify-work run on its final commit. The go never stands in for the
-verdict or for failing checks. A go is a short literal merge request (merge_go.py), or a
+verdict or for failing checks. A command with more than one merge is denied, since the checks
+read one. A go is a short literal merge request (merge_go.py), or a
 pick of the reply's stop:merge option whose text is itself one (turn_block.py) and names the
 PR or none; a T3 delegated child, a question, or a "don't merge" gives none. A pick answers
 the last reply before it, past messages T3 says another agent sent that landed in the same
@@ -66,9 +67,12 @@ code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S
 code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 # Redirections aren't arguments: `gh stack merge --yes 2>&1` merges the current stack.
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)
-match = re.search(r"\bgh\s+(pr|stack)\s+merge\b([^;&|\n]*)", code)
+# Every merge the command would run: --help only prints, and --disable-auto only turns auto-merge off.
+merges = [found for found in re.finditer(r"\bgh\s+(pr|stack)\s+merge\b([^;&|\n]*)", code)
+          if not {"-h", "--help", "--disable-auto"} & set(found.group(2).split())]
+match = merges[0] if merges else None
 kind, args = (match.group(1), match.group(2).split()) if match else (None, [])
-if not match or {"-h", "--help", "--disable-auto"} & set(args):
+if not match:
     if DRY_RUN:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
@@ -78,8 +82,8 @@ if cds:
     cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(cds[-1])))
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
-# checkout's stack, with no flag that can name another repo. Any other shell, such as a second
-# merge, a subshell, or -R, could merge something the checks below never saw, so it needs the go.
+# checkout's stack, with no flag that can name another repo. Any other shell, such as a
+# subshell or -R, could merge something the checks below never saw, so it needs the go.
 BOUND = re.compile(r"\s*(?:cd\s+[^\s;&|()<>`$'\"]+\s*&&\s*)?(?:gh\s+pr\s+ready\s+\d+\s*&&\s*)?"
                    r"gh\s+(?:pr\s+merge\s+\d+|stack\s+merge(?:\s+\d+)?)"
                    r"(?:\s+(?:--merge|--squash|--rebase|--delete-branch|--auto|--yes|-[msrd]))*\s*")
@@ -97,6 +101,10 @@ def deny(*reasons):
                                     "the gate with `gh api` or a push to the base branch.",
     }}))
     sys.exit(0)
+
+# The checks below read one merge, so a second would merge on the first one's go and verdict.
+if len(merges) > 1:
+    deny(f"this command runs {len(merges)} merges and the gate checks one: run each merge as its own command")
 
 def run(*cmd):
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=40)
