@@ -2713,15 +2713,15 @@ class MergeGate(unittest.TestCase):
     def test_a_gate_repo_asks_for_the_go_for_a_merge_it_cant_bind_to_itself(self):
         # Review rounds 2 and 3: the gate resolves the PR, its trust, and its Done in the
         # checkout, so any other shell, which could merge another repo's PR or run somewhere
-        # else, keeps the go: a repo flag in any form, a URL, branch, or missing target, a
-        # second merge, or a cd that a subshell, pipe, branch, or text could make not apply.
+        # else, keeps the go: a repo flag in any form, a URL, branch, or missing target, or a
+        # cd that a subshell, pipe, branch, or text could make not apply.
         self.trust("gate")
         self.scenario(prs={12: None})
         self.verify(12)
         for command in ["gh pr merge 12 -R o/r", "gh pr merge --repo=o/other 12", "gh pr merge -Ro/other 12",
                         "gh pr merge 12 -sRo/other", "GH_REPO=o/other gh pr merge 12",
                         "gh pr merge https://github.com/o/other/pull/12", "gh pr merge feature", "gh pr merge",
-                        "gh pr merge 12 && gh pr merge 13 -R o/other", "( cd . ) && gh pr merge 12",
+                        "( cd . ) && gh pr merge 12",
                         "false || cd . && gh pr merge 12", "cd . | cat && gh pr merge 12", "cd . ; gh pr merge 12",
                         "cd . && cd . && gh pr merge 12", "pushd . && gh pr merge 12", "echo cd . && gh pr merge 12"]:
             with self.subTest(command=command):
@@ -2923,6 +2923,21 @@ class MergeGate(unittest.TestCase):
         self.scenario()
         self.git("push", "-q", "origin", ":refs/pull/12/head")
         self.assertIn("couldn't check the merge", self.reason("gh pr merge 12"))  # fetch fails
+
+    def test_denies_a_command_with_more_than_one_merge(self):
+        # Nov 9, 2026: a dry run of `gh pr merge 39 --merge && gh pr merge 41 --merge` listed #39
+        # alone, so #41 would have merged on #39's go with no verdict of its own.
+        self.scenario(prs={12: "SUCCESS", 13: "SUCCESS"})
+        self.verify(12)
+        for command in ["gh pr merge 12 --merge && gh pr merge 13 --merge", "gh pr merge 12; gh stack merge",
+                        "gh pr merge --help; gh pr merge 12 && gh pr merge 13"]:
+            with self.subTest(command=command):
+                self.assertIn("runs 2 merges", self.reason(command))
+        self.assertIn("#13 has no Done verdict", self.reason("gh pr merge --help; gh stack merge"))
+        self.assertIsNone(self.reason("gh pr merge 12 --disable-auto && gh pr merge 12"))
+        self.assertEqual(self.dry_run("gh pr merge 12 && gh pr merge 13"),
+                         (1, "- this command runs 2 merges and the gate checks one: run each merge as its own "
+                             "command\nwould deny\n"))
 
     def test_ignores_other_commands(self):
         self.scenario(broken=True)
