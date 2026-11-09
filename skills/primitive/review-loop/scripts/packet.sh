@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Writes review-loop's packet and the one prompt every reviewer gets, under the repo's
 # .review-loop/, then prints both paths and the loop's baseline (`git diff --shortstat`
-# over the diff the packet holds).
+# over the diff the packet holds, where a moved file counts only its changed lines).
 #
 #   packet.sh pr N [OPTIONS]              the PR diff, fetched as the merge gate does, at the
 #                                         local branch instead when it's ahead (unpushed fixes)
@@ -134,7 +134,9 @@ if [ "$cmd" != plan ]; then
   done < "$dir/numstat"
 fi
 
-kept_diff() { [ ${#kept[@]} = 0 ] || git diff --no-color --no-ext-diff --no-renames "$@" "${spec[@]}" -- "${kept[@]}"; }
+# With moves found, so a moved file is its rename lines and the lines that changed, not the
+# whole file twice. The list above reads without them, since it needs one path per line.
+kept_diff() { [ ${#kept[@]} = 0 ] || git diff --no-color --no-ext-diff --find-renames "$@" "${spec[@]}" -- "${kept[@]}"; }
 {
   echo "# Review packet"
   echo

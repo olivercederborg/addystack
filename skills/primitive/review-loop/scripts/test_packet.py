@@ -91,6 +91,23 @@ class Packet(unittest.TestCase):
         self.assertIn("## Files\n\n- sub/a.ts (+1 -0)\n\nLeft out: nothing\n", self.read(only)[0])
         self.assertEqual(only["baseline"], "1 file changed, 1 insertion(+)")
 
+    def test_a_moved_file_is_its_rename_and_the_lines_that_changed(self):
+        # A move used to hold the whole file twice, as a deletion and an addition.
+        body = "".join(f"line {n}\n" for n in range(40))
+        self.commit({"old/job.ts": body})
+        base = self.git("rev-parse", "HEAD")
+        (self.repo / "new").mkdir()
+        self.git("mv", "old/job.ts", "new/job.ts")
+        self.commit({"new/job.ts": body.replace("line 7\n", "line seven\n")})
+        self.git("config", "diff.renames", "false")  # the packet finds moves whatever the user's config says
+        out = self.packet("range", f"{base}..{self.git('rev-parse', 'HEAD')}")
+        packet = self.read(out)[0]
+        self.assertIn("## Files\n\n- {old => new}/job.ts (+1 -1)\n\nLeft out: nothing\n", packet)
+        self.assertIn("rename from old/job.ts\nrename to new/job.ts\n", packet)
+        self.assertIn("-line 7\n+line seven\n", packet)
+        self.assertNotIn("line 3\n", packet.replace(" line 3\n", ""))  # only as context, if at all
+        self.assertEqual(out["baseline"], "1 file changed, 1 insertion(+), 1 deletion(-)")
+
     def test_a_kept_lockfile_counts(self):
         out = self.packet("range", f"{self.base}..{self.head}", "--keep", "yarn.lock")
         self.assertIn("yarn.lock b/yarn.lock", self.read(out)[0])

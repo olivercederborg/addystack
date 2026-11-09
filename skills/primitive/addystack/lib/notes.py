@@ -22,9 +22,8 @@ import render
 import resolved as _resolved
 from config import Resolved
 import skill_layer
-from skill_layer import layer
+from skill_layer import CORE, layer
 
-CORE = ("primitive", "orchestrator")
 _MARK = "<!-- Built by addystack build from "
 _HASH = re.compile(r"^<!-- Built by addystack build from .* whose skill had sha256 ([0-9a-f]{64})\.", re.M)
 
