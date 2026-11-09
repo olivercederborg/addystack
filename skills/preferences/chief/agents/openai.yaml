@@ -1,0 +1,6 @@
+interface:
+  display_name: "chief"
+  short_description: "One ranked card of what waits on you across both machines"
+  default_prompt: "Use $chief to post the inbox card."
+policy:
+  allow_implicit_invocation: false
