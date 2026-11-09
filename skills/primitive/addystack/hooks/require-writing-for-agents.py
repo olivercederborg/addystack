@@ -14,8 +14,8 @@ a variable (`> "$f"`, `open(p, "w")`) counts when its literal tail is an agent d
 (`"$d/SKILL.md"`), or when an agent doc is named where the command binds that variable:
 `f='a.md'; f='AGENTS.md'`, `for f in */SKILL.md`, `p = root / "SKILL.md"`, a helper's
 parameter at its call sites (`edit("build/SKILL.md")`), followed two names deep. A target
-in a new mktemp folder in the temp folder (`T=$(mktemp -d)`, `H=$T/home`) passes, since no
-agent reads a fixture there. A variable
+in a new folder mktemp made right in the temp folder (`T=$(mktemp -d)`, `H=$T/home`) passes,
+since no agent reads a fixture there, unless the command makes a link or climbs out with `..`. A variable
 the command never binds, and a computed `open()` path, fall back to every name the command
 holds. On Oct 30, 2026 two coordinators' heredocs writing project.md were denied: one
 because its text quoted `cp -RL` and named SKILL.md files, the other because it wrote two
@@ -150,19 +150,46 @@ def resolve(target, command):
     return values[0] if "$" in values[0] else values[0].replace("{", "${")
 
 
-def in_mktemp(text, command, depth=1):
-    """Whether a binding's text is a new mktemp folder in the temp folder (`$(mktemp -d)`,
-    not `$(mktemp -d ~/.claude/skills/x.XXXX)`) or, depth names deep, a path below a
-    variable every binding of which is one (`H=$T/home`)."""
-    call = re.match(r"\s*[\"']?\$\(mktemp\b([^()]*)\)", text)
+# A link or hard link can point a path inside a new folder anywhere.
+LINKS = re.compile(r"\bln\s|\bcp\s+-\w*[ls]|\b(?:symlink|symlink_to|hardlink_to|link)\(")
+
+
+def in_mktemp(text, command, depth=3):
+    """Whether a binding's text is a new folder mktemp made right in the temp folder, or a
+    path inside one, followed depth names deep (`H=$T`, `H=$T/home`, `H=$T/$order` with
+    plain values). Never when the command makes a link, or a path climbs out with `..`."""
+    call = re.match(r"\s*[\"']?\$\(mktemp\b([^()]*)\)(/[^\s;&|<>()`'\"$]*)?[\"']?(?:\s|$)", text)
     if call:
-        return all(re.match(r"/tmp/|/private/tmp/|/var/folders/|\$\{?TMPDIR\b", word.removeprefix("--tmpdir="))
-                   for word in map(unquote, call.group(1).split()) if "/" in word)
-    below = re.fullmatch(r"\s*[\"']?\$\{?([A-Za-z_]\w*)\}?/([^\s;&|<>()`'\"]*)[\"']?\s*", text)
-    if not depth or not below or ".." in below.group(2).split("/"):
+        return new_temp_folder(call.group(1)) and ".." not in (call.group(2) or "").split("/") \
+            and not LINKS.search(command)
+    below = re.fullmatch(r"\s*[\"']?\$\{?([A-Za-z_]\w*)\}?(/[^\s;&|<>()`'\"]*)?[\"']?\s*", text)
+    if not depth or not below:
         return False
+    rest = below.group(2) or ""
+    if ".." in rest.split("/"):
+        return False
+    for name in re.findall(r"\$\{?([A-Za-z_]\w*)\}?", rest):
+        # Each value must be plain words, none `..`; the scan also reads this binding
+        # itself as one of the name's (`for o in A B; do H=$S/$o`), so it's left out.
+        values = [t for t in value_bindings(name, command) if t.strip() != text.strip()]
+        if not values or any(not re.fullmatch(r"[\s\w.,+@%'\"-]*", t) or ".." in re.split(r"[\s'\"]", t)
+                             for t in values):
+            return False
     texts = value_bindings(below.group(1), command)
     return bool(texts) and all(in_mktemp(t, command, depth - 1) for t in texts)
+
+
+def new_temp_folder(args):
+    """Whether mktemp with these arguments makes its folder right in the temp folder: no
+    template, a -t one, or one directly below /tmp or $TMPDIR, so not an eval arm in
+    /tmp/skill-evals/ or a folder -p puts elsewhere."""
+    words = [unquote(w) for w in args.split()]
+    if any(w == "--tmpdir" or w.startswith("--tmpdir=") or re.fullmatch(r"-[a-zA-Z]*p[a-zA-Z]*", w) for w in words):
+        return False
+    templates = [w for w in words if not w.startswith("-")]
+    t_flag = any(re.fullmatch(r"-[a-zA-Z]*t[a-zA-Z]*", w) for w in words)
+    root = r"(?:/tmp/|/private/tmp/|\$TMPDIR(?!\w)/?|\$\{TMPDIR(?::-/tmp)?\}/?)"
+    return all((t_flag and "/" not in w) or re.fullmatch(root + r"[^/]+", w) for w in templates)
 
 
 def value_bindings(name, command):
@@ -186,6 +213,9 @@ def substituted(target, command, limit=16, partial=False):
         for text in value_bindings(name, command):
             if in_mktemp(text, command):
                 values.add(MKTEMP)
+                continue
+            if re.match(r"\s*[\"']?\$\(mktemp\b", text):
+                values.add("/tmp/mktemp")  # another mktemp folder: a path in /tmp, outside any kit
                 continue
             word = r"'[^'\n]*'|\"[^\"\n$`]*\"|[^\s;&|<>()`'\"$\[\]{},=]+"
             if not text.strip() or text.rstrip().endswith(":") or re.sub(rf"(?:{word})|\s+", "", text):
