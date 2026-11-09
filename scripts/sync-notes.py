@@ -17,9 +17,8 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "skills" / "primitive" / "addystack" / "lib"))
-from skill_layer import layer  # noqa: E402
+from skill_layer import CORE, layer  # noqa: E402
 
-CORE = ("primitive", "orchestrator")
 TOP = 8
 PREFIX = "**Notes**:"
 
