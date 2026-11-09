@@ -16,8 +16,8 @@ chief-feeder.service  the systemd --user unit
 
 **One rule source.** The feeder decides nothing about needs. It hands each machine's
 listed threads, with their shell fields and projection details, to
-`python3 chief/scripts/inbox.py live`, the rules the hourly card uses, and pushes what it
-returns. A reply with no turn block makes no call.
+`python3 skills/preferences/chief/scripts/inbox.py live`, the rules the hourly card
+uses, and pushes what it returns. A reply with no turn block makes no call.
 
 What it pushes, per machine, as the feed run `feed_<machine>` (chief-app README, Live feed):
 
@@ -64,6 +64,6 @@ systemctl --user enable --now chief-feeder
 journalctl --user -u chief-feeder -f        # snapshots, reconnects, and each push that changed
 ```
 
-`CHIEF_FEEDER_DRY=1 node chief/feeder/feeder.mjs` prints each push instead of sending it.
+`CHIEF_FEEDER_DRY=1 node skills/preferences/chief/feeder/feeder.mjs` prints each push instead of sending it.
 `CHIEF_FEEDER_SESSIONS` takes a comma-separated list of session files, each optionally
 `file=origin`, to run against one server or a proxy.

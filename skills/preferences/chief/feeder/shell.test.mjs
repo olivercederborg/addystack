@@ -1,4 +1,4 @@
-// Tests for shell.mjs: `node --test chief/feeder/shell.test.mjs` (test_chief.py runs them too).
+// Tests for shell.mjs: `node --test skills/preferences/chief/feeder/shell.test.mjs` (test_chief.py runs them too).
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { detailsOf, feedThread, healthNeeds, listed, readsDue, runKey, ShellMirror, wantsRead } from "./shell.mjs";

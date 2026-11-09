@@ -5,8 +5,8 @@ reduced to its name, coordinator link, goal line, and the Workers rows not yet d
 
 The Mac has no sshd, and T3 has no tool that reads a file on a linked machine, so
 chief sends the Mac feed thread a message each run (references/setup.md). The feed runs
-this as `git show <ref>:chief/scripts/projects.py | python3 -` and replies with its
-output, which chief reads with t3_thread_read. So it stays one stdlib file, imports
+this as `git show <ref>:skills/preferences/chief/scripts/projects.py | python3 -` and
+replies with its output, which chief reads with t3_thread_read. So it stays one stdlib file, imports
 nothing beside it, and runs on Python 3.9.
 
   projects.py [--root DIR]     DIR defaults to ~/.local/state/orchestrate

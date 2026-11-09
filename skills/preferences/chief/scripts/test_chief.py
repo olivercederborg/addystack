@@ -1,4 +1,4 @@
-"""Tests for inbox.py and projects.py: run `python3 chief/scripts/test_chief.py`."""
+"""Tests for inbox.py and projects.py: run `python3 skills/preferences/chief/scripts/test_chief.py`."""
 import json, os, subprocess, sys, tempfile, unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

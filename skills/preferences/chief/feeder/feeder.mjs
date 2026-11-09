@@ -5,7 +5,7 @@
 // (`record_live`). Which threads make a call, and what it says, comes from
 // `chief/scripts/inbox.py live`, the rules the hourly card uses.
 //
-//   node chief/feeder/feeder.mjs        run until stopped (systemd: chief-feeder.service)
+//   node skills/preferences/chief/feeder/feeder.mjs   run until stopped (systemd: chief-feeder.service)
 //
 // Env:
 //   CHIEF_FEEDER_SESSIONS  comma-separated session files, each optionally `file=origin`
