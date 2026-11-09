@@ -13,7 +13,9 @@ folder, under the source's name), and an `open()` or `write_text()` path. So rea
 a variable (`> "$f"`, `open(p, "w")`) counts when its literal tail is an agent doc's
 (`"$d/SKILL.md"`), or when an agent doc is named where the command binds that variable:
 `f='a.md'; f='AGENTS.md'`, `for f in */SKILL.md`, `p = root / "SKILL.md"`, a helper's
-parameter at its call sites (`edit("build/SKILL.md")`), followed two names deep. A variable
+parameter at its call sites (`edit("build/SKILL.md")`), followed two names deep. A target
+in a new mktemp folder in the temp folder (`T=$(mktemp -d)`, `H=$T/home`) passes, since no
+agent reads a fixture there. A variable
 the command never binds, and a computed `open()` path, fall back to every name the command
 holds. On Oct 30, 2026 two coordinators' heredocs writing project.md were denied: one
 because its text quoted `cp -RL` and named SKILL.md files, the other because it wrote two
@@ -61,6 +63,9 @@ ASSIGN = re.compile(r"(?:^|[\s;(])(\w+)\s*=(?!=)\s*(?:(?:pathlib\.)?Path\(\s*)?f
 RUNS_SYNC_FORMAT = re.compile(r"(?:^|[;&|(\n])\s*(?:\w+=\S*\s+)*(?:(?:ba|z)?sh\s+)?[\"']?"
                               r"[^\s;&|<>()\"']*sync-format\.sh\b[\"']?(?![^;&|\n]*--check)")
 VARIABLE = re.compile(r"\$")  # f-string braces become ${...}, so awk's `>=2{print}` stays literal
+# A variable's value when the command binds it to a new `mktemp` folder, or a path inside
+# one: no agent reads a doc written there, so a SKILL.md fixture in it passes.
+MKTEMP = "/<mktemp>"
 
 
 def kit_path(path):
@@ -75,6 +80,8 @@ def kit_path(path):
 
 def agent_doc(path):
     expanded = os.path.expanduser(path)
+    if os.path.normpath(expanded).startswith(MKTEMP + "/"):
+        return False
     if not expanded.startswith("/"):
         # A relative path can name a kit folder only through the working directory.
         if AGENT_DOC.search("/" + expanded):
@@ -143,6 +150,28 @@ def resolve(target, command):
     return values[0] if "$" in values[0] else values[0].replace("{", "${")
 
 
+def in_mktemp(text, command, depth=1):
+    """Whether a binding's text is a new mktemp folder in the temp folder (`$(mktemp -d)`,
+    not `$(mktemp -d ~/.claude/skills/x.XXXX)`) or, depth names deep, a path below a
+    variable every binding of which is one (`H=$T/home`)."""
+    call = re.match(r"\s*[\"']?\$\(mktemp\b([^()]*)\)", text)
+    if call:
+        return all(re.match(r"/tmp/|/private/tmp/|/var/folders/|\$\{?TMPDIR\b", word.removeprefix("--tmpdir="))
+                   for word in map(unquote, call.group(1).split()) if "/" in word)
+    below = re.fullmatch(r"\s*[\"']?\$\{?([A-Za-z_]\w*)\}?/([^\s;&|<>()`'\"]*)[\"']?\s*", text)
+    if not depth or not below or ".." in below.group(2).split("/"):
+        return False
+    texts = value_bindings(below.group(1), command)
+    return bool(texts) and all(in_mktemp(t, command, depth - 1) for t in texts)
+
+
+def value_bindings(name, command):
+    """binding_texts one level deep, without a binding to the name itself (`echo R=$R`),
+    which keeps its value."""
+    return [t for t in binding_texts(name, command, depth=0)
+            if not re.fullmatch(rf"\s*[\"']?\$\{{?{name}\}}?[\"']?\s*", t)]
+
+
 def substituted(target, command, limit=16, partial=False):
     """Each literal path target becomes when every variable in it takes one of the plain
     values the command binds it to (`d='global'`, `d=build`, `for d in a b`, a `mktemp`
@@ -154,9 +183,9 @@ def substituted(target, command, limit=16, partial=False):
     paths = [target]
     for name in names:
         values = set()
-        for text in binding_texts(name, command, depth=0):
-            if re.match(r"\s*[\"']?\$\(mktemp\b", text):
-                values.add("/tmp/mktemp")  # a new temp folder, outside any kit
+        for text in value_bindings(name, command):
+            if in_mktemp(text, command):
+                values.add(MKTEMP)
                 continue
             word = r"'[^'\n]*'|\"[^\"\n$`]*\"|[^\s;&|<>()`'\"$\[\]{},=]+"
             if not text.strip() or text.rstrip().endswith(":") or re.sub(rf"(?:{word})|\s+", "", text):
