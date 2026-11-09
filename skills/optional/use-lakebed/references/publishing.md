@@ -4,7 +4,7 @@ Follow this sequence only for explicit `publish` intent after Build and preview 
 
 ## 1. Clear disclosure
 
-State that the URL will be public. Review rendered content for credentials, secrets, personal or customer data, private links, proprietary code, logs, and documents.
+State that the URL will be public. Review everything the deploy serves (rendered pages, client code, and every other public route or file) for credentials, secrets, personal or customer data, private links, proprietary code, logs, and documents.
 
 Redact credentials and secrets. For each validator warning or necessary private item, redact it or name its category and get explicit approval.
 
