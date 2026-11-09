@@ -271,9 +271,10 @@ class Skills:
     @check
     async def tool_tests(
         self,
-        # test_update copies the tool's files into a scratch release, and test_pre_commit
-        # runs .githooks/pre-commit and reads the tool's hooks/test_*.py.
-        kit: source(TOOL, f"-{TOOL}/hooks/README.md", ".githooks/pre-commit", "scripts/addystack_home.py",
+        # test_update copies the files the tool runs from (its TOOL list) into a scratch
+        # release, and test_pre_commit runs .githooks/pre-commit and reads hooks/test_*.py.
+        kit: source(*(f"{TOOL}/{part}" for part in ("bin", "lib", "hooks", "schema", "core", "addystack.defaults.jsonc")),
+                    f"-{TOOL}/hooks/README.md", ".githooks/pre-commit", "scripts/addystack_home.py",
                     *(f"scripts/{name}.py" for name in TOOL_TESTS)),
     ) -> None:
         """scripts/test_update.py and scripts/test_pre_commit.py"""
