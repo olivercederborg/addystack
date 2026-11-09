@@ -60,14 +60,18 @@ that fresh agents wrote under the rule, on Fable 5.2 and Opus 5.5, held 191 valu
 median of 15 words and none past 21. The user's call on Nov 9, 2026, after seeing
 UI cards in use: every final reply is a headline, one fact table, and the closing. A fact
 table isn't required: a session started before that keeps the old shape until it restarts.
-So a table counts as one only when it has two columns, sits right under a headline that
-opens with its marker (or under a round's strip), and at least one row's label is on the list: in the 7 days before, 85 of
+So a table counts as one only when it has two columns, is the first thing under a headline
+that opens with its marker (a round's strip may sit between), and at least one row's label is
+on the list; fact_table reads that from the reply's own lines, after three review rounds each
+found another way a filtered view of them took an older reply's table for one: in the 7 days before, 85 of
 7,575 final replies had a two-column table under the headline, a PR list or a status list,
 and one of them had a listed label, the first fact table written. Its Pick and Source rows
 count for the source check, and numbered steps under a table with a Do row are that Do's
 steps, as under a Do note. Known limits: a fact table whose every label is off the list
-reads as a comparison view, as before, and so does one below a lead-in sentence."""
-import itertools, json, pathlib, re, sys
+reads as a comparison view, as before, and so does one below a lead-in sentence or under a
+headline without its marker."""
+import json, pathlib, re, sys
+from typing import NamedTuple, Tuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import bare_references, t3_child, transcripts, turn_block  # noqa: E402
@@ -95,7 +99,7 @@ FACT_ROWS = 5
 FACT_WORDS = 20
 FACT_SEND_BACK = 25
 # A round's strip, the one line that may sit between the headline and the fact table.
-STRIP = re.compile(r"[🟡⬜✅]\s*·")
+STRIP = re.compile(r"[\w ]*?\d+\s*[🟡⬜✅]\ufe0f?(?:\s*·\s*[\w ]*?\d+\s*[🟡⬜✅]\ufe0f?)+")  # Group 1 🟡 · 2 ⬜ · 3 ⬜
 HEADLINE = re.compile(r"\s*[✅🟡🔴⏳]")  # reply-shape's headline opens with its marker
 OPT_OUT = re.compile(r"^\W*(?:(?:use|back to|switch to|give me)\s+)?normal replies\b", re.I)
 WORD = re.compile(r"\w", re.U)
@@ -108,11 +112,19 @@ def over(count):
 
 def cells(line):
     """A table row's cells: split on pipes a backslash doesn't escape, after one outer pipe
-    at each end."""
+    at each end. A backslash escapes the character after it, so the pipe in `\\\\|` splits."""
     row = line.strip()
     row = row[1:] if row.startswith("|") else row
-    row = row[:-1] if row.endswith("|") and not row.endswith("\\|") else row
-    return re.split(r"(?<!\\)\|", row)
+    found, cell, escaped = [], "", False
+    for char in row:
+        if char == "|" and not escaped:
+            found.append(cell)
+            cell = ""
+        else:
+            cell += char
+        escaped = char == "\\" and not escaped
+    # The outer pipe at the end closes the last cell and opens none.
+    return found if found and not cell and row.endswith("|") else [*found, cell]
 
 
 def tables(lines):
@@ -137,26 +149,47 @@ def views(lines):
     return {n for start, end, rows in tables(lines) if rows <= TABLE_ROWS for n in range(start, end)}
 
 
-def fact_table(lines):
-    """reply-shape's fact table in a reply's lines, code blanked: its header's value and
-    its rows as (line index, label, value), or None without one. It's the first table, when
-    that has two columns, only a headline with its marker and a round's strip above it, and
-    a row whose label is on the list, as the module docstring says."""
-    first = next(tables(lines), None)
-    if not first:
+class Row(NamedTuple):
+    at: int  # the row's line in the reply
+    label: str
+    value: str  # the cell Markdown draws
+    cut: bool  # an unescaped pipe ends the value early, and Markdown drops the rest
+
+
+class Fact(NamedTuple):
+    header: str  # the header row's value
+    rows: Tuple[Row, ...]
+    broken: bool  # an unescaped pipe in the header's value, so Markdown draws no table
+
+
+def fact_table(reply):
+    """reply-shape's fact table, as a Fact, or None without one. It's read from the reply's
+    own lines, since what a filtered view drops (a code block, a fold) would otherwise sit
+    unseen between the headline and a table: the first line opens with the headline's
+    marker, a round's strip may follow, and the next line that isn't blank is a two-column
+    table's header, indented less than code, with a row whose label is on the list. Any
+    other table is a view, as the module docstring says. A row's line number is the same in
+    bare_references.shown's lines, as nothing above the table is dropped there."""
+    lines = turn_block.lines_ended(reply).split("\n")
+    text = [n for n, line in enumerate(lines) if line.strip()]
+    if not text or not HEADLINE.match(lines[text[0]]):
         return None
-    start, end, _ = first
-    above = [line for line in lines[:start] if line.strip()]
-    if (len(cells(lines[start])) != 2 or not above or not HEADLINE.match(above[0]) or len(above) > 2
-            or (len(above) == 2 and not STRIP.search(above[1]))):
+    under = text[2:] if len(text) > 1 and STRIP.fullmatch(lines[text[1]].strip()) else text[1:]
+    if not under or under[0] + 1 >= len(lines):
         return None
-    rows = []
-    for n in range(start + 2, end):
-        label, *value = cells(lines[n])
-        rows.append((n, label.strip().strip("*").strip(), "|".join(value).strip()))
-    if not any(listed(label) for _, label, _ in rows):
+    start = under[0]
+    header, rule = lines[start], lines[start + 1]
+    if (len(header) - len(header.lstrip(" ")) > 3 or header[:1] == "\t" or "|" not in header or BLOCK_START.match(header)
+            or "|" not in rule or not TABLE_RULE.match(rule) or len(cells(rule)) != 2 or len(cells(header)) < 2):
         return None
-    return cells(lines[start])[1].strip(), rows
+    end = start + 2
+    while end < len(lines) and lines[end].strip() and not BLOCK_START.match(lines[end]):
+        end += 1
+    rows = tuple(Row(n, found[0].strip().strip("*").strip(), found[1].strip() if len(found) > 1 else "", len(found) > 2)
+                 for n in range(start + 2, end) for found in [cells(lines[n])])
+    if not any(listed(row.label) for row in rows):
+        return None
+    return Fact(cells(header)[1].strip(), rows, len(cells(header)) > 2)
 
 
 def listed(label, among=FACT_LABELS):
@@ -165,45 +198,30 @@ def listed(label, among=FACT_LABELS):
 
 def fact_problems(reply, limit=FACT_SEND_BACK):
     """What breaks the fact table's limits in a reply that has one, one clause each."""
-    lines = bare_references.visible(reply, blank_code=True)
-    table = fact_table(lines)
+    table = fact_table(reply)
     if not table:
-        return broken_header(lines)
-    header, rows = table
+        return []
     found = []
-    if len(rows) > FACT_ROWS:
-        found.append(f"it has {len(rows)} rows under its header, over {FACT_ROWS}")
-    for label in dict.fromkeys(label for _, label, _ in rows if not listed(label)):
+    # Markdown ends a cell at a pipe, in inline code too. A third header cell no longer
+    # matches the rule row, so no table is drawn; a third cell in a row is dropped.
+    if table.broken:
+        found.append("its header value holds an unescaped |, so Markdown draws no table; write \\|")
+    if len(table.rows) > FACT_ROWS:
+        found.append(f"it has {len(table.rows)} rows under its header, over {FACT_ROWS}")
+    for label in dict.fromkeys(row.label for row in table.rows if not listed(row.label)):
         found.append(f"\"{label}\" isn't one of its labels")
-    # Markdown ends a cell at a pipe, in inline code too, and drops a third cell.
-    for label in dict.fromkeys(label for n, label, _ in rows if len(cells(lines[n])) > 2):
+    for label in dict.fromkeys(row.label for row in table.rows if row.cut):
         found.append(f"its {label} value holds an unescaped |, which cuts the rest off; write \\|")
-    for label, value in [("header", header), *((label, value) for _, label, value in rows)]:
+    for label, value in [("header", table.header), *((row.label, row.value) for row in table.rows)]:
         count = sum(1 for token in value.split() if WORD.search(token))
         if count > limit:
             found.append(f"its {label} value runs {count} words, over {FACT_WORDS}")
-    warned = [listed(label, WARNED) for _, label, _ in rows]
+    warned = [listed(row.label, WARNED) for row in table.rows]
     if warned != sorted(warned, reverse=True):
         found.append("a Risk or Unsure row sits below another row")
-    if any(not value.lstrip("*_ ").startswith("⚠") for _, label, value in rows if listed(label, WARNED)):
+    if any(not row.value.lstrip("*_ ").startswith("⚠") for row in table.rows if listed(row.label, WARNED)):
         found.append("a Risk or Unsure value doesn't start with ⚠️")
     return found
-
-
-def broken_header(lines):
-    """The one problem of a fact table Markdown doesn't draw at all: an unescaped pipe in
-    its header's value gives the header a third cell, which its two-cell rule row doesn't
-    match, so the lines show as text. Read as a fact table's when they sit under the
-    headline and a row below has a listed label."""
-    text = [n for n, line in enumerate(lines) if line.strip()][:4]
-    if len(text) < 4 or not HEADLINE.match(lines[text[0]]):
-        return []
-    header, rule, row = (lines[n] for n in text[1:4])
-    if (text[2] != text[1] + 1 or len(cells(header)) < 3 or not TABLE_RULE.match(rule) or len(cells(rule)) != 2
-            or not any(listed(cells(line)[0].strip().strip("*").strip())
-                       for line in itertools.takewhile(str.strip, lines[text[3]:]))):
-        return []
-    return ["its header value holds an unescaped |, so Markdown draws no table; write \\|"]
 
 
 def fact_feedback(reply):
@@ -252,8 +270,8 @@ def glance(reply):
                                         if CLOSING.match(line.strip()) and n not in cell), len(lines))
     short = views(lines[:end])
     short |= lead_ins(lines[:end], fenced[:end], short)
-    fact = fact_table(lines[:end])
-    do_rows = {row for row, label, _ in fact[1] if listed(label, ("Do",))} if fact else set()
+    fact = fact_table(reply)
+    do_rows = {row.at for row in fact.rows if listed(row.label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
     column = 0  # the open Do item's text column: a table left of it ends the item
     for n, line in enumerate(lines[:end]):
@@ -524,8 +542,8 @@ def unsourced(reply):
         return False
     shown = bare_references.visible(reply, blank_code=True)
     picks = [n for n, line in enumerate(shown) if PICK.match(line)]
-    fact = fact_table(shown)
-    rows = {name: [value for _, label, value in fact[1] if listed(label, (name,))] if fact else []
+    fact = fact_table(reply)
+    rows = {name: [row.value for row in fact.rows if listed(row.label, (name,))] if fact else []
             for name in ("Pick", "Source")}
     if not picks and not rows["Pick"]:
         return False

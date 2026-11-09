@@ -4660,6 +4660,16 @@ class ReplyBudget(unittest.TestCase):
         piped = self.fact(header="| Change | Handle `a | b` in the parser. |")
         self.assertIn("its header value holds an unescaped |, so Markdown draws no table; write \\|", self.bounce(piped))
         self.assertEqual(self.bounce(self.fact(header="| Change | Handle `a \\| b` in the parser. |")), "")
+        stripped = self.fact(above="Group 1 🟡 · 2 ⬜ · 3 ⬜\n\n", header="| Problem | The `foo | bar` option has no source. |")
+        self.assertIn("Markdown draws no table", self.bounce(stripped))  # under a round's strip too
+        # Codex review, round 3: a backslash escapes the next character, so the pipe in `\\\\|` still splits.
+        parity = self.fact(header="| Change | Handle \\\\| and the rest. |")
+        self.assertIn("Markdown draws no table", self.bounce(parity))
+        hidden = self.fact(rows=("| Pick | Parse with `/foo\\\\|bar/` per docs/design.md:12. |",), cls="decision",
+                           header="| Problem | The parser loses information. |")
+        self.assertIn("its Pick value holds an unescaped |", self.bounce(hidden))
+        self.assertIn("**Pick** cites no source", self.bounce(hidden))  # the citation is in the part Markdown drops
+        self.assertEqual(reply_budget.cells("| a \\| b | c \\\\| d |"), [" a \\| b ", " c \\\\", " d "])
         wide = self.fact(header="| Check | Result | Note |", rows=("| Review | Passed. | none |",))
         self.assertEqual(self.bounce(wide.replace("|---|---|", "|---|---|---|")), "")  # a real three-column view
         self.assertIn("isn't one of its labels", self.bounce(self.fact(rows=broken["a label off the list"][0]), turn_id="t1"))
@@ -4686,6 +4696,19 @@ class ReplyBudget(unittest.TestCase):
         plain = self.fact(rows=("| Review | Passed. |", "| Tests | Passed. |"), header="| Check | Result |").replace(
             "🟡 **Merge #32, so old to-dos stop blocking routine steps?**", "Here are the test results:")
         self.assertEqual(self.bounce(plain), "")
+        # Codex review, round 3: what sits between the headline and the table is read from the reply's own
+        # lines, so a code block, a fold, an indent, or a lead-in that only looks like a strip keeps it a view.
+        view = dict(header="| Check | Status |", rows=("| Review | Checked rule 21. |", "| Tests | All passed. |"))
+        between = {"fenced code": "```python\nvalue = parse()\n```\n\n",
+                   "a fold": "<details><summary>Output</summary>\n\noutput\n\n</details>\n\n",
+                   "a lead-in with a marker": "CI: ✅ · review completed, as shown here:\n\n"}
+        for name, above in between.items():
+            with self.subTest(name):
+                reply = self.fact(above=above, **view)
+                self.assertEqual(self.bounce(reply), "")
+                self.assertEqual(bare_references.problems(reply), [])
+        indented = self.fact(**view).replace("| Check", "    | Check").replace("\n|", "\n    |")
+        self.assertEqual((self.bounce(indented), bare_references.problems(indented)), ("", []))
         strip = self.fact(above="Group 1 🟡 · 2 ⬜ · 3 ⬜\n\n", rows=(self.ROWS[0], "| Cause | x |"))
         self.assertIn('"Cause" isn\'t one of its labels', self.bounce(strip))
         example = "✅ **The rules show one.**\n\n````markdown\n" + self.fact(rows=("| Cause | x |", self.ROWS[0])) + "\n````\n"

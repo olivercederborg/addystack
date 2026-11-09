@@ -81,18 +81,19 @@ def plain(line):
     return re.sub(r"[*_]{1,2}", "", line)
 
 
-def reader_rows(lines):
-    """Indexes of the Decide, Review, and Do rows of reply-shape's fact table, as
-    reply_budget reads it: the same table, labels, and cells its limits apply to."""
+def reader_rows(text):
+    """The lines of the Decide, Review, and Do rows of reply-shape's fact table, as
+    reply_budget reads it from the reply: the same table, labels, and cells its limits
+    apply to. The line numbers hold in shown()'s lines too."""
     import reply_budget  # here, since reply_budget imports this module
-    table = reply_budget.fact_table(lines)
-    return {n for n, label, _ in table[1] if reply_budget.listed(label, READER)} if table else set()
+    table = reply_budget.fact_table(text)
+    return {row.at for row in table.rows if reply_budget.listed(row.label, READER)} if table else set()
 
 
-def zone_lines(lines):
+def zone_lines(lines, rows=frozenset()):
     """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere, as a
-    note or as a row of the fact table."""
-    zone, rows = None, reader_rows(lines)
+    note or at one of rows, the fact table's reader rows."""
+    zone = None
     for n, line in enumerate(lines):
         head = ZONE.match(line)
         if head:
@@ -154,11 +155,11 @@ def problems(text, names={}):
     """One line per bare number in the reply's Next, Needs you, and Done lines. A number
     that is an item's id in names, from the turn block, gets that item's name beside it:
     "'fix 3' (3 → currency column) in: …"."""
-    # Code as blank lines, so a code block between two tables keeps them apart, as rendered.
+    # Code as blank lines, so each line keeps the number reader_rows gives it.
     lines = visible(text, blank_code=True)
     known = defined(lines)
     found = []
-    for line in zone_lines(lines):
+    for line in zone_lines(lines, reader_rows(text)):
         for ref in bare_numbers(line):
             numbers = dict.fromkeys(re.findall(r"\d+", ref))
             if set(numbers) <= known:
