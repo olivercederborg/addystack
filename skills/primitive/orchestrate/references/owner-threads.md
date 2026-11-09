@@ -3,7 +3,10 @@
 Read before launching an owner thread: a top-level thread that owns one PR and watches
 it. Owners share two slots, so at most two build or run heavy checks at once. An owner
 holds its slot until its PR reaches maintenance done and its watch is removed, not just
-until its draft opens. Queue the owners past two.
+until its draft opens. Queue the owners past two. Every launch, a queued owner's and a
+relaunch included, passes the PR owner row of
+[t3-delegation's Roles table](t3-delegation.md#roles) as `modelSelection`, since a
+launch without one takes the launching thread's model.
 
 Every message to an owner carries the standing rules file in full, and each new line
 goes to every open owner at once.
@@ -19,7 +22,7 @@ this thread:
   `watching` field of `list_thread_pull_requests` with the owner's `threadId`.
 - **Posts only changes** since the last run, and stays quiet when nothing changed.
 - **Replaces an owner** only when its thread's status in `t3_thread_read` is `failed`.
-  Relaunch it with `t3_thread_launch`, the same `modelSelection`, and
+  Relaunch it with `t3_thread_launch` and
   `workspaceStrategy: {type: "existing_worktree", worktreePath, branch}`, on its
   existing worktree and branch, in the failed owner's slot, before any queued owner
   launches, so no third owner builds. An owner the user stopped (`interrupted` or

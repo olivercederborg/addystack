@@ -31,10 +31,11 @@ change to `project.md` before the turn ends.
 - **Start**: on the machine [across machines](references/across-machines.md) picks,
   pin this thread (`t3_thread_organize` `pin`), rename it `◆ <project>` with
   `t3_thread_update`, set it to the Project thread row of t3-delegation's Roles table
-  unless the user named this thread's model, and take its id from the `currentThreadId` that `t3_thread_list`
-  returns, with that thread's `link`. Write `project.md` with `scripts/project.py
-  <folder> init`, with the link and the target repo's `Mode:` line from the user's
-  instructions, and write `standing-rules.md` from this chat's rules.
+  unless the user named this thread's model, and take its id from the
+  `currentThreadId` that `t3_thread_list` returns, with that thread's `link`. Write
+  `project.md` with `scripts/project.py <folder> init`, with the link and the target
+  repo's `Mode:` line from the user's instructions, and write `standing-rules.md` from
+  this chat's rules.
 
 **Done when:** `project.md` names the goal, its proof, and this thread's link, and the
 thread is pinned under its `◆` title.
