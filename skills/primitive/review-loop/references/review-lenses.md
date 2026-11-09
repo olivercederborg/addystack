@@ -24,3 +24,17 @@ consequence.
   the source allows that the change rejects or assumes away: absent, null, empty, or
   not yet set. Then trace a second run: a retry, a repeat visit, or the next request.
   When a finding sits in a shared helper, list every caller and check each one.
+
+## Rating
+
+Rate the whole change 1-10 as `7/10: <what cost the most>`. The worst kept finding
+sets the band, a finding that holds approval counting as a Blocker:
+
+- **9-10**: none, or Optional only; 10 sets a pattern worth copying.
+- **7-8**: Cleanups.
+- **4-6**: works but needs rework: a Blocker, scope creep, or a shape that fights the
+  repo or the user's taste.
+- **1-3**: wrong approach, unsafe, or broken on its main path.
+
+Thin test proof or hard-to-follow code takes the band's lower half. A rating never
+changes a verdict or severity.

@@ -87,7 +87,8 @@ follow-up finding with why.
    [grounding](references/grounding.md). A convention finding whose only fix needs a cast
    or lint suppression is a follow-up; a cheaper fix is applied as usual.
 3. **Merge.** Group findings by root cause, note who raised each (Claude, Codex, or
-   both), and show severity disagreements as they are.
+   both), and show severity disagreements as they are. The round's rating is the lowest
+   a reviewer gave, re-banded when a finding it rests on was dropped.
 
 **Done when:** every finding is verified or dropped, and merged by root cause.
 
@@ -108,7 +109,7 @@ follow-up finding with why.
 
 <details><summary>Checks: ✅ 3 passed · Claude 2, Codex 2, 1 shared, 1 dropped</summary>
 
-✅ typecheck · ✅ tests 22/22 · ✅ idioms (the repo's lenses, grounding, taste)
+✅ typecheck · ✅ tests 22/22 · ✅ idioms (the repo's lenses, grounding, taste) · rated 5/10: a retry double-charges
 
 - **1** · `src/retry.ts:40` · verified by rerunning `bun test retry.timeout.test.ts`: 2 charges, intent 1 · source: provider idempotency docs
 - Dropped: Codex's "unhandled rejection" at `queue.ts:8` · doesn't hold: caught at line 12
@@ -168,7 +169,8 @@ open findings lead the PR description.
 When the loop ends, run `packet.sh clean`. On a PR, branch, or range, first record its
 result for the branch's current head, against the packet's Base:
 
-`python3 scripts/verdicts.py review <Base> <head> --rounds <N>`
+`python3 scripts/verdicts.py review <Base> <head> --rounds <N> --rating <R> --reason '<why>'`,
+with the last round's rating.
 
 The ready gate (`hooks/ready-gate.py`) marks a PR ready only with a result for its
 current diff. Record `--skip '<reason>'` instead when the user skips the loop, or for a

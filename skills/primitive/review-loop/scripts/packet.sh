@@ -171,7 +171,7 @@ if [ "$cmd" = plan ]; then
 else
   kind=change scope="the files under Files in the packet; left out: $(sed -n 's/^Left out: //p' "$packet")"
   baseline=$(kept_diff --shortstat | sed 's/^ *//') baseline=${baseline:-0 files changed}
-  ask="Report every finding with a severity, a file:line, the failure it causes, its class (the kind of mistake, with every other place in the change that makes it), and the smallest fix that covers the whole class:"
+  ask="Report every finding with a severity, a file:line, the failure it causes, its class (the kind of mistake, with every other place in the change that makes it), and the smallest fix that covers the whole class, then the change's Rating as the lenses above define it:"
 fi
 spec_line=none; [ ${#sections[@]} = 0 ] || spec_line="the packet's $(join "${sections[@]}") sections"
 python3 - "$here/review-prompt.md" "$here/../references/review-lenses.md" "$prompt" "$kind" "$target" "$scope" "$spec_line" \
