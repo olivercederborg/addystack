@@ -16,8 +16,8 @@ GitHub can't require checks on these private repos on a free plan (branch protec
 rulesets return HTTP 403), so nothing on GitHub's side stops a red merge. On Oct 11, 2026
 a Strict stack merged 11 minutes after main went red, and a noyer PR merged with no CI,
 no review, and no verify-work run on its final commit. The go never stands in for the
-verdict or for failing checks. A command with more than one merge is denied, since the checks
-read one. A go is a short literal merge request (merge_go.py), or a
+verdict or for failing checks. A command that writes out more than one merge is denied, since the
+checks read one. A go is a short literal merge request (merge_go.py), or a
 pick of the reply's stop:merge option whose text is itself one (turn_block.py) and names the
 PR or none; a T3 delegated child, a question, or a "don't merge" gives none. A pick answers
 the last reply before it, past messages T3 says another agent sent that landed in the same
@@ -29,7 +29,7 @@ The user merging from their own terminal isn't affected. Fails closed: when a ch
 run, the merge is denied. Codex runs it too, but a crash or timeout there lets the merge
 through, since Codex has no `onFailure: "block"`. Known limits: merges through `gh api`
 or a push to the base branch, `gh` run by its path, a command that runs only inside
-quotes or a heredoc, and in Codex a merge reached only through `workdir`, which is
+quotes or a heredoc, one merge a tool such as `xargs` repeats, and in Codex a merge reached only through `workdir`, which is
 checked against the session's cwd.
 
 `merge-gate.py --dry-run '<merge command>' [--transcript PATH] [--session ID]` runs the same
