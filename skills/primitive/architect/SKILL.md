@@ -101,15 +101,15 @@ the whole repo.
   one, or fail the build when they disagree.
 
 **Done when:** three screened candidates, or two with the third reported missing,
-differ in structure, and each has usage traced from where the flow starts, signatures
-with their precedents, and a typed call stack.
+differ in structure, and each has usage traced from where the flow starts to its result,
+signatures with their precedents, and a typed call stack.
 
 ## 3. Present and decide
 
 The recommended candidate is the reply's shape: one code block with the signatures, each
-commented with its precedent, the caller's usage traced from where the flow starts, and
-the typed call stack as a closing comment, under a first-line comment naming what it
-hides. Each other candidate is one note naming what a caller must know. The fold holds their code blocks, written the same way, and the evidence.
+commented with its precedent, the caller's usage traced from where the flow starts to its
+result, and the typed call stack as a closing comment, under a first-line comment naming
+what it hides. Each other candidate is one note naming what a caller must know. The fold holds their code blocks, written the same way, and the evidence.
 Recommend the shape that hides the most behind the smallest interface.
 
 ````markdown
@@ -141,7 +141,8 @@ yield* download(toCsv(rows))
 export declare function exportRows(range: DateRange): Effect<Row[], ExportError> // no repo precedent; follows Effect.fn's docs
 // SummaryCard's loader, the flow's start
 const rows = yield* exportRows({ from: month.start, to: month.end })
-// summary → exportRows(range) · export → exportRows(range) → toCsv(rows)
+return summarize(rows) // the card's totals
+// summary → exportRows(range) → summarize(rows) · export → exportRows(range) → toCsv(rows)
 ```
 
 Precedents verified by grounding with the lenses · source: Codex sketched 2, Fable sketched 3
