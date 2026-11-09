@@ -48,7 +48,7 @@ SUITE_TESTS = ("skills/primitive/*/scripts/test_*.py", "skills/orchestrator/*/sc
 
 # Every folder and the root files git tracks, not a root file only one checkout keeps, such
 # as an untracked decision log, since Dagger doesn't read git's ignores.
-TRACKED = ("*/**", ".dagger/**", ".githooks/**", "-.dagger/sdk", "-.dagger/.venv", ".gitignore", "LICENSE",
+TRACKED = ("*/**", ".dagger/**", ".githooks/**", "-.dagger/sdk", "-.dagger/.venv", ".gitignore", ".gitattributes", "LICENSE",
            "CHANGELOG.md", "README.md", "dagger.json", "replies.md", "router.md")
 
 # Dagger doesn't read .gitignore, so every source also drops these untracked files,
