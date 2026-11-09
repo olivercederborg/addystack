@@ -53,9 +53,10 @@ says when to use one; this one answers the user asking about finding 1.
 
 ## 1. Load the PR
 
-- Fetch the title, description, linked issue (the spec), base and head SHAs, changed
-  files, CI status, and existing review comments, with `scripts/github.sh`
-  ([GitHub commands](references/github.md) covers each command and its traps).
+- Fetch the title, description, linked issue (the spec), base and head SHAs and the
+  `size:` line (`target N`), changed files, CI status, and existing review comments,
+  with `scripts/github.sh` ([GitHub commands](references/github.md) covers each command
+  and its traps).
 - In T3 Code, rename this thread `◎ #<PR> · <author login>` with `t3_thread_update`
   (`action: "rename"`, no `threadId`), so it sits with the other review threads.
 - Find the user's own plan for the work: run `t3_thread_search` for the linked issue's
@@ -95,7 +96,9 @@ read-only pass by the other provider in parallel, as a T3 child task on the
 diff changes no behavior, such as copy, formatting, or a version bump, and say so; a
 small diff that changes logic still gets it. Verify every sub-agent's and the pass's
 findings yourself before keeping them, and wait for the pass before step 3: it's part
-of the review, not a watch to leave running.
+of the review, not a watch to leave running. You and the pass, whose task carries the
+lenses' **Rating** section, each give a rating; re-band one that rests on a dropped
+finding, then show the lower one.
 
 When the PR has a Decisions table, raise findings on a listed decision first, by its
 number (`D2`). Keep findings with a concrete consequence, and at most three
@@ -108,8 +111,10 @@ run of it (read with `gh`), is a blocking finding.
 
 ## 3. Discuss findings
 
-One turn shows everything that needs a call: the verdict as the headline, the worst
-finding's code as the shape, the findings as one-line notes, and the drafts from step 4
+One turn shows everything that needs a call: the verdict as the headline; a line with
+what the PR does for a user or caller (not its title), its size, and the rating; the
+worst finding's code as the shape; the findings as one-line notes; and the drafts from
+step 4
 for every finding its recommended call would post, below a **Review** note. Evidence
 lines, checks, and the dropped findings go in the fold.
 
@@ -122,6 +127,8 @@ typed call stack, both as in [views](references/views.md).
 
 ````markdown
 🔴 **Hold for one fix: an export returns every company's rows.**
+
+#412 adds date-range CSV exports · +120 −30 in 4 files · 5/10: skips tenancy
 
 ```ts
 // exports/handler.ts:18: the query has no company filter
@@ -148,7 +155,7 @@ where: { bookedAt: { gte: from, lte: to } }, // ← every company's rows
 - 1 · `handler.ts:18` · verified by tracing the handler to the query · source: `CurrentCompany` in `transactions.repository.ts` · not checked: admin-only route?
 - 2 · `csv.ts:7` · verified by reading `toCsv` · not checked: downstream consumers
 - Dropped: 2 nits · 1 already raised by cubic
-- ✅ CI · ✅ idioms (the repo's lenses, grounding, taste) · ✅ grounding: re-ran 1's query with two companies · Codex pass: 1 finding, same as 1
+- ✅ CI · ✅ idioms (the repo's lenses, grounding, taste) · ✅ grounding: re-ran 1's query with two companies · Codex pass: 1 finding, same as 1, rated 6/10
 
 </details>
 ````

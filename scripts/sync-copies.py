@@ -15,6 +15,7 @@ missing, each symlink left in the kit, each copied script without a sibling it n
 references/format.md and views.md aren't listed, and each file carrying a marker line
 where a copy carries it that no pair lists as its destination, such as a copy whose pair
 was dropped: delete it or list it. Writing reports that file too, but never deletes it.
+It also keeps a block in .gitattributes marking every copy linguist-generated.
 
 Usage: scripts/sync-copies.py          # write every copy
        scripts/sync-copies.py --check  # exit 1 naming what's out of sync
@@ -44,6 +45,11 @@ FORMAT = ["shared/format.md", "shared/views.md"]
 COMMENT = {".md": "<!-- {} -->", ".py": "# {}", ".sh": "# {}", ".mjs": "// {}"}
 # The marker line each copy carries, inside its file type's COMMENT syntax; {} is the source.
 MARKER = "Copy of {}, written by scripts/sync-copies.py: edit the source, then run the script."
+# The .gitattributes block that marks each copy generated: GitHub collapses its diff, and a
+# review's size (hooks/verdicts.py) leaves it out. Text outside the block stays.
+ATTRIBUTES = ".gitattributes"
+BLOCK = ("# sync-copies:start: scripts/sync-copies.py writes this block from the copies lists",
+         "# sync-copies:end")
 # Folders the symlink scan skips: git's, and tools' untracked environments.
 SKIPPED = {".git", "node_modules", ".venv", "__pycache__", ".dagger/sdk"}
 
@@ -135,6 +141,20 @@ def orphans(root, destinations):
     return sorted(found)
 
 
+def attributes(root, destinations):
+    """root's .gitattributes with its BLOCK listing each destination as linguist-generated."""
+    path = root / ATTRIBUTES
+    text = path.read_text() if path.is_file() else ""
+    # The block marks itself too, so it never counts as written code.
+    lines = sorted({f"/{os.path.relpath(os.path.join(root, destination), root)} linguist-generated"
+                    for destination in [*destinations, ATTRIBUTES]})
+    block = "\n".join([BLOCK[0], *lines, BLOCK[1]]) + "\n"
+    start, end = text.find(BLOCK[0] + "\n"), text.find(BLOCK[1] + "\n")
+    if start == -1 or end < start:
+        return text + ("\n" if text and not text.endswith("\n") else "") + block
+    return text[:start] + block + text[end + len(BLOCK[1]) + 1:]
+
+
 def linked_parents(root, destination):
     """The folders between root and destination that are symlinks, which a write would
     follow out of the kit."""
@@ -171,10 +191,11 @@ def main(argv):
     check = argv == ["--check"]
     pairs = listed(ROOT)
     # Refuse before writing anything: a linked folder would send a write outside the kit.
-    escapes = sorted({link for _, destination in pairs for link in linked_parents(ROOT, destination)})
+    escapes = [f"{link} (a symlink: make it a real folder)" for link in
+               sorted({link for _, destination in pairs for link in linked_parents(ROOT, destination)})]
+    escapes += [f"{ATTRIBUTES} (a symlink: make it a real file)"] if (ROOT / ATTRIBUTES).is_symlink() else []
     if escapes:
-        print(f"Out of sync with {LIST}; these folders are symlinks, so no copy was written:",
-              *[f"{link} (a symlink: make it a real folder)" for link in escapes], sep="\n  ")
+        print(f"Out of sync with {LIST}; these are symlinks, so no copy was written:", *escapes, sep="\n  ")
         return 1
     stale = []
     for source, destination in pairs:
@@ -195,6 +216,11 @@ def main(argv):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(want)
             os.chmod(path, mode)
+    want = attributes(ROOT, [destination for _, destination in pairs])
+    if ((ROOT / ATTRIBUTES).read_text() if (ROOT / ATTRIBUTES).is_file() else "") != want:
+        stale.append(f"{ATTRIBUTES} (its generated block differs from the copies)")
+        if not check:
+            (ROOT / ATTRIBUTES).write_text(want)
     problems = rules(ROOT, pairs)
     problems += [f"{link} (a symlink: list its target in {LIST} instead)" for link in symlinks(ROOT)]
     # Reported, never deleted: an unlisted copy may be one whose pair was dropped by mistake.

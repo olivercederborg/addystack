@@ -63,6 +63,31 @@ class SyncCopies(unittest.TestCase):
         result = self.check()
         self.assertEqual((result.returncode, result.stderr), (0, ""), result.stdout)
 
+    def test_marks_each_copy_generated_in_gitattributes_and_keeps_the_rest(self):
+        self.kit.write(".gitattributes", "*.png binary\n")
+        self.synced()
+        block = ("# sync-copies:start: scripts/sync-copies.py writes this block from the copies lists\n"
+                 "/.gitattributes linguist-generated\n/one/references/notes.md linguist-generated\n/one/scripts/tool.py linguist-generated\n"
+                 "/two/references/notes.md linguist-generated\n# sync-copies:end\n")
+        self.assertEqual(self.kit.text(".gitattributes"), "*.png binary\n" + block)
+        self.kit.write("scripts/copies.txt", LISTED.replace("shared/notes.md      two/references/notes.md\n", ""))
+        (self.kit.root / "two/references/notes.md").unlink()
+        self.assertIn(".gitattributes (its generated block differs", self.check().stdout)
+        self.synced()
+        self.assertEqual(self.kit.text(".gitattributes"),
+                         "*.png binary\n" + block.replace("/two/references/notes.md linguist-generated\n", ""))
+        self.assertEqual(self.check().returncode, 0)
+
+    def test_refuses_to_write_attributes_through_a_symlink(self):
+        outside = self.kit.root.parent / f"{self.kit.root.name}-settings.json"
+        outside.write_text("{}\n")
+        self.addCleanup(outside.unlink)
+        (self.kit.root / ".gitattributes").symlink_to(outside)
+        result = self.kit.run()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn(".gitattributes (a symlink", result.stdout)
+        self.assertEqual(outside.read_text(), "{}\n")
+
     def test_a_script_keeps_its_shebang_first_and_its_mode(self):
         self.synced()
         copy = self.kit.root / "one/scripts/tool.py"

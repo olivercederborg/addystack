@@ -42,7 +42,9 @@ The PR's `base_sha` and `head_sha` (the current branch's PR without `N`), fetche
 merge gate fetches them, so `base_sha...head_sha` is the diff it checks. For a branch
 with no PR, `pr: none`, and the tips of `B` and of `P` or the default branch. Also prints
 whether the local checkout is at `head_sha` and clean, then the diff's `patch-id`,
-whether a Done verdict covers it, and the newest verdict recorded on the PR's branch as
+whether a Done verdict covers it, its `size:` without lockfiles, vendored, generated,
+or binary files, review-loop's result with its rating as `review:`, and the newest
+verdict recorded on the PR's branch as
 JSON (`verdict`, `findings`, `reviewed` with its `base` and `head`, and `known` when a
 re-check of this diff can only repeat it), or `last: none`.
 

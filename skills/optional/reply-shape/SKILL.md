@@ -104,10 +104,8 @@ as a review's findings with their drafts, or a planning round's questions.
      data.
    - **Message** to a person: the draft in full, in the reader's own voice, under a
      `**To**: … · **Promises**: …` line naming who gets it and what it commits them to.
-   - **Ship gate**, a push or merge: one line per PR, in merge order, with what it
-     changes and the thread that made it when that isn't you, the passing checks and
-     whether it needs a restack on one line, each warning on its own, and the rollback,
-     as [views](references/views.md#ship-gate) shows.
+   - **Ship gate**, a push or merge: each PR as [views](references/views.md#ship-gate)
+     shows.
    - **UI**: the screenshot or recording, and the one thing to judge.
    - **Stuck**, a check still failing after two fixes: each fix and why it failed, and
      the assumption the premise test checked.

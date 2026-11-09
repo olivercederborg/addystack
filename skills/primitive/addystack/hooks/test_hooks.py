@@ -3319,15 +3319,142 @@ class Verdicts(unittest.TestCase):
     def test_status_prints_the_patch_id_and_whether_it_is_done(self):
         patch_id = verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, self.head))
         before = self.status(self.base, self.head)
-        self.assertEqual((before.returncode, before.stdout), (0, f"patch-id: {patch_id}\ndone: no\n"))
+        self.assertEqual((before.returncode, before.stdout),
+                         (0, f"patch-id: {patch_id}\ndone: no\nsize: +1 −1 in 1 file\nreview: none\n"))
         self.record()
         after = self.status(self.base, "HEAD")
         self.assertEqual(after.returncode, 0)
-        self.assertRegex(after.stdout, rf"^patch-id: {patch_id}\ndone: yes \(.*a1.*\)\n$")
+        self.assertRegex(after.stdout, rf"^patch-id: {patch_id}\ndone: yes \(.*a1.*\)\nsize: .*\nreview: none\n$")
         self.assertNotEqual(self.status(self.base, "nope").returncode, 0)
 
     def store(self):
         return pathlib.Path(self.repo, ".git", "verify-work", "verdicts.tsv")
+
+    def commit(self, files):
+        for name, text in files.items():
+            path = pathlib.Path(self.repo, name)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(text) if isinstance(text, bytes) else path.write_text(text)
+            self.git("add", name)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
+        self.head = self.git("rev-parse", "HEAD").strip()
+
+    def test_size_leaves_out_lockfiles_vendored_generated_and_binary_files(self):
+        self.commit({".gitattributes": "api/*.ts linguist-generated\n", "f": "b\nc\n", "web/bun.lock": "x\ny\n", "vendor/lib.js": "v\n", "app.min.js": "m\n",
+                     "api/client.ts": "g\n", "logo.png": b"\x89PNG\x00\x01", "src/a b.ts": "s\n"})
+        repo = pathlib.Path(self.repo)
+        why = {path: why for _, _, path, why in verdicts.left_out(
+            repo, self.git("diff", "--numstat", "-z", "--no-renames", f"{self.base}...{self.head}").encode())}
+        self.assertEqual(why, {"f": "", "web/bun.lock": "lockfile", "vendor/lib.js": "vendored", "app.min.js": "generated",
+                               "api/client.ts": "generated", "logo.png": "binary", "src/a b.ts": "",
+                               ".gitattributes": ""})
+        self.assertEqual(verdicts.size(repo, self.base, self.head),
+                         "+4 −1 in 3 files, leaving out +5 −0 in 5 files: web/bun.lock (lockfile, +2 −0); "
+                         "api/client.ts (generated, +1 −0); app.min.js (generated, +1 −0); and 2 more")
+
+    def test_size_reads_attributes_at_the_head_counts_a_move_as_its_edits_and_names_the_largest_left_out(self):
+        self.commit({"old.txt": "".join(f"{n}\n" for n in range(100)), "z.generated.ts": "z\n" * 1000,
+                     **{f"{n}.min.js": "m\n" for n in "abc"}})
+        base = self.head
+        self.git("mv", "old.txt", "new.txt")
+        self.commit({".gitattributes": "api/*.ts linguist-generated\n", "api/client.ts": "g\n" * 100, "f": "d\n"})
+        self.git("checkout", "-q", base)  # the checkout has neither the attributes nor the move
+        self.base = base
+        self.assertEqual(verdicts.size(pathlib.Path(self.repo), base, self.git("rev-parse", "@{-1}").strip()),
+                         "+2 −1 in 3 files, leaving out +100 −0 in 1 file: api/client.ts (generated, +100 −0)")
+        first = self.git("rev-list", "--max-parents=0", "HEAD").strip()
+        self.assertTrue(verdicts.size(pathlib.Path(self.repo), first, base).endswith(
+            "leaving out +1003 −0 in 4 files: z.generated.ts (generated, +1000 −0); a.min.js (generated, +1 −0); "
+            "b.min.js (generated, +1 −0); and 1 more"))
+
+    def test_size_is_the_same_from_a_subfolder_and_reads_a_deleted_files_attributes_at_the_base(self):
+        self.commit({".gitattributes": "/copy.txt linguist-generated\n", "copy.txt": "g\n" * 100,
+                     "dir/a.txt": "a\n"})
+        base = self.head
+        pathlib.Path(self.repo, ".gitattributes").write_text("dir/*.gen linguist-generated\n")
+        self.git("rm", "-q", "copy.txt")
+        self.commit({".gitattributes": "dir/*.gen linguist-generated\n", "dir/b.gen": "b\n" * 5})
+        want = ("+1 −1 in 1 file, leaving out +5 −100 in 2 files: copy.txt (generated, +0 −100); "
+                "dir/b.gen (generated, +5 −0)")
+        for folder in [self.repo, os.path.join(self.repo, "dir")]:
+            with self.subTest(folder=folder):
+                self.assertEqual(verdicts.size(pathlib.Path(folder), base, self.head), want)
+
+    @unittest.skipIf(tuple(map(int, re.findall(r"\d+", subprocess.run(["git", "--version"], capture_output=True,
+                                                                     text=True).stdout)[:2])) < (2, 42),
+                     "GIT_ATTR_SOURCE needs git 2.42")
+    def test_a_diff_attribute_in_the_checkout_doesnt_hide_a_text_edit(self):
+        self.commit({".gitattributes": "*.txt -diff\n", "file.txt": "before\n"})
+        base = self.head
+        self.git("rm", "-q", ".gitattributes")
+        self.commit({"file.txt": "after\n"})
+        self.git("checkout", "-q", base)
+        self.assertEqual(verdicts.size(pathlib.Path(self.repo), base, self.head), "+1 −2 in 2 files")
+
+    def test_size_reads_the_old_side_at_the_merge_base_and_ignores_diff_relative(self):
+        self.commit({".gitattributes": "/copy.txt linguist-generated\n", "copy.txt": "g\n" * 100, "dir/a": "a\n"})
+        fork = self.head
+        self.git("checkout", "-q", "-b", "feature")
+        pathlib.Path(self.repo, ".gitattributes").write_text("")
+        self.git("rm", "-q", "copy.txt")
+        self.commit({".gitattributes": ""})
+        feature = self.head
+        self.git("checkout", "-q", fork)
+        self.commit({".gitattributes": "", "dir/a": "a\nb\n"})  # the target branch drops the rule too
+        target = self.head
+        self.git("config", "diff.relative", "true")
+        want = "+0 −1 in 1 file, leaving out +0 −100 in 1 file: copy.txt (generated, +0 −100)"
+        for folder in [self.repo, os.path.join(self.repo, "dir")]:
+            with self.subTest(folder=folder):
+                self.assertEqual(verdicts.size(pathlib.Path(folder), target, feature), want)
+
+    def test_numstat_writes_why_first_for_packet_sh(self):
+        self.commit({"yarn.lock": "x\n"})
+        numstat = self.git("diff", "--numstat", "-z", "--no-renames", f"{self.base}...{self.head}")
+        for source in [[], ["--source", self.head]]:
+            out = subprocess.run(["python3", str(HOOKS / "verdicts.py"), "numstat", *source], cwd=self.repo,
+                                 input=numstat, capture_output=True, text=True, check=True).stdout
+            self.assertEqual(out, "kept\t1\t1\tf\0lockfile\t1\t0\tyarn.lock\0")
+
+    def review(self, *args):
+        return subprocess.run(["python3", str(HOOKS / "verdicts.py"), "review", self.base, self.head, *args],
+                              cwd=self.repo, capture_output=True, text=True)
+
+    def test_a_review_records_its_rating_and_status_shows_it(self):
+        reviewed = lambda: self.status(self.base, self.head).stdout.splitlines()[3]
+        self.assertEqual(self.review("--rounds", "1").returncode, 0)
+        self.assertEqual(reviewed(), "review: 1 round, no rating")
+        out = self.review("--rounds", "2", "--rating", "7", "--reason", "one retry path has no test")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual({key: json.loads(out.stdout)[key] for key in ("rounds", "rating", "reason")},
+                         {"rounds": 2, "rating": 7, "reason": "one retry path has no test"})
+        self.assertEqual(json.loads(self.store().read_text().splitlines()[-1].split("\t")[8]),
+                         {"rounds": 2, "rating": 7, "reason": "one retry path has no test"})
+        self.assertEqual(reviewed(), "review: 2 rounds, rated 7/10: one retry path has no test")
+        self.assertEqual(self.review("--skip", "Sam: ship it").returncode, 0)
+        self.assertEqual(reviewed(), "review: skipped: Sam: ship it")
+
+    def test_a_rating_needs_rounds_a_reason_and_1_to_10(self):
+        for args in [("--rounds", "1", "--rating", "11", "--reason", "x"), ("--rounds", "1", "--rating", "0", "--reason", "x"),
+                     ("--rounds", "1", "--rating", "7"), ("--rounds", "1", "--reason", "x"),
+                     ("--skip", "s", "--rating", "7", "--reason", "x")]:
+            with self.subTest(args=args):
+                self.assertEqual(self.review(*args).returncode, 1)
+        self.assertFalse(self.store().exists())
+
+    def test_an_unreadable_review_shows_in_status_without_failing_it(self):
+        self.store().parent.mkdir(parents=True)
+        for body in ['{"rounds":1,"rating":7}', '{"rounds":1,"rating":12,"reason":"x"}', '{"rounds":1,"reason":"x"}']:
+            with self.subTest(body=body):
+                self.store().write_text("\t".join([self.patch_id(), self.head, self.base, "at", "v3", "s", "-",
+                                                     "review-loop", body]) + "\n")
+                status = self.status(self.base, self.head)
+                self.assertEqual(status.returncode, 0)
+                self.assertIn("review: unreadable: can't read the review result", status.stdout)
+                with self.assertRaises(verdicts.VerdictError):
+                    verdicts.find_review(pathlib.Path(self.repo),
+                                         verdicts.diff(pathlib.Path(self.repo), self.base, self.head))
+
 
     def patch_id(self):
         return verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, self.head))
@@ -3353,7 +3480,8 @@ class Verdicts(unittest.TestCase):
         self.assertEqual((len(row), json.loads(row[8])), (9, {**verdict, "branch": branch}))
         self.assertIsNone(verdicts.find_done(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, self.head)))
         status = self.status(self.base, self.head)
-        self.assertEqual((status.returncode, status.stdout), (0, f"patch-id: {self.patch_id()}\ndone: no\n"))
+        self.assertEqual(status.returncode, 0)
+        self.assertTrue(status.stdout.startswith(f"patch-id: {self.patch_id()}\ndone: no\nsize: "))
 
     def test_refuses_a_gap_without_a_finding_or_a_bad_evidence_kind(self):
         for verdict in ["not-done", "not-verified"]:

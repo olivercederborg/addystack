@@ -158,12 +158,15 @@ main
 
 ## Ship gate
 
-One line per PR, in merge order, naming what it changes and the thread that made it
-when another did, then the passing checks and restack state on one line, each warning
-or failure on its own line, and how to roll it back.
+One line per PR, in merge order, naming what it changes for a user or caller, not its
+title, and the thread that made it when another did. Then the `size:` and `review:`
+rating `scripts/github.sh target N` prints, with `leaving out` only when those files
+outweigh the rest; the passing checks and restack state; each warning or failure on its
+own line; and how to roll it back.
 
 ```text
 #124  uploads: a retry reuses its receipt instead of creating a second
+      +120 −30 in 4 files · 8/10: the timeout path has no test
       ✅ verify-work Done · CI · tests 41/41 · no restack
       ⚠️ blast-radius not run: adds a unique index on receipts
       rollback: revert #124, then drop the index

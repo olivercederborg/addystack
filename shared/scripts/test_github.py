@@ -211,7 +211,8 @@ class TargetBranch(unittest.TestCase):
         self.assertEqual(fields, {
             "pr": "none", "branch": "layer2", "base": "layer1", "base_sha": self.git("rev-parse", "layer1"),
             "head_sha": head, "local_head": f"matches ({head})", "clean": "yes",
-            "patch-id": self.patch_id("layer1", "layer2"), "done": "no", "last": "none"})
+            "patch-id": self.patch_id("layer1", "layer2"), "done": "no", "size": "+1 −0 in 1 file", "review": "none",
+            "last": "none"})
 
     def test_without_a_parent_it_diffs_against_the_newer_default_branch(self):
         self.git("switch", "-q", "main")

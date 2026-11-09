@@ -114,31 +114,24 @@ mkdir -p "$dir"
 packet="$dir/packet.md" prompt="$dir/prompt.md"
 
 kept=() left=()
+here=$(dirname "$self")
 if [ "$cmd" != plan ]; then
-  while IFS=$'\t' read -r -d '' insertions _ path; do
+  # verdicts.py's left_out names what to leave out, the same list the ship gate's size uses.
+  # A committed diff reads its attributes at the reviewed commits (git 2.42+); working
+  # changes, at the tree.
+  source=()
+  if [ "$cmd" != working ]; then export GIT_ATTR_SOURCE=$head; source=(--source "$(git merge-base "$base" "$head")" --source "$head"); fi
+  git diff --numstat -z --no-renames "${spec[@]}" | python3 "$here/verdicts.py" numstat "${source[@]}" > "$dir/numstat"
+  while IFS=$'\t' read -r -d '' why _ _ path; do
     if [ ${#only[@]} -gt 0 ]; then
       inside=no
       for scope in "${only[@]}"; do case $path in "${scope%/}" | "${scope%/}"/*) inside=yes ;; esac; done
       [ "$inside" = yes ] || continue
     fi
-    why=''
-    case "/$path" in
-      */package-lock.json | */npm-shrinkwrap.json | */yarn.lock | */pnpm-lock.yaml | */bun.lock | */bun.lockb | \
-        */Cargo.lock | */Gemfile.lock | */poetry.lock | */uv.lock | */Pipfile.lock | */composer.lock | \
-        */go.sum | */Podfile.lock | */Package.resolved | */flake.lock) why=lockfile ;;
-      */vendor/* | */node_modules/* | */third_party/*) why=vendored ;;
-      *.min.js | *.min.css | *.map | *.pb.go | *_pb2.py | *.generated.*) why=generated ;;
-    esac
-    [ "$insertions" != - ] || why=binary
-    if [ -z "$why" ]; then
-      case $(git check-attr linguist-vendored linguist-generated -- "$path") in
-        *"linguist-vendored: set"* | *"linguist-vendored: true"*) why=vendored ;;
-        *"linguist-generated: set"* | *"linguist-generated: true"*) why=generated ;;
-      esac
-    fi
+    [ "$why" != kept ] || why=''
     for path_kept in ${keep[@]+"${keep[@]}"}; do [ "$path_kept" != "$path" ] || why=; done
     if [ -z "$why" ]; then kept+=("$path"); else left+=("$path ($why)"); fi
-  done < <(git diff --numstat -z --no-renames "${spec[@]}")
+  done < "$dir/numstat"
 fi
 
 kept_diff() { [ ${#kept[@]} = 0 ] || git diff --no-color --no-ext-diff --no-renames "$@" "${spec[@]}" -- "${kept[@]}"; }
@@ -182,10 +175,9 @@ if [ "$cmd" = plan ]; then
 else
   kind=change scope="the files under Files in the packet; left out: $(sed -n 's/^Left out: //p' "$packet")"
   baseline=$(kept_diff --shortstat | sed 's/^ *//') baseline=${baseline:-0 files changed}
-  ask="Report every finding with a severity, a file:line, the failure it causes, its class (the kind of mistake, with every other place in the change that makes it), and the smallest fix that covers the whole class:"
+  ask="Report every finding with a severity, a file:line, the failure it causes, its class (the kind of mistake, with every other place in the change that makes it), and the smallest fix that covers the whole class, then the change's Rating as the lenses above define it:"
 fi
 spec_line=none; [ ${#sections[@]} = 0 ] || spec_line="the packet's $(join "${sections[@]}") sections"
-here=$(dirname "$self")
 python3 - "$here/review-prompt.md" "$here/../references/review-lenses.md" "$prompt" "$kind" "$target" "$scope" "$spec_line" \
   "$packet" "$round" "$previous" "$settled" "$checks" "$ask" <<'PY'
 import sys
