@@ -170,7 +170,7 @@ When the loop ends, run `packet.sh clean`. On a PR, branch, or range, first reco
 result for the branch's current head, against the packet's Base:
 
 `python3 scripts/verdicts.py review <Base> <head> --rounds <N> --rating <R> --reason '<why>'`,
-with the last round's rating.
+with the last round's rating, re-banded when a later fix closed the finding it rests on.
 
 The ready gate (`hooks/ready-gate.py`) marks a PR ready only with a result for its
 current diff. Record `--skip '<reason>'` instead when the user skips the loop, or for a
