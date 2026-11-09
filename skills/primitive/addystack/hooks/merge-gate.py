@@ -29,8 +29,8 @@ The user merging from their own terminal isn't affected. Fails closed: when a ch
 run, the merge is denied. Codex runs it too, but a crash or timeout there lets the merge
 through, since Codex has no `onFailure: "block"`. Known limits: merges through `gh api`
 or a push to the base branch, `gh` run by its path, a command that runs only inside
-quotes or a heredoc, one merge a tool such as `xargs` repeats, and in Codex a merge reached only through `workdir`, which is
-checked against the session's cwd.
+quotes or a heredoc, one merge a tool such as `xargs` repeats, and in Codex a merge
+reached only through `workdir`, which is checked against the session's cwd.
 
 `merge-gate.py --dry-run '<merge command>' [--transcript PATH] [--session ID]` runs the same
 checks from the current directory and prints the PRs it resolves, then each reason or
