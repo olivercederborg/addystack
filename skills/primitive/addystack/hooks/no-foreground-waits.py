@@ -54,17 +54,17 @@ def rewrite_installed():
 
 
 def unbounded_loops():
-    """Whether a sleeping `until`/`while` loop is left without bash-rewrite.py's guard at the
-    start of its body, each loop judged on its own, quoted ones included."""
-    if not re.search(r"\b(?:until|while)\b", code) or not sleeps(code):
+    """Whether a sleeping `until`/`while` loop runs without bash-rewrite.py's guard: any,
+    unless bash-rewrite runs before Bash and its guard directly follows every `until` and
+    `while` in the command, quoted ones included."""
+    if not any(sleeps(body) for body in SLEEPING_LOOP.findall(code)):
         return False
+    if not rewrite_installed():
+        return True
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import shell_syntax
-    if not rewrite_installed() or re.search(r"\bSECONDS\b", command):
-        # A guard the command wrote itself, or a clock it moves, isn't bash-rewrite's.
-        return any(sleeps(body) for body in SLEEPING_LOOP.findall(code)) or shell_syntax.unguarded(code, guards=False)
     edits = shell_syntax.bound_waits(command, tool_input.get("timeout"))[0]
-    return shell_syntax.unguarded(unquoted(shell_syntax.apply(command, edits)))
+    return not edits or shell_syntax.unguarded(shell_syntax.apply(command, edits))
 
 
 def counted_loop_seconds(text):

@@ -998,22 +998,25 @@ class BashRewrite(unittest.TestCase):
             out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True,
                                  text=True, check=True).stdout
             return json.loads(out)["hookSpecificOutput"]["updatedInput"]["command"] if out else None
-        # The default 2-minute timeout, less 10 seconds and one pass's 15.
+        # The default 2-minute timeout, less 10 seconds and one pass's 15, in front of the condition.
         self.assertEqual(bounded("until grep -q x /tmp/b.log; do sleep 15; done; tail -4 /tmp/b.log"),
-                         'until grep -q x /tmp/b.log; do [ "$SECONDS" -lt 95 ] || { echo "gave up waiting: the command '
-                         'ran 95s, the limit bash-rewrite.py sets" >&2; exit 124; }; sleep 15; done; tail -4 /tmp/b.log')
+                         'until [ "$SECONDS" -lt 95 ] || { echo "gave up waiting: the command ran 95s, the limit '
+                         'bash-rewrite.py sets" >&2; exit 124; }; grep -q x /tmp/b.log; do sleep 15; done; tail -4 /tmp/b.log')
         self.assertIn('-lt 45 ]', bounded("until false; do sleep 5; done", timeout=60000))
         for command in [
             "git push && while ! [ -f /tmp/x ]; do sleep 0.5; done 2>&1 && echo ok",
-            "for f in a b; do\n  until [ -s $f ]; do\n    sleep 2\n  done\ndone",
             "until curl -sf localhost:3000/up | grep -q ok; do sleep 1; done",
-            "until test $(for f in a; do sleep 0.01; echo ready; done) = ready; do sleep 0.01; done; echo completed",
             "until [ -f x ]; do sleep 1; done; tail /tmp/log | head -3",
+            'until [ "$(curl -s localhost:3000/up)" = ok ]; do echo "waiting"; sleep 2; done',
+            "while \\\n  ! [ -f x ]; do\n  sleep 2\ndone",
         ]:
             with self.subTest(command=command):
                 fixed = bounded(command)
                 self.assertIn('[ "$SECONDS" -lt ', fixed or "")
                 self.assert_parses(fixed)
+        # The body sees the condition's status, as before the guard (Codex r3).
+        fixed = bounded('until (exit 42); do echo "status $?"; sleep 0.01; break; done')
+        self.assertEqual(subprocess.run(["bash", "-c", fixed], capture_output=True, text=True).stdout, "status 42\n")
         # Loops the guard can't end, or that no-foreground-waits.py keeps denying, stay as written.
         for command, flags in [
                 ("until gh pr checks 1 | grep -q pass; do sleep 20; done", {}),
@@ -1036,7 +1039,18 @@ class BashRewrite(unittest.TestCase):
                 ("until [ -f x ]; do for i in 1 2 3; do sleep 5; done; done", {}),
                 ("until [ -f x ]; do sleep 1; sleep 1m; done", {}), ("until [ -f x ]; do sleep 1; sleep $n; done", {}),
                 ("until [ -f x ]; do SECONDS=0; sleep 1; done", {}),
-                ("poll() { gh pr checks 1; }; until poll; do sleep 5; done", {})]:
+                ("poll() { gh pr checks 1; }; until poll; do sleep 5; done", {}),
+                # Codex r3: only loops that stand alone, hold no other loop, hide nothing in
+                # quotes, sleep plain numbers, and poll no CI host are bounded.
+                ("for f in a b; do\n  until [ -s $f ]; do\n    sleep 2\n  done\ndone", {}),
+                ("if true; then while true; do sleep 1; done | cat; echo CONTINUED; fi", {}),
+                ("until test $(for f in a; do sleep 1; echo ready; done) = ready; do sleep 1; done", {}),
+                ("files=; until for i in $files; do sleep 1; done; false; do sleep 1; done", {}),
+                ("while true; do sleep 1; bash -c 'while true; do sleep 1; done'; done", {}),
+                ('while true; do echo "$(sleep 30)"; sleep 1; done', {}),
+                ("while true; do sleep 1.5m; done", {}), ("while true; do sleep 1 59; done", {}),
+                ("until curl -s https://gitlab.example/api/v4/projects/1/pipelines/2 | grep -q success; do sleep 5; done", {}),
+                ("until [ -f x ]; do sleep 1; done; while [ -f y ]; do echo idle; done", {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 
@@ -2258,7 +2272,14 @@ class NoForegroundWaits(unittest.TestCase):
             ('until [ -f x ]; do [ "$SECONDS" -lt 9 ]; sleep 1; done', {}),
             ('until gh pr checks 1; do [ "$SECONDS" -lt 9 ] || { echo "gave up waiting: the command ran 9s, the limit '
              'bash-rewrite.py sets" >&2; exit 124; }; sleep 1; done', {}),
-            ("until [ -f x ]; do until true; do :; done; sleep 1; done | cat", {}),
+            ("until [ -f x ]; do sleep 1; until true; do :; done; done | cat", {}),
+            # Codex r3: a loop piped inside `if`, a loop in the condition, a quoted inner loop,
+            # a sleep that isn't one plain number, and CI polled through another host's API.
+            ("if true; then while true; do sleep 1; done | cat; echo CONTINUED; fi", {}),
+            ("files=; until for i in $files; do sleep 1; done; false; do sleep 1; done", {}),
+            ("while true; do sleep 1; bash -c 'while true; do sleep 1; done'; done", {}),
+            ("while true; do sleep 1.5m; done", {}), ("while true; do sleep 1 59; done", {}),
+            ("until curl -s https://gitlab.example/api/v4/projects/1/pipelines/2 | grep -q success; do sleep 5; done", {}),
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command, **flags))
