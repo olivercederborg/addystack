@@ -4620,7 +4620,7 @@ class ReplyBudget(unittest.TestCase):
         at_the_limit = (*self.ROWS[:3], "| Undo | " + "word " * reply_budget.FACT_SEND_BACK + "|")
         self.assertEqual(self.bounce(self.fact(rows=at_the_limit)), "")
         self.assertEqual(reply_budget.fact_problems(self.fact(rows=at_the_limit), reply_budget.FACT_WORDS),
-                         ["its Undo value runs 30 words, over 20"])  # check_examples holds examples to the target
+                         ["its Undo value runs 25 words, over 20"])  # check_examples holds examples to the target
         piped = (*self.ROWS[:3], "| Undo | Revert `a | b`, then the merge. |")  # a pipe in a value splits no row
         self.assertEqual(self.bounce(self.fact(rows=piped)), "")
 
@@ -4640,7 +4640,7 @@ class ReplyBudget(unittest.TestCase):
                             "it has 6 rows under its header, over 5"),
             "a label off the list": ((self.ROWS[0], "| Cause | Nothing checks the rule. |", "| 3× slower | caught 5 of 5 |"),
                                      '"Cause" isn\'t one of its labels; "3× slower" isn\'t one of its labels'),
-            "a long value": ((self.ROWS[0], "| Why | " + "word " * 31 + "|"), "its Why value runs 31 words, over 20"),
+            "a long value": ((self.ROWS[0], "| Why | " + "word " * 26 + "|"), "its Why value runs 26 words, over 20"),
             "a risk below another row": ((self.ROWS[1], self.ROWS[0]), "a Risk or Unsure row sits below another row"),
             "a risk without its sign": (("| Unsure | The count is a text match. |", *self.ROWS[1:]),
                                         "a Risk or Unsure value doesn't start with ⚠️"),
@@ -4651,8 +4651,8 @@ class ReplyBudget(unittest.TestCase):
                 self.assertIn(f"fact table breaks reply-shape's limits: {clause}. ", reason)
                 self.assertIn("each label one of Risk, Unsure, Why, Effect, Proof, Undo, Skipped, Queued, Pick, Source, "
                               "Cost, Decide, Review, Do, each value at most 20 words", reason)
-        header = self.fact(header="| Problem | " + "word " * 31 + "|")
-        self.assertIn("its header value runs 31 words", self.bounce(header))
+        header = self.fact(header="| Problem | " + "word " * 26 + "|")
+        self.assertIn("its header value runs 26 words", self.bounce(header))
         self.assertIn("isn't one of its labels", self.bounce(self.fact(rows=broken["a label off the list"][0]), turn_id="t1"))
         both = self.fact(rows=(self.ROWS[1], self.ROWS[0], "| Cause | x |"))
         self.assertIn("\"Cause\" isn't one of its labels; a Risk or Unsure row sits below another row", self.bounce(both))

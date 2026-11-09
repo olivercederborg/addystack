@@ -53,7 +53,10 @@ reply-shape's fact table, the two-column table right under the headline, is a sh
 so the word count skips it; it has its own limits instead, which fact_problems checks: at
 most FACT_ROWS rows under the header, each label one of FACT_LABELS, each value within
 FACT_SEND_BACK words (FACT_WORDS is the writing target, as 60 is to 100), and Risk and
-Unsure rows first with ⚠️ leading the value. The user's call on Nov 9, 2026, after seeing
+Unsure rows first with ⚠️ leading the value. The limits come from the mockups the user
+picked from, whose longest value ran 22 words, and from a trial on Nov 9, 2026: 36 replies
+that fresh agents wrote under the rule, on Fable 5.2 and Opus 5.5, held 191 values with a
+median of 15 words and none past 21. The user's call on Nov 9, 2026, after seeing
 UI cards in use: every final reply is a headline, one fact table, and the closing. A fact
 table isn't required: a session started before that keeps the old shape until it restarts.
 So a table counts as one only when it has two columns, sits right under the headline (or a
@@ -89,7 +92,7 @@ FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Q
 WARNED = ("Risk", "Unsure")  # these rows come first, and ⚠️ leads their value
 FACT_ROWS = 5
 FACT_WORDS = 20
-FACT_SEND_BACK = 30
+FACT_SEND_BACK = 25
 # A round's strip, the one line that may sit between the headline and the fact table.
 STRIP = re.compile(r"[🟡⬜✅]\s*·")
 OPT_OUT = re.compile(r"^\W*(?:(?:use|back to|switch to|give me)\s+)?normal replies\b", re.I)
