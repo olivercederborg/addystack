@@ -548,7 +548,7 @@ class Idiom(Repo):
         head = self.change({"src/upload.ts": "x\n"})
         ref = self.media("idiom.txt", self.SOURCED)
         self.record(head, evidence={"idiom": [ref, "not-run:offline"]})
-        sources = lambda: self.cli("status", self.base, head).stdout.splitlines()[2:]
+        sources = lambda: [line for line in self.cli("status", self.base, head).stdout.splitlines() if line.startswith("idiom:")]
         self.assertEqual(sources(), [f"idiom: {line}" for line in self.SOURCED.splitlines()])
         pathlib.Path(ref).unlink()
         self.assertEqual(sources(), [f"idiom: missing: {ref}"])

@@ -21,11 +21,13 @@ gate never reads the branch.
 
 The store also keeps review-loop's results, which ready-gate.py reads: a v3 row whose
 8th column is `review-loop`, with the recording session's ID (or `-`), `-` for the
-agent, and `{"rounds": N}` or `{"skipped": reason}`. Verdict readers skip them, since
+agent, and `{"rounds": N}`, with `"rating"` (1-10) and `"reason"` when the last round
+rated the change, or `{"skipped": reason}`. Verdict readers skip them, since
 they read only `work-verifier` rows. A result matches on patch-id, as a verdict does."""
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -39,6 +41,15 @@ VERIFIER = "work-verifier"
 REVIEWER = "review-loop"
 HOOK_CONTEXT = "VERIFY_WORK_HOOK_CONTEXT"  # verdict-stamp.py puts the identity here, as JSON
 VERDICTS = ("done", "not-done", "not-verified")
+# Files a review's size and review-loop's packet leave out, matched against "/<path>".
+LEFT_OUT = (
+    ("lockfile", [f"*/{name}" for name in (
+        "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
+        "Cargo.lock", "Gemfile.lock", "poetry.lock", "uv.lock", "Pipfile.lock", "composer.lock", "go.sum",
+        "Podfile.lock", "Package.resolved", "flake.lock")]),
+    ("vendored", ["*/vendor/*", "*/node_modules/*", "*/third_party/*"]),
+    ("generated", ["*.min.js", "*.min.css", "*.map", "*.pb.go", "*_pb2.py", "*.generated.*"]),
+)
 
 
 @dataclass(frozen=True)
@@ -119,13 +130,34 @@ def left_out(cwd: Path, numstat: bytes) -> list[tuple[str, str, str, str]]:
     """Each row of `git diff --numstat -z --no-renames` as (added, deleted, path, why),
     where why is lockfile, vendored, generated, or binary for a file a review's size and
     packet leave out, or "" for one they keep."""
-    raise NotImplementedError
+    rows = []
+    for record in numstat.decode(errors="surrogateescape").split("\0"):
+        if record:
+            added, deleted, path = record.split("\t", 2)
+            why = "binary" if added == "-" else next(
+                (why for why, patterns in LEFT_OUT for pattern in patterns if fnmatch.fnmatchcase("/" + path, pattern)), "")
+            rows.append((added, deleted, path, why))
+    asked = [path for _, _, path, why in rows if not why]
+    if asked:  # git's own attributes mark the rest, as GitHub's linguist reads them
+        out = _git(cwd, "check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated",
+                   stdin="\0".join(asked) + "\0").split("\0")
+        marked = {path: attribute[len("linguist-"):] for path, attribute, value in zip(out[0::3], out[1::3], out[2::3])
+                  if value in ("set", "true")}
+        rows = [(added, deleted, path, why or marked.get(path, "")) for added, deleted, path, why in rows]
+    return rows
 
 
 def size(cwd: Path, base: str, head: str) -> str:
     """`git diff base...head`'s size without the files `left_out` names, as `+A −D in F
     files`, then each left-out file with its why and its own size."""
-    raise NotImplementedError
+    rows = left_out(cwd, _git(cwd, "diff", "--numstat", "-z", "--no-renames", f"{base}...{head}")
+                    .encode(errors="surrogateescape"))
+    kept = [(int(added), int(deleted)) for added, deleted, _, why in rows if not why]
+    files = f"{len(kept)} file{'' if len(kept) == 1 else 's'}"
+    left = [f"{path} ({why})" if why == "binary" else f"{path} ({why}, +{added} −{deleted})"
+            for added, deleted, path, why in rows if why]
+    return (f"+{sum(a for a, _ in kept)} −{sum(d for _, d in kept)} in {files}"
+            + (f", leaving out {_shown(left)}" if left else ""))
 
 
 def _shown(reasons: list[str], limit: int = 3) -> str:
@@ -222,18 +254,22 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
 
 def record_review(cwd: Path, target: ReviewTarget, rounds: int = 0, skipped: str = "", rating: int = 0,
                   reason: str = "") -> Review:
-    """Records review-loop's result for `git diff base...head`: the rounds it ran, or a
-    skip with its reason. Unlike a verdict, any session records one, from any checkout."""
+    """Records review-loop's result for `git diff base...head`: the rounds it ran, with the
+    last round's 1-10 rating and what cost it the most points, or a skip with its reason.
+    Unlike a verdict, any session records one, from any checkout."""
     if (rounds > 0) == bool(skipped.strip()):
         raise VerdictError("give the rounds review-loop ran (1 or more), or a skip's reason")
+    if (rating or reason.strip()) and not (rounds and 1 <= rating <= 10 and reason.strip()):
+        raise VerdictError("a rating is 1 to 10, with the rounds and a reason")
     base, head = (_git(cwd, "rev-parse", "--verify", f"{ref}^{{commit}}").strip() for ref in (target.base, target.head))
     patch_id = _patch_id(cwd, diff(cwd, base, head))
     if not patch_id:
         raise VerdictError(f"{head[:12]} makes no change against {base[:12]}")
     review = Review(patch_id, ReviewTarget(base, head), datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    rounds, skipped.strip())
+                    rounds, skipped.strip(), rating, reason.strip())
     session = os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID") or "-"
-    body = json.dumps({"skipped": review.skipped} if review.skipped else {"rounds": rounds}, separators=(",", ":"))
+    result = {"rounds": rounds, **({"rating": rating, "reason": review.reason} if rating else {})}
+    body = json.dumps({"skipped": review.skipped} if review.skipped else result, separators=(",", ":"))
     store = _store(cwd)
     store.parent.mkdir(parents=True, exist_ok=True)
     with store.open("a") as f:
@@ -244,7 +280,11 @@ def record_review(cwd: Path, target: ReviewTarget, rounds: int = 0, skipped: str
 def find_review(cwd: Path, pr_diff: str) -> Review | None:
     """review-loop's latest result for a PR's `diff`, or None. Raises VerdictError when it
     can't read the store or the row, so the gate fails closed."""
-    patch_id, store = _patch_id(cwd, pr_diff), _store(cwd)
+    return _review(cwd, _patch_id(cwd, pr_diff))
+
+
+def _review(cwd: Path, patch_id: str) -> Review | None:
+    store = _store(cwd)
     if not patch_id or not store.exists():
         return None
     try:
@@ -259,11 +299,14 @@ def find_review(cwd: Path, pr_diff: str) -> Review | None:
                 raise ValueError(f"{len(row)} columns, version {row[4]!r}")
             body = json.loads(row[8])
             rounds, skipped = body.get("rounds", 0), body.get("skipped", "")
-            if not (isinstance(rounds, int) and isinstance(skipped, str) and (rounds > 0) != bool(skipped)):
+            rating, reason = body.get("rating", 0), body.get("reason", "")
+            if not (isinstance(rounds, int) and isinstance(skipped, str) and (rounds > 0) != bool(skipped)
+                    and isinstance(rating, int) and isinstance(reason, str)
+                    and (rating == 0 and not reason or rating in range(1, 11) and bool(reason))):
                 raise ValueError("unexpected shape")
         except (ValueError, AttributeError) as error:
             raise VerdictError(f"can't read the review result recorded at {row[3]} for this diff: {error}")
-        return Review(row[0], ReviewTarget(row[2], row[1]), row[3], rounds, skipped)
+        return Review(row[0], ReviewTarget(row[2], row[1]), row[3], rounds, skipped, rating, reason)
     return None
 
 
@@ -352,13 +395,23 @@ def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
 
 def status(cwd: Path, base: str, head: str) -> str:
     """The patch-id of `diff(base, head)` and whether a Done verdict covers it, as the gate
-    reads it, then an `idiom:` line per pattern its idiom refs ground, for the ship-gate card."""
+    reads it, then for the ship-gate card the diff's size, review-loop's result with its
+    rating, and an `idiom:` line per pattern the Done's idiom refs ground."""
     patch_id = _patch_id(cwd, diff(cwd, base, head))
     receipt = _latest(cwd, patch_id)
     done = receipt if receipt and receipt.verdict == "done" else None
+    try:  # a review row that won't read blocks readying, not this card
+        review = _review(cwd, patch_id)
+        rounds = review and f"{review.rounds} round{'' if review.rounds == 1 else 's'}"
+        reviewed = ("none" if not review else f"skipped: {review.skipped}" if review.skipped
+                    else f"{rounds}, rated {review.rating}/10: {review.reason}" if review.rating
+                    else f"{rounds}, no rating")
+    except VerdictError as error:
+        reviewed = f"unreadable: {error}"
     lines = [f"patch-id: {patch_id or 'none (no change)'}",
              f"done: yes ({done.recorded_at}, head {done.reviewed.head[:12]}, {done.verifier.agent_id})"
-             if done else "done: no"]
+             if done else "done: no",
+             f"size: {size(cwd, base, head)}", f"review: {reviewed}"]
     # A not-run: ref grounds nothing. A ref is a path read now, as for every kind.
     for ref in [ref for ref in done.evidence.get("idiom", []) if not ref.startswith("not-run:")] if done else []:
         try:
@@ -379,12 +432,15 @@ def _evidence(text: str) -> tuple[str, str]:
 def main(argv: list[str]) -> int:
     """`record <base-sha> <reviewed-head> [--verdict V] [--evidence KIND=REF]... [--require
     KIND]... [--finding TEXT]... [--branch B]` prints the receipt as JSON; `status <base> <head>` prints
-    the patch-id, whether it's done, and a Done's idiom sources; `classify <base> <head>` prints each kind of
+    the patch-id, whether it's done, the size, review-loop's result, and a Done's idiom sources; `numstat`
+    reads `git diff --numstat -z --no-renames` and writes each row as `why<TAB>added<TAB>deleted<TAB>path`
+    and a NUL, with `kept` for why when `left_out` keeps it; `classify <base> <head>` prints each kind of
     evidence the diff needs, one `kind: reason; reason` line each, or `none`; `last
     <branch> [<base> <head>]` prints the branch's newest verdict as JSON, or `last: none`;
     given the diff to re-check, the JSON adds `known`, `known(...)`'s reason, when it isn't
-    empty; `review <base> <head> (--rounds N | --skip REASON)` records review-loop's result
-    and prints it as JSON. Exits 2 on a usage error and 1 on a VerdictError."""
+    empty; `review <base> <head> (--rounds N [--rating 1-10 --reason TEXT] | --skip REASON)`
+    records review-loop's result and prints it as JSON. Exits 2 on a usage error and 1 on a
+    VerdictError."""
     parser = argparse.ArgumentParser(prog="verdicts.py", allow_abbrev=False)
     commands = parser.add_subparsers(dest="command", required=True)
     recording = commands.add_parser("record", allow_abbrev=False)
@@ -405,6 +461,9 @@ def main(argv: list[str]) -> int:
     result = reviewing.add_mutually_exclusive_group(required=True)
     result.add_argument("--rounds", type=int, metavar="N")
     result.add_argument("--skip", metavar="REASON")
+    reviewing.add_argument("--rating", type=int, default=0, metavar="N")
+    reviewing.add_argument("--reason", default="", metavar="TEXT")
+    commands.add_parser("numstat")
     latest = commands.add_parser("last")
     latest.add_argument("branch")
     latest.add_argument("diff", nargs="*", metavar="base head")
@@ -421,8 +480,13 @@ def main(argv: list[str]) -> int:
             print(status(Path.cwd(), args.base, args.head))
             return 0
         if args.command == "review":
-            review = record_review(Path.cwd(), ReviewTarget(args.base, args.head), args.rounds or 0, args.skip or "")
+            review = record_review(Path.cwd(), ReviewTarget(args.base, args.head), args.rounds or 0, args.skip or "",
+                                   args.rating, args.reason)
             print(json.dumps(asdict(review)))
+            return 0
+        if args.command == "numstat":
+            for added, deleted, path, why in left_out(Path.cwd(), sys.stdin.buffer.read()):
+                sys.stdout.buffer.write(f"{why or 'kept'}\t{added}\t{deleted}\t{path}\0".encode(errors="surrogateescape"))
             return 0
         if args.command == "classify":
             needed = classify(Path.cwd(), args.base, args.head)
