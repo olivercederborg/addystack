@@ -22,7 +22,7 @@ heredoc, use backticks, `eval`, or a function, set SECONDS, run in the backgroun
 PR or CI tool, host, or API, whose waits watch_pull_request owns. Known limits: a condition
 that hangs, such as a `curl` with no timeout, isn't cut short, nor is a loop in a script the
 command runs, and CI polled through an API this module doesn't name runs bounded."""
-import re
+import itertools, re
 
 # Seconds before the Bash tool's timeout that a bounded loop gives up, and its 2-minute default.
 MARGIN, DEFAULT_TIMEOUT = 10, 120
@@ -119,7 +119,8 @@ def _top_level_loops(code):
                     found[frame["start"]] = match.end()
     return {start: end for start, end in found.items()
             if re.search(r"(?:\A|[;\n]|&&|\|\|)\s*(?:!\s*)?\Z", code[:start])
-            and re.match(r"(?:\s*\d*(?:_>{1,2}|[<>]{1,3}_?)\s*[^\s;&|()<>]+)*\s*(?:\Z|[;\n]|&&|\|\|)", code[end:])}
+            and re.match(r"(?:\s*(?:(?<!\w)\d+)?(?:_>{1,2}|[<>]{1,3}_?)\s*[^\s;&|()<>]+)*\s*(?:\Z|[;\n]|&&|\|\|)",
+                         code[end:])}
 
 
 def _count(pattern, text):
@@ -139,9 +140,10 @@ def bound_waits(command, timeout_ms=None):
     code = shell_code(command)
     # Parentheses must pair as written, or a subshell's loop can look like it stands alone:
     # `echo \)`, `${x%)}`, and a `case` pattern's `)` don't.
+    depths = list(itertools.accumulate(1 if c == "(" else -1 for c in code if c in "()"))
     if (UNREADABLE.search(command) or CLOCK.search(command) or "`" in code or FUNCTION.search(code)
             or EVAL.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)
-            or code.count("(") != code.count(")") or re.search(r"\\[()]", code)):
+            or min(depths, default=0) < 0 or depths[-1:] not in ([], [0]) or re.search(r"\\[()]", code)):
         return [], []
     limit = min(timeout_ms / 1000 if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool)
                 and timeout_ms > 0 else DEFAULT_TIMEOUT, DEFAULT_TIMEOUT) - MARGIN

@@ -1053,7 +1053,8 @@ class BashRewrite(unittest.TestCase):
                 ("until [ -f x ]; do sleep 1; done; while [ -f y ]; do echo idle; done", {}),
                 # verify-work: a stray `)` that would hide a piped subshell.
                 ("echo \\); ( true; until [ -f x ]; do sleep 1; done; true ) | cat; echo CONTINUED", {}),
-                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat', {})]:
+                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat', {}),
+                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat; echo ${y#(}', {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 
