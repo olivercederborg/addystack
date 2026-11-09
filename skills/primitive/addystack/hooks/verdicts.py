@@ -32,6 +32,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, astuple, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,7 +46,8 @@ LEFT_OUT = (
     ("lockfile", [f"*/{name}" for name in (
         "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb",
         "Cargo.lock", "Gemfile.lock", "poetry.lock", "uv.lock", "Pipfile.lock", "composer.lock", "go.sum",
-        "Podfile.lock", "Package.resolved", "flake.lock")]),
+        "Podfile.lock", "Package.resolved", "flake.lock", "gradle.lockfile", "pubspec.lock", "mix.lock",
+        "packages.lock.json", "deno.lock", "pdm.lock")]),
     ("vendored", ["*/vendor/*", "*/node_modules/*", "*/third_party/*"]),
     ("generated", ["*.min.js", "*.min.css", "*.map", "*.pb.go", "*_pb2.py", "*.generated.*"]),
 )
@@ -91,9 +93,9 @@ class VerdictError(Exception):
     pass
 
 
-def _git(cwd: Path, *args: str, stdin: str | None = None) -> str:
+def _git(cwd: Path, *args: str, stdin: str | None = None, env: dict[str, str] | None = None) -> str:
     # Bytes in and out: text mode would turn \r\n into \n and hide a line-ending change.
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, env=env,
                             input=None if stdin is None else stdin.encode(errors="surrogateescape"))
     if result.returncode:
         raise VerdictError(f"`git {' '.join(args[:2])}` failed: {result.stderr.decode(errors='replace').strip()[:200]}")
@@ -125,21 +127,32 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
         raise VerdictError(str(error))
 
 
-def left_out(cwd: Path, numstat: bytes) -> list[tuple[str, str, str, str]]:
-    """Each row of `git diff --numstat -z --no-renames` as (added, deleted, path, why),
-    where why is lockfile, vendored, generated, or binary for a file a review's size and
-    packet leave out, or "" for one they keep."""
-    rows = []
-    for record in numstat.decode(errors="surrogateescape").split("\0"):
+def left_out(cwd: Path, numstat: bytes, source: str = "") -> list[tuple[str, str, str, str]]:
+    """Each row of `git diff --numstat -z` as (added, deleted, path, why), where why is
+    lockfile, vendored, generated, or binary for a file a review's size and packet leave
+    out, or "" for one they keep. A renamed file's path is its new one. The attributes
+    that mark a file come from the `source` commit, the reviewed head, or else from the
+    working tree, as for working changes."""
+    rows, fields = [], iter(numstat.decode(errors="surrogateescape").split("\0"))
+    for record in fields:
         if record:
             added, deleted, path = record.split("\t", 2)
+            if not path:  # a rename: -z puts its old and new paths in the next two fields
+                next(fields)
+                path = next(fields)
             why = "binary" if added == "-" else next(
                 (why for why, patterns in LEFT_OUT for pattern in patterns if fnmatch.fnmatchcase("/" + path, pattern)), "")
             rows.append((added, deleted, path, why))
     asked = [path for _, _, path, why in rows if not why]
     if asked:  # git's own attributes mark the rest, as GitHub's linguist reads them
-        out = _git(cwd, "check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated",
-                   stdin="\0".join(asked) + "\0").split("\0")
+        with tempfile.TemporaryDirectory() as folder:
+            env, cached = None, []
+            if source:  # check-attr --source needs git 2.40, so read the commit into a scratch index
+                env = {**os.environ, "GIT_INDEX_FILE": os.path.join(folder, "index")}
+                _git(cwd, "read-tree", source, env=env)
+                cached = ["--cached"]
+            out = _git(cwd, "check-attr", *cached, "-z", "--stdin", "linguist-vendored", "linguist-generated",
+                       stdin="\0".join(asked) + "\0", env=env).split("\0")
         marked = {path: attribute[len("linguist-"):] for path, attribute, value in zip(out[0::3], out[1::3], out[2::3])
                   if value in ("set", "true")}
         rows = [(added, deleted, path, why or marked.get(path, "")) for added, deleted, path, why in rows]
@@ -147,16 +160,18 @@ def left_out(cwd: Path, numstat: bytes) -> list[tuple[str, str, str, str]]:
 
 
 def size(cwd: Path, base: str, head: str) -> str:
-    """`git diff base...head`'s size without the files `left_out` names, as `+A −D in F
-    files`, then each left-out file with its why and its own size."""
-    rows = left_out(cwd, _git(cwd, "diff", "--numstat", "-z", "--no-renames", f"{base}...{head}")
-                    .encode(errors="surrogateescape"))
-    kept = [(int(added), int(deleted)) for added, deleted, _, why in rows if not why]
-    files = f"{len(kept)} file{'' if len(kept) == 1 else 's'}"
-    left = [f"{path} ({why})" if why == "binary" else f"{path} ({why}, +{added} −{deleted})"
-            for added, deleted, path, why in rows if why]
-    return (f"+{sum(a for a, _ in kept)} −{sum(d for _, d in kept)} in {files}"
-            + (f", leaving out {_shown(left)}" if left else ""))
+    """`git diff base...head`'s size without the files `left_out` names, a move counting as
+    its edits, as `+A −D in F files`; then the left-out files' size the same way, and the
+    largest of them, each with its why and its own size."""
+    rows = left_out(cwd, _git(cwd, "diff", "--numstat", "-z", "-M", f"{base}...{head}")
+                    .encode(errors="surrogateescape"), head)
+    lines = lambda added, deleted: (0, 0) if added == "-" else (int(added), int(deleted))  # binary
+    total = lambda part: (f"+{sum(lines(a, d)[0] for a, d, *_ in part)} −{sum(lines(a, d)[1] for a, d, *_ in part)}"
+                          f" in {len(part)} file{'' if len(part) == 1 else 's'}")
+    left = sorted((row for row in rows if row[3]), key=lambda row: -sum(lines(*row[:2])))
+    named = [f"{path} ({why})" if why == "binary" else f"{path} ({why}, +{added} −{deleted})"
+             for added, deleted, path, why in left]
+    return total([row for row in rows if not row[3]]) + (f", leaving out {total(left)}: {_shown(named)}" if left else "")
 
 
 def _shown(reasons: list[str], limit: int = 3) -> str:
@@ -431,9 +446,9 @@ def _evidence(text: str) -> tuple[str, str]:
 def main(argv: list[str]) -> int:
     """`record <base-sha> <reviewed-head> [--verdict V] [--evidence KIND=REF]... [--require
     KIND]... [--finding TEXT]... [--branch B]` prints the receipt as JSON; `status <base> <head>` prints
-    the patch-id, whether it's done, the size, review-loop's result, and a Done's idiom sources; `numstat`
-    reads `git diff --numstat -z --no-renames` and writes each row as `why<TAB>added<TAB>deleted<TAB>path`
-    and a NUL, with `kept` for why when `left_out` keeps it; `classify <base> <head>` prints each kind of
+    the patch-id, whether it's done, the size, review-loop's result, and a Done's idiom sources; `numstat
+    [--source REV]` reads `git diff --numstat -z --no-renames` and writes each row as
+    `why<TAB>added<TAB>deleted<TAB>path` and a NUL, with `kept` for why when `left_out` keeps it; `classify <base> <head>` prints each kind of
     evidence the diff needs, one `kind: reason; reason` line each, or `none`; `last
     <branch> [<base> <head>]` prints the branch's newest verdict as JSON, or `last: none`;
     given the diff to re-check, the JSON adds `known`, `known(...)`'s reason, when it isn't
@@ -462,7 +477,7 @@ def main(argv: list[str]) -> int:
     result.add_argument("--skip", metavar="REASON")
     reviewing.add_argument("--rating", type=int, default=0, metavar="N")
     reviewing.add_argument("--reason", default="", metavar="TEXT")
-    commands.add_parser("numstat")
+    commands.add_parser("numstat").add_argument("--source", default="", metavar="REV")
     latest = commands.add_parser("last")
     latest.add_argument("branch")
     latest.add_argument("diff", nargs="*", metavar="base head")
@@ -484,7 +499,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps(asdict(review)))
             return 0
         if args.command == "numstat":
-            for added, deleted, path, why in left_out(Path.cwd(), sys.stdin.buffer.read()):
+            for added, deleted, path, why in left_out(Path.cwd(), sys.stdin.buffer.read(), args.source):
                 sys.stdout.buffer.write(f"{why or 'kept'}\t{added}\t{deleted}\t{path}\0".encode(errors="surrogateescape"))
             return 0
         if args.command == "classify":

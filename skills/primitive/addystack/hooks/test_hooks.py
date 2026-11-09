@@ -3349,15 +3349,31 @@ class Verdicts(unittest.TestCase):
                                "api/client.ts": "generated", "logo.png": "binary", "src/a b.ts": "",
                                ".gitattributes": ""})
         self.assertEqual(verdicts.size(repo, self.base, self.head),
-                         "+4 −1 in 3 files, leaving out api/client.ts (generated, +1 −0); app.min.js (generated, +1 −0); "
-                         "logo.png (binary); and 2 more")
+                         "+4 −1 in 3 files, leaving out +5 −0 in 5 files: web/bun.lock (lockfile, +2 −0); "
+                         "api/client.ts (generated, +1 −0); app.min.js (generated, +1 −0); and 2 more")
+
+    def test_size_reads_attributes_at_the_head_counts_a_move_as_its_edits_and_names_the_largest_left_out(self):
+        self.commit({"old.txt": "".join(f"{n}\n" for n in range(100)), "z.generated.ts": "z\n" * 1000,
+                     **{f"{n}.min.js": "m\n" for n in "abc"}})
+        base = self.head
+        self.git("mv", "old.txt", "new.txt")
+        self.commit({".gitattributes": "api/*.ts linguist-generated\n", "api/client.ts": "g\n" * 100, "f": "d\n"})
+        self.git("checkout", "-q", base)  # the checkout has neither the attributes nor the move
+        self.base = base
+        self.assertEqual(verdicts.size(pathlib.Path(self.repo), base, self.git("rev-parse", "@{-1}").strip()),
+                         "+2 −1 in 3 files, leaving out +100 −0 in 1 file: api/client.ts (generated, +100 −0)")
+        first = self.git("rev-list", "--max-parents=0", "HEAD").strip()
+        self.assertTrue(verdicts.size(pathlib.Path(self.repo), first, base).endswith(
+            "leaving out +1003 −0 in 4 files: z.generated.ts (generated, +1000 −0); a.min.js (generated, +1 −0); "
+            "b.min.js (generated, +1 −0); and 1 more"))
 
     def test_numstat_writes_why_first_for_packet_sh(self):
         self.commit({"yarn.lock": "x\n"})
         numstat = self.git("diff", "--numstat", "-z", "--no-renames", f"{self.base}...{self.head}")
-        out = subprocess.run(["python3", str(HOOKS / "verdicts.py"), "numstat"], cwd=self.repo, input=numstat,
-                             capture_output=True, text=True, check=True).stdout
-        self.assertEqual(out, "kept\t1\t1\tf\0lockfile\t1\t0\tyarn.lock\0")
+        for source in [[], ["--source", self.head]]:
+            out = subprocess.run(["python3", str(HOOKS / "verdicts.py"), "numstat", *source], cwd=self.repo,
+                                 input=numstat, capture_output=True, text=True, check=True).stdout
+            self.assertEqual(out, "kept\t1\t1\tf\0lockfile\t1\t0\tyarn.lock\0")
 
     def review(self, *args):
         return subprocess.run(["python3", str(HOOKS / "verdicts.py"), "review", self.base, self.head, *args],

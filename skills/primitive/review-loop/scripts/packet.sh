@@ -117,7 +117,9 @@ kept=() left=()
 here=$(dirname "$self")
 if [ "$cmd" != plan ]; then
   # verdicts.py's left_out names what to leave out, the same list the ship gate's size uses.
-  git diff --numstat -z --no-renames "${spec[@]}" | python3 "$here/verdicts.py" numstat > "$dir/numstat"
+  # A committed diff reads its attributes at the reviewed head; working changes, at the tree.
+  source=(); [ "$cmd" = working ] || source=(--source "$head")
+  git diff --numstat -z --no-renames "${spec[@]}" | python3 "$here/verdicts.py" numstat "${source[@]}" > "$dir/numstat"
   while IFS=$'\t' read -r -d '' why _ _ path; do
     if [ ${#only[@]} -gt 0 ]; then
       inside=no
