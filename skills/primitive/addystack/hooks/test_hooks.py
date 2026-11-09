@@ -4656,6 +4656,12 @@ class ReplyBudget(unittest.TestCase):
                               "Cost, Decide, Review, Do, each value at most 20 words", reason)
         header = self.fact(header="| Problem | " + "word " * 26 + "|")
         self.assertIn("its header value runs 26 words", self.bounce(header))
+        # A pipe in the header's value gives it a third cell, so Markdown draws no table at all.
+        piped = self.fact(header="| Change | Handle `a | b` in the parser. |")
+        self.assertIn("its header value holds an unescaped |, so Markdown draws no table; write \\|", self.bounce(piped))
+        self.assertEqual(self.bounce(self.fact(header="| Change | Handle `a \\| b` in the parser. |")), "")
+        wide = self.fact(header="| Check | Result | Note |", rows=("| Review | Passed. | none |",))
+        self.assertEqual(self.bounce(wide.replace("|---|---|", "|---|---|---|")), "")  # a real three-column view
         self.assertIn("isn't one of its labels", self.bounce(self.fact(rows=broken["a label off the list"][0]), turn_id="t1"))
         both = self.fact(rows=(self.ROWS[1], self.ROWS[0], "| Cause | x |"))
         self.assertIn("\"Cause\" isn't one of its labels; a Risk or Unsure row sits below another row", self.bounce(both))
@@ -4676,6 +4682,10 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(self.bounce(three.replace("|---|---|", "|---|---|---|")), "")
         second = self.fact(below="| Helper | Earns its place |\n|---|---|\n| `toRows` | yes |\n| Review | no |\n\n")
         self.assertEqual(self.bounce(second), "")  # a comparison view under the fact table keeps its own labels
+        # Codex review, round 2: a reply that opens on a plain sentence has no headline, so its table is a view.
+        plain = self.fact(rows=("| Review | Passed. |", "| Tests | Passed. |"), header="| Check | Result |").replace(
+            "🟡 **Merge #32, so old to-dos stop blocking routine steps?**", "Here are the test results:")
+        self.assertEqual(self.bounce(plain), "")
         strip = self.fact(above="Group 1 🟡 · 2 ⬜ · 3 ⬜\n\n", rows=(self.ROWS[0], "| Cause | x |"))
         self.assertIn('"Cause" isn\'t one of its labels', self.bounce(strip))
         example = "✅ **The rules show one.**\n\n````markdown\n" + self.fact(rows=("| Cause | x |", self.ROWS[0])) + "\n````\n"
@@ -4855,6 +4865,9 @@ class BareReferences(unittest.TestCase):
         self.assertEqual(self.bounce(compared), "")
         under = table + "| Why | A key is missing. |\n\n| Item | Result |\n|---|---|\n| Review | Item 48 fixed. |\n"
         self.assertEqual(self.bounce(under), "")
+        # Codex review, round 2: a code block ends the fact table, as it does when rendered.
+        fenced = table + "| Why | A key is missing. |\n```text\nresult\n```\n| Area | Result |\n|---|---|\n| Do | Fix item 21. |\n"
+        self.assertEqual(self.bounce(fenced), "")
 
     def test_passes_prose_outside_the_action_lines_and_a_second_stop(self):
         self.assertEqual(self.bounce("Item 48 is committed.\n\n**Needs you**: sign in to Apple."), "")

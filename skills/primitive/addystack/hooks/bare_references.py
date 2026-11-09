@@ -154,7 +154,8 @@ def problems(text, names={}):
     """One line per bare number in the reply's Next, Needs you, and Done lines. A number
     that is an item's id in names, from the turn block, gets that item's name beside it:
     "'fix 3' (3 → currency column) in: …"."""
-    lines = visible(text)
+    # Code as blank lines, so a code block between two tables keeps them apart, as rendered.
+    lines = visible(text, blank_code=True)
     known = defined(lines)
     found = []
     for line in zone_lines(lines):
