@@ -44,7 +44,9 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 
 `skills/preferences/` and `skills/preset/` hold the maintainer's own skills and a team's.
 They're outside the release: each sets `metadata.internal: true`, so `npx skills add`
-installs one only when `--skill` names it, and `update` and `doctor` leave them alone.
+installs one only when `--skill` names it or `INSTALL_INTERNAL_SKILLS=1` is set. `update`
+never adds or removes one, though it updates an installed copy with the rest, and
+`doctor` doesn't check them.
 
 ## Config
 
