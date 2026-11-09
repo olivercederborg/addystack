@@ -4628,7 +4628,7 @@ class ReplyBudget(unittest.TestCase):
         # The rules an agent writes to and the limits it's sent back for are one list.
         rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
         rows = rules[rules.index("**Rows**"):rules.index("3. **View**")]
-        self.assertIn("at most five, each `label | value`, the value at most 20 words", rows)
+        self.assertIn("at most five, each `label | value`. Every value, the header's too, is at most 20 words", rows)
         self.assertEqual((reply_budget.FACT_ROWS, reply_budget.FACT_WORDS), (5, 20))
         self.assertEqual(tuple(re.findall(r"\b(?:%s)\b" % "|".join(reply_budget.FACT_LABELS), rows)),
                          reply_budget.FACT_LABELS + reply_budget.WARNED)

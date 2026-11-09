@@ -27,14 +27,14 @@ and the other options go in one fold. Hold to this until the reader says "normal
 2. **Fact table**: two columns, right under the headline, in place of a lead-in and
    note bullets. A reply whose whole point is one sentence has none.
    - **Header row**: the subject: a PR as a link, then what it changes, its state, and
-     size; or one word, such as Problem or Change, then the point in one line.
-   - **Rows**: at most five, each `label | value`, the value at most 20 words. The
-     label is one word from this list: Risk, what could go wrong; Unsure, what you
-     couldn't check; Why, the cause or your reason; Effect, what changes, measured;
-     Proof, passed checks or how to see it; Undo, the rollback; Skipped, what you left
-     out; Queued, what waits behind this; a decision's Pick, Source, and Cost; and the
-     [reader items](#reader-items) Decide, Review, and Do. Risk and Unsure rows come
-     first, their value starting with ⚠️.
+     size; or one word, such as Problem or Change, then the point.
+   - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
+     most 20 words. The label is one word from this list: Risk, what could go wrong;
+     Unsure, what you couldn't check; Why, the cause or your reason; Effect, what
+     changes, measured; Proof, passed checks or how to see it; Undo, the rollback;
+     Skipped, what you left out; Queued, what waits; a decision's Pick, Source, and
+     Cost; and the [reader items](#reader-items) Decide, Review, and Do. Risk and
+     Unsure rows come first, their value starting with ⚠️.
 3. **View**: only what the table can't hold, in its own block under it: code or a diff
    of at most 15 lines, a comparison table of at most six rows, a message draft, the
    reader's numbered steps, or a screenshot. [Views](references/views.md) shows each,
@@ -47,8 +47,8 @@ and the other options go in one fold. Hold to this until the reader says "normal
    what you'll do when it lands, with no table: "⏳ **CI on #12, 6 min in**, then: fix
    any failure".
 
-**Budget**: other prose above the fold stays under 60 words. A mid-turn progress
-message is one line.
+**Budget**: a fact that fits no row or view goes in the fold, and any other prose above
+it stays under 60 words. A mid-turn progress message is one line.
 
 ````markdown
 ✅ **Exports no longer time out on big companies.**
@@ -95,10 +95,9 @@ as a review's findings with their drafts, or a planning round's questions.
 1. **Headline**: `🟡 **<a question answerable yes or no>**`. In a round of several, a
    strip follows it: `Group 1 🟡 · 2 ⬜ · 3 ⬜`.
 2. **Fact table**: the header row is `Problem`, then one plain line on what's wrong or
-   at stake, and for whom; the reader judges the call against it. A call that weighs
-   options adds Pick, your answer and what it optimizes; Source, what it follows; and
-   Cost only when the pick is hard to undo: a migration, a public API, or a message
-   sent.
+   at stake, and for whom. A call that weighs options adds Pick, your answer and what it
+   optimizes; Source, what it follows; and Cost only when the pick is hard to undo: a
+   migration, a public API, or a message sent.
 3. **One view** under it, by the kind of call:
    - **Design**: the pick's interface, data shape, or diff, with a call site.
    - **Product**: what the customer sees, and how many it reaches, counted from real
