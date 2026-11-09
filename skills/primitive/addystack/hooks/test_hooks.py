@@ -5221,6 +5221,45 @@ class TurnBlock(unittest.TestCase):
                 except turn_block.Malformed as error:
                     self.assertNotIn("\n", str(error))
 
+    def test_a_missing_list_reads_as_empty_on_running_and_done_only(self):
+        """running and done may omit needs, options, and standing, since [] is the only valid
+        options for both; a stop still names both lists, and an explicit null is malformed."""
+        need = self.STOP["needs"][0]
+        running = {"state": "running", "needs": [], "options": [], "elapsed": "2 min"}
+        done = {"state": "done", "needs": [], "options": []}
+        for full in (running, done, {**running, "needs": [need]}):
+            for gone in (("needs",), ("options",), ("needs", "options"), ("standing",)):
+                value = {key: item for key, item in full.items() if key not in gone}
+                with self.subTest(value=value):
+                    # The same Turn as the block with each missing list written as [].
+                    self.assertEqual(turn_block.parse(block(value)),
+                                     turn_block.parse(block({**value, **{key: [] for key in gone}})))
+        kept = turn_block.parse(block({"state": "running", "needs": [need], "elapsed": "2 min"}))
+        self.assertEqual((kept.needs, kept.options, kept.standing),
+                         ((turn_block.Need(3, "decide", "currency column"),), (), ()))
+        # The lists' other rules still hold when one is left out.
+        self.assertEqual(self.reason(block({"state": "done", "needs": [need]})), "state done carries needs")
+        self.assertEqual(self.reason(block({"state": "running", "options": self.STOP["options"], "elapsed": "2 min"})),
+                         "state running carries options")
+        self.assertEqual(self.reason(block({"state": "running"})), "state running needs elapsed")
+        # A stop names both lists, as before.
+        for gone in ("needs", "options"):
+            with self.subTest(stop_without=gone):
+                self.assertEqual(self.reason(block({key: item for key, item in self.STOP.items() if key != gone})),
+                                 f'missing field "{gone}"')
+        self.assertEqual(self.reason(block({"state": "stop"})), 'missing field "needs"')
+        # A state that isn't one of the three gets no default either.
+        self.assertEqual(self.reason(block({"state": "waiting"})), 'missing field "needs"')
+        self.assertEqual(self.reason(block({"needs": [], "options": []})), 'missing field "state"')
+        # An explicit null is still not a list, in every state.
+        for value in (running, done, self.STOP):
+            for field in ("needs", "options", "standing"):
+                with self.subTest(state=value["state"], null=field):
+                    self.assertEqual(self.reason(block({**value, field: None})), f"{field} is not a list")
+        # Picks from a stop's options read as before, and a listless done picks nothing.
+        self.assertEqual(turn_block.picked(self.REPLY + block(self.STOP), "a").cls, "stop:merge")
+        self.assertIsNone(turn_block.picked("Done.\n" + block({"state": "done"}), "a"))
+
     def test_the_block_is_last_outside_code_blocks_and_alone(self):
         valid = block(self.STOP)
         START = "the turn block must start at the beginning of its own line"

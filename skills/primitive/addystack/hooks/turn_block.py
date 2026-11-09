@@ -220,7 +220,7 @@ def block_body(reply):
 
 
 def read_fields(value, where, required, optional=()):
-    """value as a dict holding every required field and no unknown one."""
+    """value as a dict holding every required field and no unknown one; a field may be in both."""
     if not isinstance(value, dict):
         raise Malformed(f"{where or 'the turn block'} is not a JSON object")
     prefix = f"{where}." if where else ""
@@ -286,13 +286,17 @@ def parse(reply: str) -> Turn:
         raise
     except (ValueError, RecursionError) as error:  # Python 3.9 recurses on deep nesting
         raise Malformed(f"not JSON: {' '.join(str(error).split())}") from None
-    value = read_fields(value, "", ("state", "needs", "options"), ("eta", "elapsed", "project", "standing"))
+    # A missing list reads as [] on running and done, where [] is the only valid options and
+    # done's only valid needs. A stop still names both, since merge-gate reads its picks from
+    # them and a forgotten list there goes back. An explicit null is still not a list.
+    lists = () if isinstance(value, dict) and value.get("state") in ("running", "done") else ("needs", "options")
+    value = read_fields(value, "", ("state", *lists), ("needs", "options", "eta", "elapsed", "project", "standing"))
     state = one_of(value["state"], get_args(State), "state")
     ids = {}
-    needs = tuple(read_need(item, at, ids) for at, item in enumerate(read_list(value["needs"], "needs")))
+    needs = tuple(read_need(item, at, ids) for at, item in enumerate(read_list(value.get("needs", []), "needs")))
     standing = tuple(read_need(item, at, ids, "standing")
                      for at, item in enumerate(read_list(value.get("standing", []), "standing")))
-    listed = read_list(value["options"], "options")
+    listed = read_list(value.get("options", []), "options")
     if len(listed) > 3:
         raise Malformed(f"options has {len(listed)} items, at most 3")
     options = tuple(read_option(item, at) for at, item in enumerate(listed))

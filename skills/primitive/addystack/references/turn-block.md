@@ -24,8 +24,10 @@ One block per reply; these are three alternatives.
   own line, outside any code block or code span. A block inside one is an example; a
   second block outside one makes the reply malformed.
 - **Body**: one JSON object, each field once, no unknown fields, and no `-->` or `--!>`,
-  which would end the comment early and show the rest. `state`, `needs`, and `options` are
-  required in every block; `needs` and `options` are lists, empty when there's nothing.
+  which would end the comment early and show the rest. `state` is required in every block.
+  `needs` and `options` are lists, empty when there's nothing: a `stop` names both, and a
+  `running` or `done` block may leave either out, which reads as `[]`. `null` is never a
+  list.
 
 ## Fields
 
