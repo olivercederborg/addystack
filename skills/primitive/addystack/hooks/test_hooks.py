@@ -4624,6 +4624,16 @@ class ReplyBudget(unittest.TestCase):
         piped = (*self.ROWS[:3], "| Undo | Revert `a | b`, then the merge. |")  # a pipe in a value splits no row
         self.assertEqual(self.bounce(self.fact(rows=piped)), "")
 
+    def test_reply_shape_states_the_fact_tables_limits(self):
+        # The rules an agent writes to and the limits it's sent back for are one list.
+        rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
+        rows = rules[rules.index("**Rows**"):rules.index("3. **View**")]
+        self.assertIn("at most five, each `label | value`, the value at most 20 words", rows)
+        self.assertEqual((reply_budget.FACT_ROWS, reply_budget.FACT_WORDS), (5, 20))
+        self.assertEqual(tuple(re.findall(r"\b(?:%s)\b" % "|".join(reply_budget.FACT_LABELS), rows)),
+                         reply_budget.FACT_LABELS + reply_budget.WARNED)
+        self.assertIn("Risk and Unsure rows come first, their value starting with ⚠️", rows)
+
     def test_a_fact_table_past_its_limits_goes_back(self):
         broken = {
             "a sixth row": ((*self.ROWS, "| Skipped | The reinstall. |", "| Queued | Two smaller gaps. |"),

@@ -572,9 +572,9 @@ def problem(event, reply):
         return None
     return (
         f"Your reply's headline and notes come to {count} words; reply-shape keeps them under {BUDGET}. The user "
-        "reads each reply at a glance. Send your whole reply again as one: a headline of at most 12 "
-        "words, the one view that fits the content or none, at most three notes of at most 15 words, and the "
-        "same closing and turn block. Keep every risk, decision, and step the user must take, "
+        "reads each reply at a glance. Send your whole reply again as one, in the shape your reply rules give: "
+        "a headline of at most 12 words, then its fact table, or under rules without one the one view that fits "
+        "the content or none and at most three notes of at most 15 words, and the same closing and turn block. Keep every risk, decision, and step the user must take, "
         "and move checks and evidence to the one fold. T3 shows only a turn's last message and folds the rest "
         "away, so the resent reply has to stand on its own. Add no note about the change.")
 
