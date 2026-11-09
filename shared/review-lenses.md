@@ -26,14 +26,15 @@ consequence.
 
 ## Rating
 
-Rate the whole change 1-10 as `7/10: <what cost the most>`. The worst kept finding
-sets the band, a finding that holds approval counting as a Blocker:
+Rate the whole change 1-10 as `7/10: <what cost the most>`. The worst kept finding's
+severity sets the band, a finding that holds approval counting as a Blocker:
 
 - **9-10**: none, or Optional only; 10 sets a pattern worth copying.
 - **7-8**: Cleanups.
-- **4-6**: works but needs rework: a Blocker, scope creep, or a shape that fights the
-  repo or the user's taste.
-- **1-3**: wrong approach, unsafe, or broken on its main path.
+- **4-6**: a Blocker it can be reworked around.
+- **1-3**: a Blocker in the approach itself: wrong approach, unsafe, or broken on its
+  main path.
 
-Thin test proof or hard-to-follow code takes the band's lower half. A rating never
-changes a verdict or severity.
+Scope creep, a shape that fights the repo or the user's taste, thin test proof, or
+hard-to-follow code takes the band's lower half. A rating never changes a verdict or
+severity.
