@@ -1014,6 +1014,10 @@ class BashRewrite(unittest.TestCase):
                 fixed = bounded(command)
                 self.assertIn('[ "$SECONDS" -lt ', fixed or "")
                 self.assert_parses(fixed)
+        # Redirects after `done` read in linear time: 26 of them once took 10 seconds.
+        started = time.monotonic()
+        self.assertIsNone(bounded("until [ -f x ]; do sleep 1; done" + ">a1" * 26 + " | cat"))
+        self.assertLess(time.monotonic() - started, 1)
         # The body sees the condition's status, as before the guard (Codex r3).
         fixed = bounded('until (exit 42); do echo "status $?"; sleep 0.01; break; done')
         self.assertEqual(subprocess.run(["bash", "-c", fixed], capture_output=True, text=True).stdout, "status 42\n")
@@ -1053,8 +1057,11 @@ class BashRewrite(unittest.TestCase):
                 ("until [ -f x ]; do sleep 1; done; while [ -f y ]; do echo idle; done", {}),
                 # verify-work: a stray `)` that would hide a piped subshell.
                 ("echo \\); ( true; until [ -f x ]; do sleep 1; done; true ) | cat; echo CONTINUED", {}),
-                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat', {}),
-                ('y=a; echo ${y%)}; ( until [ -f x ]; do sleep 1; done ) | cat; echo ${y#(}', {})]:
+                # Each refused by one rule alone: a `)` that closes nothing, `\)`, `${…)}`.
+                ("echo ); ( true; until [ -f x ]; do sleep 1; done; true ) | cat; echo (", {}),
+                ("( case $y in a) ;; esac; until [ -f x ]; do sleep 1; done; true ) | cat", {}),
+                ("( echo \\); until [ -f x ]; do sleep 1; done; echo \\( ) | cat", {}),
+                ("( echo ${y%)}; until [ -f x ]; do sleep 1; done; echo ${y#(} ) | cat", {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 

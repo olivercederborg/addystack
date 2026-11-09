@@ -138,12 +138,12 @@ def bound_waits(command, timeout_ms=None):
     condition of every `until` or `while` loop that sleeps, or none when any such loop
     falls outside the forms it knows; the hooks then deny the command as before."""
     code = shell_code(command)
-    # Parentheses must pair as written, or a subshell's loop can look like it stands alone:
-    # `echo \)`, `${x%)}`, and a `case` pattern's `)` don't.
-    depths = list(itertools.accumulate(1 if c == "(" else -1 for c in code if c in "()"))
+    # A `)` that closes nothing, such as a `case` pattern's `a)`, can make a subshell's loop
+    # look like it stands alone, as can `\)` or `${x%)}` with a `(` that makes up for it.
+    depths = itertools.accumulate(1 if c == "(" else -1 for c in code if c in "()")
     if (UNREADABLE.search(command) or CLOCK.search(command) or "`" in code or FUNCTION.search(code)
             or EVAL.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)
-            or min(depths, default=0) < 0 or depths[-1:] not in ([], [0]) or re.search(r"\\[()]", code)):
+            or min(depths, default=0) < 0 or re.search(r"\\[()]|\$\{[^}]*[()]", code)):
         return [], []
     limit = min(timeout_ms / 1000 if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool)
                 and timeout_ms > 0 else DEFAULT_TIMEOUT, DEFAULT_TIMEOUT) - MARGIN
