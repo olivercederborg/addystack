@@ -97,7 +97,7 @@ diff changes no behavior, such as copy, formatting, or a version bump, and say s
 small diff that changes logic still gets it. Verify every sub-agent's and the pass's
 findings yourself before keeping them, and wait for the pass before step 3: it's part
 of the review, not a watch to leave running. You and the pass each give the lenses'
-**Rating**; the verdict turn shows the lower one.
+**Rating**; re-band one that rests on a dropped finding, then show the lower one.
 
 When the PR has a Decisions table, raise findings on a listed decision first, by its
 number (`D2`). Keep findings with a concrete consequence, and at most three
