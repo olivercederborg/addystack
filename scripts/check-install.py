@@ -65,7 +65,9 @@ def scratch_env(environ, home):
 def main():
     skills = sorted(path.parent for path in ROOT.glob("skills/*/*/SKILL.md"))
     with tempfile.TemporaryDirectory() as home:
-        env = scratch_env(os.environ, home)
+        # The preferences and preset skills set metadata.internal, which `--skill '*'` skips
+        # unless the CLI's INSTALL_INTERNAL_SKILLS is set; their files must survive too.
+        env = {**scratch_env(os.environ, home), "INSTALL_INTERNAL_SKILLS": "1"}
         # An agent's environment makes the CLI install without prompts; -y covers the rest.
         # `npm exec` is `npx`, which the Dagger toolbox doesn't link.
         install = subprocess.run(["npm", "exec", "--yes", f"--package={CLI}", "--", "skills", "add", str(ROOT),
