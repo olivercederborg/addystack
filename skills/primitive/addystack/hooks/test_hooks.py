@@ -3367,6 +3367,30 @@ class Verdicts(unittest.TestCase):
             "leaving out +1003 −0 in 4 files: z.generated.ts (generated, +1000 −0); a.min.js (generated, +1 −0); "
             "b.min.js (generated, +1 −0); and 1 more"))
 
+    def test_size_is_the_same_from_a_subfolder_and_reads_a_deleted_files_attributes_at_the_base(self):
+        self.commit({".gitattributes": "/copy.txt linguist-generated\n", "copy.txt": "g\n" * 100,
+                     "dir/a.txt": "a\n"})
+        base = self.head
+        pathlib.Path(self.repo, ".gitattributes").write_text("dir/*.gen linguist-generated\n")
+        self.git("rm", "-q", "copy.txt")
+        self.commit({".gitattributes": "dir/*.gen linguist-generated\n", "dir/b.gen": "b\n" * 5})
+        want = ("+1 −1 in 1 file, leaving out +5 −100 in 2 files: copy.txt (generated, +0 −100); "
+                "dir/b.gen (generated, +5 −0)")
+        for folder in [self.repo, os.path.join(self.repo, "dir")]:
+            with self.subTest(folder=folder):
+                self.assertEqual(verdicts.size(pathlib.Path(folder), base, self.head), want)
+
+    @unittest.skipIf(tuple(map(int, re.findall(r"\d+", subprocess.run(["git", "--version"], capture_output=True,
+                                                                     text=True).stdout)[:2])) < (2, 42),
+                     "GIT_ATTR_SOURCE needs git 2.42")
+    def test_a_diff_attribute_in_the_checkout_doesnt_hide_a_text_edit(self):
+        self.commit({".gitattributes": "*.txt -diff\n", "file.txt": "before\n"})
+        base = self.head
+        self.git("rm", "-q", ".gitattributes")
+        self.commit({"file.txt": "after\n"})
+        self.git("checkout", "-q", base)
+        self.assertEqual(verdicts.size(pathlib.Path(self.repo), base, self.head), "+1 −2 in 2 files")
+
     def test_numstat_writes_why_first_for_packet_sh(self):
         self.commit({"yarn.lock": "x\n"})
         numstat = self.git("diff", "--numstat", "-z", "--no-renames", f"{self.base}...{self.head}")

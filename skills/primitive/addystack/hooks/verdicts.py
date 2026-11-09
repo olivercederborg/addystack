@@ -32,7 +32,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from dataclasses import asdict, astuple, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -127,12 +126,13 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
         raise VerdictError(str(error))
 
 
-def left_out(cwd: Path, numstat: bytes, source: str = "") -> list[tuple[str, str, str, str]]:
+def left_out(cwd: Path, numstat: bytes, sources: tuple[str, ...] = ()) -> list[tuple[str, str, str, str]]:
     """Each row of `git diff --numstat -z` as (added, deleted, path, why), where why is
     lockfile, vendored, generated, or binary for a file a review's size and packet leave
     out, or "" for one they keep. A renamed file's path is its new one. The attributes
-    that mark a file come from the `source` commit, the reviewed head, or else from the
-    working tree, as for working changes."""
+    that mark a file are each source commit's, a mark in any counting, so a deleted file
+    reads its base's; with none, the working tree's, as for working changes. Git before
+    2.42 ignores GIT_ATTR_SOURCE and reads the working tree's."""
     rows, fields = [], iter(numstat.decode(errors="surrogateescape").split("\0"))
     for record in fields:
         if record:
@@ -144,27 +144,23 @@ def left_out(cwd: Path, numstat: bytes, source: str = "") -> list[tuple[str, str
                 (why for why, patterns in LEFT_OUT for pattern in patterns if fnmatch.fnmatchcase("/" + path, pattern)), "")
             rows.append((added, deleted, path, why))
     asked = [path for _, _, path, why in rows if not why]
-    if asked:  # git's own attributes mark the rest, as GitHub's linguist reads them
-        with tempfile.TemporaryDirectory() as folder:
-            env, cached = None, []
-            if source:  # check-attr --source needs git 2.40, so read the commit into a scratch index
-                env = {**os.environ, "GIT_INDEX_FILE": os.path.join(folder, "index")}
-                _git(cwd, "read-tree", source, env=env)
-                cached = ["--cached"]
-            out = _git(cwd, "check-attr", *cached, "-z", "--stdin", "linguist-vendored", "linguist-generated",
-                       stdin="\0".join(asked) + "\0", env=env).split("\0")
-        marked = {path: attribute[len("linguist-"):] for path, attribute, value in zip(out[0::3], out[1::3], out[2::3])
-                  if value in ("set", "true")}
-        rows = [(added, deleted, path, why or marked.get(path, "")) for added, deleted, path, why in rows]
-    return rows
+    marked: dict[str, str] = {}
+    root = Path(_git(cwd, "rev-parse", "--show-toplevel").strip())  # numstat's paths are from the root
+    for source in (sources or (None,)) if asked else ():  # git's own attributes mark the rest, as linguist reads them
+        env = {**os.environ, "GIT_ATTR_SOURCE": source} if source else None
+        out = _git(root, "check-attr", "-z", "--stdin", "linguist-vendored", "linguist-generated",
+                   stdin="\0".join(asked) + "\0", env=env).split("\0")
+        marked |= {path: attribute[len("linguist-"):] for path, attribute, value in zip(out[0::3], out[1::3], out[2::3])
+                   if value in ("set", "true")}
+    return [(added, deleted, path, why or marked.get(path, "")) for added, deleted, path, why in rows]
 
 
 def size(cwd: Path, base: str, head: str) -> str:
     """`git diff base...head`'s size without the files `left_out` names, a move counting as
     its edits, as `+A −D in F files`; then the left-out files' size the same way, and the
-    largest of them, each with its why and its own size."""
-    rows = left_out(cwd, _git(cwd, "diff", "--numstat", "-z", "-M", f"{base}...{head}")
-                    .encode(errors="surrogateescape"), head)
+    largest of them, each with its why and its own size. The diff reads head's attributes."""
+    numstat = _git(cwd, "diff", "--numstat", "-z", "-M", f"{base}...{head}", env={**os.environ, "GIT_ATTR_SOURCE": head})
+    rows = left_out(cwd, numstat.encode(errors="surrogateescape"), (base, head))
     lines = lambda added, deleted: (0, 0) if added == "-" else (int(added), int(deleted))  # binary
     total = lambda part: (f"+{sum(lines(a, d)[0] for a, d, *_ in part)} −{sum(lines(a, d)[1] for a, d, *_ in part)}"
                           f" in {len(part)} file{'' if len(part) == 1 else 's'}")
@@ -447,7 +443,7 @@ def main(argv: list[str]) -> int:
     """`record <base-sha> <reviewed-head> [--verdict V] [--evidence KIND=REF]... [--require
     KIND]... [--finding TEXT]... [--branch B]` prints the receipt as JSON; `status <base> <head>` prints
     the patch-id, whether it's done, the size, review-loop's result, and a Done's idiom sources; `numstat
-    [--source REV]` reads `git diff --numstat -z --no-renames` and writes each row as
+    [--source REV]...` reads `git diff --numstat -z --no-renames` and writes each row as
     `why<TAB>added<TAB>deleted<TAB>path` and a NUL, with `kept` for why when `left_out` keeps it; `classify <base> <head>` prints each kind of
     evidence the diff needs, one `kind: reason; reason` line each, or `none`; `last
     <branch> [<base> <head>]` prints the branch's newest verdict as JSON, or `last: none`;
@@ -477,7 +473,7 @@ def main(argv: list[str]) -> int:
     result.add_argument("--skip", metavar="REASON")
     reviewing.add_argument("--rating", type=int, default=0, metavar="N")
     reviewing.add_argument("--reason", default="", metavar="TEXT")
-    commands.add_parser("numstat").add_argument("--source", default="", metavar="REV")
+    commands.add_parser("numstat").add_argument("--source", action="append", default=[], metavar="REV")
     latest = commands.add_parser("last")
     latest.add_argument("branch")
     latest.add_argument("diff", nargs="*", metavar="base head")
@@ -499,7 +495,7 @@ def main(argv: list[str]) -> int:
             print(json.dumps(asdict(review)))
             return 0
         if args.command == "numstat":
-            for added, deleted, path, why in left_out(Path.cwd(), sys.stdin.buffer.read(), args.source):
+            for added, deleted, path, why in left_out(Path.cwd(), sys.stdin.buffer.read(), tuple(args.source)):
                 sys.stdout.buffer.write(f"{why or 'kept'}\t{added}\t{deleted}\t{path}\0".encode(errors="surrogateescape"))
             return 0
         if args.command == "classify":
