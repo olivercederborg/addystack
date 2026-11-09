@@ -41,7 +41,8 @@ SKILL_SUITES = {
     "skills/primitive/verify-work": [],
 }
 # Where pre-commit's glob finds each kit suite: a shipped skill's scripts/, and
-# shared/scripts/. The workshop that holds the kit runs its own suites on the host.
+# shared/scripts/. The preferences and preset skills, outside the release, run theirs on the
+# host, in pre-commit's last step.
 SUITE_TESTS = ("skills/primitive/*/scripts/test_*.py", "skills/orchestrator/*/scripts/test_*.py",
                "skills/optional/*/scripts/test_*.py", "shared/scripts/test_*.py")
 

@@ -42,6 +42,10 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 | orchestrator: runs primitives as steps | `autopilot` builds an approved plan to a verified PR stack, `babysit` keeps a watched PR moving, `coordinator` runs a project from one thread |
 | optional: extras `update` never adds or removes | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
 
+`skills/preferences/` and `skills/preset/` hold the maintainer's own skills and a team's.
+They're outside the release: each sets `metadata.internal: true`, so `npx skills add`
+installs one only when `--skill` names it, and `update` and `doctor` leave them alone.
+
 ## Config
 
 Your settings live in `~/.config/addystack/addystack.jsonc`.
