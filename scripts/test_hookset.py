@@ -207,6 +207,19 @@ class Merge(unittest.TestCase):
         self.assertTrue(owned("SessionStart", f"{resolved['kit']}/hooks/reply-shape-context.py --rules"))
         self.assertFalse(owned("Stop", "/opt/my-hooks/merge-gate.py"))
 
+    def test_owner_names_a_retired_kit_hook_without_a_ledger_entry(self):
+        # Codex review of the UI cards' removal: settings kept running the deleted reply-card.py.
+        resolved = resolve("{}")
+        owned = hookset.owner(resolved)
+        self.assertTrue(owned("PreToolUse", f"{resolved['kit']}/hooks/reply-card.py"))
+        self.assertTrue(owned("PreToolUse", f"{hookset._kit(resolved)}/hooks/reply-card.py"))
+        self.assertFalse(owned("PreToolUse", "/opt/my-hooks/reply-card.py"))
+        stale = {"hooks": {"PreToolUse": [{"matcher": "mcp__t3-code__html_render", "hooks": [
+            {"type": "command", "command": f"{hookset._kit(resolved)}/hooks/reply-card.py", "timeout": 10}]}]}}
+        merged = hookset.merge(stale, hookset.select(resolved, "claude"), owned)
+        self.assertNotIn("reply-card.py", json.dumps(merged))
+        self.assertFalse((KIT / "hooks" / "reply-card.py").exists())
+
     def test_owner_doesnt_name_a_users_hook_on_a_kit_script_no_manifest_entry_runs(self):
         resolved = resolve("{}")
         owned = hookset.owner(resolved)
@@ -241,6 +254,12 @@ class Drift(unittest.TestCase):
         self.hooks["Stop"].append({"hooks": [{"type": "command",
                                               "command": f"{self.resolved['kit']}/hooks/my-personal-hook.sh"}]})
         self.assertEqual(self.drift(), [])
+
+    def test_a_retired_kit_hook_left_in_the_settings_is_extra(self):
+        command = f"{hookset._kit(self.resolved)}/hooks/reply-card.py"
+        self.hooks["PreToolUse"].append({"matcher": "mcp__t3-code__html_render",
+                                         "hooks": [{"type": "command", "command": command, "timeout": 10}]})
+        self.assertEqual(self.drift(), [f"claude: extra PreToolUse {command}"])
 
     def test_a_regular_file_in_an_older_link_folder_is_the_users(self):
         with tempfile.TemporaryDirectory() as legacy:

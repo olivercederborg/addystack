@@ -37,6 +37,12 @@ RUNTIMES: Tuple[Runtime, ...] = ("claude", "codex")
 PRESETS = {"recommended": {"safety", "workflow"}, "all": {"safety", "workflow", "replies", "machine"}}
 PROFILES = {"darwin": {"darwin"}, "linux": {"linux"}, "sandbox": {"linux", "sandbox"}}
 _FIELDS = ("matcher", "timeout", "onFailure")
+# Hook scripts the kit once installed and has since deleted. A checkout that fast-forwards
+# past the deletion still has the command in its settings until the next install, so a
+# command on one in this kit's hooks folder is addystack's: drift reports it as extra, and
+# an install removes it, with or without a ledger entry. reply-card.py went with
+# reply-shape's UI cards (Nov 2026).
+RETIRED = ("reply-card.py",)
 
 
 @dataclass(frozen=True)
@@ -260,12 +266,14 @@ def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> 
     older install's link (a symlink or a missing path, never a regular file) in _legacy_dirs()
     whose name, or whose target's name, is a script the manifest runs. A user's own hook on
     another script in the kit's hooks folder isn't, nor one elsewhere that shares a name,
-    such as /opt/my-hooks/merge-gate.py."""
+    such as /opt/my-hooks/merge-gate.py. A RETIRED script in this kit's hooks folder is."""
     words = _words(command)
     if any(words == _words(_entry(entry, kit).command) for rows in manifest.values() for entry in rows):
         return True
     script = _script(command)
     folder = os.path.dirname(script)
+    if folder == os.path.join(os.path.expanduser(kit), "hooks") and os.path.basename(script) in RETIRED:
+        return True
     scripts = {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows}
     if folder not in {os.path.expanduser(legacy) for legacy in _legacy_dirs()}:
         return False
