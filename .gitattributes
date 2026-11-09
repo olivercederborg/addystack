@@ -1,4 +1,5 @@
 # sync-copies:start: scripts/sync-copies.py writes this block from the copies lists
+/.gitattributes linguist-generated
 /skills/optional/reply-shape/references/views.md linguist-generated
 /skills/optional/reply-shape/scripts/check-mermaid.mjs linguist-generated
 /skills/optional/review-artifact/references/format.md linguist-generated

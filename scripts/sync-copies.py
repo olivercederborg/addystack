@@ -145,8 +145,9 @@ def attributes(root, destinations):
     """root's .gitattributes with its BLOCK listing each destination as linguist-generated."""
     path = root / ATTRIBUTES
     text = path.read_text() if path.is_file() else ""
+    # The block marks itself too, so it never counts as written code.
     lines = sorted({f"/{os.path.relpath(os.path.join(root, destination), root)} linguist-generated"
-                    for destination in destinations})
+                    for destination in [*destinations, ATTRIBUTES]})
     block = "\n".join([BLOCK[0], *lines, BLOCK[1]]) + "\n"
     start, end = text.find(BLOCK[0] + "\n"), text.find(BLOCK[1] + "\n")
     if start == -1 or end < start:
@@ -190,10 +191,11 @@ def main(argv):
     check = argv == ["--check"]
     pairs = listed(ROOT)
     # Refuse before writing anything: a linked folder would send a write outside the kit.
-    escapes = sorted({link for _, destination in pairs for link in linked_parents(ROOT, destination)})
+    escapes = [f"{link} (a symlink: make it a real folder)" for link in
+               sorted({link for _, destination in pairs for link in linked_parents(ROOT, destination)})]
+    escapes += [f"{ATTRIBUTES} (a symlink: make it a real file)"] if (ROOT / ATTRIBUTES).is_symlink() else []
     if escapes:
-        print(f"Out of sync with {LIST}; these folders are symlinks, so no copy was written:",
-              *[f"{link} (a symlink: make it a real folder)" for link in escapes], sep="\n  ")
+        print(f"Out of sync with {LIST}; these are symlinks, so no copy was written:", *escapes, sep="\n  ")
         return 1
     stale = []
     for source, destination in pairs:
