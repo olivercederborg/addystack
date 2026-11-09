@@ -27,7 +27,9 @@ consequence.
 ## Rating
 
 Rate the whole change 1-10 as `7/10: <what cost the most>`. The worst kept finding's
-severity sets the band, a finding that holds approval counting as a Blocker:
+severity sets the band, a finding that holds approval counting as a Blocker, and a
+Blocker only a contrived setup reaches, such as an unreadable folder or a huge file, as
+a Cleanup:
 
 - **9-10**: none, or Optional only; 10 sets a pattern worth copying.
 - **7-8**: Cleanups.
