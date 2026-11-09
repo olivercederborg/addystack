@@ -19,7 +19,7 @@ this thread:
   `watching` field of `list_thread_pull_requests` with the owner's `threadId`.
 - **Posts only changes** since the last run, and stays quiet when nothing changed.
 - **Replaces an owner** only when its thread's status in `t3_thread_read` is `failed`.
-  Relaunch it with `t3_thread_launch` and
+  Relaunch it with `t3_thread_launch`, the same `modelSelection`, and
   `workspaceStrategy: {type: "existing_worktree", worktreePath, branch}`, on its
   existing worktree and branch, in the failed owner's slot, before any queued owner
   launches, so no third owner builds. An owner the user stopped (`interrupted` or

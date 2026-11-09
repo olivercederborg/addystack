@@ -63,7 +63,7 @@ When the `t3-code` MCP server offers `delegate_task`, follow [t3-delegation](ref
   [t3-delegation](references/t3-delegation.md) names the role. Those run through
   `delegate_task`.
 - Another provider or model: `delegate_task`.
-- Separate PR work: `t3_thread_launch` with `workspaceStrategy: "worktree"`. For a stacked PR, set `baseRef` to the parent branch and `startFromOrigin: false`.
+- Separate PR work: `t3_thread_launch` with `workspaceStrategy: "worktree"` and the PR owner row of the Roles table as `modelSelection`. For a stacked PR, set `baseRef` to the parent branch and `startFromOrigin: false`.
 - Long or heavy work on pushed code, such as a review, verify-work, or a browser run: another machine, per
   [t3-delegation's On another machine](references/t3-delegation.md#on-another-machine).
 

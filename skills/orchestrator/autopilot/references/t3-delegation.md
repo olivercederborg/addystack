@@ -21,17 +21,24 @@ one.
 
 | Role | `target` | Effort |
 |---|---|---|
+| Project thread: runs a multi-PR project | `claudeAgent`, `claude-opus-5-5` | `high` |
+| PR owner: a project worker or an owner thread | `claudeAgent`, `claude-opus-5-5` | `high` |
 | Writer: a routine layer | `claudeAgent`, `claude-opus-5-5` | `medium` |
 | Writer: a layer marked hard | `claudeAgent`, `claude-fable-5-2` | `high` |
 | Third sketcher: architect | `claudeAgent`, `claude-fable-5-2` | `high` |
 
-Fable 5.2 runs the hard roles: at `high` it matches Opus 5.5's best coding score for
-about half the cost per task, while a routine layer costs least on Opus at `medium`.
+Fable 5.2 runs only the short hard roles. At `high` it matches Opus 5.5's best coding
+score for about half the cost per task, but it has its own weekly allowance, which a
+thread that runs for hours, such as a project thread, a PR owner, or a reviewer, drains
+in one evening.
 
-Run these roles through `delegate_task`, even when the model matches yours, so the
-effort is set. They're required: when the child fails, report its layer or sketch as not
-done, and leave it undone rather than doing it yourself. Verifiers keep the models their
-own skills name.
+Run a worker, writer, or sketcher through `delegate_task`, even when the model matches
+yours, so the model and effort are set. An owner thread takes its row as
+`modelSelection` on `t3_thread_launch`, and a project thread sets its own with
+`t3_thread_configure`: `{instanceId: "claudeAgent", model: "claude-opus-5-5", options:
+[{id: "effort", value: "high"}]}`. They're required: when the child fails, report its
+layer or sketch as not done, and leave it undone rather than doing it yourself.
+Verifiers keep the models their own skills name.
 
 ## Reviewers
 
@@ -42,7 +49,7 @@ model:
 | Reviewer | `target` | Effort |
 |---|---|---|
 | Codex | `codex`, `gpt-6.1-terra` | `max` |
-| Claude | `claudeAgent`, `claude-fable-5-2` | `high` |
+| Claude | `claudeAgent`, `claude-opus-5-5` | `high` |
 
 Give a reviewer `role: "review"`, the title `◎ <PR #N or unit> r<round> · <reviewer
 model>`, such as `◎ #312 r1 · gpt-6.1-terra`, and `timeoutMs: 1800000`, since `max`

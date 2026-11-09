@@ -112,8 +112,8 @@ or a subtle algorithm, and its writer takes the hard row of the Roles table.
 
 **Owners.** When the work splits into PRs that don't depend on each other, give each
 its own owner thread, since a child task can't watch a PR. Launch it with
-`t3_thread_launch` in its own worktree from the default branch, with a brief that
-starts with the `Mode:` line. Each owner runs its PR through the user's router, or
+`t3_thread_launch` in its own worktree from the default branch, on the PR owner row of
+t3-delegation's Roles table, with a brief that starts with the `Mode:` line. Each owner runs its PR through the user's router, or
 autopilot without one, and watches its own PR. Owners share two slots, as
 `orchestrate`'s Owner threads sets out: launch two, and queue the rest for the hourly
 check to launch as slots free. A stack stays in one thread. This thread then
