@@ -25,6 +25,7 @@ if tool_input.get("run_in_background"):
     sys.exit(0)
 command = tool_input.get("command", "")
 
+
 def unquoted(text):
     text = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", text, flags=re.S)
     return re.sub(r"'[^']*'", "''", text)
@@ -39,14 +40,28 @@ def sleeps(text):
     return [float(s) for s in re.findall(r"\bsleep\s+(\d+(?:\.\d+)?)\b", text)]
 
 
+def rewrite_installed():
+    """Whether Claude Code's settings run bash-rewrite.py before Bash, so its guard applies."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip()
+    settings = (Path(os.path.abspath(home)) if home else Path("~/.claude").expanduser()) / "settings.json"
+    try:
+        groups = json.loads(settings.read_text())["hooks"]["PreToolUse"]
+        return any("bash-rewrite.py" in hook.get("command", "") for group in groups for hook in group["hooks"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
 def unbounded_loops():
-    """The sleeping `until`/`while` loops bash-rewrite.py leaves without a time limit."""
+    """Whether a sleeping `until`/`while` loop is left without bash-rewrite.py's guard at the
+    start of its body, each loop judged on its own, quoted ones included."""
     if not any(sleeps(body) for body in SLEEPING_LOOP.findall(code)):
         return False
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import shell_syntax
-    bounded = shell_syntax.apply(command, shell_syntax.bound_waits(command)[0])
-    return any(sleeps(body) and shell_syntax.GUARD_NAME not in body for body in SLEEPING_LOOP.findall(unquoted(bounded)))
+    if not rewrite_installed():
+        return True
+    edits = shell_syntax.bound_waits(command, tool_input.get("timeout"))[0]
+    return shell_syntax.unguarded(unquoted(shell_syntax.apply(command, edits)))
 
 
 def counted_loop_seconds(text):

@@ -992,26 +992,47 @@ class BashRewrite(unittest.TestCase):
                 self.assertEqual(subprocess.run([shell, "-n", "-c", command], capture_output=True).returncode, 0, (shell, command))
 
     def test_bounds_a_sleeping_loop(self):
-        fixed = self.rewrite("until grep -q x /tmp/b.log; do sleep 15; done; tail -4 /tmp/b.log")
-        self.assertEqual(fixed, '{ _wait_end1=$((SECONDS + 95)); until grep -q x /tmp/b.log; do [ "$SECONDS" -lt '
-                                '"$_wait_end1" ] || { echo "gave up waiting after 95s, the limit bash-rewrite.py set" >&2; '
-                                'exit 124; }; sleep 15; done; }; tail -4 /tmp/b.log')
+        def bounded(command, **flags):
+            payload = {"tool_name": "Bash", "permission_mode": "bypassPermissions",
+                       "tool_input": {"command": command, **flags}}
+            out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True,
+                                 text=True, check=True).stdout
+            return json.loads(out)["hookSpecificOutput"]["updatedInput"]["command"] if out else None
+        # The default 2-minute timeout, less 10 seconds and one pass's 15.
+        self.assertEqual(bounded("until grep -q x /tmp/b.log; do sleep 15; done; tail -4 /tmp/b.log"),
+                         'until grep -q x /tmp/b.log; do [ "$SECONDS" -lt 95 ] || { echo "gave up waiting: the command '
+                         'ran 95s, the limit bash-rewrite.py sets" >&2; exit 124; }; sleep 15; done; tail -4 /tmp/b.log')
+        self.assertIn('-lt 45 ]', bounded("until false; do sleep 5; done", timeout=60000))
         for command in [
-            "git push | tail -1 && while ! [ -f /tmp/x ]; do sleep 0.5; done 2>&1 | tail -1",
+            "git push && while ! [ -f /tmp/x ]; do sleep 0.5; done 2>&1 && echo ok",
             "for f in a b; do\n  until [ -s $f ]; do\n    sleep 2\n  done\ndone",
-            "x=$(while pgrep -f build >/dev/null; do sleep 5; done; echo ok) && echo $x",
-            "while true; do grep -q done /tmp/o && break; sleep 10; done &",
+            "until curl -sf localhost:3000/up | grep -q ok; do sleep 1; done",
+            "until test $(for f in a; do sleep 0.01; echo ready; done) = ready; do sleep 0.01; done; echo completed",
+            "until [ -f x ]; do sleep 1; done; tail /tmp/log | head -3",
+            "f() { echo x | cat; }; until [ -f x ]; do sleep 1; done",
         ]:
             with self.subTest(command=command):
-                fixed = self.rewrite(command)
-                self.assertIn("_wait_end1", fixed)
+                fixed = bounded(command)
+                self.assertIn('[ "$SECONDS" -lt ', fixed or "")
                 self.assert_parses(fixed)
-        # Loops no-foreground-waits.py keeps denying stay as written.
-        for command in ["until gh pr checks 1 | grep -q pass; do sleep 20; done", "until [ -f x ]; do sleep 60; done",
-                        "while read f; do sleep 1; done < list", 'bash -c "until [ -f x ]; do sleep 1; done"',
-                        "until [ -f x ]; do :; done"]:
-            with self.subTest(command=command):
-                self.assertIsNone(self.run_on(command))
+        # Loops the guard can't end, or that no-foreground-waits.py keeps denying, stay as written.
+        for command, flags in [
+                ("until gh pr checks 1 | grep -q pass; do sleep 20; done", {}),
+                ("until gh -R cli/cli pr checks 1; do sleep 1; done", {}), ("until [ -f x ]; do sleep 60; done", {}),
+                ("while read f; do sleep 1; done < list", {}), ('bash -c "until [ -f x ]; do sleep 1; done"', {}),
+                ("until [ -f x ]; do :; done", {}), ("while true; do sleep 1; done | cat && echo continued", {}),
+                ("echo $(while true; do sleep 1; done) && echo continued", {}),
+                ("(until [ -f x ]; do sleep 1; done)", {}),
+                ("while true; do grep -q done /tmp/o && break; sleep 10; done &", {}),
+                ("until false; do sleep 1; done", {"run_in_background": True}),
+                ("until false; do sleep 1; done", {"timeout": 1000}),
+                # The loop is in a pipe or the background through a compound command around it.
+                ("{ until [ -f x ]; do sleep 1; done; } | tail", {}),
+                ("for f in a; do until [ -f $f ]; do sleep 1; done; done | tail", {}),
+                ("if true; then until [ -f x ]; do sleep 1; done; fi &", {}),
+                ("until [ -f x ]; do sleep 1; done & wait $!", {})]:
+            with self.subTest(command=command, flags=flags):
+                self.assertIsNone(bounded(command, **flags))
 
     def test_runs_a_piped_git_write_that_chains_on_under_pipefail(self):
         for command, fixed in [
@@ -2169,17 +2190,29 @@ class AgentMemoryGuardNotice(unittest.TestCase):
 class NoForegroundWaits(unittest.TestCase):
     HOOK = "no-foreground-waits.py"
 
-    def bash(self, command, background=False):
-        return denies(self.HOOK, "Bash", {"command": command, "run_in_background": background})
+    def setUp(self):
+        # Claude Code's settings, as `addystack install` writes them, run bash-rewrite.py.
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.claude = pathlib.Path(folder.name)
+        self.settings(["~/kit/hooks/bash-rewrite.py", "~/kit/hooks/no-foreground-waits.py"])
+
+    def settings(self, commands):
+        hooks = [{"matcher": "Bash", "hooks": [{"type": "command", "command": c} for c in commands]}]
+        (self.claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": hooks}}))
+
+    def bash(self, command, background=False, **flags):
+        return denies(self.HOOK, "Bash", {"command": command, "run_in_background": background, **flags},
+                      env={**os.environ, "CLAUDE_CONFIG_DIR": str(self.claude)})
 
     def test_denies_long_foreground_waits(self):
         for command in [
             # Sleeping loops bash-rewrite.py leaves without a time limit: a PR or CI poll,
-            # a pass that sleeps a minute or more in all, and one in quoted text.
+            # a pass that leaves under 20 seconds of the 2 minutes, and one in quoted text.
             "until gh pr checks 133 | grep -q pass; do sleep 20; done",
             "while true; do gh run view 1 --json status | grep -q completed && break; sleep 15; done",
             "until grep -q 'BUILD EXIT' /tmp/build.log 2>/dev/null; do sleep 60; done",
-            "while pgrep -f 'codex exec' >/dev/null; do sleep 45; sleep 45; done; echo done",
+            "while pgrep -f 'codex exec' >/dev/null; do sleep 45; sleep 50; done; echo done",
             'bash -c "until [ -f /tmp/x ]; do sleep 5; done"',
             'for i in $(seq 1 115); do [ -s "$f" ] && break; sleep 5; done; cat "$f"',
             "for i in {1..30}; do sleep 10; done",
@@ -2210,6 +2243,18 @@ class NoForegroundWaits(unittest.TestCase):
                 self.assertFalse(self.bash(command))
         # A bounded loop still holds a sleep of a minute or more after it.
         self.assertTrue(self.bash("until grep -q x /tmp/o; do sleep 3; done; sleep 60"))
+        for command, flags in [
+            # The guard binds each loop: a quoted inner loop, or a body that only names it, has none.
+            ('while true; do sleep 1; bash -c "while true; do sleep 1; done"; done', {}),
+            ('while gh pr checks 1; do echo "[ \\"$SECONDS\\" -lt 9 ]"; sleep 1; done', {}),
+            ("until false; do sleep 1; done", {"timeout": 1000}),
+            ("while true; do sleep 1; done | cat", {}),
+        ]:
+            with self.subTest(command=command):
+                self.assertTrue(self.bash(command, **flags))
+        # Without bash-rewrite.py in Claude Code's settings, the loop runs unbounded, so it's denied.
+        self.settings(["~/kit/hooks/no-foreground-waits.py"])
+        self.assertTrue(self.bash("until grep -q x /tmp/o; do sleep 3; done"))
 
     def test_allows_background_runs(self):
         self.assertFalse(self.bash("until grep -q EXIT /tmp/b.log; do sleep 15; done", background=True))

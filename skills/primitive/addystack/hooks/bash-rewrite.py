@@ -267,7 +267,8 @@ def main():
     pipe_edits, pipe_notes, heads = pipefail_fixes(command)
     zsh_edits, zsh_notes = modifier_fixes(command)
     body_edits, body_notes = body_check_fixes(command)
-    wait_edits, wait_notes = bound_waits(command)
+    # A call sent to the background holds no turn, so its loop may run on.
+    wait_edits, wait_notes = ([], []) if tool_input.get("run_in_background") else bound_waits(command, tool_input.get("timeout"))
     refused, timeout_note = verifier_fix(payload, tool_input, command)
     if heads:
         refused = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
