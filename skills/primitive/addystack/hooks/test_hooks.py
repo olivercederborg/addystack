@@ -1009,7 +1009,6 @@ class BashRewrite(unittest.TestCase):
             "until curl -sf localhost:3000/up | grep -q ok; do sleep 1; done",
             "until test $(for f in a; do sleep 0.01; echo ready; done) = ready; do sleep 0.01; done; echo completed",
             "until [ -f x ]; do sleep 1; done; tail /tmp/log | head -3",
-            "f() { echo x | cat; }; until [ -f x ]; do sleep 1; done",
         ]:
             with self.subTest(command=command):
                 fixed = bounded(command)
@@ -1030,7 +1029,14 @@ class BashRewrite(unittest.TestCase):
                 ("{ until [ -f x ]; do sleep 1; done; } | tail", {}),
                 ("for f in a; do until [ -f $f ]; do sleep 1; done; done | tail", {}),
                 ("if true; then until [ -f x ]; do sleep 1; done; fi &", {}),
-                ("until [ -f x ]; do sleep 1; done & wait $!", {})]:
+                ("until [ -f x ]; do sleep 1; done & wait $!", {}),
+                # Codex r2: forms whose shell, pass length, clock, or GitHub use the hook can't read.
+                ("f() { until [ -f x ]; do sleep 1; done; }; f | cat && echo continued", {}),
+                ("x=`until [ -f x ]; do sleep 1; done` && echo continued", {}),
+                ("until [ -f x ]; do for i in 1 2 3; do sleep 5; done; done", {}),
+                ("until [ -f x ]; do sleep 1; sleep 1m; done", {}), ("until [ -f x ]; do sleep 1; sleep $n; done", {}),
+                ("until [ -f x ]; do SECONDS=0; sleep 1; done", {}),
+                ("poll() { gh pr checks 1; }; until poll; do sleep 5; done", {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 
@@ -2249,11 +2255,19 @@ class NoForegroundWaits(unittest.TestCase):
             ('while gh pr checks 1; do echo "[ \\"$SECONDS\\" -lt 9 ]"; sleep 1; done', {}),
             ("until false; do sleep 1; done", {"timeout": 1000}),
             ("while true; do sleep 1; done | cat", {}),
+            ('until [ -f x ]; do [ "$SECONDS" -lt 9 ]; sleep 1; done', {}),
+            ('until gh pr checks 1; do [ "$SECONDS" -lt 9 ] || { echo "gave up waiting: the command ran 9s, the limit '
+             'bash-rewrite.py sets" >&2; exit 124; }; sleep 1; done', {}),
+            ("until [ -f x ]; do until true; do :; done; sleep 1; done | cat", {}),
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command, **flags))
         # Without bash-rewrite.py in Claude Code's settings, the loop runs unbounded, so it's denied.
         self.settings(["~/kit/hooks/no-foreground-waits.py"])
+        self.assertTrue(self.bash("until grep -q x /tmp/o; do sleep 3; done"))
+        # Nor when its entry's matcher keeps it from running on Bash.
+        (self.claude / "settings.json").write_text(json.dumps({"hooks": {"PreToolUse": [
+            {"matcher": "Read", "hooks": [{"type": "command", "command": "~/kit/hooks/bash-rewrite.py"}]}]}}))
         self.assertTrue(self.bash("until grep -q x /tmp/o; do sleep 3; done"))
 
     def test_allows_background_runs(self):

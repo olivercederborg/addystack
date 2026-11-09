@@ -11,11 +11,12 @@ shell the Bash tool runs the command in, so one limit covers every loop and the 
 before them. D is the call's timeout (at most the 2-minute default) less 10 seconds and
 less the sleeps in one pass, so the last pass still ends inside it.
 
-A loop keeps no-foreground-waits' deny when the guard can't hold: in a pipe, `$(…)`, a
-subshell, or the background, where `exit` ends only that part (any lone `|` or `&` outside
-the loop counts); in quoted text, a heredoc, or a script the command runs; when it runs
-`gh` or polls GitHub, whose waits watch_pull_request owns; when one pass sleeps a minute or
-more, or leaves under 20 seconds; and in a call sent to the background. Known limit: a
+A loop keeps no-foreground-waits' deny when the guard can't hold: in a pipe, `$(…)`,
+backticks, a subshell, a function, or the background, where `exit` ends only that part; in
+quoted text, a heredoc, or a script the command runs; in a command that runs `gh` or reaches
+GitHub, whose waits watch_pull_request owns, or that sets SECONDS; when a pass's length is
+unknown (an inner loop, `sleep 1m`, `sleep $n`), a minute or more, or leaves under 20
+seconds; and in a call sent to the background. Known limit: a
 condition that hangs, such as a `curl` with no timeout, isn't cut short."""
 import re
 
@@ -24,7 +25,13 @@ MARGIN, DEFAULT_TIMEOUT = 10, 120
 # The fewest seconds a bounded loop may get.
 LEAST = 20
 GUARD = '[ "$SECONDS" -lt '
-POLLS_GITHUB = re.compile(r"(?<![\w.-])gh(?![\w.-])|\bgit\s+ls-remote\b|github\.com")
+GUARD_TEXT = re.compile(r'\[ "\$SECONDS" -lt (\d+) \] \|\| \{ echo "gave up waiting: the command ran \1s, the limit '
+                        r'bash-rewrite\.py sets" >&2; exit 124; \};')
+# A command that runs `gh` or reaches GitHub anywhere, which may poll a PR or CI through a
+# function, or that sets the clock the guard reads, keeps its loops as written.
+UNREADABLE = re.compile(r"(?<![\w.-])gh(?![\w.-])|\bgit\s+ls-remote\b|github\.com|\bSECONDS\b")
+# A function definition, whose loop runs wherever it's called, maybe in a pipe.
+FUNCTION = re.compile(r"\w\s*\(\s*\)\s*[{(]|\bfunction\s+\w")
 SLEEP = re.compile(r"\bsleep\s+(\d+(?:\.\d+)?)\b")
 # The words and braces that open and close a compound command, and parentheses, `$(` included.
 TOKEN = re.compile(r"(?<![\w$-])(for|select|while|until|do|done|if|fi|case|esac)(?![\w-])|(?<!\$)[{}]|\(|\)")
@@ -108,9 +115,9 @@ def loops(code):
     return result
 
 
-def unguarded(text):
+def unguarded(text, guards=True):
     """Whether text holds a sleeping `until` or `while` loop whose body doesn't start with
-    the guard. Any such word counts, in double quotes too, with the `do` and `done` that pair
+    the guard, or, without guards, any sleeping loop. Any such word counts, in double quotes too, with the `do` and `done` that pair
     with it, where a command starts, past loops nested in its condition or body; one with
     neither is skipped."""
     for keyword in re.finditer(r"(?<![\w$-])(?:until|while)(?![\w-])(?!\s+(?:IFS=\S*\s+)?read\b)", text):
@@ -125,7 +132,7 @@ def unguarded(text):
             elif word.group(1) == "done" and nested:
                 nested -= 1
             elif word.group(1) == "done" and do_end is not None:
-                if SLEEP.search(text[do_end:word.start()]) and not text[do_end:].lstrip().startswith(GUARD):
+                if SLEEP.search(text[do_end:word.start()]) and not (guards and GUARD_TEXT.match(text[do_end:].lstrip())):
                     return True
                 break
     return False
@@ -135,18 +142,22 @@ def bound_waits(command, timeout_ms=None):
     """(insertions, notes) putting the guard the module docstring describes at the start of
     each pass of every sleeping `until` or `while` loop it can bound."""
     code = shell_code(command)
+    if UNREADABLE.search(command) or "`" in code or FUNCTION.search(code):
+        return [], []
     limit = min(timeout_ms / 1000 if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool)
                 and timeout_ms > 0 else DEFAULT_TIMEOUT, DEFAULT_TIMEOUT) - MARGIN
     edits, notes = [], []
     for keyword, start, do_end, done_start, main in loops(code):
         if keyword not in ("until", "while") or re.match(r"(?:until|while)\s+(?:IFS=\S*\s+)?read\b", code[start:]):
             continue
-        body_sleeps = [float(s) for s in SLEEP.findall(code[do_end:done_start])]
-        sleeps = [float(s) for s in SLEEP.findall(code[start:done_start])]
+        body, loop = code[do_end:done_start], code[start:done_start]
+        body_sleeps = [float(s) for s in SLEEP.findall(body)]
+        sleeps = [float(s) for s in SLEEP.findall(loop)]
         seconds = int(limit - -(-sum(sleeps) // 1))
         if not main or not body_sleeps or max(sleeps) >= 60 or seconds < LEAST:
             continue
-        if POLLS_GITHUB.search(command[start:done_start]):
+        # A sleep of `1m` or `$n`, or one an inner loop repeats, makes a pass's length unknown.
+        if len(sleeps) != len(re.findall(r"\bsleep\b", loop)) or re.search(r"(?<![\w$-])(?:for|select|while|until)(?![\w-])", body):
             continue
         edits.append((do_end, 0, f' {GUARD}{seconds} ] || {{ echo "gave up waiting: the command ran {seconds}s,'
                                   f' the limit bash-rewrite.py sets" >&2; exit 124; }};'))

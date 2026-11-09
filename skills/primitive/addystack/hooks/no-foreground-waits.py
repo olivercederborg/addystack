@@ -46,20 +46,23 @@ def rewrite_installed():
     settings = (Path(os.path.abspath(home)) if home else Path("~/.claude").expanduser()) / "settings.json"
     try:
         groups = json.loads(settings.read_text())["hooks"]["PreToolUse"]
-        return any("bash-rewrite.py" in hook.get("command", "") for group in groups for hook in group["hooks"])
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return any("bash-rewrite.py" in hook.get("command", "") for group in groups
+                   if group.get("matcher") in (None, "", "*") or re.fullmatch(group["matcher"], "Bash")
+                   for hook in group["hooks"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, re.error):
         return False
 
 
 def unbounded_loops():
     """Whether a sleeping `until`/`while` loop is left without bash-rewrite.py's guard at the
     start of its body, each loop judged on its own, quoted ones included."""
-    if not any(sleeps(body) for body in SLEEPING_LOOP.findall(code)):
+    if not re.search(r"\b(?:until|while)\b", code) or not sleeps(code):
         return False
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import shell_syntax
-    if not rewrite_installed():
-        return True
+    if not rewrite_installed() or re.search(r"\bSECONDS\b", command):
+        # A guard the command wrote itself, or a clock it moves, isn't bash-rewrite's.
+        return any(sleeps(body) for body in SLEEPING_LOOP.findall(code)) or shell_syntax.unguarded(code, guards=False)
     edits = shell_syntax.bound_waits(command, tool_input.get("timeout"))[0]
     return shell_syntax.unguarded(unquoted(shell_syntax.apply(command, edits)))
 
