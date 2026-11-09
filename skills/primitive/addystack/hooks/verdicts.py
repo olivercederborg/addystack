@@ -113,7 +113,8 @@ def _store(cwd: Path) -> Path:
 def diff(cwd: Path, base: str, head: str) -> str:
     """`git diff base...head` as verdicts key it: raw (no color, external diff, or text
     conversion), with full blob ids so a binary change hashes the same in every clone."""
-    return _git(cwd, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--full-index", f"{base}...{head}")
+    return _git(cwd, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--no-relative", "--full-index",
+                f"{base}...{head}")
 
 
 def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
@@ -158,9 +159,11 @@ def left_out(cwd: Path, numstat: bytes, sources: tuple[str, ...] = ()) -> list[t
 def size(cwd: Path, base: str, head: str) -> str:
     """`git diff base...head`'s size without the files `left_out` names, a move counting as
     its edits, as `+A −D in F files`; then the left-out files' size the same way, and the
-    largest of them, each with its why and its own size. The diff reads head's attributes."""
-    numstat = _git(cwd, "diff", "--numstat", "-z", "-M", f"{base}...{head}", env={**os.environ, "GIT_ATTR_SOURCE": head})
-    rows = left_out(cwd, numstat.encode(errors="surrogateescape"), (base, head))
+    largest of them, each with its why and its own size. The diff reads head's attributes,
+    and a file reads its old side's at the merge base."""
+    numstat = _git(cwd, "diff", "--numstat", "-z", "-M", "--no-relative", f"{base}...{head}",
+                   env={**os.environ, "GIT_ATTR_SOURCE": head})
+    rows = left_out(cwd, numstat.encode(errors="surrogateescape"), (_git(cwd, "merge-base", base, head).strip(), head))
     lines = lambda added, deleted: (0, 0) if added == "-" else (int(added), int(deleted))  # binary
     total = lambda part: (f"+{sum(lines(a, d)[0] for a, d, *_ in part)} −{sum(lines(a, d)[1] for a, d, *_ in part)}"
                           f" in {len(part)} file{'' if len(part) == 1 else 's'}")

@@ -3391,6 +3391,23 @@ class Verdicts(unittest.TestCase):
         self.git("checkout", "-q", base)
         self.assertEqual(verdicts.size(pathlib.Path(self.repo), base, self.head), "+1 −2 in 2 files")
 
+    def test_size_reads_the_old_side_at_the_merge_base_and_ignores_diff_relative(self):
+        self.commit({".gitattributes": "/copy.txt linguist-generated\n", "copy.txt": "g\n" * 100, "dir/a": "a\n"})
+        fork = self.head
+        self.git("checkout", "-q", "-b", "feature")
+        pathlib.Path(self.repo, ".gitattributes").write_text("")
+        self.git("rm", "-q", "copy.txt")
+        self.commit({".gitattributes": ""})
+        feature = self.head
+        self.git("checkout", "-q", fork)
+        self.commit({".gitattributes": "", "dir/a": "a\nb\n"})  # the target branch drops the rule too
+        target = self.head
+        self.git("config", "diff.relative", "true")
+        want = "+0 −1 in 1 file, leaving out +0 −100 in 1 file: copy.txt (generated, +0 −100)"
+        for folder in [self.repo, os.path.join(self.repo, "dir")]:
+            with self.subTest(folder=folder):
+                self.assertEqual(verdicts.size(pathlib.Path(folder), target, feature), want)
+
     def test_numstat_writes_why_first_for_packet_sh(self):
         self.commit({"yarn.lock": "x\n"})
         numstat = self.git("diff", "--numstat", "-z", "--no-renames", f"{self.base}...{self.head}")

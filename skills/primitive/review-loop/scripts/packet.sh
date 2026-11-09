@@ -120,7 +120,7 @@ if [ "$cmd" != plan ]; then
   # A committed diff reads its attributes at the reviewed commits (git 2.42+); working
   # changes, at the tree.
   source=()
-  if [ "$cmd" != working ]; then export GIT_ATTR_SOURCE=$head; source=(--source "$base" --source "$head"); fi
+  if [ "$cmd" != working ]; then export GIT_ATTR_SOURCE=$head; source=(--source "$(git merge-base "$base" "$head")" --source "$head"); fi
   git diff --numstat -z --no-renames "${spec[@]}" | python3 "$here/verdicts.py" numstat "${source[@]}" > "$dir/numstat"
   while IFS=$'\t' read -r -d '' why _ _ path; do
     if [ ${#only[@]} -gt 0 ]; then
