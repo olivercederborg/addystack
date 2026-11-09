@@ -2995,6 +2995,12 @@ class MergeGate(unittest.TestCase):
                                        "content": [{"type": "input_text", "text": "merge #95 and #96"}]}}) + "\n")
         status, out = self.dry_run(command, CODEX_THREAD_ID=session, CODEX_HOME=os.path.join(self.dir, "codex"))
         self.assertEqual((status, out.splitlines()[1]), (0, f"go: yes, from {rollout}"))
+        # In Claude Code, the session's transcript, under CLAUDE_CONFIG_DIR when that's set.
+        transcript = pathlib.Path(self.dir, "claude", "projects", "-work", f"{session}.jsonl")
+        transcript.parent.mkdir(parents=True)
+        transcript.write_text(json.dumps(claude_said("merge #95 and #96")) + "\n")
+        status, out = self.dry_run(command, CLAUDE_CODE_SESSION_ID=session, CLAUDE_CONFIG_DIR=os.path.join(self.dir, "claude"))
+        self.assertEqual((status, out.splitlines()[1]), (0, f"go: yes, from {transcript}"))
         self.assertIn("go: no, from no transcript; pass --transcript", self.dry_run(command)[1])
 
     def test_names_a_go_the_matcher_takes_for_a_long_stack(self):
