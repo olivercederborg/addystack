@@ -108,7 +108,7 @@ checks: data and schema first, then server, then app. Assign every plan check to
 layer that proves it, and log the layout. Mark the checks only the user can run, such
 as on a real device or with a second account, so the report asks for them together.
 Mark each layer routine or hard. A hard layer holds cross-cutting design, concurrency,
-or a subtle algorithm, and its writer runs at high effort.
+or a subtle algorithm, and its writer takes the hard row of the Roles table.
 
 **Owners.** When the work splits into PRs that don't depend on each other, give each
 its own owner thread, since a child task can't watch a PR. Launch it with
@@ -125,8 +125,8 @@ and each independent PR has an owner thread or a place in the queue.
 ## 3. Build each layer
 
 Create the layer with the stacking tool, then hand its build to a fresh writer child:
-the writer in the Roles table of [t3-delegation](references/t3-delegation.md), at the
-effort the layer's mark sets, with `role: "implementation"`, `mode: "wait"`, and
+the writer row in the Roles table of [t3-delegation](references/t3-delegation.md) that
+the layer's mark picks, with `role: "implementation"`, `mode: "wait"`, and
 `timeoutMs: 1800000` in this checkout, and wait for it to finish before the next layer.
 Its `task` carries the `Mode:` line, the plan or brief, the contract, the layer's scope
 and checks, the decision log's path for its `--pr agent` calls, and the limits every

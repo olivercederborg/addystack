@@ -135,7 +135,7 @@ export declare function exportRows(range: DateRange): Effect<Row[], ExportError>
 // summary → exportRows(range) · export → exportRows(range) → toCsv(rows)
 ```
 
-`export.ts:12` · verified by grounding all three sketches · source: Codex sketched 2, Opus sketched 3
+`export.ts:12` · verified by grounding all three sketches · source: Codex sketched 2, Fable sketched 3
 
 </details>
 ````

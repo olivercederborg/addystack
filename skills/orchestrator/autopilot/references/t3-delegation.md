@@ -21,8 +21,12 @@ one.
 
 | Role | `target` | Effort |
 |---|---|---|
-| Writer: a stack's layers | `claudeAgent`, `claude-opus-5-5` | `medium`, or `high` for a layer marked hard |
-| Third sketcher: architect | `claudeAgent`, `claude-opus-5-5` | `high` |
+| Writer: a routine layer | `claudeAgent`, `claude-opus-5-5` | `medium` |
+| Writer: a layer marked hard | `claudeAgent`, `claude-fable-5-2` | `high` |
+| Third sketcher: architect | `claudeAgent`, `claude-fable-5-2` | `high` |
+
+Fable 5.2 runs the hard roles: at `high` it matches Opus 5.5's best coding score for
+about half the cost per task, while a routine layer costs least on Opus at `medium`.
 
 Run these roles through `delegate_task`, even when the model matches yours, so the
 effort is set. They're required: when the child fails, report its layer or sketch as not
@@ -38,7 +42,7 @@ model:
 | Reviewer | `target` | Effort |
 |---|---|---|
 | Codex | `codex`, `gpt-6.1-terra` | `max` |
-| Claude | `claudeAgent`, `claude-opus-5-5` | `high` |
+| Claude | `claudeAgent`, `claude-fable-5-2` | `high` |
 
 Give a reviewer `role: "review"`, the title `◎ <PR #N or unit> r<round> · <reviewer
 model>`, such as `◎ #312 r1 · gpt-6.1-terra`, and `timeoutMs: 1800000`, since `max`
