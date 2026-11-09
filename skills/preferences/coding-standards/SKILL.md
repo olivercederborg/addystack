@@ -40,7 +40,7 @@ When rules conflict:
 - Read [Modules and effects](references/modules-and-effects.md) for module ownership, services, adapters, persistence, workflows, transactions, and external effects.
 - Read [Testing](references/testing.md) when writing, changing, planning, running, or reviewing tests.
 - Read [TypeScript style](references/typescript-style.md) for strictness, casts, names, control flow, imports, exports, files, comments, and JSDoc.
-- Read [Taste](references/taste.md) on every run: Oliver's architecture, code, test, and UI preferences.
+- Read the user's taste on every run, their architecture, code, test, and UI preferences: the file their instructions name under Principles or Taste, which addystack builds from `judgment.taste`, or the kit's default [Taste](references/taste.md) when they name none.
 
 
 ## Library idioms
