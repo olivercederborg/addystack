@@ -65,6 +65,7 @@ shared/taste.md                                                skills/primitive/
 shared/taste.md                                                skills/primitive/review-teammate-pr/references/taste.md
 shared/taste.md                                                skills/primitive/scope-grill/references/taste.md
 shared/taste.md                                                skills/primitive/verify-work/references/taste.md
+shared/taste.md                                                skills/preferences/coding-standards/references/taste.md
 shared/views.md                                                skills/optional/reply-shape/references/views.md
 shared/views.md                                                skills/optional/review-artifact/references/views.md
 shared/views.md                                                skills/orchestrator/autopilot/references/views.md
