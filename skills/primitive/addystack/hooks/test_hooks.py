@@ -2999,7 +2999,8 @@ class MergeGate(unittest.TestCase):
         transcript = pathlib.Path(self.dir, "claude", "projects", "-work", f"{session}.jsonl")
         transcript.parent.mkdir(parents=True)
         transcript.write_text(json.dumps(claude_said("merge #95 and #96")) + "\n")
-        status, out = self.dry_run(command, CLAUDE_CODE_SESSION_ID=session, CLAUDE_CONFIG_DIR=os.path.join(self.dir, "claude"))
+        status, out = self.dry_run(command, CLAUDE_CODE_SESSION_ID=session, CLAUDE_CONFIG_DIR=os.path.join(self.dir, "claude"),
+                                   CODEX_HOME=os.path.join(self.dir, "no-codex"))
         self.assertEqual((status, out.splitlines()[1]), (0, f"go: yes, from {transcript}"))
         self.assertIn("go: no, from no transcript; pass --transcript", self.dry_run(command)[1])
 

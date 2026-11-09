@@ -51,8 +51,9 @@ def dry_run_payload(argv):
     if set(flags) - {"--transcript", "--session"}:
         sys.exit(f"merge-gate.py --dry-run: unknown flag {sorted(set(flags) - {'--transcript', '--session'})[0]}")
     session = flags.get("--session") or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
-    claude, codex = os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude", os.environ.get("CODEX_HOME") or "~/.codex"
-    transcripts = sorted(glob.glob(os.path.expanduser(f"{claude}/projects/*/{session}.jsonl"))
+    import hook_parity  # here: only a dry run looks the transcript up
+    claude, codex = hook_parity.config.claude_home(), os.environ.get("CODEX_HOME") or "~/.codex"
+    transcripts = sorted(glob.glob(f"{claude}/projects/*/{session}.jsonl")
                          + glob.glob(os.path.expanduser(f"{codex}/sessions/*/*/*/rollout-*-{session}.jsonl")),
                          key=os.path.getmtime) if session else []
     return {"tool_input": {"command": argv[0]}, "cwd": os.getcwd(), "session_id": session,
