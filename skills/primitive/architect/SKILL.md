@@ -67,14 +67,17 @@ Goal: <goal>
 Decisions: <one line each>
 Not in scope: <list>
 Touched modules and their callers: <paths>
+Lenses: <the chat format's Lenses skills>; load each, and follow them.
 Return the caller's usage first, then the modules and what each owns, the types and
 function signatures with bodies left out, and a typed call stack of how the modules call
 each other, with the type at each hop where it carries information. Prefer the shape that hides the most behind the smallest interface.
 ```
 
-Before presenting, ground every signature with [grounding](references/grounding.md)
-against the version it will compile on (the target branch's lockfile, read from a
-checkout with it installed), the repo's conventions, and the framework's idioms. Then screen every candidate for these red flags,
+Before presenting, load the chat format's **Lenses** skills, and ground every signature
+with [grounding](references/grounding.md) against them and the version it will compile
+on (the target branch's lockfile, read from a checkout with it installed). Find each
+part's precedent: the repo file whose pattern it follows, or the framework's idiom where
+the repo has none. Then screen every candidate for these red flags,
 revising or dropping one that has them. Assume the next contributor is an agent that sees
 only the files it opened, copies the nearest example, and takes the shortest path that
 compiles. Prefer the shape where a change that looks right from one file is right for
@@ -102,10 +105,10 @@ differ in structure, and each has usage, signatures, and a typed call stack.
 
 ## 3. Present and decide
 
-The recommended candidate is the reply's shape: one code block with the signatures,
-the caller's usage, and the typed call stack as a closing comment, under a first-line
-comment naming what it hides. Each other candidate is one note naming what a caller must
-know. The fold holds their code blocks, written the same way, and the evidence.
+The recommended candidate is the reply's shape: one code block with the signatures, each
+commented with its precedent, the caller's usage traced from where the flow starts, and
+the typed call stack as a closing comment, under a first-line comment naming what it
+hides. Each other candidate is one note naming what a caller must know. The fold holds their code blocks, written the same way, and the evidence.
 Recommend the shape that hides the most behind the smallest interface.
 
 ````markdown
@@ -113,8 +116,10 @@ Recommend the shape that hides the most behind the smallest interface.
 
 ```ts
 // 1 · Export owns the date range: hides filtering and column order
-export declare function exportCsv(range: DateRange): Effect<CsvFile, ExportError>
-const file = yield* exportCsv({ from, to }) // caller knows only DateRange
+export declare function exportCsv(range: DateRange): Effect<CsvFile, ExportError> // as exportSummary, export.ts:12
+// ExportButton's handler, the flow's start; it knows only DateRange
+const file = yield* exportCsv({ from: month.start, to: month.end })
+yield* download(file)
 // exportCsv → transactions.inRange(range) → toCsv(rows)
 ```
 
@@ -135,7 +140,7 @@ export declare function exportRows(range: DateRange): Effect<Row[], ExportError>
 // summary → exportRows(range) · export → exportRows(range) → toCsv(rows)
 ```
 
-`export.ts:12` · verified by grounding all three sketches · source: Codex sketched 2, Fable sketched 3
+Precedents verified by grounding with the lenses · source: Codex sketched 2, Fable sketched 3
 
 </details>
 ````
