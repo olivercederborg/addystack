@@ -61,7 +61,7 @@ it stays under 60 words. A mid-turn progress message is one line.
 
 ---
 
-**Done**. Still open: your review of #212.
+**Done**. Still open: the 40 s yearly export.
 ````
 
 ## Reader items

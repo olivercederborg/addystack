@@ -200,19 +200,21 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 ````
 
 Several PRs share one table: its header row is `Stack`, a Risk names its PR, and a
-table under it lists each PR in merge order.
+table under it lists each PR in merge order with its own size and rating.
 
 ````markdown
 🟡 **Merge the upload stack, #124 to #126?**
 
-| Stack | 3 PRs, bottom first · all draft · verify-work Done on each at head |
+| Stack | 3 PRs, bottom first · all draft · +184 −182 in 9 files |
 |---|---|
 | Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
+| Risk | ⚠️ #124's review is 8/10: the timeout path has no test. |
+| Proof | verify-work Done on each at head · CI · no restack |
 | Undo | Revert #126, then #125, then #124, and drop the index. |
 
 | PR | Changes | Size · review |
 | --- | --- | --- |
-| [#124](https://github.com/acme/app/pull/124) | uploads: a retry reuses its receipt | +120 −30 in 4 files · 8/10: no timeout test |
+| [#124](https://github.com/acme/app/pull/124) | uploads: a retry reuses its receipt | +120 −30 in 4 files · 8/10 |
 | [#125](https://github.com/acme/app/pull/125) | server: receipts carry their upload id | +60 −12 in 2 files · 9/10 |
 | [#126](https://github.com/acme/app/pull/126) | cleanup: the old dedupe job is gone | +4 −140 in 3 files · 10/10 |
 
