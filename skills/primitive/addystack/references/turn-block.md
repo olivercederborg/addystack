@@ -40,12 +40,13 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
     as `"10 min"`), plus `eta`, the time left (1-40 characters, not blank), only when it's
     measured. Only `running`
     carries either.
-- **`needs`**: each Decide, Review, or Do item the reply asks of the user, and a decision
-  card's question, as `{"id", "kind", "name"}`. `id` is a whole number of 1 or more,
-  unique, the number the visible item gives it; `kind` is `decide`, `review`, or `do`;
-  `name` is 1-80 characters with a word of 3+ letters, as the visible item names it. A
-  screenshot or recording waiting for the user's look is a `review`. A Do from an earlier
-  reply that's still open stays listed.
+- **`needs`**: what this turn waits on the user for: each Decide, Review, or Do item, and
+  a decision card's question, as `{"id", "kind", "name"}`. `id` is a whole number of 1 or
+  more, unique, the number the visible item gives it; `kind` is `decide`, `review`, or
+  `do`; `name` is 1-80 characters with a word of 3+ letters, as the visible item names it.
+  A screenshot or recording waiting for the user's look is a `review`. An item only the
+  user can do that a routine option waits on goes here; an earlier reply's open Do that
+  doesn't block this turn's next step goes in `standing`.
 - **`standing`** (optional): items still open from earlier replies that don't block this
   turn's next step, in `needs`' item shape. An `id` is unique across both lists, any state
   may carry it, and alone it doesn't make a `stop`; only `needs` counts as needing the user.
