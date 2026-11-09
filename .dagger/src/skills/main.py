@@ -259,7 +259,7 @@ class Skills:
         # compare the core templates with the router and principles index they copy.
         # test_sync_copies runs each copied skill script beside its source. The install tests
         # link the work-verifier agent from verify-work's folder.
-        kit: source("scripts", "skills/*/*/scripts", "shared/scripts", ".githooks/pre-commit", TOOL,
+        kit: source("scripts", "skills/*/*/scripts", "shared/scripts", TOOL,
                     f"-{TOOL}/hooks/README.md", "skills/*/*/SKILL.md", "skills/*/*/agents/*.md", "replies.md",
                     "skills/optional/reply-shape/references/*.md", "router.md", "principles/index.md"),
     ) -> None:
