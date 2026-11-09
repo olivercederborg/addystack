@@ -33,8 +33,7 @@ Four parts, in this order. Skip a part that has nothing to say.
    Lead in with one plain sentence that says where things stand and ends in a colon
    naming the view. Write a text view as a code block of at most 15 lines or a table of
    at most six rows. None when a sentence makes the point. A second view only when a
-   second point needs its own, beside its note. In T3, draw the glance as a
-   [UI card](references/ui-cards.md) when it fits; read that first.
+   second point needs its own, beside its note.
 3. **Notes**: up to three bullets of at most 15 words each, ranked: an architectural or
    strategic call you made and its reason, a risk, how to see the change, or what only
    the reader can do. A note for the reader opens with its label, as in
@@ -130,8 +129,8 @@ smallest option, often leaving things as they are.
 - **Say it once** per session: each piece of code, draft, and warning. A reply whose
   next step posts or sends drafts shows each in full again, since what the reader
   approves is what goes out.
-- **One picture** per turn at most: an image, an inline page, or a UI card. Text views,
-  such as code, a table, or a flow line, don't count. Any other inline page only for
+- **One picture** per turn at most: an image or an inline page. Text views, such as
+  code, a table, or a flow line, don't count. An inline page (`html_render`) only for
   screenshots, a chart, or a UI mockup; read [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
 - **Blank lines**: chat joins lines that have no blank line between them, so separate

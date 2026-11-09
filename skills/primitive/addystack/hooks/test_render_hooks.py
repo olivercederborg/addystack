@@ -118,9 +118,9 @@ class Render(unittest.TestCase):
         names = {event: [pathlib.PurePath(c.split()[0]).name for c in commands({event: groups})]
                  for event, groups in hooks.items()}
         self.assertEqual(names["PreToolUse"], ["gh-stack-only.py", "t3-children-only.py", "merge-gate.py", "coordinator-light.py",
-                                               "ready-gate.py", "thread-titles.py", "reply-card.py"])
+                                               "ready-gate.py", "thread-titles.py"])
         self.assertEqual(names["Stop"], ["bare_references.py", "routine_stop.py", "upload_handoff.py", "reply_budget.py"])
-        self.assertEqual([len(groups) for groups in hooks.values()], [1, 3, 1])
+        self.assertEqual([len(groups) for groups in hooks.values()], [1, 2, 1])
 
     def cli(self, *args):
         return subprocess.run([sys.executable, str(HOOKS / "render_hooks.py"), *args],
