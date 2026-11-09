@@ -92,7 +92,7 @@ host_suites() {
 checks=('skills:*-tests' skills:suites-listed)
 wait_for_dagger=${PRE_COMMIT_DAGGER_WAIT:-180}
 case $wait_for_dagger in
-  '' | *[!0-9]*)  # `[ -ge ]` fails on anything else, which would turn the time limit off
+  *[!0-9]*)  # the wait's `[ -ge ]` needs an integer, so a value like `3m` would turn the time limit off
     echo "pre-commit: PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '$wait_for_dagger'." >&2
     exit 1 ;;
 esac
