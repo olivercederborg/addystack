@@ -139,6 +139,15 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(calls, [LIST])
         self.assertTrue(self.ran.exists())
 
+    def test_a_wait_that_isnt_whole_seconds_blocks_the_commit(self):
+        # `3m` made the wait's `[ -ge ]` fail on every poll, so a hung engine never timed out.
+        for wait in ["3m", "1.5", "-1"]:
+            with self.subTest(wait=wait):
+                run, calls = self.commit(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT=wait)
+                self.assertEqual(run.returncode, 1)
+                self.assertIn(f"PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '{wait}'", run.stderr)
+                self.assertEqual(calls, [])
+
     def test_a_module_that_doesnt_load_blocks_the_commit(self):
         run, calls = self.commit(module=1)
         self.assertEqual(run.returncode, 1)

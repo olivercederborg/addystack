@@ -91,6 +91,11 @@ host_suites() {
 # run here too. A cold engine and module load take about a minute.
 checks=('skills:*-tests' skills:suites-listed)
 wait_for_dagger=${PRE_COMMIT_DAGGER_WAIT:-180}
+case $wait_for_dagger in
+  '' | *[!0-9]*)  # `[ -ge ]` fails on anything else, which would turn the time limit off
+    echo "pre-commit: PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '$wait_for_dagger'." >&2
+    exit 1 ;;
+esac
 within() {  # within SECONDS CMD...: CMD's stdout and status, or status 124 once SECONDS pass
   local limit=$1 out pid status waited=0
   shift
