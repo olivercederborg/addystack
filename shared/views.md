@@ -1,8 +1,9 @@
 # Views
 
-How to show a reply's point: a report's shape, a decision card's view, or a **Review**
-item. Pick the smallest view that makes the point clear, from the content, and none when
-a sentence makes it, after HumanLayer's
+How to show what a reply's fact table can't hold: a report's view, a decision card's
+view, or what a Review row points at. It goes in its own block under the table. Pick the
+smallest view that makes the point clear, from the content, and none when the table
+makes it, after HumanLayer's
 [show-me](https://github.com/humanlayer/skills/blob/bba9d13a/plugins/show-me/skills/show-me/SKILL.md):
 
 - **An interface**: its types and one call site.
@@ -113,7 +114,9 @@ skips a table of up to six rows, since it's a view and not prose.
 ````markdown
 ✅ **One of the three export helpers only forwards its call.**
 
-Right now the export builds its CSV through three helpers, compared here:
+| Finding | The export builds its CSV through three helpers, and `prepareRows` adds nothing. |
+|---|---|
+| Effect | Inlining `prepareRows` changes no caller. |
 
 | Helper | Called by | Earns its place |
 | --- | --- | --- |
@@ -121,7 +124,11 @@ Right now the export builds its CSV through three helpers, compared here:
 | `prepareRows` | `exportTransactionsCsv` | no: forwards to `toRows` |
 | `toCsv` | `exportTransactionsCsv` | yes, but its array check can't fail |
 
-- Inlining `prepareRows` changes no caller.
+---
+
+**Next**
+
+- **`a` → inline `prepareRows`, one commit** · *recommended*
 ````
 
 ## Trace
@@ -132,15 +139,15 @@ value at each step and a `←` on the step that matters.
 ````markdown
 ✅ **A receipt reaches the books in three steps; VAT splits in the middle.**
 
-Right now the bookkeeper sees only the receipt photo, so here's one €121 receipt, traced:
+| Example | One €121 receipt, traced below; the bookkeeper sees only its photo. |
+|---|---|
+| Effect | A receipt with no VAT line books all €121 as expense. |
 
 ```txt
 upload     receipt.jpg, €121.00 total
   -> parse { net: 100.00, vat: 21.00, rate: 21% }        ← VAT splits here
   -> book  expense 100.00 · input VAT 21.00 · bank −121.00
 ```
-
-- A receipt with no VAT line books all €121 as expense.
 ````
 
 ## Stack map
@@ -157,19 +164,65 @@ main
 
 ## Ship gate
 
-One line per PR, in merge order, naming what it changes for a user or caller, not its
-title, and the thread that made it when another did. Then the `size:` and `review:`
-rating `scripts/github.sh target N` prints, with `leaving out` only when those files
-outweigh the rest; the passing checks and restack state; each warning or failure on its
-own line; and how to roll it back.
+A merge go or a push go. The header row is the PR as a link, then what it changes for a
+user or caller, not its title, its state, and the `size:` rating
+`scripts/github.sh target N` prints, with `leaving out` only when those files outweigh
+the rest, and the thread that made it when another did. A push go's header is the branch
+and its unpushed commits. Its rows:
 
-```text
-#124  uploads: a retry reuses its receipt instead of creating a second
-      +120 −30 in 4 files · 8/10: the timeout path has no test
-      ✅ verify-work Done · CI · tests 41/41 · no restack
-      ⚠️ blast-radius not run: adds a unique index on receipts
-      rollback: revert #124, then drop the index
-```
+- **Risk**: each warning or failure, one row each, the gap behind the `review:` rating
+  among them.
+- **Proof**: the passing checks and the restack state.
+- **Undo**: how to roll it back.
+
+````markdown
+🟡 **Merge #124, so a retried upload stops creating a second receipt?**
+
+| [#124](https://github.com/acme/app/pull/124) | A retry reuses its receipt · draft · +120 −30 in 4 files |
+|---|---|
+| Risk | ⚠️ blast-radius not run: it adds a unique index on receipts. |
+| Risk | ⚠️ Review 8/10: the timeout path has no test. |
+| Proof | verify-work Done at head · CI · tests 41/41 · no restack |
+| Undo | Revert #124, then drop the index. |
+
+<details><summary>Idiom sources · review rounds</summary>
+
+Idiom sources: none recorded. Review: two rounds, one finding left open.
+
+</details>
+
+---
+
+**Next**
+
+- **`a` → merge #124** · *recommended*
+- `b` → no: keep #124 as a draft
+````
+
+Several PRs share one table: its header row is `Stack`, a Risk names its PR, and a
+table under it lists each PR in merge order.
+
+````markdown
+🟡 **Merge the upload stack, #124 to #126?**
+
+| Stack | 3 PRs, bottom first · all draft · verify-work Done on each at head |
+|---|---|
+| Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
+| Undo | Revert #126, then #125, then #124, and drop the index. |
+
+| PR | Changes | Size · review |
+| --- | --- | --- |
+| [#124](https://github.com/acme/app/pull/124) | uploads: a retry reuses its receipt | +120 −30 in 4 files · 8/10: no timeout test |
+| [#125](https://github.com/acme/app/pull/125) | server: receipts carry their upload id | +60 −12 in 2 files · 9/10 |
+| [#126](https://github.com/acme/app/pull/126) | cleanup: the old dedupe job is gone | +4 −140 in 3 files · 10/10 |
+
+---
+
+**Next**
+
+- **`a` → merge #124, #125 and #126** · *recommended*
+- `b` → no: keep the stack as drafts
+````
 
 The fold lists each PR's idiom sources: the `idiom:` lines `scripts/github.sh target N`
 prints for its Done, or "none recorded" for a Done that predates them.
@@ -188,18 +241,16 @@ A full card for a design call, with the card's one view as a `diff`:
 
 Group 1 🟡 · 2 ⬜ · 3 ⬜ · 4 ⬜
 
-**Problem**: a crash in the sign-in hooks goes unlogged, so a failed Apple sign-in
-leaves no trace.
+| Problem | A crash in the sign-in hooks goes unlogged, so a failed Apple sign-in leaves no trace. |
+|---|---|
+| Pick | Yes, so every hook crash gets logged in one place. |
+| Source | The shared runner every other library callback in the app goes through. |
 
 ```diff
   // apps/server/src/accounts/account-server.service.ts: runs Better Auth's hooks
 - const runHook = Effect.runPromiseWith(services);
 + const runHook = yield* callbackRunner;
 ```
-
-**Pick**: yes, so every hook crash gets logged in one place.
-
-**Source**: the shared runner every other library callback in the app goes through
 
 <details><summary>Proof, other options, sources → shared runner</summary>
 
@@ -216,6 +267,79 @@ hook in its own logger was the other option.
 - `b` → no, keep it as is and show group 2
 
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"shared callback runner"}],"options":[{"key":"a","class":"decision","text":"yes, switch it and show group 2"},{"key":"b","class":"decision","text":"no, keep it as is and show group 2"}]} -->
+````
+
+## Reply kinds
+
+The fact table for the kinds of reply the examples above don't show. Finished work ends
+on `**Done**`, and a report with a routine next step is the same table above
+`**Next**`, as under [Comparison](#comparison).
+
+**The reader has to do something**: a Do row, with its steps numbered under the table.
+
+````markdown
+🔴 **Layer 2 of 3 stopped: the export needs an API key.**
+
+| Problem | The export can't sign in to the bank without a key from its console. |
+|---|---|
+| Do | Create the key: only the account owner can open the console. |
+| Proof | Layer 1 is built and verified. |
+| Queued | Layer 3, the settings screen, builds meanwhile. |
+
+1. Open the bank's developer console and choose **API keys**.
+2. Create a read-only key named `export`.
+3. Paste it into `apps/server/.env` as `BANK_API_KEY`.
+
+---
+
+**Next**
+
+- **`a` → build layer 3 while you create the key** · *recommended*
+````
+
+**A message to a person**: the header row is `To`, Cost is what it commits the reader
+to, and the draft follows in full.
+
+````markdown
+🟡 **Post this reply to Sam on #88?**
+
+| To | Sam, as a reply to their review comment on #88 |
+|---|---|
+| Why | They asked whether a retry can charge twice. It can't, and a test shows it. |
+| Cost | Commits you to the follow-up PR this week. |
+
+> Good catch. A retry reuses the first charge's key, so the bank drops the second one,
+> and `retry.test.ts` covers it. I'll move the key into the client in a follow-up this
+> week.
+
+---
+
+**Next**
+
+- **`a` → post it** · *recommended*
+- `b` → no: leave the comment unanswered
+````
+
+**A production write**: the header row is what runs and where, Effect counts the rows it
+touches from real data, and Undo says how they come back.
+
+````markdown
+🟡 **Backfill the missing VAT rate on 412 receipts in production?**
+
+| Write | One `UPDATE` on `receipts` in production: sets `vat_rate` where it's null |
+|---|---|
+| Risk | ⚠️ 9 of the 412 have no VAT line, so they get 0%. |
+| Effect | 412 of 80,300 receipts change, in 37 companies, counted on the replica. |
+| Proof | A dry run on a copy changed 412 rows in 0.4 s. |
+| Undo | The old values are saved in `receipts_vat_backup`; one statement restores them. |
+| Cost | Exports already sent keep the old totals. |
+
+---
+
+**Next**
+
+- **`a` → run the backfill in production** · *recommended*
+- `b` → no: leave the rates empty
 ````
 
 ## Pages
