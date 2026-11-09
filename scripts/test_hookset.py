@@ -219,6 +219,13 @@ class Merge(unittest.TestCase):
         merged = hookset.merge(stale, hookset.select(resolved, "claude"), owned)
         self.assertNotIn("reply-card.py", json.dumps(merged))
         self.assertFalse((KIT / "hooks" / "reply-card.py").exists())
+        # Codex review, round 2: a kit path with a space renders quoted, and a moved kit left its old path.
+        spaced = dict(resolved, kit="/opt/my kit")
+        self.assertTrue(hookset.owner(spaced)("PreToolUse", f"{hookset._kit(spaced)}/hooks/reply-card.py"))
+        self.assertIn("'", hookset._kit(spaced))
+        moved = hookset.owner(resolved, moved=["/old/kit"])
+        self.assertTrue(moved("PreToolUse", "/old/kit/hooks/reply-card.py"))
+        self.assertFalse(moved("PreToolUse", "/old/kit/hooks/my-personal-hook.sh"))
 
     def test_owner_doesnt_name_a_users_hook_on_a_kit_script_no_manifest_entry_runs(self):
         resolved = resolve("{}")

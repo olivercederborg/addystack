@@ -39,8 +39,9 @@ PROFILES = {"darwin": {"darwin"}, "linux": {"linux"}, "sandbox": {"linux", "sand
 _FIELDS = ("matcher", "timeout", "onFailure")
 # Hook scripts the kit once installed and has since deleted. A checkout that fast-forwards
 # past the deletion still has the command in its settings until the next install, so a
-# command on one in this kit's hooks folder is addystack's: drift reports it as extra, and
-# an install removes it, with or without a ledger entry. reply-card.py went with
+# command on one is addystack's wherever a manifest script's would be: in this kit's hooks
+# folder, an earlier kit's, or an older install's link folder. Drift reports it as extra,
+# and an install removes it, with or without a ledger entry. reply-card.py went with
 # reply-shape's UI cards (Nov 2026).
 RETIRED = ("reply-card.py",)
 
@@ -272,9 +273,10 @@ def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> 
         return True
     script = _script(command)
     folder = os.path.dirname(script)
-    if folder == os.path.join(os.path.expanduser(kit), "hooks") and os.path.basename(script) in RETIRED:
+    # As _script reads the rendered command, since a kit path with a space is quoted.
+    if script in {_script(f"{kit}/hooks/{name}") for name in RETIRED}:
         return True
-    scripts = {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows}
+    scripts = _scripts(manifest)
     if folder not in {os.path.expanduser(legacy) for legacy in _legacy_dirs()}:
         return False
     # A link, or a leftover entry whose link is gone. A regular file there is the user's
@@ -284,12 +286,16 @@ def _ours(command: str, manifest: Dict[str, List[Dict[str, Any]]], kit: str) -> 
     return os.path.basename(script) in scripts or os.path.basename(os.path.realpath(script)) in scripts
 
 
+def _scripts(manifest: Dict[str, List[Dict[str, Any]]]) -> set:
+    """The names of the scripts addystack installs, or once did: the manifest's and RETIRED."""
+    return {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows} | set(RETIRED)
+
+
 def _moved(command: str, manifest: Dict[str, List[Dict[str, Any]]], folders: Iterable[str]) -> bool:
-    """Whether command runs a script the manifest runs, from one of folders, an earlier
-    kit's hooks folder."""
+    """Whether command runs a script the manifest runs, or a RETIRED one, from one of
+    folders, an earlier kit's hooks folder."""
     script = _script(command)
-    scripts = {os.path.basename(_script(entry["command"])) for rows in manifest.values() for entry in rows}
-    return os.path.dirname(script) in set(folders) and os.path.basename(script) in scripts
+    return os.path.dirname(script) in set(folders) and os.path.basename(script) in _scripts(manifest)
 
 
 def _drift(manifest: Dict[str, List[Dict[str, Any]]], resolved: Resolved, runtime: Runtime,
