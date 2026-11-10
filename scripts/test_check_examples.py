@@ -142,7 +142,17 @@ class CheckExamplesTest(unittest.TestCase):
         views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
         gate = views[views.index("## Ship gate"):views.index("## Choosing between shapes")]
         examples = [block for _, block in check_examples.example_blocks(gate.splitlines())]
-        self.assertEqual(["| You accept |" in "\n".join(block) for block in examples], [True, True])
+        self.assertEqual(len(examples), 2)
+        kinds = ["New", "Changes", "Edits", "Goes live", "Left out"]
+        for block in examples:
+            with self.subTest(example=block[0]):
+                at = next(n for n, line in enumerate(block) if line.startswith("| You accept |"))
+                prs = len(check_examples.reply_budget.cells(block[at])) - 1
+                rows = {cells[0].strip(): [cell.strip() for cell in cells[1:]]
+                        for line in block[at + 2:at + 2 + len(kinds)]
+                        for cells in [check_examples.reply_budget.cells(line)]}
+                self.assertEqual(list(rows), kinds)  # every kind, in order
+                self.assertTrue(all(len(values) == prs and all(values) for values in rows.values()), rows)
 
     def test_every_skill_passes(self):
         root = pathlib.Path(__file__).resolve().parent.parent
