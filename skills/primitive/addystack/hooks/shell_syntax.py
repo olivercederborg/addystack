@@ -40,6 +40,8 @@ CLOCK = re.compile(r"\bSECONDS\b")
 # A function definition, whose loop runs wherever it's called, maybe in a pipe, and `eval`.
 FUNCTION = re.compile(r"\w\s*\(\s*\)\s*[{(]|\bfunction\s+\w")
 EVAL = re.compile(r"(?<![\w$-])eval(?![\w-])")
+# `coproc` and `time` open a compound command the loop parser doesn't track.
+PREFIX = re.compile(r"(?<![\w$.-])(?:coproc|time)(?![\w.-])")
 WAIT = re.compile(r"(?<![\w$-])(?:until|while)(?![\w-])(?!\s+(?:IFS=\S*\s+)?read\b)")
 # Any loop word, wherever it stands, so a loop the pairing can't see still counts.
 LOOP_WORD = re.compile(r"(?<![\w$-])(?:for|select|while|until)(?![\w-])")
@@ -90,7 +92,7 @@ def apply(command, edits):
 def _starts_command(code, at):
     """Whether a word at offset `at` stands where a command starts."""
     before = code[:at].rstrip(" \t")
-    return not before or before[-1] in ";\n&|(){}" or re.search(r"(?<![\w-])(?:then|else|do|done|fi|esac)\Z", before)
+    return not before or before[-1] in ";\n&|(){}!" or re.search(r"(?<![\w-])(?:then|else|do|done|fi|esac)\Z", before)
 
 
 def _top_level_loops(code):
@@ -142,7 +144,7 @@ def bound_waits(command, timeout_ms=None):
     # look like it stands alone, as can `\)` or `${x%)}` with a `(` that makes up for it.
     depths = itertools.accumulate(1 if c == "(" else -1 for c in code if c in "()")
     if (UNREADABLE.search(command) or CLOCK.search(command) or "`" in code or FUNCTION.search(code)
-            or EVAL.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)
+            or EVAL.search(code) or PREFIX.search(code) or _count(QUOTABLE, command) != _count(QUOTABLE, code)
             or min(depths, default=0) < 0 or re.search(r"\\[()]|\$\{[^}]*[()]", code)):
         return [], []
     limit = min(timeout_ms / 1000 if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool)
