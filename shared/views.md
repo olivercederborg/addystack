@@ -1,236 +1,43 @@
 # Views
 
-Each reply primitive with a real example, then the code shapes a decision or a Before →
-after often carries. Compose the primitives the moment needs; none is required except
-the headline and the turn block. Every view uses the same markers: `-` for removed and
-`+` for added in a `diff` block, `← note` for a one-line note, and ★ for the pick.
+How to show what a reply's fact table can't hold: a report's view, a decision card's
+view, or what a Review row points at. It goes in its own block under the table. Pick the
+smallest view that makes the point clear, from the content, and none when the table
+makes it, after HumanLayer's
+[show-me](https://github.com/humanlayer/skills/blob/bba9d13a/plugins/show-me/skills/show-me/SKILL.md):
 
-## Headline
+- **An interface**: its types and one call site.
+- **What changes**: a `diff` in the topic's own shape, such as a file tree, a call tree,
+  or a schema. Show the whole block when most of it is new.
+- **A comparison of items on the same points**: a table. An audit's results, a list of
+  IDs, or a status matrix is evidence, so it goes in the fold.
+- **An order of steps**: a flow line in a code block, or Mermaid when it branches.
+- **How something works**: one real example traced through it, as [trace](#trace) shows.
+- **UI**: a screenshot.
 
-A status marker, then the outcome in bold, in the reader's terms: what happened or what
-they decide, not what you did. ✅ done and nothing needs them, 🟡 a decision or a risk,
-🔴 broken or blocked on them, ⏳ still working. A question gets its answer here; a ⏳
-headline names what it waits on.
+Every view uses the same markers: `-` for
+removed and `+` for added in a `diff` block, `← note` for a one-line note, and ★ for
+the pick.
 
-> 🟡 **Close #36? It was meant to save review time, and it saves almost none.**
+## Renames and moves
 
-## Fact table
-
-Labeled rows, `label | value`, right under the headline, when the reader decides. Pick
-the labels the call needs, such as Problem, Pick, Source, Risk, Cost, Undo, or Effect;
-a value is a sentence the reader can act on without asking what it means.
-
-````markdown
-🟡 **Keep the test we used to check the fix-the-cause rule?**
-
-| What | #312 saves the 8 replays built today: 5 past fixes where you pushed back on a quick patch, and 3 safety checks, such as not bundling extras into a hotfix. |
-|---|---|
-| Pick | Merge it, so the next attempt at the symptom-fix problem is measured the same way. |
-| Effect | None on agents: it's a test. |
-
----
-
-**Next**
-
-- **`a` → merge #312** · *recommended*
-````
-
-## You accept
-
-A merge or push go: what the reader accepts, by kind, so they can say yes without
-opening a PR. One column per PR in merge order, headed by its link and what it does,
-for one PR or several; when columns would be too narrow to read, a table per PR. Use the
-kinds this change has, such as New, Changes, Edits (the files, grouped), Goes live (what
-runs once it lands, and who runs it), and Left out (what the reader might expect that it
-doesn't do), `none` in a cell that's empty. Each risk is a ⚠️ line under it, naming its
-PR, and the fold lists the checks and each PR's idiom sources. A line of context first
-when the go answers an earlier question.
-
-````markdown
-🟡 **Ready to merge: the kit now owns domain-modeling. Merge both?**
-
-This morning you asked whether domain-modeling belongs in the kit. It does. Its upstream author renamed the glossary file to `GLOSSARY.md`, but all five of your repos use `CONTEXT.md`, so agents could look in the wrong file.
-
-| You accept | [addystack#55](https://github.com/acme/addystack/pull/55) the kit | [dotfiles#36](https://github.com/acme/dotfiles/pull/36) your machines |
-| --- | --- | --- |
-| Changes | in planning, domain-modeling challenges fuzzy terms and records them in `CONTEXT.md`; autonomous runs only read it | none |
-| New | the skill, with credit to its author; scope-grill's partial copy goes, and five skills point to it | a setup step that swaps the upstream copy for the kit's |
-| Goes live | on merge | I run setup on both machines after merging; the old copy is kept |
-| Left out | the same author's other three skills, which carry the same rename risk | none |
-
-⚠️ No second-model review ran on either PR.
-
-<details><summary>Checks: ⚠️ no second-model review · ✅ verify-work Done on both</summary>
-
-Idiom sources: none recorded for either PR.
-
-</details>
-
----
-
-**Next**
-
-- **`a` → merge addystack#55 and dotfiles#36** · *recommended*
-- `b` → run a Codex review first
-````
-
-## Comparison
-
-A table, when items differ on the same points: options, results, or picks. An audit's raw
-results or a list of IDs is evidence, so it goes in the fold.
-
-````markdown
-✅ **You picked text over pictures in both rounds.**
-
-| Situation | Picked | Over |
-| --- | --- | --- |
-| Merge across two repos | fact table, a column per PR | colleague message, a visual card |
-| Waiting on background work | since-you-left log | running table, progress bars |
-| "What does this PR do?" | before → after text | a diagram, a story |
-````
-
-## Before → after
-
-What a change does, shown concretely: the command, call, screen, or tree before and after,
-and its size when the reader weighs it.
-
-````markdown
-✅ **#44 closes a way around the merge check.**
-
-Before: `gh pr merge 39 && gh pr merge 41`: your go for #39 also merged #41, unchecked.
-
-After: a command with two merges is denied, and each merge runs on its own.
-
-34 lines in 3 files. The gate tests pass.
-````
-
-## List with reasons
-
-Several concrete items, each named, with why: renames, follow-ups, or a code-shape call.
-The names go into the Next option too, never a count of them.
+One `-` and `+` pair per file, with paths from the repo root, or from a folder named once
+above the block. Past five pairs, show five that cover each kind of move and fold the
+rest with a count.
 
 ```diff
-  accounts/
--   account-server.ts
-+   account-server.service.ts      ← service role
--   account-ids.ts
-+   account-ids.utils.ts           ← hashes, so not a pure rule
+- apps/web/src/features/bill-pay/components/pay-bill-panel.tsx
++ apps/web/src/features/bill-pay/pay-bill-panel.component.tsx
+- apps/web/src/features/bill-pay/payment-submission.handler.ts
++ apps/web/src/features/bill-pay/payment-submission.operation.ts
 ```
 
-## Since you left
-
-What changed while the reader was away, oldest first, each line with its time, then
-what's running and when it's back. Give a time only when a past run or this run's
-progress measures it. Close on what you'll do next.
-
-````markdown
-⏳ **Two things are running. Nothing needs you before about 15:30.**
-
-- **13:05** · Merge options that can name the repo: the fix is in, and its tests are being written; back around 14:30.
-- **13:20** · The "is this the long-term fix?" check started building, then a replay test; back around 16:00.
-
-Next from me: the merge-option fix, for you to approve.
-````
-
-## What changed for you
-
-Work is done: what's different for the reader now, how to undo it, and anything left
-for them, in plain sentences.
-
-````markdown
-✅ **domain-modeling is live on both machines.**
-
-Agents now load the kit's version, which uses `CONTEXT.md`. The upstream copy is kept in `~/.local/state/agent-skills/replaced/` if you ever want it back. Your Mac's dotfiles are two merges behind, so pull when convenient.
-
----
-
-**Done**. Nothing else is open.
-````
-
-## Project view
-
-"What's going on?" across a project: a heading each for Needs you, Running, and Done (named
-for its span, such as Done today, so it isn't read as the closing), one line per item. Needs you comes first, ordered by what unblocks the most, each item sized
-by what it takes from the reader, such as a yes or no or a login.
-
-````markdown
-🟡 **Two things need you; two are running.**
-
-**Needs you**
-
-- Merge addystack#55 and dotfiles#36, so the kit owns domain-modeling: a yes or no, with what each PR changes.
-- Keep #312, the replay test for the fix-the-cause rule: a yes or no; it changes nothing agents do.
-
-**Running**
-
-- Merge options that can name the repo: writing tests, back around 14:30.
-- The "is this the long-term fix?" check: building, back around 16:00.
-
-**Done today**
-
-- The reply audit: 4,803 of your messages, with what you picked in both rounds.
-````
-
-## Proof
-
-One fold for the checks and sources the reader may audit, its summary leading with the
-worst: `<details><summary>Checks: ❌ tests 11/12 · ⚠️ lint not run · ✅ typecheck</summary>`,
-then a blank line. A detail worth neither a look nor an audit is cut, not folded.
-
-## Next
-
-`a`, your pick, and `b` only when the reply stops for the reader's call, each naming the
-full action and every item in it. Items that don't fit on one line go in a list above.
-
-> `b` → create Linear issues for lenient decoding, V3 re-export, readiness cards, and Dinero
-
-## Turn block
-
-The hidden last line Prefrontal and the hooks read, as the reader's reply rules or the
-kit's `references/turn-block.md` define it. Its `needs` name each item as the reply
-shows it.
-
-## Decision card example
-
-A full card: the headline asks, the fact table holds the call, the view shows the numbers
-behind it, and `a` and `b` answer it.
-
-````markdown
-🟡 **Close #36? It was meant to save review time, and it saves almost none.**
-
-| Problem | #36 changes how a third review round labels repeated findings, to save an estimated 150 min a day. |
-|---|---|
-| Pick | Close it. Long-term, it adds stops for you without saving time. |
-| Source | A replay of 120 real findings: today's wording already labels them, so #36 saves about 0 min. |
-| If kept | It would leave 6 of 8 repeat bugs for you to decide at merge. |
-
-<details><summary>Proof: the 120-finding replay</summary>
-
-The replay ran today's wording and #36's on the same findings.
-
-</details>
-
----
-
-**Next**
-
-- **`a` → close #36** · *recommended*
-- `b` → keep #36 as a draft
-
-<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"close the review-round change"}],"options":[{"key":"a","class":"decision","text":"close #36"},{"key":"b","class":"decision","text":"keep #36 as a draft"}]} -->
-````
-
-Some stops carry their own rows. A **message to a person**: `To`, who gets it; Cost, what
-it commits the reader to; and the draft in full, in their voice. A **production write**:
-what runs and where, the rows it touches counted from real data, and how they come back.
-
-## Code shapes
-
-### Interface and usage
+## Interface and usage
 
 The module's interface with its types, then one call site, in one block. A comment on
-the first line names where the module lives and what it hides. For a change, a `diff`
-of the signature, with the call site below it.
+the first line names where the module lives and what it hides, so the reader sees a
+deep module or a domain module at work. For a change, a `diff` of the signature, with
+the call site below it.
 
 ```diff
   // apps/server/src/accounts/account-server.service.ts: hides Apple's token exchange
@@ -243,32 +50,42 @@ of the signature, with the call site below it.
 + yield* AccountServer.revoke(userId);
 ```
 
-### Renames and moves
+## Module shape
 
-One `-` and `+` pair per file, with paths from the repo root, or from a folder named once
-above the block. A long list shows a pair for each kind of move and folds the rest by
-name.
+The tree after the change, as a `diff`, with a note on each changed line.
 
 ```diff
-- apps/web/src/features/bill-pay/components/pay-bill-panel.tsx
-+ apps/web/src/features/bill-pay/pay-bill-panel.component.tsx
+  accounts/
+-   account-server.ts
++   account-server.service.ts      ← service role
+-   account-ids.ts
++   account-ids.utils.ts           ← hashes, so not a pure rule
 ```
 
-### Typed call stack
+## Typed call stack
 
 The path from an entrypoint to its side effects, one hop per line, with the type the
-data has where it carries information, such as an Effect's error channel. Show only the
-hops that change or explain the point, and mark the broken or changed hop with `←`. On a
-decision card or a finding, it goes in the fold.
+data has at each hop. Use it for a design, a PR's changed path, or a bug, and mark the
+broken or changed hop with `←`. Three limits keep it short:
+
+- Show only the hops that change or explain the point, at most six. A longer path gets
+  split, or goes into a design doc.
+- Write a type only where it carries information, such as an Effect's error and
+  requirement channels. Skip types like `string`.
+- On a decision card or a finding, put it in the fold. The surface keeps its lines.
 
 ```txt
 Better Auth links the Apple account                         (Promise world)
+  -> hooks.claimGrants(appleSubject, userId)                  : Promise<void>
   -> AppleGrants.claim(appleSubject, owner)                   : Effect<void, AccountPersistenceError>
   -> callbackRunner(effect)                                   : Promise<void>   ← logs defects only
   -> auth.service.ts:73 .catch(() => undefined)               : void            ← typed failures end here
 ```
 
-### Types inline
+For a change, show the current stack and the proposed one as two blocks, or one `diff`.
+For a bug where the types don't matter, drop them and keep the `←` marks.
+
+## Types inline
 
 A snippet with the compiler's inferred types as `^?` comments under the code they
 describe, and the runtime result when it differs.
@@ -278,27 +95,62 @@ const runHook = yield* callbackRunner;
 //    ^? <A, E>(effect: Effect<A, E>) => Promise<A>
 ```
 
-### Behavior and flow
+## Behavior and flow
 
-Two lines, now and after, with the outcome in bold. In a PR body, a flow that branches
-may be Mermaid; parse it first, as open-pr's `check-body.mjs` does.
+Two lines, now and after, with the outcome in bold. Use Mermaid only when the flow
+branches or crosses runtimes, such as an app, a Worker, and a Durable Object. Parse
+a Mermaid block before it goes on GitHub, as open-pr's `check-body.mjs` does.
 
 > **Now**: Better Auth → own runner → **crash unlogged**
 >
 > **After**: Better Auth → `callbackRunner` → **crash logged**
 
-### Trace
+## Comparison
+
+A table, when the reader compares items on the same points. Keep it to six rows; past
+six, show the rows that make the point and fold the rest with a count. The glance budget
+skips a table of up to six rows, since it's a view and not prose.
+
+````markdown
+✅ **One of the three export helpers only forwards its call.**
+
+| Finding | The export builds its CSV through three helpers, and `prepareRows` adds nothing. |
+|---|---|
+| Effect | Inlining `prepareRows` changes no caller. |
+
+| Helper | Called by | Earns its place |
+| --- | --- | --- |
+| `toRows` | `prepareRows` | yes: filters and formats rows |
+| `prepareRows` | `exportTransactionsCsv` | no: forwards to `toRows` |
+| `toCsv` | `exportTransactionsCsv` | yes, but its array check can't fail |
+
+---
+
+**Next**
+
+- **`a` → inline `prepareRows`, one commit** · *recommended*
+````
+
+## Trace
 
 To explain how something works, follow one real example through each step, with its
 value at each step and a `←` on the step that matters.
+
+````markdown
+✅ **A receipt reaches the books in three steps; VAT splits in the middle.**
+
+| Example | One €121 receipt, traced below; the bookkeeper sees only its photo. |
+|---|---|
+| Effect | A receipt with no VAT line books all €121 as expense. |
 
 ```txt
 upload     receipt.jpg, €121.00 total
   -> parse { net: 100.00, vat: 21.00, rate: 21% }        ← VAT splits here
   -> book  expense 100.00 · input VAT 21.00 · bank −121.00
 ```
+````
 
-### Stack map
+## Stack map
 
 The PR stack as a tree, each PR with its CI state and whether it's a draft, after any step
 that pushes or restacks.
@@ -310,7 +162,214 @@ main
       └─ #126 cleanup  ⏳ CI · draft   ← this branch
 ```
 
-### Choosing between shapes
+## Ship gate
+
+A merge go or a push go. The header row is the PR as a link, then what it changes for a
+user or caller, not its title, its state, and the `size:` rating
+`scripts/github.sh target N` prints, with `leaving out` only when those files outweigh
+the rest, and the thread that made it when another did. A push go's header is the branch
+and its unpushed commits. Its rows:
+
+- **Risk**: each warning or failure, one row each, the gap behind the `review:` rating
+  among them.
+- **Proof**: the passing checks and the restack state.
+- **Undo**: how to roll it back.
+
+Its view is what the reader accepts, so they can say yes without opening the PR: a
+table headed `You accept`, then the PR, or the branch for a push with no PR, with a short
+phrase per cell, `none` when empty, and no row that's empty for all:
+
+- **New**: what didn't exist before, such as a command or an index.
+- **Changes**: behavior that changes for an agent, a user, or a caller.
+- **Edits**: the files, grouped, as in "6 skills name it; 14 synced copies of one line".
+- **Goes live**: what runs once it lands, such as a deploy or a setup step, and who
+  runs it.
+- **Left out**: what it doesn't do that the reader might expect.
+
+````markdown
+🟡 **Merge #124, so a retried upload stops creating a second receipt?**
+
+| [#124](https://github.com/acme/app/pull/124) | A retry reuses its receipt · draft · +120 −30 in 4 files |
+|---|---|
+| Risk | ⚠️ blast-radius not run: it adds a unique index on receipts. |
+| Risk | ⚠️ Review 8/10: the timeout path has no test. |
+| Proof | verify-work Done at head · CI · tests 41/41 · no restack |
+| Undo | Revert #124, then drop the index. |
+
+| You accept | [#124](https://github.com/acme/app/pull/124) |
+| --- | --- |
+| New | a unique index on each receipt's upload id |
+| Changes | the upload API answers a retry with the first receipt |
+| Edits | the upload handler and its test; one migration |
+| Goes live | the deploy runs the migration on about 80,000 receipts |
+| Left out | a message telling the user their upload was reused |
+
+<details><summary>Idiom sources · review rounds</summary>
+
+Idiom sources: none recorded. Review: two rounds, one finding left open.
+
+</details>
+
+---
+
+**Next**
+
+- **`a` → merge #124** · *recommended*
+- `b` → no: keep #124 as a draft
+````
+
+Several PRs, in one repo or across repos, share one fact table: its header row is
+`Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
+PR in that order, headed by its link and review rating, each Edits led by its size. Past
+three PRs, the one view is a table per PR, since columns grow too narrow and row groups
+would pass a view's six rows.
+
+````markdown
+🟡 **Merge #124 then #125, so a retried upload stops double-booking?**
+
+| Stack | #124 then #125, bottom first · both draft · +180 −42 in 6 files |
+|---|---|
+| Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
+| Risk | ⚠️ #124's review is 8/10: the timeout path has no test. |
+| Proof | verify-work Done on both at head · CI · no restack |
+| Undo | Revert #125, then #124, and drop the index. |
+
+| You accept | [#124](https://github.com/acme/app/pull/124) uploads · 8/10 | [#125](https://github.com/acme/app/pull/125) server · 9/10 |
+| --- | --- | --- |
+| New | a unique index on receipts' upload id | an upload id field on receipts |
+| Changes | a retry gets its first receipt back | the receipts API returns each upload id |
+| Edits | +120 −30 in 4 files: upload handler, its test, a migration | +60 −12 in 2 files: receipt type, its serializer |
+| Goes live | the deploy runs the migration | none |
+| Left out | a message that the upload was reused | the app doesn't show the id yet |
+
+---
+
+**Next**
+
+- **`a` → merge #124 and #125** · *recommended*
+- `b` → no: keep the stack as drafts
+````
+
+The fold lists each PR's idiom sources: the `idiom:` lines `scripts/github.sh target N`
+prints for its Done, or "none recorded" for a Done that predates them.
+
+## Choosing between shapes
 
 One bold line per option, the pick first with ★, each followed by the same snippet
 written its way. Keep the options out of the fold.
+
+## Decision card example
+
+A full card for a design call, with the card's one view as a `diff`:
+
+````markdown
+🟡 **Switch the account service to the shared callback runner?**
+
+Group 1 🟡 · 2 ⬜ · 3 ⬜ · 4 ⬜
+
+| Problem | A crash in the sign-in hooks goes unlogged, so a failed Apple sign-in leaves no trace. |
+|---|---|
+| Pick | Yes, so every hook crash gets logged in one place. |
+| Source | The shared runner every other library callback in the app goes through. |
+
+```diff
+  // apps/server/src/accounts/account-server.service.ts: runs Better Auth's hooks
+- const runHook = Effect.runPromiseWith(services);
++ const runHook = yield* callbackRunner;
+```
+
+<details><summary>Proof, other options, sources → shared runner</summary>
+
+OpenCode and Zed route library callbacks through one helper. Wrapping only this
+hook in its own logger was the other option.
+
+</details>
+
+---
+
+**Next**
+
+- **`a` → yes, switch it and show group 2** · *recommended*
+- `b` → no, keep it as is and show group 2
+
+<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"shared callback runner"}],"options":[{"key":"a","class":"decision","text":"yes, switch it and show group 2"},{"key":"b","class":"decision","text":"no, keep it as is and show group 2"}]} -->
+````
+
+## Reply kinds
+
+The fact table for the kinds of reply the examples above don't show. Finished work ends
+on `**Done**`, and a report with a routine next step is the same table above
+`**Next**`, as under [Comparison](#comparison).
+
+**The reader has to do something**: a Do row, with its steps numbered under the table.
+
+````markdown
+🔴 **Layer 2 of 3 stopped: the export needs an API key.**
+
+| Problem | The export can't sign in to the bank without a key from its console. |
+|---|---|
+| Do | Create the key: only the account owner can open the console. |
+| Proof | Layer 1 is built and verified. |
+| Queued | Layer 3, the settings screen, builds meanwhile. |
+
+1. Open the bank's developer console and choose **API keys**.
+2. Create a read-only key named `export`.
+3. Paste it into `apps/server/.env` as `BANK_API_KEY`.
+
+---
+
+**Next**
+
+- **`a` → build layer 3 while you create the key** · *recommended*
+````
+
+**A message to a person**: the header row is `To`, Cost is what it commits the reader
+to, and the draft follows in full.
+
+````markdown
+🟡 **Post this reply to Sam on #88?**
+
+| To | Sam, as a reply to their review comment on #88 |
+|---|---|
+| Why | They asked whether a retry can charge twice. It can't, and a test shows it. |
+| Cost | Commits you to the follow-up PR this week. |
+
+> Good catch. A retry reuses the first charge's key, so the bank drops the second one,
+> and `retry.test.ts` covers it. I'll move the key into the client in a follow-up this
+> week.
+
+---
+
+**Next**
+
+- **`a` → post it** · *recommended*
+- `b` → no: leave the comment unanswered
+````
+
+**A production write**: the header row is what runs and where, Effect counts the rows it
+touches from real data, and Undo says how they come back.
+
+````markdown
+🟡 **Backfill the missing VAT rate on 412 receipts in production?**
+
+| Write | One `UPDATE` on `receipts` in production: sets `vat_rate` where it's null |
+|---|---|
+| Risk | ⚠️ 9 of the 412 have no VAT line, so they get 0%. |
+| Effect | 412 of 80,300 receipts change, in 37 companies, counted on the replica. |
+| Proof | A dry run on a copy changed 412 rows in 0.4 s. |
+| Undo | The old values are saved in `receipts_vat_backup`; one statement restores them. |
+| Cost | Exports already sent keep the old totals. |
+
+---
+
+**Next**
+
+- **`a` → run the backfill in production** · *recommended*
+- `b` → no: leave the rates empty
+````
+
+## Pages
+
+When Markdown can't show it, such as a highlight on part of a name across many renames,
+two trees side by side, or a UI, publish a page. Keep the same markers there: struck through for removed and a green highlight for added.
+Check the exact page at 728px and 390px wide before it goes out.

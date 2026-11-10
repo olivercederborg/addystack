@@ -263,7 +263,7 @@ class Card(unittest.TestCase):
         turn = turn_block.parse(text)
         self.assertEqual(turn.state, "stop")
         self.assertEqual(len(turn.needs), 4)
-        self.assertEqual(reply_budget.unplain(text), [])
+        self.assertLess(reply_budget.words(text), 60)
         self.assertEqual(bare_references.problems(text), [])
         self.assertIn("<t3-thread://v2/", text)
 

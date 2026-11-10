@@ -1,6 +1,6 @@
 ---
 name: reply-shape
-description: Replies composed from primitives the moment calls for - a headline, labeled rows for a decision, what each PR asks the reader to accept, before → after, what changed since they left, a project view, and Next options that name the full action - so the reader sees what's going on and what they're accepting without asking "what is X?". A SessionStart hook loads it in the user's sessions; run /reply-shape to turn it on elsewhere.
+description: Replies the reader takes in at a glance - a one-line headline, one fact table of labelled rows, and the next step - plus a decision card, with the problem, the pick, and its source, when a call needs their judgement. A SessionStart hook loads it in the user's sessions; run /reply-shape to turn it on elsewhere.
 disable-model-invocation: true
 metadata:
   layer: optional
@@ -8,90 +8,135 @@ metadata:
 
 # Reply shape
 
-The reader runs many threads at once and reads each reply cold. Build every reply from
-one question: **what does the reader need, right now, to understand what's going on and
-act?** Pick the [primitives](#primitives) that answer it and put them in the order that
-tells the story. Hold to this until the reader says "normal replies".
+The reader runs many agents at once and gives each reply a glance. Spend that glance
+where their judgement matters: a reply that stops for their call is a
+[decision card](#decision-card), and every other reply is a report, both written as
+the glance below, in plain Markdown. The work's process stays with you, and its evidence
+and the other options go in one fold. Hold to this until the reader says "normal replies".
 
-## Habits
+## The glance
 
-- **Show, don't point.** Whenever you name a PR, a follow-up, a task, or a count, say what
-  it is in the same breath: "#312, the replay test for the fix-the-cause rule"; "lenient
-  decoding, V3 re-export, and readiness cards", not "the 3 follow-ups". What lives in an
-  earlier reply, a fold, or the turn block is out of the reader's sight.
-- **Frame it around the reader**: what changes for them, what they're accepting, what
-  they need to do. Use their words, short sentences, one idea each. A term they haven't
-  used, such as an issue key, a branch, or a label you coined, gets named by what it
-  does instead. A number
-  says what it means: "about 30% less memory", not a raw score. Inline code only for a
-  name the reader would type or search.
-- **Let the moment set the length.** A merge of a big change gets the full picture, a
-  status gets a line per running thing, and a yes or no gets one sentence. No word or row
-  counts: cut a line only when the reader would act the same without it. Say each piece
-  of code, draft, and warning once a session, except a draft the next step sends, which
-  shows in full again.
-- **Restate context** in one line when they may have lost the thread: after a long wait,
-  on earlier work, or on another thread's result.
-- **Judge.** On a call, give your pick and its long-term reason.
-- **Tangents wait.** A side issue you noticed becomes a later Next option.
-- **Text, not pictures.** Structure comes from labeled rows, lists, and small tables. A
-  picture only when the reader asks for one, or a screenshot of UI; read
-  [pictures](references/pictures.md) first.
-- **Fold the evidence.** Checks, sources, raw scores, and per-source or per-run results
-  go in the one fold, and above it you say what they mean. What the reader needs to
-  decide stays in sight.
+1. **Headline**: one line of at most 12 words, a marker and then the outcome in bold, in
+   the reader's terms: `✅ **Exports no longer time out.**`, not "added an index on
+   `created_at`". The marker says before a word whether the reader is needed: ✅ done
+   and nothing needs them, 🟡 a decision or a risk, 🔴 broken or blocked on them, ⏳
+   still working. An answer to a question is the headline: your pick for a which or
+   whether, or a best guess in concrete units and how sure you are. A ⏳ headline names
+   what it waits on and how long it has run, and time left only when a past run or this
+   run's progress measures it.
+2. **Fact table**: two columns, right under the headline, in place of a lead-in and
+   note bullets. A reply whose whole point is one sentence has none.
+   - **Header row**: the subject: a PR as a link, then what it changes, its state, and
+     size; or one word, such as Problem or Change, then the point.
+   - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
+     most 20 words. The label is one word from this list: Risk, what could go wrong;
+     Unsure, what you couldn't check; Why, the cause or your reason; Effect, what
+     changes, measured; Proof, passed checks or how to see it; Undo, the rollback;
+     Skipped, what you left out; Queued, what waits; a decision's Pick, Source, and
+     Cost; and the [reader items](#reader-items) Decide, Review, and Do. Risk and
+     Unsure rows come first, their value starting with ⚠️.
+3. **View**: only what the table can't hold, in its own block under it: code or a diff
+   of at most 15 lines, a comparison table of at most six rows, a message draft, the
+   reader's numbered steps, or a screenshot. [Views](references/views.md) shows each,
+   and a reply of each kind.
+4. **Closing**: below a `---` line with a blank line on each side. At a stop, a fork, or
+   an answer, the next step, in the reader's own format when their instructions define
+   one. When the work is finished, `**Done**` and one line naming what's still open;
+   when only the reader's merge go is left, the reply is a ship gate instead. When only
+   background work is left, the reply is the ⏳ headline and one `then: …` clause naming
+   what you'll do when it lands, with no table: "⏳ **CI on #12, 6 min in**, then: fix
+   any failure".
+
+**Budget**: a fact that fits no row or view goes in the fold, and any other prose above
+it stays under 60 words. A mid-turn progress message is one line.
+
+````markdown
+✅ **Exports no longer time out on big companies.**
+
+| [#212](https://github.com/acme/app/pull/212) | Exports page their rows · draft · +86 −40 in 3 files |
+|---|---|
+| Risk | ⚠️ A year of rows still takes about 40 s. |
+| Why | Paging sits inside `Export`, so its callers don't change. |
+| Proof | Tests 41/41 · a 90,000-row export finished in 38 s. |
+
+---
+
+**Done**. Still open: the 40 s yearly export.
+````
+
+## Reader items
+
+Each is a row, and a skill's Decide, Review, or Do note is that row.
+
+- **Decide**: a choice only the reader can make. It gets a decision card, and a choice
+  queued behind it is a Decide row naming it and your pick.
+- **Review**: what goes out or ships on the reader's yes, such as a draft, a push, or a
+  UI, gets a decision card. What only waits on their look, such as a PR open for their
+  review, is one row.
+- **Do**: a login, a device step, or a payment, with why you can't do it, and its steps
+  numbered under the table. Show it once, in the reply that first needs it.
+
+## The fold
+
+At most one fold, for what the reader may audit or compare: checks, sources, the other
+options or finding cards, a draft's long diff, and a multi-item run's table of items
+with `#`, item, status, and commit columns. Write it as `<details><summary>…</summary>`
+and a blank line. The summary leads with the worst check:
+`Checks: ❌ tests 11/12 · ⚠️ lint not run · ✅ typecheck`.
+Risks and reader items stay in the table. A detail worth neither a
+glance nor an audit is cut, not folded.
+
+## Decision card
+
+When a reply stops for the reader's judgement, the card is the whole reply. One call
+per reply; queue the rest. A skill that names its own format for a call keeps it, such
+as a review's findings with their drafts, or a planning round's questions.
+
+1. **Headline**: `🟡 **<a question answerable yes or no>**`. In a round of several, a
+   strip follows it: `Group 1 🟡 · 2 ⬜ · 3 ⬜`.
+2. **Fact table**: the header row is `Problem`, then one plain line on what's wrong or
+   at stake, and for whom. A call that weighs options adds Pick, your answer and what it
+   optimizes; Source, what it follows; and Cost only when the pick is hard to undo: a
+   migration, a public API, or a message sent.
+3. **One view** under it, by the kind of call:
+   - **Design**: the pick's interface, data shape, or diff, with a call site.
+   - **Product**: what the customer sees, and how many it reaches, counted from real
+     data.
+   - **Message** to a person: the header row is `To`, then who gets it; Cost is what it
+     commits the reader to; the draft follows in full, in their own voice.
+   - **Ship gate**, a push or merge: the header row is the PR or the stack in merge
+     order, and the view is what the reader accepts, by kind, a column per PR, or a
+     table each past three, as [views](references/views.md#ship-gate) shows.
+   - **UI**: the screenshot or recording, and the one thing to judge as a Review row.
+   - **Stuck**, a check still failing after two fixes: each fix and why it failed, and
+     the assumption the premise test checked as Why.
+4. **One fold** for the proof, the other options, and the sources.
+
+The next step's options are the answers: `a` is yes, your pick, and `b` is no, the
+smallest option, often leaving things as they are.
+[Views](references/views.md#decision-card-example) shows a full card.
+
+## Writing
+
+- **The reader's words**: short sentences, one idea each, in the reader's terms, such as
+  PR, stack, or service. Name anything else by what it does; a label you coined, a hash,
+  or a flag goes in the fold. A number says what it means, "about 30% less memory", not
+  a raw score, in a table too. Inline code only for a name the reader would type or
+  search.
+- **Names, not numbers**: call each item by its short name. Number only a list in this
+  reply the reader might answer by number, such as findings.
+- **Say it once** per session: each piece of code, draft, and warning. A reply whose
+  next step posts or sends drafts shows each in full again, since what the reader
+  approves is what goes out.
+- **One picture** per turn at most: an image or an inline page. Text views, such as
+  code, a table, or a flow line, don't count. An inline page (`html_render`) only for
+  screenshots, a chart, or a UI mockup; read [pictures](references/pictures.md) first.
+- **Tangents wait**: a side issue becomes a later next-step option.
 - **Blank lines**: chat joins lines that have no blank line between them, so separate
   lines with a blank line or make them list items.
 
-## Primitives
+## Before sending
 
-Each is a building block with one job. [Views](references/views.md) shows each with a real
-example, plus the code shapes (an interface, a module tree, a call path) that Before →
-after and a decision often carry.
-
-| Primitive | Its job | Use when |
-|---|---|---|
-| **Headline** | A marker, then the outcome in bold: ✅ done, 🟡 a decision or a risk, 🔴 broken or blocked on the reader, ⏳ still working. On a question, the answer; on a call that waits for the reader's yes, the question. | Always |
-| **Fact table** | Labeled rows, `label \| value`, such as Problem, Pick, Source, Risk, Cost, Undo | A decision |
-| **You accept** | What changes, by kind, a column per PR | A merge or push go, for one PR or several |
-| **Comparison** | A table across the same few points | Options or results that differ the same way |
-| **Before → after** | The change, concretely: a command, a call, a screen, a tree | Explaining what a change does |
-| **List with reasons** | Each item named, with why | Several concrete items: renames, follow-ups, a code-shape call |
-| **Since you left** | Timestamped changes, what's running, and when it's back | The reader is catching up or waiting |
-| **What changed for you** | The effects on the reader, the undo, their move | Work is done |
-| **Project view** | Needs you (ordered, each sized), Running, Done | "What's going on?" across a project |
-| **Proof** | Checks and sources in one fold, its summary leading with the worst | There's evidence |
-| **Next** | `a`, and `b` on a call, each naming the full action | The reply stops for the reader |
-| **Turn block** | Hidden state for Prefrontal and the hooks | Always |
-
-Common compositions:
-
-- **Decision card**: a Headline that asks the yes-or-no question, `🟡 **Drop the JSON
-  option?**`, even when the reader asked it; a Fact table with Problem, Pick, and Source;
-  the one view the call needs (Before → after, a Comparison, the interface, or a message
-  draft in full); one fold with the proof and the other options; and Next with `a` yes,
-  your pick, and `b` no, the smallest option. One call per card; queue the rest. A skill that names its own format for a
-  call, such as a review's findings or a planning round, keeps it.
-- **Ship gate**: Headline, You accept, each risk as a ⚠️ line, Proof, and Next.
-- **Status**: Headline and Since you left. **Done**: Headline and What changed for you.
-- **A Do**, something only the reader can do (a login, a device step, a payment): why
-  you can't, then numbered steps, shown once, in the reply that first needs it.
-
-## Contracts
-
-Machines read these, so they hold whatever the moment:
-
-- **Closing**: below a `---` line with a blank line on each side. At a stop, a fork, or
-  an answer, `**Next**` in the reader's own format when their instructions define one.
-  When the work is finished, `**Done**` and what's still open. When only background work
-  is left, the ⏳ headline and one `then: …` clause naming what you'll do when it lands.
-- **Next options** name the full action and every item in it. A merge option's text is
-  the plain request with no other step, "merge #12 and #13", since merge-gate takes
-  only that as the reader's go; `hooks/reply_budget.py` sends back any other.
-- **Numbers on action lines**: a Next, Needs you, or Done line that cites one ("item
-  48", "fix 21–33") gives its name beside it; `hooks/bare_references.py` sends back one
-  that doesn't.
-- **Turn block**: every final reply ends with one, as the reader's reply rules (Turn block
-  section) or the kit's `references/turn-block.md` define it, its `options` repeating
-  each Next option's text word for word; `hooks/routine_stop.py` sends back one that's
-  missing or malformed.
+Read only the headline and the table. They alone must say what happened, what it means
+for the reader, and what comes next, with no "what's X?" left; on a card, the reader
+must be able to answer yes or no from them. Cut each row that doesn't change that.

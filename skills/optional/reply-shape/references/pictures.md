@@ -1,8 +1,7 @@
 # Pictures in replies
 
-Replies are text: in two rounds of side-by-side picks, every visual format lost to labeled
-rows, lists, and small tables. Draw a picture only when the reader asks for one, or show a
-screenshot or recording when the subject is UI.
+How to draw a Mermaid view, or the turn's one picture: an image or an inline page. Keep a
+diagram to five boxes or fewer, and keep a list or a run of steps as text.
 
 ## Mermaid
 
@@ -11,6 +10,9 @@ screenshot or recording when the subject is UI.
 - Before a diagram goes to GitHub, in a PR, issue, or comment, run this skill's
   `scripts/check-mermaid.mjs FILE`, which parses it with the version GitHub renders.
   Fix each block it rejects; quoting the label, as in `A["call (x)"]`, fixes most.
+- Color nodes with `classDef bad fill:#fdecec,stroke:#e5484d,color:#7f1d1d`,
+  `classDef hit fill:#fff4d6,stroke:#d4a106,color:#713f12`, and
+  `classDef good fill:#e8f7ee,stroke:#30a46c,color:#14532d`.
 
 ## Inline pages
 

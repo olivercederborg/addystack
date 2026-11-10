@@ -31,7 +31,7 @@ work is wanted. Building holds the must-haves. At a pilot Bar the smallest optio
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
 the goal back in the user's words. Show the plan and questions in the first round. Keep
 the user's boundaries verbatim: on the plan, or copied into the fold and named on the
-plan when the round can't show them.
+plan when the glance can't hold them.
 
 **Milestones**: when the request holds more than one step that ships on its own, map
 them first, in order, each with its goal and size, in the fold.
@@ -64,7 +64,7 @@ Not in scope, so a later run picks it up.
 ## 3. Show each option's impact
 
 Every reply in the grill, including a clarification, uses this order. Aim for about 45
-words of prose above its fold. Plan items and
+words of prose above its fold; the Stop check sends a round back at 60. Plan items and
 the fold's summary count, while code and diff blocks and the fixed labels (these
 headings, their tags, `Size`, `Pick`, `(say if wrong)` and the who-agreed tags) don't.
 Only **Proposed this round** and **Changed this round** are `diff` blocks; the plan is plain bullet lists,
@@ -81,7 +81,7 @@ name, such as `+4 more in the fold`:
 3. Print **The plan so far** as its own heading every time, then these plain headings
    in order: **Building** · **Not building** · **Assuming** (say if wrong) · **Size**.
    Show the complete Size on its line, including PRs, files and migrations; use
-   `Size`, not a synonym. Mark each Building
+   `Size`, not a synonym, so the Stop check can read it. Mark each Building
    clause `(you)`, `(you, round N)`, or `(me, round N)`; write the heading exactly as
    **Assuming** (say if wrong), with each value on its heading line as in the example.
    Keep about five Building clauses,

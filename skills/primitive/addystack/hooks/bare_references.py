@@ -31,14 +31,6 @@ FOLD = re.compile(r"<details>.*?</details>", re.S)
 ZONE = re.compile(r"^\*\*(Next|Done|Needs you)\*\*")
 LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*")
 READER = ("Decide", "Review", "Do")
-# reply-shape's fact table: a two-column GFM table under a headline that opens with its
-# marker, a round's strip (Group 1 🟡 · 2 ⬜) allowed between them.
-HEADLINE = re.compile(r"\s*[✅🟡🔴⏳]")
-STRIP = re.compile(r"[\w ]*?\d+\s*[🟡⬜✅]️?(?:\s*·\s*[\w ]*?\d+\s*[🟡⬜✅]️?)+")
-TABLE_RULE = re.compile(r"^\s*\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)*\|?\s*$")
-# What ends a table's rows: a list item, a quote, a heading, a fence, a thematic break, or an HTML block.
-BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#{1,6}\s|`{3,}|~{3,}|([-*_])(?:[ \t]*\1){2,}[ \t]*$"
-                         r"|</?[A-Za-z][A-Za-z0-9-]*(?:\s|/?>|$)|<!--|<\?|<![A-Z])")
 NUMS = r"\d+(?!\.\d)(?:\s*(?:[–-]|,|and|or|to|&)\s*\d+)*"
 KEYWORD = re.compile(
     r"\b(?:items?|rules?|findings?|rows?|milestones?|questions?|decisions?|lessons?|nits?|"
@@ -89,48 +81,13 @@ def plain(line):
     return re.sub(r"[*_]{1,2}", "", line)
 
 
-def cells(line):
-    """A table row's cells: split on pipes a backslash doesn't escape, after one outer pipe
-    at each end. A backslash escapes the character after it, so the pipe in `\\\\|` splits."""
-    row = line.strip()
-    row = row[1:] if row.startswith("|") else row
-    found, cell, escaped = [], "", False
-    for char in row:
-        if char == "|" and not escaped:
-            found.append(cell)
-            cell = ""
-        else:
-            cell += char
-        escaped = char == "\\" and not escaped
-    # The outer pipe at the end closes the last cell and opens none.
-    return found if found and not cell and row.endswith("|") else [*found, cell]
-
-
 def reader_rows(text):
-    """The lines of the Decide, Review, and Do rows of reply-shape's fact table: the
-    two-column table that is the first thing under a headline opening with its marker (a
-    round's strip may sit between), read from the reply's own lines, since what shown()
-    drops (a code block, a fold) would otherwise sit unseen between the headline and an
-    older table. The line numbers hold in shown()'s lines too, as nothing above the table
-    is dropped there. A Review cell in any other table is that table's own label."""
-    lines = turn_block.lines_ended(text).split("\n")
-    filled = [n for n, line in enumerate(lines) if line.strip()]
-    if not filled or not HEADLINE.match(lines[filled[0]]):
-        return set()
-    under = filled[2:] if len(filled) > 1 and STRIP.fullmatch(lines[filled[1]].strip()) else filled[1:]
-    if not under or under[0] + 1 >= len(lines):
-        return set()
-    start = under[0]
-    header, rule = lines[start], lines[start + 1]
-    if (len(header) - len(header.lstrip(" ")) > 3 or header[:1] == "\t" or "|" not in header or BLOCK_START.match(header)
-            or "|" not in rule or not TABLE_RULE.match(rule) or len(cells(rule)) != 2 or len(cells(header)) < 2):
-        return set()
-    found, n = set(), start + 2
-    while n < len(lines) and lines[n].strip() and not BLOCK_START.match(lines[n]):
-        if cells(lines[n])[0].strip().strip("*").strip().casefold() in {name.casefold() for name in READER}:
-            found.add(n)
-        n += 1
-    return found
+    """The lines of the Decide, Review, and Do rows of reply-shape's fact table, as
+    reply_budget reads it from the reply: the same table, labels, and cells its limits
+    apply to. The line numbers hold in shown()'s lines too."""
+    import reply_budget  # here, since reply_budget imports this module
+    table = reply_budget.fact_table(text)
+    return {row.at for row in table.rows if reply_budget.listed(row.label, READER)} if table else set()
 
 
 def zone_lines(lines, rows=frozenset()):

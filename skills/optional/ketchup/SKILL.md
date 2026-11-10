@@ -91,7 +91,7 @@ Draw one when a picture is easier to grasp than sentences: how a design or syste
 a PR stack with each PR's state, a before and after of a fix, or options side by side.
 Never draw a status list, a list of action items, or boxes with nothing connecting them,
 and never give a fact twice, in text or across visuals. Keep each one readable at a
-glance, at most eight words a box, labeled in
+glance, within the reply style's size limit and at most eight words a box, labeled in
 plain words a person would say, not tags like "Tests: pass".
 
 Embed screenshots and videos inline when the change is visible, not only as links. When

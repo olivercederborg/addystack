@@ -5,7 +5,7 @@ Upstream commit: 839872f9d1cd634fed642b4589ce7226199cc15f
 Upstream file: https://github.com/ayghri/i-have-adhd/blob/839872f9d1cd634fed642b4589ce7226199cc15f/.cursor/skills/i-have-adhd/SKILL.md
 
 The adapted skill preserves the upstream MIT license (see LICENSE). It keeps the
-upstream rules of leading with state, matter-of-fact errors, and no preamble, recap,
-or closers, and adds a catalog of reply primitives (a headline, labeled rows, what each
-PR asks the reader to accept, before → after, a project view, one evidence fold, and
-more), status markers, and rules for pictures, code, and checks.
+upstream rules of leading with state, matter-of-fact errors, capped lists, and no
+preamble, recap, or closers, and adds the glance (a headline, one fact table of
+labelled rows, one evidence fold, and a 60-word budget), status markers, and
+rules for pictures, code, and checks.
