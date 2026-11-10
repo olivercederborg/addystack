@@ -2815,7 +2815,13 @@ class MergeGate(unittest.TestCase):
                          ("merge r#10 through #14", True), ("merge #10 through r#14", True),
                          ("merge r#10-#14", True), ("merge dotfiles#10 through #14", False),
                          ("merge #10 through dotfiles#14", False), ("merge dotfiles#10-#14", False),
-                         ("merge #1 and r#10 through #14", True)]:
+                         ("merge #1 and r#10 through #14", True),
+                         # The card's own form, a space between repo and PR.
+                         ("merge #12 and dotfiles #36", True), ("merge r #12 and dotfiles #36", True),
+                         ("merge R #12", True), ("merge o/r #12", True), ("merge dotfiles #12", False),
+                         ("merge other/r #12", False), ("merge #36 and dotfiles #12", False),
+                         ("merge #12 and r #36", False), ("merge r #10 through #14", True),
+                         ("merge r #10-#14", True), ("merge dotfiles #10 through #14", False)]:
             with self.subTest(text=text):
                 reason = self.reason("gh pr merge 12", said=(
                     "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
@@ -3285,6 +3291,10 @@ class MergeGo(unittest.TestCase):
         "lets get the final PRs merged": "2026-10-26 7f90013d",
         "just merge it and then we can always change it back": "2026-10-28 ab1c3b07",
         "merge both stacks please": "2026-10-29 405ca507",
+        # A picked option, then the same option with both repos named, in T3's suite-audit
+        # coordinator thread 3cce05fc: the gate read neither as a go until "dotfiles #36" did.
+        "merge #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
+        "merge addystack #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
         # Merge requests the gate never judged, in repos with CI.
         "lets get all the current PRs for the redesign merged": "2026-10-03 a1cb0fac",
         "a + merge when ready": "2026-10-05 linux 43e516e7",
@@ -3347,6 +3357,21 @@ class MergeGo(unittest.TestCase):
         for prompt, source in self.NOT_GOS.items():
             with self.subTest(prompt=prompt, source=source):
                 self.assertFalse(merge_go.literal_go(prompt))
+
+    def test_reads_a_word_before_a_pr_as_its_repo_unless_a_sentence_puts_it_there(self):
+        for text in ["merge dotfiles #36", "merge sam/dotfiles #36", "merge Dotfiles #36 and #37", "merge #55, dotfiles #36",
+                     "merge dotfiles #36 through #38", "merge dotfiles #36-#38", "a, and merge dotfiles #36",
+                     "merge the stack of dotfiles #36"]:
+            with self.subTest(text=text):
+                self.assertTrue(merge_go.literal_go(text))
+        # A time or a condition, a refusal, a noun that isn't a repo ("PR #36", or "stack #3",
+        # a stack's number the gate can't place), a count, or the grammar's own words.
+        for text in ["merge after #36", "merge before #36", "merge once #36", "merge except #36", "merge not #36",
+                     "merge without #36", "merge only #36", "merge into #36", "merge with #36", "merge PR #36",
+                     "merge prs #36", "merge stack #36", "merge 55 #36", "merge both #55 and #36", "merge it #36",
+                     "merge the #36", "merge and #36", "merge #55 and after #36", "merge #36 to after #38"]:
+            with self.subTest(text=text):
+                self.assertFalse(merge_go.literal_go(text))
 
     def test_stays_fast_on_a_long_run_of_openers(self):
         started = time.monotonic()
