@@ -324,52 +324,34 @@ on `**Done**`, and a report with a routine next step is the same table above
 ````
 
 **A message to a person**: the header row is `To`, Cost is what it commits the reader
-to, and the draft follows in full.
+to, and the draft follows in full. **A production write**: the header row is what runs
+and where, Effect counts the rows it touches from real data, and Undo says how they come
+back.
+
+**Several things**: an item each, grouped by the thing, findings by severity.
 
 ````markdown
-🟡 **Post this reply to Sam on #88?**
+🔴 **Not ready: the export leaves out the ticket's currency column.**
 
-| To | Sam, as a reply to their review comment on #88 |
-|---|---|
-| Why | They asked whether a retry can charge twice. It can't, and a test shows it. |
-| Cost | Commits you to the follow-up PR this week. |
+**Must fix**
 
-> Good catch. A retry reuses the first charge's key, so the bank drops the second one,
-> and `retry.test.ts` covers it. I'll move the key into the client in a follow-up this
-> week.
+- **Currency column**: the ticket's header ends in `currency`; rows stop at amount.
+- **Commas in descriptions**: fields aren't quoted, so "Rent, January" adds a column.
+
+**Cleanups**
+
+- **JSON option**: the ticket never asked for it.
+- **Mock-only test**: it checks its own mock, never the export.
+
+<details><summary>Checks: ⚠️ lint not set up · ✅ tests 2/2, but one expects the wrong header</summary>
+
+✅ typecheck · a real run printed `2026-01-31,Rent, January,900.00`.
+
+</details>
 
 ---
 
 **Next**
 
-- **`a` → post it** · *recommended*
-- `b` → no: leave the comment unanswered
+- **`a` → fix the currency column, quoting, JSON option, and mock test** · *recommended*
 ````
-
-**A production write**: the header row is what runs and where, Effect counts the rows it
-touches from real data, and Undo says how they come back.
-
-````markdown
-🟡 **Backfill the missing VAT rate on 412 receipts in production?**
-
-| Write | One `UPDATE` on `receipts` in production: sets `vat_rate` where it's null |
-|---|---|
-| Risk | ⚠️ 9 of the 412 have no VAT line, so they get 0%. |
-| Effect | 412 of 80,300 receipts change, in 37 companies, counted on the replica. |
-| Proof | A dry run on a copy changed 412 rows in 0.4 s. |
-| Undo | The old values are saved in `receipts_vat_backup`; one statement restores them. |
-| Cost | Exports already sent keep the old totals. |
-
----
-
-**Next**
-
-- **`a` → run the backfill in production** · *recommended*
-- `b` → no: leave the rates empty
-````
-
-## Pages
-
-When Markdown can't show it, such as a highlight on part of a name across many renames,
-two trees side by side, or a UI, publish a page. Keep the same markers there: struck through for removed and a green highlight for added.
-Check the exact page at 728px and 390px wide before it goes out.

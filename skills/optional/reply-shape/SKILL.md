@@ -1,6 +1,6 @@
 ---
 name: reply-shape
-description: Replies the reader takes in at a glance - a one-line headline, one fact table of labelled rows, and the next step - plus a decision card, with the problem, the pick, and its source, when a call needs their judgement. A SessionStart hook loads it in the user's sessions; run /reply-shape to turn it on elsewhere.
+description: Replies the reader takes in at a glance - a one-line headline, a fact table or bold item lines, and the next step - plus a decision card, with the problem, the pick, and its source, when a call needs their judgement. A SessionStart hook loads it in the user's sessions; run /reply-shape to turn it on elsewhere.
 disable-model-invocation: true
 metadata:
   layer: optional
@@ -24,8 +24,11 @@ and the other options go in one fold. Hold to this until the reader says "normal
    whether, or a best guess in concrete units and how sure you are. A ⏳ headline names
    what it waits on and how long it has run, and time left only when a past run or this
    run's progress measures it.
-2. **Fact table**: two columns, right under the headline, in place of a lead-in and
-   note bullets. A reply whose whole point is one sentence has none.
+2. **Fact table** for one subject, such as a PR, a decision, or a check: two columns,
+   right under the headline. A reply whose whole point is one sentence has none. Several
+   things get **items** instead: a list item per PR, finding, option, or running job,
+   its name in bold, then a short clause, with details under it or in the fold. Group by
+   the thing, and findings by severity under a bold **Must fix**, then **Cleanups**.
    - **Header row**: the subject: a PR as a link, then what it changes, its state, and
      size; or one word, such as Problem or Change, then the point.
    - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
@@ -95,8 +98,8 @@ as a review's findings with their drafts, or a planning round's questions.
 1. **Headline**: `🟡 **<a question answerable yes or no>**`. In a round of several, a
    strip follows it: `Group 1 🟡 · 2 ⬜ · 3 ⬜`.
 2. **Fact table**: the header row is `Problem`, then one plain line on what's wrong or
-   at stake, and for whom. A call that weighs options adds Pick, your answer and what it
-   optimizes; Source, what it follows; and Cost only when the pick is hard to undo: a
+   at stake, and for whom. A call that weighs options adds Pick, your answer and its
+   long-term reason; Source, what it follows; and Cost only when the pick is hard to undo: a
    migration, a public API, or a message sent.
 3. **One view** under it, by the kind of call:
    - **Design**: the pick's interface, data shape, or diff, with a call site.
@@ -123,20 +126,19 @@ smallest option, often leaving things as they are.
   or a flag goes in the fold. A number says what it means, "about 30% less memory", not
   a raw score, in a table too. Inline code only for a name the reader would type or
   search.
-- **Names, not numbers**: call each item by its short name. Number only a list in this
-  reply the reader might answer by number, such as findings.
+- **Names, not numbers**: call each item by its short name; number only a list the
+  reader might answer by number.
 - **Say it once** per session: each piece of code, draft, and warning. A reply whose
   next step posts or sends drafts shows each in full again, since what the reader
   approves is what goes out.
-- **One picture** per turn at most: an image or an inline page. Text views, such as
-  code, a table, or a flow line, don't count. An inline page (`html_render`) only for
-  screenshots, a chart, or a UI mockup; read [pictures](references/pictures.md) first.
+- **Pictures** only for UI or when the reader asks; read
+  [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
-- **Blank lines**: chat joins lines that have no blank line between them, so separate
-  lines with a blank line or make them list items.
+- **Blank lines**: chat joins lines with no blank line between, so separate lines with
+  one or make them list items.
 
 ## Before sending
 
-Read only the headline and the table. They alone must say what happened, what it means
+Read only the headline and the table or items. They alone must say what happened, what it means
 for the reader, and what comes next, with no "what's X?" left; on a card, the reader
 must be able to answer yes or no from them. Cut each row that doesn't change that.
