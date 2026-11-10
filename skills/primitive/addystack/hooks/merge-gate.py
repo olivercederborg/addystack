@@ -114,8 +114,9 @@ def run(*cmd):
     return result.stdout.decode(errors="surrogateescape")
 
 # A PR an option names, read word by word in merge_go's REF forms: 12, #12, skills#12,
-# owner/skills#12, skills #12 joined into skills#12, and 10-14 or #10-#14. Two joined by "through", "to", or "-" are a range.
-# "the 2 PRs" is a count, and "v2" a name, not a PR; a bare "the 13" reads as #13.
+# owner/skills#12, skills #12 read as skills#12, and 10-14 or #10-#14. Two joined by
+# "through", "to", or "-" are a range. "the 2 PRs" is a count, and "v2" a name, not a PR;
+# a bare "the 13" reads as #13.
 PART = r"(?:(?:([\w.-]+)/)?([\w.-]+)#|#)?(\d+)"
 WORD = re.compile(rf"{PART}(?:-{PART})?")
 COUNT = re.compile(r"\bthe \d+ prs?\b", re.I)
@@ -130,7 +131,7 @@ def names(text, pr, owner, repo):
     import merge_go
     same = lambda part, want: not part or part.lower() == want.lower()
     here = lambda found, at: same(found.group(at), owner) and same(found.group(at + 1), repo)
-    text = re.sub(rf"(?<![^\s(])({merge_go.REPO})\s+(?=#\d)", r"\1", text, flags=re.I)  # "dotfiles #36"
+    text = merge_go.REPO_REF.sub(r"\1", text)  # "dotfiles #36" reads as dotfiles#36
     text = re.sub(r"\s*-\s*", "-", COUNT.sub(" ", text)).replace(",", " ").replace("&", " ")  # merge_go's REFS joins
     words = [word.strip("()").rstrip(".!?;:") for word in text.split()]
     refs = []
@@ -182,14 +183,14 @@ def letter_miss(reply, key):
 def user_go(pr, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge pr, and,
     for a key that doesn't, what it picked and why that isn't a go. A go is a literal go
-    (merge_go.py), or a key that picks an option of the reply it answered (answered,
+    (merge_go.py), held to the PRs it names when it names one as "dotfiles #36", or a key that picks an option of the reply it answered (answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR.
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
     pick needs that reply's turn block, so an earlier reply's option, a reply without one,
     or a block in a message another agent sent gives no go."""
     try:
         import sqlite3, t3_child, transcripts, turn_block
-        from merge_go import literal_go
+        from merge_go import literal_go, REPO_REF
         in_t3 = bool(os.environ.get("T3CODE_CLI_PATH"))  # where only T3's database tells another agent from the user
         try:
             with contextlib.closing(t3_child.connect()) as db:
@@ -205,12 +206,17 @@ def user_go(pr, owner, repo):
         # The latest prompt itself: when the user didn't type it, an earlier go doesn't count.
         found = transcripts.exchanges(payload.get("transcript_path"), strict=in_t3)
         prompt = found[-1].prompt if found else ""
+        said = f'the user\'s "{prompt.strip()}"'
         if literal_go(prompt):
-            return True, None
+            # A word before " #N" may be a step or a refusal NOT_REPO misses ("skip #12"), so a
+            # typed go that names a PR that way is held to its PRs, as a pick is.
+            if not REPO_REF.search(prompt) or names(prompt, pr, owner, repo):
+                return True, None
+            return False, f"{said} isn't a merge of #{pr}"
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
             return False, None
-        reply, said = answered(found), f'the user\'s "{prompt.strip()}"'
+        reply = answered(found)
         option = turn_block.picked(reply, prompt)
         if option is None:
             return False, f"{said} picks nothing: {letter_miss(reply, key.group(1).lower())}"

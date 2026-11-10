@@ -2827,6 +2827,20 @@ class MergeGate(unittest.TestCase):
                     "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
                 self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
 
+    def test_a_typed_go_that_names_a_pr_as_repo_space_number_is_held_to_its_prs(self):
+        # Nov 10, 2026: verify-work found "merge #36, skip #12" passed for #12 once a word
+        # before " #N" read as a repo, since a typed go isn't held to its PRs.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for text in ["merge #12 and dotfiles #36", "merge r #12", "merge o/r #12 and dotfiles #36",
+                     "merge #13"]:  # no repo word, so as unheld as before
+            with self.subTest(text=text):
+                self.assertIsNone(self.reason("gh pr merge 12", said=(text,)))
+        for text in ["merge #36, skippy #12", "merge #36 and dontt #12", "merge #36 and dotfiles #12",
+                     "merge dotfiles #12", "merge #12 and r #36"]:
+            with self.subTest(text=text):
+                self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
+
     def workflow(self, text, name="ci.yml"):
         """Commit a workflow to main; PRs made after it branch from it."""
         path = pathlib.Path(self.writer, ".github", "workflows", name)
@@ -3369,7 +3383,14 @@ class MergeGo(unittest.TestCase):
         for text in ["merge after #36", "merge before #36", "merge once #36", "merge except #36", "merge not #36",
                      "merge without #36", "merge only #36", "merge into #36", "merge with #36", "merge PR #36",
                      "merge prs #36", "merge stack #36", "merge 55 #36", "merge both #55 and #36", "merge it #36",
-                     "merge the #36", "merge and #36", "merge #55 and after #36", "merge #36 to after #38"]:
+                     "merge the #36", "merge and #36", "merge #55 and after #36", "merge #36 to after #38",
+                     # verify-work's near misses, Nov 10, 2026: a refusal, a time, or another step.
+                     "merge #36, skip #12", "merge #36 and dont #12", "merge #36 and rebase #12",
+                     "merge #12 and fix #36", "merge excluding #36", "merge unless #36", "merge no #36",
+                     "merge never #36", "merge #55, ignore #36", "merge #55 and drop #36", "merge later #36",
+                     "merge maybe #36", "merge #55, hold #36", "merge #55 and revert #36", "merge #55 and push #36",
+                     "merge #55 and deploy #36", "merge #55 and verify #36", "merge #55 and close #36",
+                     "merge #55, release #36", "merge #55, review #36"]:
             with self.subTest(text=text):
                 self.assertFalse(merge_go.literal_go(text))
 

@@ -3,23 +3,27 @@ only action is the merge, matched whole. merge-gate.py takes a PR with no checks
 
 A go names what to merge or nothing: "merge it", "merge both stacks please", "merge #92
 through #112 into main", "merge dotfiles#1", "merge #55 and dotfiles #36", "lets get the
-final PRs merged", "merge whats ready now and merge the rest when they come back done". It may open on a pick of the
-reply's option ("a, and merge them"), on marking the PRs ready, or on a polite opener, end
-on "please", a following pick, "and start next", or "we can always change it back", and
-ask as "can you" or "let's" ("lets merge it?"). A question about whether to merge, "can
-we merge …?" included, a refusal, an if-clause first, another step before or after the
-merge (fix, push, rebase, verify, deploy, release, try it out, handle it), and talk about
-merging don't match. MergeGo in test_hooks.py holds the real prompts this was built from,
+final PRs merged", "merge whats ready now and merge the rest when they come back done".
+It may open on a pick of the reply's option ("a, and merge them"), on marking the PRs
+ready, or on a polite opener, end on "please", a following pick, "and start next", or "we
+can always change it back", and ask as "can you" or "let's" ("lets merge it?"). A
+question about whether to merge, "can we merge …?" included, a refusal, an if-clause
+first, another step before or after the merge (fix, push, rebase, verify, deploy,
+release, try it out, handle it), and talk about merging don't match, though a refusal or
+step NOT_REPO misses before a "#N" reads as a repo (REPO_REF). MergeGo in test_hooks.py holds the real prompts this was built from,
 each with its source: every one merge-gate denied for want of a go, and the nearest misses."""
 import re
 
 # A repo's name before " #N", as in "dotfiles #36", but no word a sentence puts there:
-# "merge after #36" waits, "merge except #36" refuses, and "PR #36", "stack #3", or
-# "merge 5 #36" names no repo.
-NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|but|except|not|without|with|on|onto|into|in|from"
-            r"|for|of|by|to|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those"
-            r"|prs?|pull|issues?|stacks?|branch|merge)")
+# "merge after #36" waits, "merge #55, skip #36" refuses, "merge #55 and fix #36" adds a
+# step, and "PR #36", "stack #3", or "merge 5 #36" names no repo. No list holds every such
+# word, so merge-gate.py holds a go in this form to the PRs it names (REPO_REF).
+NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
+            r"|no|never|dont|skip|drop|ignore|hold|without|with|on|onto|into|in|from|for|of|by|to"
+            r"|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those|prs?|pull"
+            r"|issues?|stacks?|branch|merge|fix|push|rebase|revert|verify|deploy|release|review|close)")
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/)?[a-z][\w.-]*"
+REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
 REF = rf"(?:(?:[\w.-]+/)?[\w.-]+#\d+|{REPO}\s+#\d+|#?\d+)"
 REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
 STATE = r"(?:ready|passing|green|safe|done|verified)"
