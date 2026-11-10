@@ -10,4 +10,5 @@ d80fa0f4ebe0c5714af0adf8670336065233ecc6; this copy keeps the CONTEXT names, so 
 is upstream's from the commit before that rename, which is the only change to this folder
 between the two commits. It adds the kit's frontmatter layer and notes line, and a rule
 that an autonomous run reads the glossary for names only and reports new terms and ADR
-candidates as follow-ups.
+candidates as follow-ups. It replaces scope-grill's former references/domain-docs.md,
+whose generic rules upstream already held; scope-grill keeps only its own steps.

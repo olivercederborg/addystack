@@ -22,10 +22,9 @@ Item kind here: **Decide**, one per question, as the round's lines.
 ## 1. Set the scope line
 
 Before asking anything, read the request, the linked issue, the code involved, the
-domain docs (`CONTEXT.md`, or the context `CONTEXT-MAP.md` points to, and the area's
-ADRs), and any spec, ticket, or PR you start from, with a PR's diff against its base. A
-brain dump (loose thoughts in any order) is a fine request: draw the goal, the
-must-haves, and the open questions out of it.
+domain docs (the area's `CONTEXT.md` and ADRs), and any spec, ticket, or PR you start
+from, with a PR's diff against its base. A brain dump (loose thoughts in any order) is a
+fine request: draw the goal, the must-haves, and the open questions out of it.
 
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
 work is wanted. Building holds the must-haves. At a pilot Bar the smallest option that
@@ -159,9 +158,10 @@ each option, show:
   would justify it later, and moves to **Not in scope**. Every narrower option that
   loses names the concrete work it would cost to widen later, even when the narrower
   choice is easy to undo. With one losing option, the Pick line can carry it.
-- **Domain docs as you go**: when an answer settles a domain term, the user's word is
-  ambiguous or conflicts with the glossary, or a hard-to-undo decision may need an ADR,
-  read [domain docs](references/domain-docs.md).
+- **Domain docs as you go**: use `domain-modeling` when an answer settles a domain term,
+  the user's word is fuzzy or conflicts with the glossary, or a decision may need an ADR.
+  Show a settled term in that question's fold and write it once the round is accepted;
+  offer an ADR as an option in that turn.
 
 ## 4. Watch the whole plan
 
