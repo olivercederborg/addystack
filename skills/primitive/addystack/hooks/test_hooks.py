@@ -1,6 +1,6 @@
 """Pipe tests for the PreToolUse hooks: feed each hook the JSON Claude Code sends and
 check whether it denies."""
-import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
+import contextlib, dataclasses, functools, hashlib, importlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
 
 import bare_references, hook_parity, merge_go, reply_budget, resolved, routine_stop, transcripts, turn_block, verdicts, workflow_triggers
 
@@ -1751,7 +1751,8 @@ for line in sys.stdin:
         no_turn_block["replies"]["turnBlock"] = False
         resolved_state(self.env["ADDYSTACK_STATE"], json.dumps(no_turn_block), kit=pathlib.Path(self.env["HOME"], "kit"))
         self.assertEqual(self.drift(), ["claude: extra Stop ~/kit/hooks/routine_stop.py",
-                                        "claude: extra Stop ~/kit/hooks/reply_budget.py"])
+                                        "claude: extra Stop ~/kit/hooks/reply_budget.py",
+                                        "claude: extra Stop ~/kit/hooks/long_term_fix.py"])
 
     def test_without_a_build_the_kit_defaults_select_the_recommended_hooks(self):
         os.remove(pathlib.Path(self.env["ADDYSTACK_STATE"], "resolved.json"))
@@ -1886,6 +1887,141 @@ class BugRoute(unittest.TestCase):
                        "/verify-work for the whole stack\n\n[Historical assistant; earlier] the build failed"):
             with self.subTest(prompt=prompt):
                 self.assertEqual(self.run_on(prompt), "")
+
+
+class LongTermFix(unittest.TestCase):
+    """In bug work, a reply that recommends or ships a fix goes back once with the user's
+    question: is this the best long-term fix, or does it just treat the symptom?"""
+    FIX = {"key": "a", "class": "decision", "text": "yes: add the client beforeSend filter and a test, in one commit"}
+    SHIP = {"key": "a", "class": "stop:push", "text": "push the branch and open a draft PR"}
+    LOADED = {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Skill", "input": {"skill": "diagnosing-bugs"}}]}}
+    ALERT = ("Look into this Slack thread from #error-monitoring and do what the user asks.\n\n"
+             "Thread https://example.slack.com/archives/C1/p1, oldest first.")
+    ROUTED = {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "UserPromptSubmit",
+                                                   "content": [importlib.import_module("bug-route").CONTEXT]}}
+
+    def reply(self, option=None, state="stop"):
+        return "🟡 **Drop the client copies?**\n\n" + block(
+            {"state": state, "needs": [], "options": [option or self.FIX]})
+
+    def run_on(self, reply=None, before=None, after=(), said="investigate the Sentry alert", **event):
+        """The hook's output on reply, after a transcript of before (default: diagnosing-bugs
+        loaded), then the user's message said, then after; None when it passes."""
+        entries = [*(before if before is not None else [self.LOADED]), claude_said(said), *after]
+        with tempfile.TemporaryDirectory() as folder:
+            transcript = pathlib.Path(folder, "s.jsonl")
+            transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
+            out = subprocess.run([str(HOOKS / "long_term_fix.py")], capture_output=True, text=True, check=True, input=json.dumps(
+                {"last_assistant_message": reply or self.reply(), "transcript_path": str(transcript), "session_id": "s", **event}),
+                env={**os.environ, "HOME": folder, "T3_STATE_DB": os.path.join(folder, "none.sqlite")}).stdout
+        return json.loads(out) if out else None
+
+    def asks(self, *args, **kwargs):
+        out = self.run_on(*args, **kwargs)
+        return out is not None and "best long-term fix, or does it just treat the symptom" in json.dumps(out)
+
+    def test_a_fix_in_bug_work_goes_back_with_the_question(self):
+        out = self.run_on()
+        context = out["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("is this the best long-term fix, or does it just treat the symptom? Answer it, then send the reply "
+                      "again", context)
+        self.assertIn("production hurts now, the cause's owner is elsewhere, or the cause fix is out of scope "
+                      "(fix-the-cause-in-scope)", context)
+        codex = self.run_on(turn_id="t1")
+        self.assertEqual(codex["decision"], "block")
+        self.assertIn("treat the symptom", codex["reason"])
+
+    def test_bug_work_is_the_skill_bug_routes_context_or_an_alert_thread(self):
+        banner = {"type": "user", "isMeta": True, "message": {"content": [
+            {"type": "text", "text": "Base directory for this skill: /k/diagnosing-bugs\n\n# Diagnosing"}]}}
+        self.assertTrue(self.asks(before=[banner]))
+        self.assertTrue(self.asks(before=[self.ROUTED]))
+        self.assertTrue(self.asks(before=[], said=self.ALERT))
+        self.assertTrue(self.asks(before=[claude_said("/diagnosing-bugs the export fails")], said="fix it"))
+        # Not bug work: no skill, a quoted alert, another hook's context, or a later workflow skill.
+        self.assertFalse(self.asks(before=[]))
+        self.assertFalse(self.asks(before=[claude_said("hi")], said=self.ALERT))
+        self.assertFalse(self.asks(before=[{**self.ROUTED, "attachment": {
+            **self.ROUTED["attachment"], "content": ["Run verify-work before you say done."]}}]))
+        self.assertFalse(self.asks(before=[{**self.ROUTED, "attachment": {**self.ROUTED["attachment"], "hookEvent": "Stop"}}]))
+        verify = {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": "verify-work"}}]}}
+        self.assertFalse(self.asks(before=[self.LOADED, verify]))
+        self.assertTrue(self.asks(before=[self.LOADED, verify, self.LOADED]))
+
+    def test_bug_routes_context_still_names_the_route(self):
+        """The hook spots bug-route.py's context by this phrase."""
+        import long_term_fix
+        self.assertIn(long_term_fix.ROUTED, long_term_fix.bug_route.CONTEXT)
+
+    def test_only_a_code_or_config_change_asks(self):
+        for text in ("add the denyUrls filter for executors/*.js to the web Sentry client config, one commit",
+                     "fix the panel lookup and the archive link, one commit each, on a new stack branch (no push)",
+                     "raise the supplier-list request timeout to 30s and commit it locally",
+                     "yes: bump Better Auth to 1.7.8, run blast-radius and the web checks",
+                     "plan the fix: stop retrying on rate limits, or add backoff",
+                     "make the lazy-import fix, build-check it, open a hotfix PR",
+                     "Yes: retry out-of-memory crashes once, with a guard"):
+            with self.subTest(text=text):
+                self.assertTrue(self.asks(self.reply({**self.FIX, "text": text})))
+        for text in ("push the branch and open a draft PR linked to APP-2A8",
+                     "draft a Linear issue for this out-of-memory cause, for you to create and link",
+                     "add DEV-3347 to the current cycle and move it from Backlog to Todo",
+                     "build fix/mac-text-pages clean and install it",
+                     "diagnose 19 so the whole suite passes; fix the test or the app",
+                     "wrap up the audit: a final summary of what shipped",
+                     "merge #5441", "run verify-work on #5469", "no: leave issue 199 as it is"):
+            with self.subTest(text=text):
+                self.assertFalse(self.asks(self.reply({**self.FIX, "text": text})))
+        for cls in ("stop:merge", "stop:post", "stop:credential"):
+            with self.subTest(cls=cls):
+                self.assertFalse(self.asks(self.reply({**self.FIX, "class": cls})))
+
+    def test_a_turn_that_edited_the_checkout_asks_unless_the_user_picked_it(self):
+        edit = {"type": "assistant", "cwd": "/repo", "message": {"content": [
+            {"type": "tool_use", "name": "Edit", "input": {"file_path": "/repo/src/pdf.ts"}}]}}
+        cwd = {"type": "user", "cwd": "/repo", "message": {"content": "investigate and fix it"}}
+        self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[edit]))
+        codex = {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "apply_patch", "input": "…"}}
+        self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[codex]))
+        self.assertTrue(self.asks(self.reply({**self.SHIP, "class": "stop:merge", "text": "merge it"}),
+                                  before=[self.LOADED, cwd], after=[edit]))
+        done = "✅ **Fixed.**\n\n" + block({"state": "done", "needs": [], "options": []})
+        self.assertTrue(self.asks(done, before=[self.LOADED, cwd], after=[edit]))
+        # A pick of the option that asked for it, an edit outside the checkout, an earlier
+        # turn's edit, or a read.
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], said="a", after=[edit]))
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], said="`a`, but name it fix/x", after=[edit]))
+        report = {**edit, "message": {"content": [
+            {"type": "tool_use", "name": "Write", "input": {"file_path": "/tmp/report.md"}}]}}
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[report]))
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd, edit]))
+        read = {**edit, "message": {"content": [{"type": "tool_use", "name": "Read", "input": {"file_path": "/repo/a.ts"}}]}}
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[read]))
+
+    def test_once_per_reply_and_recommendation(self):
+        self.assertIsNone(self.run_on(stop_hook_active=True))
+        earlier = claude_wrote("Earlier.\n\n" + block({"state": "stop", "needs": [], "options": [self.FIX]}))
+        self.assertIsNone(self.run_on(before=[self.LOADED, claude_said("look"), earlier]))
+        other = claude_wrote("Earlier.\n\n" + block({"state": "stop", "needs": [], "options": [
+            {**self.FIX, "text": "add a retry"}]}))
+        self.assertTrue(self.asks(before=[self.LOADED, claude_said("look"), other]))
+
+    def test_wakes_notices_questions_and_children_pass(self):
+        for said in ("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching",
+                     "<task-notification>\n<task-id>b1</task-id>\n</task-notification>",
+                     "T3 Code stopped watching pull request #4925 because it failed to read it",
+                     "From the orchestrator: the build is green",
+                     "is this the best long-term fix?", "Ground and verify that it's the most idiomatic fix",
+                     "Investigate further to ensure it's the best possible fix"):
+            with self.subTest(said=said):
+                self.assertIsNone(self.run_on(said=said))
+        self.assertIsNone(self.run_on(said="Act as the test sub-agent for this task.\n\nfix the export"))
+        running = "⏳ Building the fix.\n\n" + block({"state": "running", "needs": [], "options": [], "elapsed": "3m"})
+        edit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {}}]}}
+        self.assertIsNone(self.run_on(running, after=[edit]))
+        self.assertIsNone(self.run_on("Fixed it, no block."))  # routine_stop.py sends that back
 
 
 class ManifestMatchesReadme(unittest.TestCase):

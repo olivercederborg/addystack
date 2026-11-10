@@ -100,6 +100,7 @@ class Select(unittest.TestCase):
                     selected = ids(hookset.select(resolved, runtime, "darwin"))
                     self.assertNotIn("routine-stop", selected)
                     self.assertNotIn("reply-budget", selected)
+                    self.assertNotIn("long-term-fix", selected)
                     self.assertIn("bare-references", selected)
 
     def test_reply_hooks_follow_their_preferences(self):
@@ -293,7 +294,7 @@ class Drift(unittest.TestCase):
     def test_a_hook_the_config_no_longer_selects_is_extra(self):
         self.resolved["replies"]["turnBlock"] = False
         self.assertEqual(self.drift(), [f"claude: extra Stop {hookset._kit(self.resolved)}/hooks/{name}"
-                                        for name in ("routine_stop.py", "reply_budget.py")])
+                                        for name in ("routine_stop.py", "reply_budget.py", "long_term_fix.py")])
 
 
 class ClaudeConfigDir(unittest.TestCase):
