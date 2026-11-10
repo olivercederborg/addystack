@@ -48,22 +48,10 @@ git behind a wrapper such as `env` or `sudo`, `set -o pipefail` inside a group t
 before the pipe, and positional parameters (`$1:a`)."""
 import json, os, pathlib, re, shlex, sys
 
+from shell_syntax import apply, blank, bound_waits, mask_heredocs, shell_code
+
 # open-pr's check, copied beside the kit (scripts/copies.txt), so it runs without open-pr installed.
 CHECK_BODY = pathlib.Path(__file__).resolve().parent.parent / "scripts" / "check-body.mjs"
-
-
-def blank(text):
-    """text as that many `x`s, newlines too, so a masked copy keeps every offset of the
-    original and a quoted line break doesn't read as a new command."""
-    return "x" * len(text)
-
-
-def mask_heredocs(command, quoted_only):
-    """command with each heredoc's body masked, through the line that is its delimiter
-    alone (after tabs, for `<<-`), as the shell ends it; `EOF remains` is still body."""
-    pattern = r"<<-?\s*(['\"])(\w+)\1" if quoted_only else r"<<-?\s*(['\"]?)(\w+)\1"
-    return re.sub(pattern + r"([^\n]*\n)((?:[^\n]*\n)*?\t*\2)(?=\n|$)",
-                  lambda m: m.group(0)[:m.start(4) - m.start(0)] + blank(m.group(4)), command, flags=re.S)
 
 
 # Only a command position counts: the start of a line, a list, a group, or a branch or
@@ -81,17 +69,6 @@ STACK = (r"gh\s+stack\s+(?:add|init|rebase|sync|push|submit|modify|merge|unstack
 PIPED = re.compile(LEAD + rf"((?:\w+=\S*\s+)*(?:\S*/)?(?:{GIT}|{STACK})[^|;&\n]*\|\s*(tail|head)\b[^;&\n)]*?)\s*(?=\)*\s*&&)")
 PIPEFAIL_ON = re.compile(LEAD + r"(?:set\s+-[a-z]*o\s+pipefail|setopt\s+pipe_?fail)\b")
 MODIFIER = re.compile(r"(?<![\\$])\$([A-Za-z_][A-Za-z0-9_]*):(?=[aAcehlPqQrstu&])")
-
-
-def shell_code(command):
-    """command with heredoc bodies and quoted text masked, and `&` in redirects too, so
-    what's left is the shell's own syntax, at the same offsets."""
-    code = mask_heredocs(command, quoted_only=False)
-    code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", lambda m: "'" + blank(m.group()[1:-1]) + "'", code)
-    # A comment ends its command, and what it says is text; `$#` and `${#a}` aren't comments.
-    code = re.sub(r"(?:(?<=[\s;&|(])|^)#[^\n]*", lambda m: ";" * len(m.group()), code, flags=re.M)
-    # `2>&1` and `&>` redirect; they don't end a command.
-    return re.sub(r"\d?>&\d?|&>", lambda m: m.group().replace("&", "_"), code)
 
 
 def pipefail_fixes(command):
@@ -278,12 +255,6 @@ def verifier_fix(payload, tool_input, command):
                   + SPLIT.rstrip("."))  # main() ends each note with its own period
 
 
-def apply(command, edits):
-    for at, _, text in sorted(edits, key=lambda e: (e[0], e[1]), reverse=True):
-        command = command[:at] + text + command[at:]
-    return command
-
-
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -296,6 +267,8 @@ def main():
     pipe_edits, pipe_notes, heads = pipefail_fixes(command)
     zsh_edits, zsh_notes = modifier_fixes(command)
     body_edits, body_notes = body_check_fixes(command)
+    # A call sent to the background holds no turn, so its loop may run on.
+    wait_edits, wait_notes = ([], []) if tool_input.get("run_in_background") else bound_waits(command, tool_input.get("timeout"))
     refused, timeout_note = verifier_fix(payload, tool_input, command)
     if heads:
         refused = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
@@ -305,9 +278,9 @@ def main():
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                  "permissionDecisionReason": refused}}))
         return
-    if not pipe_edits and not zsh_edits and not body_edits and not timeout_note:
+    if not pipe_edits and not zsh_edits and not body_edits and not wait_edits and not timeout_note:
         return
-    notes = "; ".join(pipe_notes + zsh_notes + body_notes + ([timeout_note] if timeout_note else []))
+    notes = "; ".join(pipe_notes + zsh_notes + body_notes + wait_notes + ([timeout_note] if timeout_note else []))
     if "record-verdict.sh" in command and payload.get("agent_id"):
         # verdict-stamp.py rewrites a subagent's recording too, and only the last rewrite applies.
         reason = f"verdict-stamp.py also rewrites this command, and only one rewrite applies, so fix it yourself: {notes}."
@@ -318,7 +291,7 @@ def main():
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if payload.get("permission_mode") == "bypassPermissions" else "ask",
         "permissionDecisionReason": f"bash-rewrite.py {notes}.",
-        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits),
+        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits + wait_edits),
                          **({"timeout": LONG} if timeout_note else {})},
         "additionalContext": f"bash-rewrite.py changed the command before it ran: it {notes}. Write it that way next time.",
     }}))
