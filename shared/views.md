@@ -202,7 +202,7 @@ phrase per cell, `none` when empty, and no row that's empty for all:
 | Changes | the upload API answers a retry with the first receipt |
 | Edits | the upload handler and its test; one migration |
 | Goes live | the deploy runs the migration on about 80,000 receipts |
-| Left out | retries from the mobile app, which skip this API |
+| Left out | a message telling the user their upload was reused |
 
 <details><summary>Idiom sources · review rounds</summary>
 
@@ -239,7 +239,7 @@ since columns grow too narrow and row groups would pass a view's six rows.
 | Changes | a retry gets its first receipt back | none |
 | Edits | +120 −30 in 4 files: upload handler, its test, a migration | +60 −12 in 2 files: receipt type, its serializer |
 | Goes live | the deploy runs the migration | none |
-| Left out | mobile app retries, which skip this API | the app doesn't show the id yet |
+| Left out | a message that the upload was reused | the app doesn't show the id yet |
 
 ---
 
