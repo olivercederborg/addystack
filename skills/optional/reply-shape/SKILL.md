@@ -20,8 +20,9 @@ tells the story. Hold to this until the reader says "normal replies".
   decoding, V3 re-export, and readiness cards", not "the 3 follow-ups". What lives in an
   earlier reply, a fold, or the turn block is out of the reader's sight.
 - **Frame it around the reader**: what changes for them, what they're accepting, what
-  they need to do. Use their words, short sentences, one idea each. A label you coined
-  (R104, "arm", "ship gate") stays with you; name the thing by what it does. A number
+  they need to do. Use their words, short sentences, one idea each. A term they haven't
+  used, such as an issue key, a branch, or a label you coined, gets named by what it
+  does instead. A number
   says what it means: "about 30% less memory", not a raw score. Inline code only for a
   name the reader would type or search.
 - **Let the moment set the length.** A merge of a big change gets the full picture, a
@@ -32,10 +33,13 @@ tells the story. Hold to this until the reader says "normal replies".
 - **Restate context** in one line when they may have lost the thread: after a long wait,
   on earlier work, or on another thread's result.
 - **Judge.** On a call, give your pick and its long-term reason.
+- **Tangents wait.** A side issue you noticed becomes a later Next option.
 - **Text, not pictures.** Structure comes from labeled rows, lists, and small tables. A
   picture only when the reader asks for one, or a screenshot of UI; read
   [pictures](references/pictures.md) first.
-- **Fold only proof.** What the reader needs to decide stays in sight.
+- **Fold the evidence.** Checks, sources, raw scores, and per-source or per-run results
+  go in the one fold, and above it you say what they mean. What the reader needs to
+  decide stays in sight.
 - **Blank lines**: chat joins lines that have no blank line between them, so separate
   lines with a blank line or make them list items.
 
@@ -47,7 +51,7 @@ after and a decision often carry.
 
 | Primitive | Its job | Use when |
 |---|---|---|
-| **Headline** | A marker, then the outcome in bold: ✅ done, 🟡 a decision or a risk, 🔴 broken or blocked on the reader, ⏳ still working. On a question, the answer. | Always |
+| **Headline** | A marker, then the outcome in bold: ✅ done, 🟡 a decision or a risk, 🔴 broken or blocked on the reader, ⏳ still working. On a question, the answer; on a call that waits for the reader's yes, the question. | Always |
 | **Fact table** | Labeled rows, `label \| value`, such as Problem, Pick, Source, Risk, Cost, Undo | A decision |
 | **You accept** | What changes, by kind, a column per PR | A merge or push go, for one PR or several |
 | **Comparison** | A table across the same few points | Options or results that differ the same way |
@@ -62,10 +66,11 @@ after and a decision often carry.
 
 Common compositions:
 
-- **Decision card**: a yes-or-no Headline, a Fact table with Problem, Pick, and Source,
+- **Decision card**: a Headline that asks the yes-or-no question, `🟡 **Drop the JSON
+  option?**`, even when the reader asked it; a Fact table with Problem, Pick, and Source;
   the one view the call needs (Before → after, a Comparison, the interface, or a message
-  draft in full), Proof, and Next with `a` yes, your pick, and `b` no, the smallest
-  option. One call per card; queue the rest. A skill that names its own format for a
+  draft in full); one fold with the proof and the other options; and Next with `a` yes,
+  your pick, and `b` no, the smallest option. One call per card; queue the rest. A skill that names its own format for a
   call, such as a review's findings or a planning round, keeps it.
 - **Ship gate**: Headline, You accept, each risk as a ⚠️ line, Proof, and Next.
 - **Status**: Headline and Since you left. **Done**: Headline and What changed for you.
@@ -87,5 +92,6 @@ Machines read these, so they hold whatever the moment:
   48", "fix 21–33") gives its name beside it; `hooks/bare_references.py` sends back one
   that doesn't.
 - **Turn block**: every final reply ends with one, as the reader's reply rules (Turn block
-  section) or the kit's `references/turn-block.md` define it; `hooks/routine_stop.py`
-  sends back one that's missing or malformed.
+  section) or the kit's `references/turn-block.md` define it, its `options` repeating
+  each Next option's text word for word; `hooks/routine_stop.py` sends back one that's
+  missing or malformed.
