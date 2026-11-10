@@ -1926,8 +1926,8 @@ class LongTermFix(unittest.TestCase):
         context = out["hookSpecificOutput"]["additionalContext"]
         self.assertIn("is this the best long-term fix, or does it just treat the symptom? Answer it, then send the reply "
                       "again", context)
-        self.assertIn("when the cause fix is unrelated, large, or outside the change's scope (fix-the-cause-in-scope)",
-                      context)
+        self.assertIn("when the cause fix is unrelated, large, or outside the change's scope, and the user didn't ask "
+                      "for it (fix-the-cause-in-scope)", context)
         codex = self.run_on(turn_id="t1")
         self.assertEqual(codex["decision"], "block")
         self.assertIn("treat the symptom", codex["reason"])

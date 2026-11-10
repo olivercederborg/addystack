@@ -54,7 +54,8 @@ bug_route = importlib.import_module("bug-route")
 QUESTION = ("Before this reaches the user, their question: is this the best long-term fix, or does it just "
             "treat the symptom? Answer it, then send the reply again, with your pick changed if the answer "
             "changes it. A quick fix stays the pick when the cause fix is unrelated, large, or outside the "
-            "change's scope (fix-the-cause-in-scope). T3 shows only a turn's last message, so "
+            "change's scope, and the user didn't ask for it (fix-the-cause-in-scope). T3 shows only a turn's "
+            "last message, so "
             "the resent reply has to stand on its own.")
 # The user's own wording of the question, from the replies it flipped: when their message
 # already asks it, the reply is the answer.
