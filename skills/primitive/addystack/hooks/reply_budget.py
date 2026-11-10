@@ -585,7 +585,7 @@ def pick_lines(shown, n):
 
 
 # A merge the option asks for: "merge #12", not "I'll merge them myself" after marking ready.
-MERGES = re.compile(r"(?<!\bI'll )(?<!\bI )(?<!\byou )(?<!\bwe )\bmerge", re.I)
+MERGES = re.compile(r"(?<!\bI'll )(?<!\bI will )\bmerge", re.I)
 
 
 def unplain(reply):
@@ -595,7 +595,8 @@ def unplain(reply):
     except turn_block.Malformed:
         return []  # routine_stop.py sends a reply without a valid block back
     return [option for option in options
-            if option.cls == "stop:merge" and MERGES.search(option.text) and not merge_go.literal_go(option.text)]
+            if option.cls == "stop:merge" and MERGES.search(option.text.replace("’", "'"))
+            and not merge_go.literal_go(option.text)]
 
 
 def merge_feedback(reply):

@@ -5059,6 +5059,8 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #5394–#5397 ready for review")), [])
         # Delivered on Oct 31, 2026: marking ready, with the merge left to the user, isn't a merge option.
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I'll merge them myself")), [])
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I’ll merge them myself")), [])
+        self.assertTrue(reply_budget.unplain(self.merge_gate_reply("mark #12 ready, then you merge it after CI")))
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
         self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
 
