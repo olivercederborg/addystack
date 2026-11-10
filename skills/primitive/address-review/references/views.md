@@ -336,17 +336,21 @@ back.
 
 **Must fix**
 
-- **Currency column**: the ticket's header ends in `currency`; rows stop at amount.
-- **Commas in descriptions**: fields aren't quoted, so "Rent, January" adds a column.
+- **Currency column**: rows stop at amount; the ticket's header ends in `currency` · `export.ts:41` → fix
+- **Commas in descriptions**: unquoted, so "Rent, January" adds a column · `export.ts:58` → fix
 
 **Cleanups**
 
-- **JSON option**: the ticket never asked for it.
-- **Mock-only test**: it checks its own mock, never the export.
+- **JSON option**: the ticket never asked for it · `export.ts:12` → fix
 
 <details><summary>Checks: ⚠️ lint not set up · ✅ tests 2/2, but one expects the wrong header</summary>
 
 ✅ typecheck · a real run printed `2026-01-31,Rent, January,900.00`.
+
+- `export.ts:41` · verified by that run: three columns, the ticket's header has four · source: the ticket
+- `export.ts:58` · verified by that run: "Rent, January" split in two · source: RFC 4180
+- `export.ts:12` · verified by reading the ticket: no JSON · source: the ticket
+- **Mock-only test**, Cleanup · `export.test.ts:8` → fix · it checks its own mock, never the export · verified by reading the test
 
 </details>
 
