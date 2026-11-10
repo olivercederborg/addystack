@@ -20,9 +20,11 @@ its turn block's option `a` changes code or config (fix_option), or when its tur
 files in the session's checkout and the user's message didn't pick the option that asked
 for it, since that pick came from a reply this hook already saw. It passes when the
 turn's message isn't one the user typed (a PR watch wake, a task notification, a T3
-notice, a message another thread sent), when that message already asks the question, when
-an earlier reply's option `a` had the same text, which the hook asked about then, and for
-T3 delegated children, whose parent reads them. stop_hook_active keeps it to one send per
+notice), when that message already asks the question, when an earlier bug-work reply's
+option `a` had the same text, which the hook asked about then, and for T3 delegated
+children, whose parent reads them. A message another agent sent still asks, since the
+Slack bridge sends the alert threads' briefs; skipping them lost 12 of the 18 Linux-machine
+fires on the replay. stop_hook_active keeps it to one send per
 stop. Claude Code continues through additionalContext and Codex through decision: block,
 as in routine_stop.py.
 
@@ -124,7 +126,6 @@ class Session:
     def __init__(self, path):
         self.bug = False  # diagnosing-bugs loaded, bug-route fired, or an alert thread
         self.prompt = None  # the latest prompt's typed text, "" when the user didn't type it
-        self.sent = ""  # the latest prompt's text as T3 stored it
         self.earlier = set()  # option `a` texts of earlier replies in bug work
         self.edited = False  # this turn edited a file in the session's checkout
         root, first, reply, started = None, True, None, False
@@ -143,8 +144,7 @@ class Session:
                         if self.bug and self.prompt and not bug_route.NOTICE.match(self.prompt):
                             self.earlier.add(recommended(reply))  # a reply the hook could have asked about
                         started = False
-                        self.sent = "\n".join(transcripts.texts(transcripts.text_parts(entry) or []))
-                        if first and ALERT.match(self.sent):
+                        if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
                             self.bug = started = True
                         first = first and not text  # an injected AGENTS.md entry isn't the user's first message
                         self.prompt, self.edited, reply = text, False, None
@@ -205,8 +205,7 @@ def ask(event):
         return None
     session = Session(event.get("transcript_path"))
     prompt = session.prompt
-    if not session.bug or not prompt or bug_route.NOTICE.match(prompt) or ASKED.search(prompt) \
-            or bug_route.agent_sent(event.get("session_id"), session.sent):
+    if not session.bug or not prompt or bug_route.NOTICE.match(prompt) or ASKED.search(prompt):
         return None
     option = turn.recommended
     if fix_option(option) and option.text not in session.earlier:

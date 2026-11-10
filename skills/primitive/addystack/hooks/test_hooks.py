@@ -2038,9 +2038,9 @@ class LongTermFix(unittest.TestCase):
                      "Investigate further to ensure it's the best possible fix"):
             with self.subTest(said=said):
                 self.assertIsNone(self.run_on(said=said))
-        with tempfile.TemporaryDirectory() as folder:  # a message another thread sent
-            self.assertIsNone(self.run_on(said="Fix the export", db=self.sent_db(folder, "agent")))
-            self.assertTrue(self.asks(said="Fix the export", db=self.sent_db(folder, "user")))
+        # A message an agent sent still asks: the Slack alert bridge sends the alert threads' briefs.
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertTrue(self.asks(said="Fix the export", db=self.sent_db(folder, "agent")))
         self.assertIsNone(self.run_on(said="Act as the test sub-agent for this task.\n\nfix the export"))
         running = "⏳ Building the fix.\n\n" + block({"state": "running", "needs": [], "options": [], "elapsed": "3m"})
         edit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {}}]}}
