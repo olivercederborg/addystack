@@ -2818,15 +2818,16 @@ class MergeGate(unittest.TestCase):
                          ("merge #1 and r#10 through #14", True),
                          # review-loop r1, Nov 10, 2026: a range's bare end isn't also a PR of its own.
                          ("merge r#10 through #12", True), ("merge r #10 through #12", True),
-                         ("merge #12 through r#14", True), ("merge #12 and sam/12306 #36", True), ("merge #12 and 1password #36", True),
+                         ("merge #12 through r#14", True), ("merge #12 and sam/12306 #36", True),
+                         ("merge #12 and 1password #36", True),
                          # The same round: a refusal of a range written high to low, and one
                          # in a word that is this repo's name, as a repo named exclude would read
                          # "merge exclude #10-#14, exclude #12". Naming one PR twice is no go.
-                         ("merge #10-#14, exclude #14-#12", False),
+                         ("merge #10-#14, exclude #14-#12", False), ("merge r #10-#14, r #12", False),
+                         ("merge r #11, r #12", True),
+                         ("merge #10-#14 and #12", True),  # naming one PR twice, with no repo, as before
                          # Round 3: a bare PR after one that names a repo may be that repo's.
                          ("merge dotfiles #36 and #12", False), ("merge dotfiles #36, #12", False),
-                         ("merge #10-#14 and #12", True),  # naming one PR twice, with no repo, as before ("merge r #10-#14, r #12", False),
-                         ("merge r #11, r #12", True),
                          # Round 2: a chained range can't say where its middle end is.
                          ("merge #10 through dotfiles #12 through #14", False),
                          ("merge #10 through dotfiles#12 through #14", False), ("merge #10-dotfiles#12 to #14", False),
