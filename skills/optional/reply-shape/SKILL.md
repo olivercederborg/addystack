@@ -69,7 +69,7 @@ it stays under 60 words. A mid-turn progress message is one line.
 
 ## Reader items
 
-Each is a row, and a skill's Decide, Review, or Do note is that row.
+A skill's Decide, Review, or Do note is a row, or a line under its item.
 
 - **Decide**: a choice only the reader can make. It gets a decision card, and a choice
   queued behind it is a Decide row naming it and your pick.
@@ -77,7 +77,7 @@ Each is a row, and a skill's Decide, Review, or Do note is that row.
   UI, gets a decision card. What only waits on their look, such as a PR open for their
   review, is one row.
 - **Do**: a login, a device step, or a payment, with why you can't do it, and its steps
-  numbered under the table. Show it once, in the reply that first needs it.
+  numbered below. Show it once, in the reply that first needs it.
 
 ## The fold
 
@@ -86,7 +86,7 @@ options or finding cards, a draft's long diff, and a multi-item run's table of i
 with `#`, item, status, and commit columns. Write it as `<details><summary>…</summary>`
 and a blank line. The summary leads with the worst check:
 `Checks: ❌ tests 11/12 · ⚠️ lint not run · ✅ typecheck`.
-Risks and reader items stay in the table. A detail worth neither a
+Risks and reader items stay in sight. A detail worth neither a
 glance nor an audit is cut, not folded.
 
 ## Decision card
