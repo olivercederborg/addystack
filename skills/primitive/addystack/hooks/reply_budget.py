@@ -26,7 +26,9 @@ A merge option goes back too when its text isn't the plain request merge-gate ta
 (merge_go.literal_go), such as "merge #90, then deploy": a bare-letter pick of it costs the
 user a typed go. In the 60 days to Nov 10, 2026, 27 of 347 merge options in delivered T3
 replies weren't plain, in 13 threads, and the user picked 11 of them with a bare letter. An
-option of class `stop:merge` that only marks PRs ready passes.
+option of class `stop:merge` that only marks PRs ready passes. Known limits: it reads merge
+words, so "ready to merge" reads as a merge and "don't forget to merge" or "land #12" as none;
+merge-gate.py still refuses any pick that isn't a literal go.
 A delegated child whose brief has a "Reply rules: on" line plays the user's session, so it
 is sent back like one.
 
@@ -629,11 +631,11 @@ def main():
     if bare_references.delegated_child(event) and not t3_child.rules_on(bare_references.first_brief(event)):
         return
     reply = event.get("last_assistant_message") or ""
-    if running(reply) or opted_out(event):
-        return
+    # The merge option is a contract merge-gate reads, so "normal replies" doesn't turn it off.
+    shape = () if running(reply) or opted_out(event) else (
+        problem(event, reply), fact_feedback(reply), SOURCE_FEEDBACK if unsourced(reply) else None)
     # One send per stop, so a fact table's limits and a missing source ride along with any other problem.
-    feedback = " ".join(filter(None, (problem(event, reply), fact_feedback(reply),
-                                      SOURCE_FEEDBACK if unsourced(reply) else None, merge_feedback(reply))))
+    feedback = " ".join(filter(None, (*shape, merge_feedback(reply))))
     if feedback:
         send_back(event, feedback)
 
@@ -656,7 +658,7 @@ def problem(event, reply):
     return (
         f"Your reply's headline and notes come to {count} words; reply-shape keeps them under {BUDGET}. The user "
         "reads each reply at a glance. Send your whole reply again as one, in the shape your reply rules give: "
-        "a headline of at most 12 words, then its fact table, or a bold item per thing with each item's details in the fold, or under rules without one the one view that fits "
+        "a headline of at most 12 words, then its fact table, or a bold item per thing with its details in the fold and its risks and reader items under it, or under rules without one the one view that fits "
         "the content or none and at most three notes of at most 15 words, and the same closing and turn block. Keep every risk, decision, and step the user must take, "
         "and move checks and evidence to the one fold. T3 shows only a turn's last message and folds the rest "
         "away, so the resent reply has to stand on its own. Add no note about the change.")

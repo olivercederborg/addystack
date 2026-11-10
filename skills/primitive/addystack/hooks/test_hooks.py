@@ -5053,6 +5053,10 @@ class ReplyBudget(unittest.TestCase):
         reason = self.bounce(self.merge_gate_reply(text))
         self.assertIn(f"`a` → {text}", reason)
         self.assertIn("merge #12 and #13", reason)
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:  # Codex review, round 2
+            transcript.write(json.dumps({"type": "user", "message": {"content": "normal replies please"}}) + "\n")
+            transcript.flush()
+            self.assertIn("merge #12 and #13", self.bounce(self.merge_gate_reply(text), transcript_path=transcript.name))
         long = "✅ **Eight PRs moved.**\n\n" + "".join(f"- **#{n}**: {' '.join(['word'] * 12)}\n" for n in range(8))
         self.assertIn("a bold item per thing", self.bounce(long))  # an item reply isn't told to become a fact table
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("merge #124 and #125")), [])
