@@ -2824,7 +2824,8 @@ class MergeGate(unittest.TestCase):
                          # "merge exclude #10-#14, exclude #12". Naming one PR twice is no go.
                          ("merge #10-#14, exclude #14-#12", False),
                          # Round 3: a bare PR after one that names a repo may be that repo's.
-                         ("merge dotfiles #36 and #12", False), ("merge dotfiles #36, #12", False), ("merge r #10-#14, r #12", False),
+                         ("merge dotfiles #36 and #12", False), ("merge dotfiles #36, #12", False),
+                         ("merge #10-#14 and #12", True),  # naming one PR twice, with no repo, as before ("merge r #10-#14, r #12", False),
                          ("merge r #11, r #12", True),
                          # Round 2: a chained range can't say where its middle end is.
                          ("merge #10 through dotfiles #12 through #14", False),
