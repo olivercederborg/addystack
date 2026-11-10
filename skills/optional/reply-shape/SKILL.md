@@ -22,10 +22,13 @@ tells the story. Hold to this until the reader says "normal replies".
 - **Frame it around the reader**: what changes for them, what they're accepting, what
   they need to do. Use their words, short sentences, one idea each. A label you coined
   (R104, "arm", "ship gate") stays with you; name the thing by what it does. A number
-  says what it means: "about 30% less memory", not a raw score.
+  says what it means: "about 30% less memory", not a raw score. Inline code only for a
+  name the reader would type or search.
 - **Let the moment set the length.** A merge of a big change gets the full picture, a
   status gets a line per running thing, and a yes or no gets one sentence. No word or row
-  counts: cut a line only when the reader would act the same without it.
+  counts: cut a line only when the reader would act the same without it. Say each piece
+  of code, draft, and warning once a session, except a draft the next step sends, which
+  shows in full again.
 - **Restate context** in one line when they may have lost the thread: after a long wait,
   on earlier work, or on another thread's result.
 - **Judge.** On a call, give your pick and its long-term reason.
