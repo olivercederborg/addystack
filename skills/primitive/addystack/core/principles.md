@@ -4,7 +4,7 @@ How {{user}} wants work done. Before applying a principle, read its file in full
 `{{kit}}/principles/`.{{taste}}
 
 - **[do-it-before-asking]({{kit}}/principles/do-it-before-asking.md)**: about to ask {{user}}, hand them a step, or answer from code what live data shows. Look it up, probe it, or drive it first.
-- **[fix-the-cause-in-scope]({{kit}}/principles/fix-the-cause-in-scope.md)**: picking a fix. Rank at the cause first (correct, idiomatic, long-term), then smallest; a quick fix is a labelled stopgap.
+- **[fix-the-cause-in-scope]({{kit}}/principles/fix-the-cause-in-scope.md)**: picking a fix. Learn the cause and how the vendor or codebase solves it; rank correct, idiomatic, long-term first, then smallest; a quick fix is a labelled stopgap.
 - **[reuse-before-adding]({{kit}}/principles/reuse-before-adding.md)**: adding a service, type, file, or dependency. Name what you checked first.
 - **[check-exposure]({{kit}}/principles/check-exposure.md)**: weighing compatibility, rollout, or severity. Find who can hit it today.
 - **[prove-it-works]({{kit}}/principles/prove-it-works.md)**: about to say done, fixed, or safe, or to rest a decision on a claim. Check the real artifact or source.

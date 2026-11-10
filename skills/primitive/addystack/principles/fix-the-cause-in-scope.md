@@ -2,10 +2,16 @@
 
 **Apply when** picking a fix for a bug, alert, failing check, or review finding.
 
-Rank the fixes, and make the first one option `a`:
+Before option `a`, dig past the failure's explanation:
 
-1. **At the cause**: correct, idiomatic (the way the vendor, library, or codebase
-   already solves it), and long-term.
+- **Know the cause**: reproduce it where it failed, not on a local stand-in; ask why
+  until the answer is a design choice; and find every entry point that reaches it.
+- **Look up the idiom**: how the vendor's docs or source, or a sibling in the codebase,
+  already solve it.
+
+Then rank the fixes; the first is option `a`:
+
+1. **At the cause**: correct, idiomatic, and long-term.
 2. **Then the smallest** of those. Size only breaks ties.
 
 A quick fix ranks first only when production hurts now, another person or PR owns the
@@ -16,11 +22,8 @@ the cause fix beside it, naming who builds it.
 cause".
 
 **Pattern:**
-- **Reproduce where it failed**: the hosted build, deploy, or device that broke, not a
-  local stand-in.
-- **Ship what the evidence shows**: revert what a disproven hypothesis added.
-- **Ask why** until the answer is a design choice, not another symptom.
-- **Sweep the class**: fix each other place with the same cause, or list it as a
+- **Revert** what a disproven hypothesis added.
+- **Sweep the class**: fix each other place with the same cause, or list it as
   follow-up.
 - **Leave a signal**: after a deep dig, propose the always-on log, assertion, or metric
   that would have shown it at once.
