@@ -2029,6 +2029,11 @@ class LongTermFix(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:  # a message another thread sent
             self.assertIsNone(self.run_on(said="Fix the export", db=self.sent_db(folder, "agent")))
             self.assertTrue(self.asks(said="Fix the export", db=self.sent_db(folder, "user")))
+        self.assertIsNone(self.run_on(said="Act as the test sub-agent for this task.\n\nfix the export"))
+        running = "⏳ Building the fix.\n\n" + block({"state": "running", "needs": [], "options": [], "elapsed": "3m"})
+        edit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {}}]}}
+        self.assertIsNone(self.run_on(running, after=[edit]))
+        self.assertIsNone(self.run_on("Fixed it, no block."))  # routine_stop.py sends that back
 
     @staticmethod
     def sent_db(folder, creator):
@@ -2045,11 +2050,6 @@ class LongTermFix(unittest.TestCase):
             db.execute("insert into orchestration_v2_projection_messages values ('thread-1', null, 'user', '06:00', ?)",
                        (json.dumps({"text": "Fix the export", "createdBy": creator}),))
         return path
-        self.assertIsNone(self.run_on(said="Act as the test sub-agent for this task.\n\nfix the export"))
-        running = "⏳ Building the fix.\n\n" + block({"state": "running", "needs": [], "options": [], "elapsed": "3m"})
-        edit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {}}]}}
-        self.assertIsNone(self.run_on(running, after=[edit]))
-        self.assertIsNone(self.run_on("Fixed it, no block."))  # routine_stop.py sends that back
 
 
 class ManifestMatchesReadme(unittest.TestCase):
