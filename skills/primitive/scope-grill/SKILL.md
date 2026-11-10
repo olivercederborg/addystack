@@ -31,7 +31,7 @@ work is wanted. Building holds the must-haves. At a pilot Bar the smallest optio
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
 the goal back in the user's words. Show the plan and questions in the first round. Keep
 the user's boundaries verbatim: on the plan, or copied into the fold and named on the
-plan when the glance can't hold them.
+plan when the round can't show them.
 
 **Milestones**: when the request holds more than one step that ships on its own, map
 them first, in order, each with its goal and size, in the fold.

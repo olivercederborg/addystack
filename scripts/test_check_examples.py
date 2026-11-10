@@ -125,22 +125,22 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(card.format(text="merge #12, then deploy")),
                          ["merge option `a` isn't the plain request merge-gate takes as a go"])
 
-    def test_every_ship_gate_example_shows_what_the_reader_accepts(self):
-        # Agents copy examples before rules, so each ship gate in views shows the You accept view.
+    def test_every_you_accept_example_fills_a_column_per_pr(self):
+        # Agents copy examples before rules, so each You accept view shows every PR's cells.
         views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
-        gate = views[views.index("## Ship gate"):views.index("## Choosing between shapes")]
-        examples = [block for _, block in check_examples.example_blocks(gate.splitlines())]
-        self.assertEqual(len(examples), 2)
-        kinds = ["New", "Changes", "Edits", "Goes live", "Left out"]
+        section = views[views.index("## You accept"):views.index("## Comparison")]
+        examples = [block for _, block in check_examples.example_blocks(section.splitlines())]
+        self.assertTrue(examples)
+        cells = check_examples.bare_references.cells
         for block in examples:
             with self.subTest(example=block[0]):
                 at = next(n for n, line in enumerate(block) if line.startswith("| You accept |"))
-                prs = len(check_examples.bare_references.cells(block[at])) - 1
-                rows = {cells[0].strip(): [cell.strip() for cell in cells[1:]]
-                        for line in block[at + 2:at + 2 + len(kinds)]
-                        for cells in [check_examples.bare_references.cells(line)]}
-                self.assertEqual(list(rows), kinds)  # every kind, in order
-                self.assertTrue(all(len(values) == prs and all(values) for values in rows.values()), rows)
+                prs = len(cells(block[at])) - 1
+                rows = [line for line in block[at + 2:] if line.startswith("|")]
+                self.assertTrue(rows)
+                for line in rows:
+                    values = [cell.strip() for cell in cells(line)[1:]]
+                    self.assertTrue(len(values) == prs and all(values), line)
 
     def test_every_skill_passes(self):
         root = pathlib.Path(__file__).resolve().parent.parent
