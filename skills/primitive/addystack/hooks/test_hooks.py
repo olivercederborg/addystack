@@ -2541,8 +2541,8 @@ class MergeGate(unittest.TestCase):
                    "great, lets merge the pr", "Can you please merge it.", "can you merge all the PRs that are ready",
                    "a, and merge it when it’s passing ci", "merge both, then `a`", "merge #17 and #18 -> c",
                    "sounds good mark them ready for review and merge in that order", "  merge the stack of #53-#55 ",
-                   "merge dotfiles#1", "merge sam/dotfiles#1",
-                   "go ahead and merge dotfiles#1 and skills#118",
+                   # A go that names a repo is held to its PRs, so these name #12 here.
+                   "merge r#12", "merge o/r#12", "go ahead and merge r#12 and skills#118",
                    # Oct 25, 2026: denied as a go until "the ones" counted as a target.
                    "can you just merge the ones that are ready to be merged now?", "merge those",
                    "merge the ready ones",
@@ -2800,6 +2800,83 @@ class MergeGate(unittest.TestCase):
                     "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
                 self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
         self.assertIsNone(self.reason("gh pr merge 12", said=("merge #13",)))  # a typed go isn't held to its PRs
+
+    def test_a_pick_reads_a_bare_pr_beside_one_that_names_this_repo_as_another_repos(self):
+        # Nov 10, 2026: a coordinator's card offered "merge #55 and dotfiles #36" for addystack
+        # #55 and dotfiles #36. Read in dotfiles, its bare #55 is addystack's, so this repo, r,
+        # stands in for each side in turn.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for text, go in [("merge #12 and dotfiles#36", True), ("merge r#12 and dotfiles#36", True),
+                         ("merge dotfiles#36 and #12", False), ("merge #36 and dotfiles#12", False),
+                         ("merge #12 and r#36", False), ("merge #12 and o/r#36", False),
+                         ("merge r#36 and #12", False), ("merge #12 and other/r#36", True),
+                         # A range's bare end is in its other end's repo.
+                         ("merge r#10 through #14", True), ("merge #10 through r#14", True),
+                         ("merge r#10-#14", True), ("merge dotfiles#10 through #14", False),
+                         ("merge #10 through dotfiles#14", False), ("merge dotfiles#10-#14", False),
+                         ("merge #1 and r#10 through #14", True),
+                         # review-loop r1, Nov 10, 2026: a range's bare end isn't also a PR of its own.
+                         ("merge r#10 through #12", True), ("merge r #10 through #12", True),
+                         ("merge #12 through r#14", True), ("merge #12 and sam/12306 #36", True),
+                         ("merge #12 and 1password #36", True),
+                         # The same round: a refusal of a range written high to low, and one
+                         # in a word that is this repo's name, as a repo named exclude would read
+                         # "merge exclude #10-#14, exclude #12". Naming one PR twice is no go.
+                         ("merge #10-#14, exclude #14-#12", False), ("merge r #10-#14, r #12", False),
+                         ("merge r #11, r #12", True),
+                         ("merge #10-#14 and #12", True),  # naming one PR twice, with no repo, as before
+                         # Round 3: a bare PR after one that names a repo may be that repo's.
+                         ("merge dotfiles #36 and #12", False), ("merge dotfiles #36, #12", False),
+                         # Round 2: a chained range can't say where its middle end is.
+                         ("merge #10 through dotfiles #12 through #14", False),
+                         ("merge #10 through dotfiles#12 through #14", False), ("merge #10-dotfiles#12 to #14", False),
+                         # The card's own form, a space between repo and PR.
+                         ("merge #12 and dotfiles #36", True), ("merge r #12 and dotfiles #36", True),
+                         ("merge R #12", True), ("merge o/r #12", True), ("merge dotfiles #12", False),
+                         ("merge other/r #12", False), ("merge #36 and dotfiles #12", False),
+                         ("merge #12 and r #36", False), ("merge r #10 through #14", True),
+                         ("merge r #10-#14", True), ("merge dotfiles #10 through #14", False),
+                         # A word NOT_REPO misses, on a PR the option also names.
+                         ("merge #10-#14, exclude #12", False), ("merge #12 and dotfiles #12", False),
+                         ("merge #12 and dotfiles #13", True)]:
+            with self.subTest(text=text):
+                reason = self.reason("gh pr merge 12", said=(
+                    "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
+                self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
+
+    def test_a_typed_go_that_names_a_pr_as_repo_space_number_is_held_to_its_prs(self):
+        # Nov 10, 2026: verify-work found "merge #36, skip #12" passed for #12 once a word
+        # before " #N" read as a repo, since a typed go isn't held to its PRs.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for text in ["merge #12 and dotfiles #36", "merge r #12", "merge o/r #12 and dotfiles #36",
+                     "merge r #10 through #12", "merge #13"]:  # no repo word, so as unheld as before
+            with self.subTest(text=text):
+                self.assertIsNone(self.reason("gh pr merge 12", said=(text,)))
+        # verify-work's re-check, Nov 10, 2026: a word NOT_REPO misses, on a PR the go also
+        # names, so a PR the merge holds that the go places in another repo gives no go.
+        for text in ["merge #36, skippy #12", "merge #36 and dontt #12", "merge #36 and dotfiles #12",
+                     "merge dotfiles #12", "merge #12 and r #36", "merge #10-#14, exclude #12",
+                     "merge #10 through #14, leave #12", "merge #12, retest #12", "merge #12, omit #10-#14",
+                     "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12", "merge r #10-#14, r #12",
+                     # review-loop r1: the joined form too, which no typed go was held to before.
+                     "merge dotfiles#12", "merge dotfiles#1", "merge #55 and dotfiles#12",
+                     "merge #10-dotfiles#14",  # round 2: a joined repo at a range's end
+                     "merge dotfiles #36 and #12",  # round 3: a bare PR after a repo-named one
+                     "merge sam/12306#12"]:
+            with self.subTest(text=text):
+                self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
+        # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.
+        self.scenario(prs={11: None, 12: None})
+        self.verify(11)
+        self.assertIsNone(self.reason("gh stack merge 12", said=("merge #11-#12 and dotfiles #36",)))
+        for text in ["merge #10-#12, exclude #11", "merge #12, retest #11", "merge #12, exclude #11-#10"]:
+            with self.subTest(text=text):
+                self.assertIn("isn't a merge of #12", self.reason("gh stack merge 12", said=(text,)))
+                reason = self.reason("gh stack merge 12", said=(
+                    "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
+                self.assertIn("not a merge of #12", reason)
 
     def workflow(self, text, name="ci.yml"):
         """Commit a workflow to main; PRs made after it branch from it."""
@@ -3265,6 +3342,10 @@ class MergeGo(unittest.TestCase):
         "lets get the final PRs merged": "2026-10-26 7f90013d",
         "just merge it and then we can always change it back": "2026-10-28 ab1c3b07",
         "merge both stacks please": "2026-10-29 405ca507",
+        # A picked option, then the same option with both repos named, in T3's suite-audit
+        # coordinator thread 3cce05fc: the gate read neither as a go until "dotfiles #36" did.
+        "merge #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
+        "merge addystack #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
         # Merge requests the gate never judged, in repos with CI.
         "lets get all the current PRs for the redesign merged": "2026-10-03 a1cb0fac",
         "a + merge when ready": "2026-10-05 linux 43e516e7",
@@ -3327,6 +3408,28 @@ class MergeGo(unittest.TestCase):
         for prompt, source in self.NOT_GOS.items():
             with self.subTest(prompt=prompt, source=source):
                 self.assertFalse(merge_go.literal_go(prompt))
+
+    def test_reads_a_word_before_a_pr_as_its_repo_unless_a_sentence_puts_it_there(self):
+        for text in ["merge dotfiles #36", "merge sam/dotfiles #36", "merge sam/12306 #36", "merge 1password-codex-plugin #36", "merge Dotfiles #36 and #37", "merge #55, dotfiles #36",
+                     "merge dotfiles #36 through #38", "merge dotfiles #36-#38", "a, and merge dotfiles #36",
+                     "merge the stack of dotfiles #36"]:
+            with self.subTest(text=text):
+                self.assertTrue(merge_go.literal_go(text))
+        # A time or a condition, a refusal, a noun that isn't a repo ("PR #36", or "stack #3",
+        # a stack's number the gate can't place), a count, or the grammar's own words.
+        for text in ["merge after #36", "merge before #36", "merge once #36", "merge except #36", "merge not #36",
+                     "merge without #36", "merge only #36", "merge into #36", "merge with #36", "merge PR #36",
+                     "merge prs #36", "merge stack #36", "merge 55 #36", "merge 10-14 #36", "merge both #55 and #36", "merge it #36",
+                     "merge the #36", "merge and #36", "merge #55 and after #36", "merge #36 to after #38",
+                     # verify-work's near misses, Nov 10, 2026: a refusal, a time, or another step.
+                     "merge #36, skip #12", "merge #36 and dont #12", "merge #36 and rebase #12",
+                     "merge #12 and fix #36", "merge excluding #36", "merge unless #36", "merge no #36",
+                     "merge never #36", "merge #55, ignore #36", "merge #55 and drop #36", "merge later #36",
+                     "merge maybe #36", "merge #55, hold #36", "merge #55 and revert #36", "merge #55 and push #36",
+                     "merge #55 and deploy #36", "merge #55 and verify #36", "merge #55 and close #36",
+                     "merge #55, release #36", "merge #55, review #36"]:
+            with self.subTest(text=text):
+                self.assertFalse(merge_go.literal_go(text))
 
     def test_stays_fast_on_a_long_run_of_openers(self):
         started = time.monotonic()
