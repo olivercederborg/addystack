@@ -101,7 +101,7 @@ and each PR's merge state is read.
 Verify each claim against the PR head and, in a stack, whether another PR already
 handles it. Give each item one call:
 
-- **Fix**: the smallest fix that fully solves it.
+- **Fix**: correct, at the cause, idiomatic, long-term, then smallest.
 - **Decline**: the claim is wrong, or the change isn't worth the risk. The evidence
   covers every path the claim names, so a path you haven't run rules out Decline. A
   "no rule asks for X" reason names the conventions doc you read in full.

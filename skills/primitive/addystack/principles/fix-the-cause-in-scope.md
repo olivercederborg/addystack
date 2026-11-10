@@ -1,28 +1,29 @@
 # Fix the cause, in scope
 
-**Apply when** fixing a bug, a review finding, or a type error.
+**Apply when** picking a fix for a bug, alert, failing check, or review finding.
 
-Fix the cause, not the symptom, and every instance of it. When the cause sits outside
-the change's scope, fix the symptom and name the cause as a follow-up, unless the user
-asked for it.
+Rank the fixes, and make the first one option `a`:
 
-**Why:** "obviously it depends. if fixing the cause means increasing the scope to an
-extend that doesnt fit in the PR, then it could just be flagged as a possible
-follow-up".
+1. **At the cause**: correct, idiomatic (the way the vendor, library, or codebase
+   already solves it), and long-term.
+2. **Then the smallest** of those. Size only breaks ties.
+
+A quick fix ranks first only when production hurts now, another person or PR owns the
+cause, or the cause fix reaches other features or domains. Label it a stopgap, and offer
+the cause fix beside it, naming who builds it.
+
+**Why:** "I want the smallest most correct long-term fix that is idiomatic and fixes the
+cause".
 
 **Pattern:**
 - **Reproduce where it failed**: the hosted build, deploy, or device that broke, not a
   local stand-in.
-- **Ship what the evidence shows**: only the lines the confirmed cause needs. Revert what a
-  disproven hypothesis added.
+- **Ship what the evidence shows**: revert what a disproven hypothesis added.
 - **Ask why** until the answer is a design choice, not another symptom.
-- **Sweep the class**: search for the same cause elsewhere, and list each hit as fixed or
-  follow-up: "Make sure it doesn't happen anywhere else on the app".
-- **Small and in the touched flow**, or the user asked: fix it now. **Unrelated or
-  large**: follow-up.
-- **Leave a signal**: when the deciding fact took a deep dig to find, propose the cheap,
-  always-on signal, such as a log line, an assertion, or a metric, that would have shown
-  it at first look.
+- **Sweep the class**: fix each other place with the same cause, or list it as a
+  follow-up.
+- **Leave a signal**: after a deep dig, propose the always-on log, assertion, or metric
+  that would have shown it at once.
 
-**Tell:** a type annotation, cast, retry, or guard that makes the error go away while
-the reason it happened stays.
+**Tell:** a cast, retry, rerun, label, or guard that makes the error go away while its
+reason stays.
