@@ -152,10 +152,10 @@ each option, show:
 
 - **The recommendation** is the option that best meets the must-haves at the **Bar**.
   Ground it with [grounding](references/grounding.md), with its evidence lines in
-  the fold. Also ground a losing option when its idiom decides the question. When a
-  wider option wins on merit, say what it adds and why it's worth it now.
-- **"Becomes worth it when"**: every wider option that loses names the signal that
-  would justify it later, and moves to **Not in scope**. Every narrower option that
+  the fold. Also ground a losing option when its idiom decides the question.
+- **"Becomes worth it when"**: the goal's right shape wins, with what it adds, unless
+  slim-scope says it waits. Any other losing wider option names the signal that would
+  justify it later, and moves to **Not in scope**. Every narrower option that
   loses names the concrete work it would cost to widen later, even when the narrower
   choice is easy to undo. With one losing option, the Pick line can carry it.
 - **Domain docs as you go**: use `domain-modeling` when an answer settles a domain term,

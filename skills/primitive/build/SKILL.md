@@ -90,8 +90,8 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
   plan's bar, and in the fold give each option its scope against the plan, as in
   `scope-grill`: `No extra scope`, `Drops …`, or `Adds …`. Build the addition only
   after the user's answer.
-- **Listed as out**: items under **Not in scope** stay out, however cheap. If the build
-  can't work without one, raise a Decision card.
+- **Listed as out**: items the user agreed under **Not in scope** stay out. If the
+  build can't work without one, raise a Decision card.
 - **Forced deviations**: when the code must differ from a decision (for example, an API
   doesn't support the planned shape), show a **Deviation** card with the reason and its
   sources.
