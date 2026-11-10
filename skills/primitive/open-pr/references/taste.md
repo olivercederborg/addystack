@@ -1,8 +1,8 @@
 <!-- Copy of shared/taste.md, written by scripts/sync-copies.py: edit the source, then run the script. -->
 # Taste
 
-What good looks like in every repo. A repo's own `AGENTS.md` or `CONTEXT.md`
-wins where it's more specific.
+What good looks like in every repo. A repo's own `AGENTS.md` or `domain-modeling`
+glossary (`CONTEXT.md`) wins where it's more specific.
 
 ## Architecture
 

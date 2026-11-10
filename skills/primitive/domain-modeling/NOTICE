@@ -1,0 +1,14 @@
+This skill is vendored from Matt Pocock's skills, skills/engineering/domain-modeling/.
+
+Upstream repository: https://github.com/mattpocock/skills
+Upstream commit: 4ae2317ddb22b046e26455e4f9c9b3aaaf62212d
+Upstream directory: https://github.com/mattpocock/skills/tree/4ae2317ddb22b046e26455e4f9c9b3aaaf62212d/skills/engineering/domain-modeling
+
+The vendored skill preserves the upstream MIT license (see LICENSE). Upstream renamed the
+glossary files CONTEXT.md and CONTEXT-MAP.md to GLOSSARY.md and GLOSSARY-MAP.md in
+d80fa0f4ebe0c5714af0adf8670336065233ecc6; this copy keeps the CONTEXT names, so its text
+is upstream's from the commit before that rename, which is the only change to this folder
+between the two commits. It adds the kit's frontmatter layer and notes line, and a rule
+that an autonomous run reads the glossary for names only and reports new terms and ADR
+candidates as follow-ups. It replaces scope-grill's former references/domain-docs.md,
+whose generic rules upstream already held; scope-grill keeps only its own steps.

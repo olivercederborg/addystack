@@ -10,6 +10,7 @@
     "build": "primitive",
     "coordinator": "orchestrator",
     "correct": "primitive",
+    "domain-modeling": "primitive",
     "grounding": "primitive",
     "in-your-own-words": "optional",
     "ketchup": "optional",

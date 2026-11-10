@@ -18,9 +18,9 @@ after one read.
 - **Suggest the fix:** offer it as something the author can take, as in "Z would fix
   it" or "a test like … could cover it", the way a colleague suggests.
 - **Speak the glossary:** before drafting, read the repo's glossary (the root and the
-  touched package's `CONTEXT.md`, or `GLOSSARY.md`). Name each domain concept by its
-  term, swap any word from an _Avoid_ line for the term it points to, and keep code
-  identifiers for pointing at code.
+  touched package's `CONTEXT.md`, laid out as `domain-modeling` says). Name each domain
+  concept by its term, swap any word from an _Avoid_ line for the term it points to, and
+  keep code identifiers for pointing at code.
 - **Keep it short:** before any fold, one claim and its fix in at most 40 words. Evidence
   the author needs, such as a repro, a source, or each consequence, goes in a
   `<details>` after the fix.

@@ -33,7 +33,7 @@ Calls, one per candidate: **recommended** or **alternative**.
   sketch traced on stale code gives a stale contract. Use the repo's file-placement
   skill (such as a `file-structure` skill) and `codebase-design` for ownership and
   seams when they're installed.
-- **Names**: use the glossary's terms from `CONTEXT.md`.
+- **Names**: use the terms in the `domain-modeling` glossary (`CONTEXT.md`).
 
 Before a candidate adds scope beyond a saved plan, show **Proposed this round** ·
 *my suggestion, not agreed* with a `diff` block of `+` additions and any Size change,

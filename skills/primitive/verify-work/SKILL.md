@@ -56,7 +56,8 @@ it breaks. Anything weaker is Optional.
 - **Idiom**: an upstream source for each non-trivial pattern, per evidence's
   [idiom](references/evidence.md#idiom) kind.
 - **Standards**: the repo's conventions and the user's standards, through the chat
-  format's **Lenses**. A term `CONTEXT.md`'s glossary says to avoid is a Cleanup.
+  format's **Lenses**. A term the `domain-modeling` glossary (`CONTEXT.md`) says to
+  avoid is a Cleanup.
 - **Slop**: the list below, plus `tidy`'s criteria when installed.
 - **Tests**: each protects behavior that could regress, through the interface rather
   than past it (such as a direct database query), with no duplicates.
