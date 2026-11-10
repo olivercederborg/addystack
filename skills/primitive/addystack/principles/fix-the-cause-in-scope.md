@@ -5,18 +5,21 @@
 Before option `a`, dig past the failure's explanation:
 
 - **Know the cause**: reproduce it where it failed, not on a local stand-in; ask why
-  until the answer is a design choice; and find every entry point that reaches it.
+  until the answer is a design choice; find every entry point that reaches it.
 - **Look up the idiom**: how the vendor's docs or source, or a sibling in the codebase,
   already solve it.
 
-Then rank the fixes; the first is option `a`:
+Then rank the fixes for option `a`:
 
 1. **At the cause**: correct, idiomatic, and long-term.
-2. **Then the smallest** of those. Size only breaks ties.
+2. **Then the smallest** of those.
 
-A quick fix ranks first only when production hurts now, another person or PR owns the
-cause, or the cause fix reaches other features or domains. Label it a stopgap, and offer
-the cause fix beside it, naming who builds it.
+Two cases change option `a`:
+
+- **Another person or PR owns the cause**: hand it to them with what the fix needs;
+  build no parallel fix.
+- **Production hurts now, or the cause fix reaches other features or domains**: the
+  smallest fix that stops it, labelled a stopgap, with the cause fix offered as its own PR.
 
 **Why:** "I want the smallest most correct long-term fix that is idiomatic and fixes the
 cause".
