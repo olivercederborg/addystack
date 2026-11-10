@@ -150,8 +150,12 @@ def resolve(target, command):
     return values[0] if "$" in values[0] else values[0].replace("{", "${")
 
 
-# A link or hard link can point a path inside a new folder anywhere.
-LINKS = re.compile(r"\bln\s|\bcp\s+-\w*[ls]|\b(?:symlink|symlink_to|hardlink_to|link)\(")
+# A link or hard link can point a path inside a new folder anywhere, and so can a copy or an
+# unpack that keeps links: `cp -R` or `-a` without `-L`, `rsync -a` or `-l`, `tar -x`. Every
+# skill in ~/.agents/skills is a link into a kit, so a write in such a copy edits the kit.
+LINKS = re.compile(r"\bln\s|\bcp\s+-\w*[ls]|\b(?:symlink|symlink_to|hardlink_to|link)\("
+                   r"|\bcp\b(?=[^;&|\n]*\s(?:-\w*[Rra]|--recursive|--archive)\b)(?![^;&|\n]*\s-\w*L)"
+                   r"|\brsync\b(?=[^;&|\n]*\s(?:-\w*[al]|--archive|--links)\b)|\btar\s+-?\w*x")
 
 
 def in_mktemp(text, command, depth=3, name=None):

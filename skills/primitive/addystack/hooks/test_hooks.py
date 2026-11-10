@@ -171,11 +171,16 @@ class RequireWritingForAgents(unittest.TestCase):
             'S=$(mktemp -d); for order in ../skills; do H=$S/$order; printf x > "$H/AGENTS.md"; done',
             'T=$(mktemp -d)/../skills; printf x > "$T/AGENTS.md"',
             'T=$(mktemp -d); ln -s ~/.claude/skills "$T/link"; printf x > "$T/link/CLAUDE.md"',
-            # verify-work: a name bound again after the mktemp.
+            # verify-work: a name bound again after the mktemp, and a copy that keeps links.
             "T=$(mktemp -d) && T=~/.claude && echo rule >> $T/CLAUDE.md",
             'T=$(mktemp -d) || T=~/.claude; echo rule >> "$T/CLAUDE.md"',
             'T=$(mktemp -d) T=~/.claude; echo rule >> "$T/CLAUDE.md"',
             'T=$(mktemp -d) && cd ~/r && T=skills/build && printf x > "$T/SKILL.md"',
+            'T=$(mktemp -d); cp -R ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp -a ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp --recursive ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -a ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/verify-work/SKILL.md"',
+            'T=$(mktemp -d); tar -xf skills.tar -C "$T"; printf x >> "$T/skills/build/SKILL.md"',
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command))
@@ -271,6 +276,8 @@ class RequireWritingForAgents(unittest.TestCase):
             'T=$(mktemp -d "${TMPDIR:-/tmp}/rr.XXXX"); echo stale > "$T/AGENTS.md"',
             'T=$(mktemp -d -t probe); H=$T; mkdir -p "$H/home"; printf x > "$H/home/AGENTS.md"',
             'T=$(mktemp -d); H=$T/home; P=$H/skills; mkdir -p "$P"; printf x > "$P/SKILL.md"',
+            # A copy that follows links holds files, not links.
+            'T=$(mktemp -d); cp -RL ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
             "T=$(mktemp -d) && mkdir -p \"$T/skills/x\" && H=$T/home && printf hi > \"$T/skills/x/SKILL.md\"",
             "R=/tmp/r1probe; for f in $R/new/build/references/*; do b=$(basename $f); cp $f $R/old/build/references/$b; done",
             # Names in comments or text aren't targets, so these pass where main denied them.
