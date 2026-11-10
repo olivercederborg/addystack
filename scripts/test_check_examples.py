@@ -61,13 +61,6 @@ class CheckExamplesTest(unittest.TestCase):
         bad = GOOD.replace("✅ idioms (grounding)", "✅ idioms")
         self.assertIn("name its lenses", problems(bad)[0])
 
-    def test_a_long_glance_fails(self):
-        filler = " ".join(["word"] * 60)
-        bad = GOOD.replace("- **Review**: the draft below.", f"- **Review**: the draft below. {filler}")
-        self.assertIn("under 60", problems(bad)[0])
-        unmarked = bad.replace("✅ **Done.**", "**Done.**")
-        self.assertEqual(problems(unmarked), [])
-
     def test_bare_number_in_next_fails(self):
         bad = GOOD.replace("`a` → publish", "`a` → keep item 48 and publish")
         self.assertIn("'item 48' needs its short name", problems(bad)[0])
@@ -91,23 +84,6 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(three), ["Next offers a third option; replies.md allows `a` and `b`"])
         bold = two.replace("hold it\n````", "hold it\n- **`c` → publish a draft** · *recommended*\n````")
         self.assertEqual(problems(bold), ["Next offers a third option; replies.md allows `a` and `b`"])
-
-    def test_a_decision_card_pick_needs_a_source(self):
-        turn = ('<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"publish it"}],'
-                '"options":[{"key":"a","class":"decision","text":"publish"}]} -->')
-        card = GOOD.replace("**Needs you**", "**Pick**: publish it.\n\n**Needs you**").replace(
-            "*recommended*\n````", "*recommended*\n\n" + turn + "\n````")
-        self.assertEqual(problems(card), ["the decision card's Pick cites no source; add a **Source** line"])
-        self.assertEqual(problems(card.replace("publish it.", "publish it.\n\n**Source**: the launch doc")), [])
-
-    def test_a_fact_table_keeps_its_limits(self):
-        table = ("# Skill\n\n````markdown\n✅ **Exports no longer time out.**\n\n| Change | `Export` pages its rows. |\n"
-                 "|---|---|\n| Risk | ⚠️ A year of rows still takes about 40 s. |\n{row}\n````\n")
-        self.assertEqual(problems(table.format(row="| Proof | 12 of 12 tests pass. |")), [])
-        self.assertEqual(problems(table.format(row="| Cause | Every row loaded at once. |")),
-                         ['the fact table: "Cause" isn\'t one of its labels'])
-        long = "| Proof | " + "word " * 21 + "|"  # the writing target, under the hook's send-back limit
-        self.assertEqual(problems(table.format(row=long)), ["the fact table: its Proof value runs 21 words, over 20"])
 
     def test_a_turn_block_in_an_example_must_parse(self):
         turn = '<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"publish"}]} -->'
@@ -137,6 +113,18 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(bad.replace(turn, standing)), ["'fix 3' (3 → currency column) needs its short name "
                                                                  "beside it, as in \"48 (optional email variables)\""])
 
+    def test_a_long_reply_passes(self):
+        # Length is the moment's call, not a count (R107).
+        filler = " ".join(["word"] * 300)
+        self.assertEqual(problems(GOOD.replace("- **Review**: the draft below.", f"- **Review**: the draft below. {filler}")), [])
+
+    def test_a_merge_option_must_be_the_plain_request(self):
+        turn = ('<!-- turn {{"state":"stop","needs":[],"options":[{{"key":"a","class":"stop:merge","text":"{text}"}}]}} -->')
+        card = GOOD.replace("`a` → publish", "`a` → {text}").replace("*recommended*\n````", "*recommended*\n\n" + turn + "\n````")
+        self.assertEqual(problems(card.format(text="merge #12 and #13")), [])
+        self.assertEqual(problems(card.format(text="merge #12, then deploy")),
+                         ["merge option `a` isn't the plain request merge-gate takes as a go"])
+
     def test_every_ship_gate_example_shows_what_the_reader_accepts(self):
         # Agents copy examples before rules, so each ship gate in views shows the You accept view.
         views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
@@ -147,10 +135,10 @@ class CheckExamplesTest(unittest.TestCase):
         for block in examples:
             with self.subTest(example=block[0]):
                 at = next(n for n, line in enumerate(block) if line.startswith("| You accept |"))
-                prs = len(check_examples.reply_budget.cells(block[at])) - 1
+                prs = len(check_examples.bare_references.cells(block[at])) - 1
                 rows = {cells[0].strip(): [cell.strip() for cell in cells[1:]]
                         for line in block[at + 2:at + 2 + len(kinds)]
-                        for cells in [check_examples.reply_budget.cells(line)]}
+                        for cells in [check_examples.bare_references.cells(line)]}
                 self.assertEqual(list(rows), kinds)  # every kind, in order
                 self.assertTrue(all(len(values) == prs and all(values) for values in rows.values()), rows)
 

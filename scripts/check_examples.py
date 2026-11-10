@@ -14,16 +14,12 @@ with four or more backticks. Inside one, this fails on:
 - an idioms check that doesn't name its lenses, as in `✅ idioms (typescript-style)`;
 - a Next, Needs you, or Done line citing a number without its name, as in "keep item 48",
   which `hooks/bare_references.py` also sends back in live replies;
-- a reply whose headline and notes reach 60 words, where reply-shape keeps them under 60, as `hooks/reply_budget.py`
-  counts them in live replies; only a block that opens with a status marker is a reply;
 - a turn block that doesn't parse (`hooks/turn_block.py`), when the example carries one.
   An example without one passes, and so does one shown in code;
 - a third Next option, `c`, where replies.md allows two, as `hooks/routine_stop.py` sends
   back in live replies;
-- a decision card whose Pick cites no source, as `hooks/reply_budget.py` sends back in live
-  replies.
-- a fact table past reply-shape's limits, as `hooks/reply_budget.py` sends back in live
-  replies, with each value held to the 20-word target.
+- a merge option whose text isn't the plain request merge-gate takes as a go, as
+  `hooks/reply_budget.py` sends back in live replies.
 
 It checks every SKILL.md, plus `replies.md` and reply-shape's references.
 
@@ -41,7 +37,6 @@ LABEL_SENTENCE = re.compile(r"^\*\*(Decide|Review|Do)\*\* ")
 ENDING = re.compile(r"^\*\*(Next|Done)\*\*")
 BARE_IDIOMS = re.compile(r"✅ idioms(?! \()")
 THIRD_OPTION = re.compile(r"^- (?:\*\*)?`c` →")
-MARKER = re.compile(r"\s*[✅🟡🔴⏳]")
 
 
 def example_blocks(lines):
@@ -91,13 +86,8 @@ def check_block(start, block):
         except turn_block.Malformed as error:
             problems.append((start + carried[0], f"turn block: {error}"))
     text = "\n".join(block)
-    if MARKER.match(text) and reply_budget.over(reply_budget.words(text)):
-        problems.append((start, f"headline and notes run {reply_budget.words(text)} words; "
-                                f"reply-shape keeps them under {reply_budget.BUDGET}"))
-    for clause in reply_budget.fact_problems(text, reply_budget.FACT_WORDS):
-        problems.append((start, f"the fact table: {clause}"))
-    if reply_budget.unsourced(text):
-        problems.append((start, "the decision card's Pick cites no source; add a **Source** line"))
+    for option in reply_budget.unplain(text):
+        problems.append((start, f"merge option `{option.key}` isn't the plain request merge-gate takes as a go"))
     for problem in bare_references.problems(text, names):
         # The cited line ends the problem; the longest match, in case one line ends another.
         offset = max((i for i, line in enumerate(block) if line.strip() and problem.endswith(f" in: {line.strip()}")),
