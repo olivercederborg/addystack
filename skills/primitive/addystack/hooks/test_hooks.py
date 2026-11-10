@@ -2808,7 +2808,7 @@ class MergeGate(unittest.TestCase):
         self.scenario(prs={12: None})
         self.verify(12)
         for text, go in [("merge #12 and dotfiles#36", True), ("merge r#12 and dotfiles#36", True),
-                         ("merge dotfiles#36 and #12", True), ("merge #36 and dotfiles#12", False),
+                         ("merge dotfiles#36 and #12", False), ("merge #36 and dotfiles#12", False),
                          ("merge #12 and r#36", False), ("merge #12 and o/r#36", False),
                          ("merge r#36 and #12", False), ("merge #12 and other/r#36", True),
                          # A range's bare end is in its other end's repo.
@@ -2822,7 +2822,9 @@ class MergeGate(unittest.TestCase):
                          # The same round: a refusal of a range written high to low, and one
                          # in a word that is this repo's name, as a repo named exclude would read
                          # "merge exclude #10-#14, exclude #12". Naming one PR twice is no go.
-                         ("merge #10-#14, exclude #14-#12", False), ("merge r #10-#14, r #12", False),
+                         ("merge #10-#14, exclude #14-#12", False),
+                         # Round 3: a bare PR after one that names a repo may be that repo's.
+                         ("merge dotfiles #36 and #12", False), ("merge dotfiles #36, #12", False), ("merge r #10-#14, r #12", False),
                          ("merge r #11, r #12", True),
                          # Round 2: a chained range can't say where its middle end is.
                          ("merge #10 through dotfiles #12 through #14", False),
@@ -2858,7 +2860,8 @@ class MergeGate(unittest.TestCase):
                      "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12", "merge r #10-#14, r #12",
                      # review-loop r1: the joined form too, which no typed go was held to before.
                      "merge dotfiles#12", "merge dotfiles#1", "merge #55 and dotfiles#12",
-                     "merge #10-dotfiles#14"]:  # round 2: a joined repo at a range's end
+                     "merge #10-dotfiles#14",  # round 2: a joined repo at a range's end
+                     "merge dotfiles #36 and #12"]:  # round 3: a bare PR after a repo-named one
             with self.subTest(text=text):
                 self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
         # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.

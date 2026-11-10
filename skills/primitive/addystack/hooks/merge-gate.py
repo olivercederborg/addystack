@@ -126,12 +126,13 @@ def names(text, pr, owner, repo, merging=()):
     PRs, or names no PR at all ("merge them"). A PR with its repo, "dotfiles #36" or
     dotfiles#36, is in that repo. A bare one, "#55", is in any repo, unless another PR in the
     text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
-    bare end is in its other end's repo. A text that places a PR the merge holds (pr and
-    merging) in another repo names none: the word before it may be a refusal or a step
-    NOT_REPO misses, as in "merge #10-#14, exclude #12", and so does a text that names a repo
-    and names one PR twice. A word that starts like a PR, with a
-    digit or holding a #, but doesn't read as one, names something it can't place, so it
-    isn't pr."""
+    bare end is in its other end's repo. A bare PR after one that names a repo, as #12 in
+    "merge dotfiles #36 and #12", may be in that repo, so it's in none. A text that places a
+    PR the merge holds (pr and merging) in another repo, or in none, names none: the word
+    before it may be a refusal or a step NOT_REPO misses, as in "merge #10-#14, exclude #12",
+    and so does a text that names a repo and names one PR twice. A word that starts like a
+    PR, with a digit or holding a #, but doesn't read as one, names something it can't place,
+    so it isn't pr."""
     import merge_go
     same = lambda part, want: not part or part.lower() == want.lower()
     here = lambda found, at: same(found.group(at), owner) and same(found.group(at + 1), repo)
@@ -162,7 +163,9 @@ def names(text, pr, owner, repo, merging=()):
         last = (at, joined or bool(found.group(6)))
     bare = not any(here_ for span in spans for here_, _ in span)
     side = lambda one, other: one if one is not None else other if other is not None else bare
-    placed = [(side(a[0], b[0]) and side(b[0], a[0]), a[1], b[1]) for a, b in spans]
+    after_repo = [any(point[0] is not None for span in spans[:i] for point in span) for i in range(len(spans))]
+    placed = [(side(a[0], b[0]) and side(b[0], a[0]) and not (a[0] is None and b[0] is None and late), a[1], b[1])
+              for (a, b), late in zip(spans, after_repo)]
     held = lambda low, high: any(min(low, high) <= n <= max(low, high) for n in {pr, *merging})  # "#14-#12" too
     if any(not ours and held(low, high) for ours, low, high in placed):
         return False
