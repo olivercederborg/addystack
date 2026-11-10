@@ -175,6 +175,17 @@ and its unpushed commits. Its rows:
 - **Proof**: the passing checks and the restack state.
 - **Undo**: how to roll it back.
 
+Its view is what the reader accepts, so they can say yes without opening the PR: a
+table headed `You accept`, then the PR, or the branch for a push, with a short phrase per
+cell, `none` when empty, and no row that's empty for all:
+
+- **New**: what didn't exist before, such as a command or an index.
+- **Changes**: behavior that changes for an agent, a user, or a caller.
+- **Edits**: the files, grouped, as in "6 skills name it; 14 synced copies of one line".
+- **Goes live**: what runs once it lands, such as a deploy or a setup step, and who
+  runs it.
+- **Left out**: what it doesn't do that the reader might expect.
+
 ````markdown
 🟡 **Merge #124, so a retried upload stops creating a second receipt?**
 
@@ -184,6 +195,14 @@ and its unpushed commits. Its rows:
 | Risk | ⚠️ Review 8/10: the timeout path has no test. |
 | Proof | verify-work Done at head · CI · tests 41/41 · no restack |
 | Undo | Revert #124, then drop the index. |
+
+| You accept | [#124](https://github.com/acme/app/pull/124) |
+| --- | --- |
+| New | a unique index on each receipt's upload id |
+| Changes | the upload API answers a retry with the first receipt |
+| Edits | the upload handler and its test; one migration |
+| Goes live | the deploy runs the migration on about 80,000 receipts |
+| Left out | duplicates made before it stay |
 
 <details><summary>Idiom sources · review rounds</summary>
 
@@ -199,30 +218,33 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 - `b` → no: keep #124 as a draft
 ````
 
-Several PRs share one table: its header row is `Stack`, a Risk names its PR, and a
-table under it lists each PR in merge order with its own size and rating.
+Several PRs, in one repo or across repos, share one fact table: its header row is
+`Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
+PR in that order, each Edits led by its size. Past three PRs, each PR gets its own table,
+since columns grow too narrow and row groups would pass a view's six rows.
 
 ````markdown
-🟡 **Merge the upload stack, #124 to #126?**
+🟡 **Merge #124 then #125, so a retried upload stops double-booking?**
 
-| Stack | 3 PRs, bottom first · all draft · +184 −182 in 9 files |
+| Stack | #124 then #125, bottom first · both draft · +180 −42 in 6 files |
 |---|---|
 | Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
-| Risk | ⚠️ #124's review is 8/10: the timeout path has no test. |
-| Proof | verify-work Done on each at head · CI · no restack |
-| Undo | Revert #126, then #125, then #124, and drop the index. |
+| Proof | verify-work Done on both at head · CI · no restack |
+| Undo | Revert #125, then #124, and drop the index. |
 
-| PR | Changes | Size · review |
+| You accept | [#124](https://github.com/acme/app/pull/124) uploads | [#125](https://github.com/acme/app/pull/125) server |
 | --- | --- | --- |
-| [#124](https://github.com/acme/app/pull/124) | uploads: a retry reuses its receipt | +120 −30 in 4 files · 8/10 |
-| [#125](https://github.com/acme/app/pull/125) | server: receipts carry their upload id | +60 −12 in 2 files · 9/10 |
-| [#126](https://github.com/acme/app/pull/126) | cleanup: the old dedupe job is gone | +4 −140 in 3 files · 10/10 |
+| New | a unique index on receipts' upload id | the upload id on each receipt the API returns |
+| Changes | a retry gets its first receipt back | none |
+| Edits | +120 −30: upload handler, its test, a migration | +60 −12: receipt type and its serializer |
+| Goes live | the deploy runs the migration | none |
+| Left out | old duplicates stay | the app doesn't show the id yet |
 
 ---
 
 **Next**
 
-- **`a` → merge #124, #125 and #126** · *recommended*
+- **`a` → merge #124 and #125** · *recommended*
 - `b` → no: keep the stack as drafts
 ````
 
