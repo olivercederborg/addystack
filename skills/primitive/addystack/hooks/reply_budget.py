@@ -22,6 +22,11 @@ after one. Of that week's 215 Pick cards with a decision recommended, it sends b
 two of the weekly's three cases among them (D-r75a); the third, a plan review, has no
 **Pick**. A ship gate, post, or push passes, since its view carries the checks. The note
 joins any other send-back, so it's one per stop.
+A merge option goes back too when its text isn't the plain request merge-gate takes as a go
+(merge_go.literal_go), such as "merge #90, then deploy": a bare-letter pick of it costs the
+user a typed go. In the 60 days to Nov 10, 2026, 27 of 347 merge options in delivered T3
+replies weren't plain, in 13 threads, and the user picked 11 of them with a bare letter. An
+option of class `stop:merge` that only marks PRs ready passes.
 A delegated child whose brief has a "Reply rules: on" line plays the user's session, so it
 is sent back like one.
 
@@ -74,7 +79,7 @@ import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import bare_references, t3_child, transcripts, turn_block  # noqa: E402
+import bare_references, merge_go, t3_child, transcripts, turn_block  # noqa: E402
 
 BUDGET = 60  # reply-shape's writing target, which check_examples holds examples to
 SEND_BACK = 100  # the send-back limit: a glance above it goes back
@@ -579,6 +584,30 @@ def pick_lines(shown, n):
     return kept
 
 
+MERGES = re.compile(r"\bmerge", re.I)
+
+
+def unplain(reply):
+    """The reply's merge options whose text merge_go doesn't read as a literal go."""
+    try:
+        options = turn_block.parse(reply).options
+    except turn_block.Malformed:
+        return []  # routine_stop.py sends a reply without a valid block back
+    return [option for option in options
+            if option.cls == "stop:merge" and MERGES.search(option.text) and not merge_go.literal_go(option.text)]
+
+
+def merge_feedback(reply):
+    """The send-back text for merge options merge-gate wouldn't take as a go, or None."""
+    found = unplain(reply)
+    if not found:
+        return None
+    listing = "; ".join(f"`{option.key}` → {option.text}" for option in found)
+    return (f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
+            "Write each as the merge alone, such as \"merge #12 and #13\", with any step before or after it "
+            "in the reply or another option, the same in Next and the turn block, then resend the whole reply.")
+
+
 def main():
     try:
         event = json.loads(sys.stdin.read())
@@ -594,7 +623,7 @@ def main():
         return
     # One send per stop, so a fact table's limits and a missing source ride along with any other problem.
     feedback = " ".join(filter(None, (problem(event, reply), fact_feedback(reply),
-                                      SOURCE_FEEDBACK if unsourced(reply) else None)))
+                                      SOURCE_FEEDBACK if unsourced(reply) else None, merge_feedback(reply))))
     if feedback:
         send_back(event, feedback)
 

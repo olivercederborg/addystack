@@ -5041,6 +5041,24 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.words(no_do), 11 + 2 + 3 * 70)  # with the two step numbers
 
 
+    def merge_gate_reply(self, *texts, cls="stop:merge"):
+        options = [{"key": key, "class": cls, "text": text} for key, text in zip("ab", texts)]
+        listed = "\n".join(f"- `{option['key']}` → {option['text']}" for option in options)
+        return ("🟡 **Merge #90?**\n\n---\n\n**Next**\n\n" + listed + "\n\n"
+                + block({"state": "stop", "needs": [], "options": options}))
+
+    def test_sends_back_a_merge_option_with_another_step(self):
+        # Delivered on Oct 27, 2026: a bare `a` on it wasn't a go merge-gate could take.
+        text = "merge #90 once its dev webhook test passes, then deploy production from the main checkout on main"
+        reason = self.bounce(self.merge_gate_reply(text))
+        self.assertIn(f"`a` → {text}", reason)
+        self.assertIn("merge #12 and #13", reason)
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("merge #124 and #125")), [])
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #5394–#5397 ready for review")), [])
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
+        self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
+
+
 class BareReferences(unittest.TestCase):
     HOOK = "bare_references.py"
 

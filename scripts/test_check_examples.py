@@ -109,6 +109,13 @@ class CheckExamplesTest(unittest.TestCase):
         long = "| Proof | " + "word " * 21 + "|"  # the writing target, under the hook's send-back limit
         self.assertEqual(problems(table.format(row=long)), ["the fact table: its Proof value runs 21 words, over 20"])
 
+    def test_a_merge_option_must_be_the_plain_request(self):
+        turn = ('<!-- turn {{"state":"stop","needs":[],"options":[{{"key":"a","class":"stop:merge","text":"{text}"}}]}} -->')
+        card = GOOD.replace("`a` → publish", "`a` → {text}").replace("*recommended*\n````", "*recommended*\n\n" + turn + "\n````")
+        self.assertEqual(problems(card.format(text="merge #12 and #13")), [])
+        self.assertEqual(problems(card.format(text="merge #12, then deploy")),
+                         ["merge option `a` isn't the plain request merge-gate takes as a go"])
+
     def test_a_turn_block_in_an_example_must_parse(self):
         turn = '<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"publish"}]} -->'
         with_block = GOOD.replace("*recommended*\n````", f"*recommended*\n\n{turn}\n````")
