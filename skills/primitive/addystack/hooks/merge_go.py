@@ -10,8 +10,9 @@ can always change it back", and ask as "can you" or "let's" ("lets merge it?"). 
 question about whether to merge, "can we merge …?" included, a refusal, an if-clause
 first, another step before or after the merge (fix, push, rebase, verify, deploy,
 release, try it out, handle it), and talk about merging don't match, though a refusal or
-step NOT_REPO misses before a "#N" reads as a repo (REPO_REF). MergeGo in test_hooks.py holds the real prompts this was built from,
-each with its source: every one merge-gate denied for want of a go, and the nearest misses."""
+step NOT_REPO misses before a "#N" reads as a repo (REPO_REF). MergeGo in test_hooks.py
+holds the real prompts this was built from, each with its source: every one merge-gate
+denied for want of a go, and the nearest misses."""
 import re
 
 # A repo's name before " #N", as in "dotfiles #36", but no word a sentence puts there:

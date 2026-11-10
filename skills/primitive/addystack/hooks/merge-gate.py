@@ -121,13 +121,16 @@ PART = r"(?:(?:([\w.-]+)/)?([\w.-]+)#|#)?(\d+)"
 WORD = re.compile(rf"{PART}(?:-{PART})?")
 COUNT = re.compile(r"\bthe \d+ prs?\b", re.I)
 
-def names(text, pr, owner, repo):
+def names(text, pr, owner, repo, merging=()):
     """Whether an option's text names pr in owner/repo, alone or in a range of this repo's
     PRs, or names no PR at all ("merge them"). A PR with its repo, "dotfiles #36" or
     dotfiles#36, is in that repo. A bare one, "#55", is in any repo, unless another PR in the
     text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
-    bare end is in its other end's repo. A word that starts like a PR, with a digit or
-    holding a #, but doesn't read as one, names something it can't place, so it isn't pr."""
+    bare end is in its other end's repo. A text that places a PR the merge holds (pr and
+    merging) in another repo names none: the word before it may be a refusal or a step
+    NOT_REPO misses, as in "merge #10-#14, exclude #12". A word that starts like a PR, with a
+    digit or holding a #, but doesn't read as one, names something it can't place, so it
+    isn't pr."""
     import merge_go
     same = lambda part, want: not part or part.lower() == want.lower()
     here = lambda found, at: same(found.group(at), owner) and same(found.group(at + 1), repo)
@@ -154,7 +157,10 @@ def names(text, pr, owner, repo):
         last = (at, high)
     bare = not any(here_ for span in spans for here_, _ in span)
     side = lambda one, other: one if one is not None else other if other is not None else bare
-    return not spans or any(side(a[0], b[0]) and side(b[0], a[0]) and a[1] <= pr <= b[1] for a, b in spans)
+    placed = [(side(a[0], b[0]) and side(b[0], a[0]), a[1], b[1]) for a, b in spans]
+    if any(not ours and low <= n <= high for ours, low, high in placed for n in {pr, *merging}):
+        return False
+    return not spans or any(ours and low <= pr <= high for ours, low, high in placed)
 
 def answered(found):
     """The reply the latest prompt answers: the last one before it, past messages T3 says
@@ -180,14 +186,17 @@ def letter_miss(reply, key):
     return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML other than "
             "fold lines and autolinks, or a fence line it can't place")
 
-def user_go(pr, owner, repo):
-    """(go, note): whether the user's latest prompt in this session asks to merge pr, and,
-    for a key that doesn't, what it picked and why that isn't a go. A go is a literal go
-    (merge_go.py), held to the PRs it names when it names one as "dotfiles #36", or a key that picks an option of the reply it answered (answered,
-    turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR.
+def user_go(numbers, owner, repo):
+    """(go, note): whether the user's latest prompt in this session asks to merge the last
+    of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
+    go is a literal go (merge_go.py), held to the PRs it names when it names one as
+    "dotfiles #36", or a key that picks an option of the reply it answered (answered,
+    turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
+    and no PR of numbers in another repo (names).
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
     pick needs that reply's turn block, so an earlier reply's option, a reply without one,
     or a block in a message another agent sent gives no go."""
+    pr = numbers[-1]
     try:
         import sqlite3, t3_child, transcripts, turn_block
         from merge_go import literal_go, REPO_REF
@@ -210,7 +219,7 @@ def user_go(pr, owner, repo):
         if literal_go(prompt):
             # A word before " #N" may be a step or a refusal NOT_REPO misses ("skip #12"), so a
             # typed go that names a PR that way is held to its PRs, as a pick is.
-            if not REPO_REF.search(prompt) or names(prompt, pr, owner, repo):
+            if not REPO_REF.search(prompt) or names(prompt, pr, owner, repo, numbers):
                 return True, None
             return False, f"{said} isn't a merge of #{pr}"
         key = turn_block.PICK.fullmatch(prompt)
@@ -222,7 +231,7 @@ def user_go(pr, owner, repo):
             return False, f"{said} picks nothing: {letter_miss(reply, key.group(1).lower())}"
         if option.cls != "stop:merge" or not literal_go(option.text):
             return False, f'{said} picks "{option.text}" from your reply before it, which isn\'t a merge go'
-        if not names(option.text, pr, owner, repo):
+        if not names(option.text, pr, owner, repo, numbers):
             return False, (f'{said} picks "{option.text}" from your reply before it, not a merge of #{pr}; '
                            "a turn block in a message you didn't write, such as a worker's result, never counts")
         return True, None
@@ -350,7 +359,7 @@ for n in numbers:
         reasons.append(f"#{n} has no checks yet at {commit['oid'][:8]}: wait for CI to register")
     elif state is None and not no_ci[n]:  # a gate repo with no CI needs only the Done checked below
         if go is None:
-            go, note = user_go(numbers[-1], owner, name)
+            go, note = user_go(numbers, owner, name)
         if not go:
             why = ("this repo's CI skips it by its path or branch filters" if skipped[n]
                    else "this repo runs no CI on PRs")

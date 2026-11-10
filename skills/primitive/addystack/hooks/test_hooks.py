@@ -2821,7 +2821,10 @@ class MergeGate(unittest.TestCase):
                          ("merge R #12", True), ("merge o/r #12", True), ("merge dotfiles #12", False),
                          ("merge other/r #12", False), ("merge #36 and dotfiles #12", False),
                          ("merge #12 and r #36", False), ("merge r #10 through #14", True),
-                         ("merge r #10-#14", True), ("merge dotfiles #10 through #14", False)]:
+                         ("merge r #10-#14", True), ("merge dotfiles #10 through #14", False),
+                         # A word NOT_REPO misses, on a PR the option also names.
+                         ("merge #10-#14, exclude #12", False), ("merge #12 and dotfiles #12", False),
+                         ("merge #12 and dotfiles #13", True)]:
             with self.subTest(text=text):
                 reason = self.reason("gh pr merge 12", said=(
                     "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
@@ -2836,10 +2839,24 @@ class MergeGate(unittest.TestCase):
                      "merge #13"]:  # no repo word, so as unheld as before
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh pr merge 12", said=(text,)))
+        # verify-work's re-check, Nov 10, 2026: a word NOT_REPO misses, on a PR the go also
+        # names, so a PR the merge holds that the go places in another repo gives no go.
         for text in ["merge #36, skippy #12", "merge #36 and dontt #12", "merge #36 and dotfiles #12",
-                     "merge dotfiles #12", "merge #12 and r #36"]:
+                     "merge dotfiles #12", "merge #12 and r #36", "merge #10-#14, exclude #12",
+                     "merge #10 through #14, leave #12", "merge #12, retest #12", "merge #12, omit #10-#14",
+                     "merge #12 and dotfiles #12"]:
             with self.subTest(text=text):
                 self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
+        # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.
+        self.scenario(prs={11: None, 12: None})
+        self.verify(11)
+        self.assertIsNone(self.reason("gh stack merge 12", said=("merge #11-#12 and dotfiles #36",)))
+        for text in ["merge #10-#12, exclude #11", "merge #12, retest #11"]:
+            with self.subTest(text=text):
+                self.assertIn("isn't a merge of #12", self.reason("gh stack merge 12", said=(text,)))
+                reason = self.reason("gh stack merge 12", said=(
+                    "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
+                self.assertIn("not a merge of #12", reason)
 
     def workflow(self, text, name="ci.yml"):
         """Commit a workflow to main; PRs made after it branch from it."""
