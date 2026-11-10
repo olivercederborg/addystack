@@ -176,8 +176,8 @@ and its unpushed commits. Its rows:
 - **Undo**: how to roll it back.
 
 Its view is what the reader accepts, so they can say yes without opening the PR: a
-table headed `You accept`, then the PR, or the branch for a push, with a short phrase per
-cell, `none` when empty, and no row that's empty for all:
+table headed `You accept`, then the PR, or the branch for a push with no PR, with a short
+phrase per cell, `none` when empty, and no row that's empty for all:
 
 - **New**: what didn't exist before, such as a command or an index.
 - **Changes**: behavior that changes for an agent, a user, or a caller.
