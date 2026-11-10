@@ -206,7 +206,7 @@ class Skills:
     async def fresh_install_from(
         self,
         repo: str,
-        kit: source("scripts/check-fresh-install.py", "scripts/check-install.py"),
+        kit: source("scripts/check-fresh-install.py", "scripts/check-install.py", f"{TOOL}/lib/skill_layer.py"),
         token: dagger.Secret | None = None,
     ) -> None:
         """Plan check 9 on a published kit, such as owner/addystack: npx skills add installs it from
