@@ -1984,9 +1984,14 @@ class LongTermFix(unittest.TestCase):
                      "merge #5441", "run verify-work on #5469", "no: leave issue 199 as it is"):
             with self.subTest(text=text):
                 self.assertFalse(self.asks(self.reply({**self.FIX, "text": text})))
-        for cls in ("stop:merge", "stop:post", "stop:credential"):
-            with self.subTest(cls=cls):
-                self.assertFalse(self.asks(self.reply({**self.FIX, "class": cls})))
+        self.assertFalse(self.asks(self.reply({**self.FIX, "class": "stop:merge"})))
+        # A post or credential stop can still lead with a fix; the words decide.
+        for cls, text, asks in (("stop:post", "fix the export, then post the update", True),
+                                ("stop:credential", "fix the export once you add the API key", True),
+                                ("stop:post", "send Ander the note, no PR from us", False),
+                                ("stop:credential", "add the API key to the keychain", True)):
+            with self.subTest(cls=cls, text=text):
+                self.assertEqual(self.asks(self.reply({**self.FIX, "class": cls, "text": text})), asks)
 
     def test_a_turn_that_edited_the_checkout_asks_unless_the_user_picked_it(self):
         edit = {"type": "assistant", "cwd": "/repo", "message": {"content": [

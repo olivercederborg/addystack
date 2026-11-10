@@ -81,7 +81,8 @@ NOT_CHANGE = re.compile(r"(?:wrap\s+up|archive|ask|babysit|check|close|create|de
 PREFIX = re.compile(r"\A\s*(?:(?:yes|no|go)\s*[:,—-]\s*)?(?:then\s+|now\s+|also\s+|first\s+)?", re.I)
 # Claude Code's file tools, and Codex's patch tool.
 EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
-FIX_CLASSES = {"routine", "decision", "stop:push", "stop:prod"}
+# A merge ships a change the hook already saw built, so stop:merge never asks.
+FIX_CLASSES = {"routine", "decision", "stop:push", "stop:prod", "stop:post", "stop:credential"}
 
 
 def fix_option(option):
