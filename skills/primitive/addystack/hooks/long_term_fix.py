@@ -116,6 +116,7 @@ class Session:
     def __init__(self, path):
         self.bug = False  # diagnosing-bugs loaded, bug-route fired, or an alert thread
         self.prompt = None  # the latest prompt's typed text, "" when the user didn't type it
+        self.sent = ""  # the latest prompt's text as T3 stored it
         self.earlier = set()  # option `a` texts of earlier replies in bug work
         self.edited = False  # this turn edited a file in the session's checkout
         root, first, reply, started = None, True, None, False
@@ -137,7 +138,8 @@ class Session:
                         self.edited = self.edited or edited(entry, root)
                         continue
                     started = False
-                    if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
+                    self.sent = "\n".join(transcripts.texts(transcripts.text_parts(entry) or []))
+                    if first and ALERT.match(self.sent):
                         self.bug = started = True
                     first = first and not text  # an injected AGENTS.md entry isn't the user's first message
                     if self.bug:  # the hook only asked about a recommendation made in bug work
@@ -195,7 +197,8 @@ def ask(event):
         return None
     session = Session(event.get("transcript_path"))
     prompt = session.prompt
-    if not session.bug or not prompt or bug_route.NOTICE.match(prompt) or ASKED.search(prompt):
+    if not session.bug or not prompt or bug_route.NOTICE.match(prompt) or ASKED.search(prompt) \
+            or bug_route.agent_sent(event.get("session_id"), session.sent):
         return None
     option = turn.recommended
     if fix_option(option) and option.text not in session.earlier:

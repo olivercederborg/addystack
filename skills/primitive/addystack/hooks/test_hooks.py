@@ -1905,7 +1905,7 @@ class LongTermFix(unittest.TestCase):
         return "🟡 **Drop the client copies?**\n\n" + block(
             {"state": state, "needs": [], "options": [option or self.FIX]})
 
-    def run_on(self, reply=None, before=None, after=(), said="investigate the Sentry alert", **event):
+    def run_on(self, reply=None, before=None, after=(), said="investigate the Sentry alert", db=None, **event):
         """The hook's output on reply, after a transcript of before (default: diagnosing-bugs
         loaded), then the user's message said, then after; None when it passes."""
         entries = [*(before if before is not None else [self.LOADED]), claude_said(said), *after]
@@ -1914,7 +1914,7 @@ class LongTermFix(unittest.TestCase):
             transcript.write_text("".join(json.dumps(entry) + "\n" for entry in entries))
             out = subprocess.run([str(HOOKS / "long_term_fix.py")], capture_output=True, text=True, check=True, input=json.dumps(
                 {"last_assistant_message": reply or self.reply(), "transcript_path": str(transcript), "session_id": "s", **event}),
-                env={**os.environ, "HOME": folder, "T3_STATE_DB": os.path.join(folder, "none.sqlite")}).stdout
+                env={**os.environ, "HOME": folder, "T3_STATE_DB": db or os.path.join(folder, "none.sqlite")}).stdout
         return json.loads(out) if out else None
 
     def asks(self, *args, **kwargs):
@@ -2026,6 +2026,25 @@ class LongTermFix(unittest.TestCase):
                      "Investigate further to ensure it's the best possible fix"):
             with self.subTest(said=said):
                 self.assertIsNone(self.run_on(said=said))
+        with tempfile.TemporaryDirectory() as folder:  # a message another thread sent
+            self.assertIsNone(self.run_on(said="Fix the export", db=self.sent_db(folder, "agent")))
+            self.assertTrue(self.asks(said="Fix the export", db=self.sent_db(folder, "user")))
+
+    @staticmethod
+    def sent_db(folder, creator):
+        """A T3 state database whose thread runs session \"s\", where creator sent \"Fix the export\"."""
+        path = os.path.join(folder, f"{creator}.sqlite")
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
+            db.execute("create table orchestration_v2_projection_provider_threads "
+                       "(provider_thread_id text, thread_id text, payload_json text)")
+            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+            db.execute("create table orchestration_v2_projection_messages "
+                       "(thread_id text, run_id text, role text, created_at text, payload_json text)")
+            db.execute("insert into orchestration_v2_projection_provider_threads values ('p', 'thread-1', ?)",
+                       (json.dumps({"nativeThreadRef": {"nativeId": "s"}}),))
+            db.execute("insert into orchestration_v2_projection_messages values ('thread-1', null, 'user', '06:00', ?)",
+                       (json.dumps({"text": "Fix the export", "createdBy": creator}),))
+        return path
         self.assertIsNone(self.run_on(said="Act as the test sub-agent for this task.\n\nfix the export"))
         running = "⏳ Building the fix.\n\n" + block({"state": "running", "needs": [], "options": [], "elapsed": "3m"})
         edit = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Edit", "input": {}}]}}
