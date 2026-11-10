@@ -151,9 +151,10 @@ def names(text, pr, owner, repo, merging=()):
     for at, found in refs:
         low = end(found, 1)
         high = end(found, 4) if found.group(6) else low
-        spans.append((low, high))
         if last and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-"):
-            spans.append((last[1], low))
+            spans[-1] = (spans[-1][0], high)  # "#10 through #14" is one range, not three
+        else:
+            spans.append((low, high))
         last = (at, high)
     bare = not any(here_ for span in spans for here_, _ in span)
     side = lambda one, other: one if one is not None else other if other is not None else bare

@@ -2816,6 +2816,9 @@ class MergeGate(unittest.TestCase):
                          ("merge r#10-#14", True), ("merge dotfiles#10 through #14", False),
                          ("merge #10 through dotfiles#14", False), ("merge dotfiles#10-#14", False),
                          ("merge #1 and r#10 through #14", True),
+                         # review-loop r1, Nov 10, 2026: a range's bare end isn't also a PR of its own.
+                         ("merge r#10 through #12", True), ("merge r #10 through #12", True),
+                         ("merge #12 through r#14", True),
                          # The card's own form, a space between repo and PR.
                          ("merge #12 and dotfiles #36", True), ("merge r #12 and dotfiles #36", True),
                          ("merge R #12", True), ("merge o/r #12", True), ("merge dotfiles #12", False),
@@ -2836,7 +2839,7 @@ class MergeGate(unittest.TestCase):
         self.scenario(prs={12: None})
         self.verify(12)
         for text in ["merge #12 and dotfiles #36", "merge r #12", "merge o/r #12 and dotfiles #36",
-                     "merge #13"]:  # no repo word, so as unheld as before
+                     "merge r #10 through #12", "merge #13"]:  # no repo word, so as unheld as before
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh pr merge 12", said=(text,)))
         # verify-work's re-check, Nov 10, 2026: a word NOT_REPO misses, on a PR the go also
