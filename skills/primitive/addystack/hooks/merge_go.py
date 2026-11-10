@@ -23,7 +23,7 @@ NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|exc
             r"|no|never|dont|skip|drop|ignore|hold|without|with|on|onto|into|in|from|for|of|by|to"
             r"|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those|prs?|pull"
             r"|issues?|stacks?|branch|merge|fix|push|rebase|revert|verify|deploy|release|review|close)")
-REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/)?[a-z][\w.-]*"
+REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[a-z][\w.-]*)"  # owner/12306, but not a bare 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
 REF = rf"(?:(?:[\w.-]+/)?[\w.-]+#\d+|{REPO}\s+#\d+|#?\d+)"
 REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
