@@ -11,6 +11,8 @@ metadata:
 
 Actively build and sharpen the project's domain model as you design. This is the *active* discipline: challenging terms, inventing edge-case scenarios, and writing the glossary and decisions down the moment they crystallise. (Merely *reading* `CONTEXT.md` for vocabulary is not this skill: that's a one-line habit any skill can do. This skill is for when you're changing the model, not just consuming it.)
 
+**Autonomous runs**: with no user to grill, as when `planning` is `autonomous`, read the glossary for names only and put each new term or ADR candidate in the run's report as a follow-up. Terms and ADRs are written in gated planning, with the user, by `scope-grill` and `architect`.
+
 ## File structure
 
 Most repos have a single context:

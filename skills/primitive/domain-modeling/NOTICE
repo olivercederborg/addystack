@@ -8,4 +8,6 @@ The vendored skill preserves the upstream MIT license (see LICENSE). Upstream re
 glossary files CONTEXT.md and CONTEXT-MAP.md to GLOSSARY.md and GLOSSARY-MAP.md in
 d80fa0f4ebe0c5714af0adf8670336065233ecc6; this copy keeps the CONTEXT names, so its text
 is upstream's from the commit before that rename, which is the only change to this folder
-between the two commits. It adds the kit's frontmatter layer and notes line.
+between the two commits. It adds the kit's frontmatter layer and notes line, and a rule
+that an autonomous run reads the glossary for names only and reports new terms and ADR
+candidates as follow-ups.
