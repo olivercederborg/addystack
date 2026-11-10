@@ -238,7 +238,7 @@ since columns grow too narrow and row groups would pass a view's six rows.
 | --- | --- | --- |
 | New | a unique index on receipts' upload id | the upload id on each receipt the API returns |
 | Changes | a retry gets its first receipt back | none |
-| Edits | +120 −30: upload handler, its test, a migration | +60 −12: receipt type and its serializer |
+| Edits | +120 −30 in 4 files: upload handler, its test, a migration | +60 −12 in 2 files: receipt type, its serializer |
 | Goes live | the deploy runs the migration | none |
 | Left out | mobile app retries, which skip this API | the app doesn't show the id yet |
 
