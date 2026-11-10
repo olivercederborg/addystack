@@ -128,7 +128,8 @@ def names(text, pr, owner, repo, merging=()):
     text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
     bare end is in its other end's repo. A text that places a PR the merge holds (pr and
     merging) in another repo names none: the word before it may be a refusal or a step
-    NOT_REPO misses, as in "merge #10-#14, exclude #12". A word that starts like a PR, with a
+    NOT_REPO misses, as in "merge #10-#14, exclude #12", and so does a text that names a repo
+    and names one PR twice. A word that starts like a PR, with a
     digit or holding a #, but doesn't read as one, names something it can't place, so it
     isn't pr."""
     import merge_go
@@ -161,6 +162,12 @@ def names(text, pr, owner, repo, merging=()):
     placed = [(side(a[0], b[0]) and side(b[0], a[0]), a[1], b[1]) for a, b in spans]
     held = lambda low, high: any(min(low, high) <= n <= max(low, high) for n in {pr, *merging})  # "#14-#12" too
     if any(not ours and held(low, high) for ours, low, high in placed):
+        return False
+    # A text that names a repo and names a PR twice may refuse it the second time, even
+    # with this repo's name: "merge exclude #10-#14, exclude #12" in a repo named exclude.
+    spread = [(min(low, high), max(low, high)) for _, low, high in placed]
+    if any(point[0] is not None for span in spans for point in span) and any(
+            max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:]):
         return False
     return not spans or any(ours and low <= pr <= high for ours, low, high in placed)
 
