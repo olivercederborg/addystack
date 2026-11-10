@@ -5053,8 +5053,12 @@ class ReplyBudget(unittest.TestCase):
         reason = self.bounce(self.merge_gate_reply(text))
         self.assertIn(f"`a` → {text}", reason)
         self.assertIn("merge #12 and #13", reason)
+        long = "✅ **Eight PRs moved.**\n\n" + "".join(f"- **#{n}**: {' '.join(['word'] * 12)}\n" for n in range(8))
+        self.assertIn("a bold item per thing", self.bounce(long))  # an item reply isn't told to become a fact table
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("merge #124 and #125")), [])
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #5394–#5397 ready for review")), [])
+        # Delivered on Oct 31, 2026: marking ready, with the merge left to the user, isn't a merge option.
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I'll merge them myself")), [])
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
         self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
 

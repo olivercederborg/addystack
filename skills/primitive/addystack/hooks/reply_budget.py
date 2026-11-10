@@ -584,7 +584,8 @@ def pick_lines(shown, n):
     return kept
 
 
-MERGES = re.compile(r"\bmerge", re.I)
+# A merge the option asks for: "merge #12", not "I'll merge them myself" after marking ready.
+MERGES = re.compile(r"(?<!\bI'll )(?<!\bI )(?<!\byou )(?<!\bwe )\bmerge", re.I)
 
 
 def unplain(reply):
@@ -646,7 +647,7 @@ def problem(event, reply):
     return (
         f"Your reply's headline and notes come to {count} words; reply-shape keeps them under {BUDGET}. The user "
         "reads each reply at a glance. Send your whole reply again as one, in the shape your reply rules give: "
-        "a headline of at most 12 words, then its fact table, or under rules without one the one view that fits "
+        "a headline of at most 12 words, then its fact table, or a bold item per thing with each item's details in the fold, or under rules without one the one view that fits "
         "the content or none and at most three notes of at most 15 words, and the same closing and turn block. Keep every risk, decision, and step the user must take, "
         "and move checks and evidence to the one fold. T3 shows only a turn's last message and folds the rest "
         "away, so the resent reply has to stand on its own. Add no note about the change.")

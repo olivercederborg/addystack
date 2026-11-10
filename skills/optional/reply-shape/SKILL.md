@@ -27,7 +27,7 @@ and the other options go in one fold. Hold to this until the reader says "normal
 2. **Fact table** for one subject, such as a PR, a decision, or a check: two columns,
    right under the headline. A reply whose whole point is one sentence has none. Several
    things get **items** instead: a list item per PR, finding, option, or running job,
-   its name in bold, then a short clause, with details under it or in the fold. Group by
+   its name in bold and a short clause, details under it or in the fold. Group by
    the thing, and findings by severity under a bold **Must fix**, then **Cleanups**.
    - **Header row**: the subject: a PR as a link, then what it changes, its state, and
      size; or one word, such as Problem or Change, then the point.
@@ -131,7 +131,7 @@ smallest option, often leaving things as they are.
 - **Say it once** per session: each piece of code, draft, and warning. A reply whose
   next step posts or sends drafts shows each in full again, since what the reader
   approves is what goes out.
-- **Pictures** only for UI or when the reader asks; read
+- **One picture** a turn, only for UI, a chart, or when asked; read
   [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
 - **Blank lines**: chat joins lines with no blank line between, so separate lines with
