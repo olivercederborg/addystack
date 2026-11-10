@@ -3,8 +3,7 @@
 **Apply when** you're sizing a plan, a stack, its PR count, or a review round.
 
 Recommend the smallest shape that meets the agreed goal. A wider shape becomes a
-one-line follow-up. A fix's correctness isn't traded for size
-(fix-the-cause-in-scope).
+one-line follow-up. A fix's correctness isn't traded for size.
 
 **Why:** "its getting way too out of hand. lets keep it simple" · "73 PRs is still
 ALOT".
