@@ -229,6 +229,7 @@ since columns grow too narrow and row groups would pass a view's six rows.
 | Stack | #124 then #125, bottom first · both draft · +180 −42 in 6 files |
 |---|---|
 | Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
+| Risk | ⚠️ #124's review is 8/10: the timeout path has no test. |
 | Proof | verify-work Done on both at head · CI · no restack |
 | Undo | Revert #125, then #124, and drop the index. |
 
