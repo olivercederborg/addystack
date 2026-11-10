@@ -2818,7 +2818,7 @@ class MergeGate(unittest.TestCase):
                          ("merge #1 and r#10 through #14", True),
                          # review-loop r1, Nov 10, 2026: a range's bare end isn't also a PR of its own.
                          ("merge r#10 through #12", True), ("merge r #10 through #12", True),
-                         ("merge #12 through r#14", True), ("merge #12 and sam/12306 #36", True),
+                         ("merge #12 through r#14", True), ("merge #12 and sam/12306 #36", True), ("merge #12 and 1password #36", True),
                          # The same round: a refusal of a range written high to low, and one
                          # in a word that is this repo's name, as a repo named exclude would read
                          # "merge exclude #10-#14, exclude #12". Naming one PR twice is no go.
@@ -3404,7 +3404,7 @@ class MergeGo(unittest.TestCase):
                 self.assertFalse(merge_go.literal_go(prompt))
 
     def test_reads_a_word_before_a_pr_as_its_repo_unless_a_sentence_puts_it_there(self):
-        for text in ["merge dotfiles #36", "merge sam/dotfiles #36", "merge sam/12306 #36", "merge Dotfiles #36 and #37", "merge #55, dotfiles #36",
+        for text in ["merge dotfiles #36", "merge sam/dotfiles #36", "merge sam/12306 #36", "merge 1password-codex-plugin #36", "merge Dotfiles #36 and #37", "merge #55, dotfiles #36",
                      "merge dotfiles #36 through #38", "merge dotfiles #36-#38", "a, and merge dotfiles #36",
                      "merge the stack of dotfiles #36"]:
             with self.subTest(text=text):
@@ -3413,7 +3413,7 @@ class MergeGo(unittest.TestCase):
         # a stack's number the gate can't place), a count, or the grammar's own words.
         for text in ["merge after #36", "merge before #36", "merge once #36", "merge except #36", "merge not #36",
                      "merge without #36", "merge only #36", "merge into #36", "merge with #36", "merge PR #36",
-                     "merge prs #36", "merge stack #36", "merge 55 #36", "merge both #55 and #36", "merge it #36",
+                     "merge prs #36", "merge stack #36", "merge 55 #36", "merge 10-14 #36", "merge both #55 and #36", "merge it #36",
                      "merge the #36", "merge and #36", "merge #55 and after #36", "merge #36 to after #38",
                      # verify-work's near misses, Nov 10, 2026: a refusal, a time, or another step.
                      "merge #36, skip #12", "merge #36 and dont #12", "merge #36 and rebase #12",
