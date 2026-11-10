@@ -161,6 +161,7 @@ elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
               test_agent_memory_guard.CommandLine.test_cpu_includes_reaped_children_and_start_is_wall_clock)
   (cd skills/primitive/addystack/hooks && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only[@]}")
 fi
-# The workshop's own suites, which the kit's Dagger module leaves out: its preferences and
-# preset skills', and maintainer/'s. They run here whenever the checkout has them.
+# The suites the kit's Dagger module leaves out: the preferences and preset skills', which
+# stay out of the release, and a workshop checkout's maintainer/'s. They run here whenever
+# the checkout has them.
 run_suites "$root"/skills/{preferences,preset}/*/scripts "$root"/maintainer

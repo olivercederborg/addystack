@@ -1,0 +1,18 @@
+[Unit]
+Description=chief live feeder: T3 turn blocks to chief's Executor app within seconds
+After=network-online.target t3code.service
+Wants=network-online.target
+# Never give up: a long T3 or network outage is the feeder's to wait out.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+# bin/chief runs on `env node`, and inbox.py on python3, so both need PATH.
+Environment=PATH=%h/.local/share/mise/installs/node/24/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/.local/share/mise/installs/node/24/bin/node %h/Developer/personal/addystack/skills/preferences/chief/feeder/feeder.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

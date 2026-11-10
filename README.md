@@ -42,6 +42,14 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 | orchestrator: runs primitives as steps | `autopilot` builds an approved plan to a verified PR stack, `babysit` keeps a watched PR moving, `coordinator` runs a project from one thread |
 | optional: extras `update` never adds or removes | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words` |
 
+`skills/preferences/` and `skills/preset/` hold the maintainer's own skills and a team's.
+They're outside the release: each sets `metadata.internal: true`, so `npx skills add`
+installs one only when `--skill` names it or `INSTALL_INTERNAL_SKILLS=1` is set. `update`
+never adds or removes one, and `doctor` doesn't check them. When the skills CLI checks
+for updates through a git clone instead of GitHub's API, it leaves internal skills out,
+calls them deleted upstream, and an interactive run offers to remove them. Set
+`INSTALL_INTERNAL_SKILLS=1` when you update to keep them in.
+
 ## Config
 
 Your settings live in `~/.config/addystack/addystack.jsonc`.

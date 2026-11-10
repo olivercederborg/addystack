@@ -36,6 +36,8 @@
 /skills/orchestrator/coordinator/scripts/github.sh linguist-generated
 /skills/orchestrator/coordinator/scripts/stack.sh linguist-generated
 /skills/orchestrator/coordinator/scripts/verdicts.py linguist-generated
+/skills/preferences/chief/scripts/turn_block.py linguist-generated
+/skills/preferences/coding-standards/references/taste.md linguist-generated
 /skills/primitive/address-review/references/disclosure.md linguist-generated
 /skills/primitive/address-review/references/format.md linguist-generated
 /skills/primitive/address-review/references/github.md linguist-generated

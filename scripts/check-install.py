@@ -5,6 +5,11 @@ skill's checkout folder has that its installed copy lacks or holds with other by
 when verify-work's work-verifier agent (AGENT) isn't installed. The CLI skips a symlink
 that leaves the skill's folder, so a link shows up here as lost.
 
+It also checks that the skills in a layer the release doesn't ship (preferences, preset)
+stay hidden: a plain `npx skills add <repo> -g` leaves each out, and naming it with
+`--skill` installs it. Their `metadata.internal: true` does that, so a SKILL.md that
+loses it fails here.
+
 Needs node with npm and the npm registry (the Dagger check `install` runs it in Linux).
 
 Usage: scripts/check-install.py
@@ -15,6 +20,9 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "skills" / "primitive" / "addystack" / "lib"))
+import skill_layer  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CLI = "skills@1.7.6"
@@ -62,15 +70,59 @@ def scratch_env(environ, home):
             "CODEX_HOME": f"{home}/.codex", "XDG_STATE_HOME": f"{home}/.local/state"}
 
 
+def unshipped(root=ROOT):
+    """The skills in a layer the release doesn't ship, by name: a plain install must skip them."""
+    return sorted(skill.parent.name for skill in root.glob("skills/*/*/SKILL.md")
+                  if skill_layer.layer(skill) not in skill_layer.SHIPPED)
+
+
+def hidden_problems(hidden, plain, named):
+    """Each hidden skill a plain install added, or an install naming it with --skill didn't;
+    plain and named are the skill folders each install left."""
+    return ([f"{name}: a plain install added it; set metadata.internal: true in its SKILL.md"
+             for name in hidden if name in plain]
+            + [f"{name}: not installed when --skill names it" for name in hidden if name not in named])
+
+
+def add(home, env, *names):
+    """`npx skills add` of this checkout into home's Claude Code folder: every skill the CLI
+    picks without names, else the named ones."""
+    # An agent's environment makes the CLI install without prompts; -y covers the rest.
+    # `npm exec` is `npx`, which the Dagger toolbox doesn't link.
+    picked = ["--skill", *names] if names else []
+    return subprocess.run(["npm", "exec", "--yes", f"--package={CLI}", "--", "skills", "add", str(ROOT), *picked,
+                           "-g", "-y", "-a", "claude-code"], env=env, cwd=home, capture_output=True, text=True)
+
+
+def installed(home):
+    folder = pathlib.Path(home, ".claude/skills")
+    return {path.name for path in folder.iterdir()} if folder.is_dir() else set()
+
+
+def hidden_check():
+    """hidden_problems for a plain install, then one naming the hidden skills, in one home."""
+    hidden = unshipped()
+    if not hidden:
+        return []
+    with tempfile.TemporaryDirectory() as home:
+        env = {key: value for key, value in scratch_env(os.environ, home).items() if key != "INSTALL_INTERNAL_SKILLS"}
+        for names in ((), hidden):
+            done = add(home, env, *names)
+            if done.returncode:
+                return [f"npx skills add {' '.join(names) or '(plain)'} exited {done.returncode}: "
+                        f"{(done.stdout + done.stderr).strip()[-300:]}"]
+            if not names:
+                plain = installed(home)
+        return hidden_problems(hidden, plain, installed(home))
+
+
 def main():
     skills = sorted(path.parent for path in ROOT.glob("skills/*/*/SKILL.md"))
     with tempfile.TemporaryDirectory() as home:
-        env = scratch_env(os.environ, home)
-        # An agent's environment makes the CLI install without prompts; -y covers the rest.
-        # `npm exec` is `npx`, which the Dagger toolbox doesn't link.
-        install = subprocess.run(["npm", "exec", "--yes", f"--package={CLI}", "--", "skills", "add", str(ROOT),
-                                  "--skill", "*", "-g", "-y", "-a", "claude-code"],
-                                 env=env, cwd=home, capture_output=True, text=True)
+        # The hidden skills set metadata.internal, which `--skill '*'` skips unless the CLI's
+        # INSTALL_INTERNAL_SKILLS is set; their files must survive too.
+        env = {**scratch_env(os.environ, home), "INSTALL_INTERNAL_SKILLS": "1"}
+        install = add(home, env, "*")
         if install.returncode:
             print(install.stdout, install.stderr, sep="\n")
             return 1
@@ -83,10 +135,12 @@ def main():
             problems += [f"{skill.name}/{path}" for path in lost(skill, installed)]
         if not pathlib.Path(home, ".claude/skills", AGENT).is_file():
             problems.append(f"{AGENT}: not installed, so addystack install has no work-verifier agent to link")
+    problems += hidden_check()
     if problems:
-        print(f"npx {CLI} add lost files from {len(skills)} skills:", *problems, sep="\n  ")
+        print(f"npx {CLI} add lost files from {len(skills)} skills, or showed a hidden one:", *problems, sep="\n  ")
         return 1
-    print(f"npx {CLI} add installed every file of {len(skills)} skills")
+    print(f"npx {CLI} add installed every file of {len(skills)} skills, and hid {', '.join(unshipped())} "
+          "unless named")
     return 0
 
 

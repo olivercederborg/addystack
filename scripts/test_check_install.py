@@ -1,6 +1,7 @@
 """Tests for check-install.py's comparison: a file the install lacks or holds with other
 bytes is named, a symlink in either tree is named, and the checkout's untracked caches
-don't count."""
+don't count; and its hidden-skill check: each skill outside the release's layers is
+named when a plain install adds it or a named one doesn't."""
 import importlib.util, pathlib, shutil, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check-install.py"
@@ -32,6 +33,25 @@ class Lost(unittest.TestCase):
                          ["references/format.md (differs)", "references/views.md (a symlink in the checkout)",
                           "scripts/github.sh (missing)"])
 
+
+
+class Hidden(unittest.TestCase):
+    def test_unshipped_lists_the_preferences_and_preset_skills(self):
+        root = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        for name, layer in [("build", "primitive"), ("bro", "optional"), ("my-inbox", "preferences"),
+                            ("verify-acme", "preset")]:
+            path = root / "skills" / layer / name / "SKILL.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(f"---\nname: {name}\nmetadata:\n  layer: {layer}\n---\n")
+        self.assertEqual(check_install.unshipped(root), ["my-inbox", "verify-acme"])
+
+    def test_a_hidden_skill_must_stay_out_of_a_plain_install_and_come_in_by_name(self):
+        hidden = ["my-inbox", "verify-acme"]
+        self.assertEqual(check_install.hidden_problems(hidden, {"build"}, {"build", *hidden}), [])
+        self.assertEqual(check_install.hidden_problems(hidden, {"build", "my-inbox"}, {"build", "my-inbox"}),
+                         ["my-inbox: a plain install added it; set metadata.internal: true in its SKILL.md",
+                          "verify-acme: not installed when --skill names it"])
 
 
 class ScratchEnv(unittest.TestCase):

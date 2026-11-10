@@ -1,0 +1,21 @@
+This skill is adapted from dmmulroy/skills, coding-standards/SKILL.md.
+
+Upstream repository: https://github.com/dmmulroy/skills
+Upstream commit: 8603380821fee6a77c82639f364ce8fe4f5a92be
+Upstream file: https://github.com/dmmulroy/skills/blob/8603380821fee6a77c82639f364ce8fe4f5a92be/coding-standards/SKILL.md
+
+The adapted skill preserves the upstream MIT license and changes the standards to match Oliver Cederborg's preferences.
+
+The type-guard branding rule in references/typescript-style.md follows Lauren Tan's pstack,
+skills/typescript-best-practices/, at upstream commit 0317eb8
+(https://github.com/cursor/plugins, MIT).
+
+The type-evidence rules in references/typescript-style.md and
+references/domain-values-and-boundaries.md (keep a value's type, parse by provenance, and
+name the proof in a cast's safety comment) adapt dmmulroy/herdr-ts-sdk,
+docs/coding-standards.md, at upstream commit f45427708ec6505e789b3925b3c35845403df5a7
+(https://github.com/dmmulroy/herdr-ts-sdk, MIT).
+
+The module-mocking rule in references/testing.md follows the no-module-mocking rule in
+dmmulroy/anti-slop, src/rules/no-module-mocking.ts, at upstream commit
+13909c9e07590f5a85d93c62712259fe14a883f7 (https://github.com/dmmulroy/anti-slop, MIT).

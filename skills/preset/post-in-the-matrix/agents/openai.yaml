@@ -1,0 +1,6 @@
+interface:
+  display_name: "Post in the matrix"
+  short_description: "Post and answer agent PR requests in #plug-into-the-matrix"
+  default_prompt: "Use $post-in-the-matrix to ask a teammate's agent to review this PR."
+policy:
+  allow_implicit_invocation: true
