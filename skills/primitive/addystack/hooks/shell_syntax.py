@@ -18,10 +18,14 @@ nothing around it but `;`, `&&`, `||`, and redirects, since `exit` in a pipe, `$
 subshell, a compound command, or the background ends only that part; hold no other loop;
 and sleep only `sleep N`, N a plain number under a minute, leaving at least 20 seconds. The
 command must not hide `sleep`, `while`, `until`, `select`, or `eval` in quoted text or a
-heredoc, use backticks, `eval`, or a function, set SECONDS, run in the background, or name a
-PR or CI tool, host, or API, whose waits watch_pull_request owns. Known limits: a condition
-that hangs, such as a `curl` with no timeout, isn't cut short, nor is a loop in a script the
-command runs, and CI polled through an API this module doesn't name runs bounded."""
+heredoc, use backticks, `eval`, a function, `coproc`, or `time`, set SECONDS, run in the
+background, or name a PR or CI tool, host, or API, whose waits watch_pull_request owns. A
+`!` before a `{` group opens a compound command too. A condition must not read `$?`,
+`PIPESTATUS`, or `$_`, which the guard, run first, would set. Known limits: a condition or a
+body command that hangs, such as a `curl` with no timeout, isn't cut short, nor is a loop in
+a script the command runs, and CI polled through an API this module doesn't name runs
+bounded. An exported SECONDS moves the clock's start, and no-foreground-waits trusts a
+configured bash-rewrite.py to be the kit's own."""
 import itertools, re
 
 # Seconds before the Bash tool's timeout that a bounded loop gives up, and its 2-minute default.
