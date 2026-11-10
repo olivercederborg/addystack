@@ -116,7 +116,7 @@ class Session:
     def __init__(self, path):
         self.bug = False  # diagnosing-bugs loaded, bug-route fired, or an alert thread
         self.prompt = None  # the latest prompt's typed text, "" when the user didn't type it
-        self.earlier = set()  # option `a` texts of earlier replies
+        self.earlier = set()  # option `a` texts of earlier replies in bug work
         self.edited = False  # this turn edited a file in the session's checkout
         root, first, reply, started = None, True, None, False
         try:
@@ -140,7 +140,8 @@ class Session:
                     if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
                         self.bug = started = True
                     first = first and not text  # an injected AGENTS.md entry isn't the user's first message
-                    self.earlier.add(recommended(reply))
+                    if self.bug:  # the hook only asked about a recommendation made in bug work
+                        self.earlier.add(recommended(reply))
                     self.prompt, self.edited, reply = text, False, None
         except (OSError, TypeError):
             pass

@@ -2014,6 +2014,8 @@ class LongTermFix(unittest.TestCase):
         other = claude_wrote("Earlier.\n\n" + block({"state": "stop", "needs": [], "options": [
             {**self.FIX, "text": "add a retry"}]}))
         self.assertTrue(self.asks(before=[self.LOADED, claude_said("look"), other]))
+        # The same recommendation, made before bug work started, was never asked about.
+        self.assertTrue(self.asks(before=[claude_said("plan the export"), earlier], after=[self.LOADED]))
 
     def test_wakes_notices_questions_and_children_pass(self):
         for said in ("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching",
