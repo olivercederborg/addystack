@@ -1947,8 +1947,13 @@ class LongTermFix(unittest.TestCase):
         self.assertFalse(self.asks(before=[{**self.ROUTED, "attachment": {**self.ROUTED["attachment"], "hookEvent": "Stop"}}]))
         verify = {"type": "assistant", "message": {"content": [
             {"type": "tool_use", "name": "Skill", "input": {"skill": "verify-work"}}]}}
-        self.assertFalse(self.asks(before=[self.LOADED, verify]))
-        self.assertTrue(self.asks(before=[self.LOADED, verify, self.LOADED]))
+        self.assertFalse(self.asks(before=[self.LOADED, claude_said("look"), verify]))
+        self.assertTrue(self.asks(before=[self.LOADED, claude_said("look"), verify, self.LOADED]))
+        # The Bug route goes on to plan and autopilot in the turn that loaded diagnosing-bugs.
+        autopilot = {**verify, "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "autopilot"}}]}}
+        self.assertTrue(self.asks(before=[], after=[self.LOADED, autopilot]))
+        self.assertTrue(self.asks(before=[], after=[self.ROUTED, autopilot]))
+        self.assertFalse(self.asks(before=[self.LOADED], after=[autopilot]))
 
     def test_bug_routes_context_still_names_the_route(self):
         """The hook spots bug-route.py's context by this phrase."""

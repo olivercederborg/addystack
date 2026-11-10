@@ -13,7 +13,9 @@ cause fix in 2 of 5 on both the old and the new text (decision D-r57: a tie mean
 change). So this asks the question itself, once, before the reply reaches the user.
 
 A bug session is one that loaded diagnosing-bugs, got bug-route.py's context, or opened
-on a Slack #error-monitoring thread, whose alerts don't load the skill. A reply asks when
+on a Slack #error-monitoring thread, whose alerts don't load the skill. It lasts through
+the workflow skills that turn goes on to load, as the Bug route plans and builds the fix,
+and ends when one loads in a later turn. A reply asks when
 its turn block's option `a` changes code or config (fix_option), or when its turn edited
 files in the session's checkout and the user's message didn't pick the option that asked
 for it, since that pick came from a reply this hook already saw. It passes when the
@@ -25,8 +27,8 @@ stop. Claude Code continues through additionalContext and Codex through decision
 as in routine_stop.py.
 
 Replayed over the 60 days to Nov 10, 2026, on both machines' Claude Code and Codex
-transcripts, it fires 26 times in 20 sessions: 18 in 14 on the Linux machine, where the
-alert threads run, and 8 in 6 on the Mac. In four alert threads it fires on the reply the
+transcripts, it fires 28 times in 22 sessions: 18 in 14 on the Linux machine, where the
+alert threads run, and 10 in 8 on the Mac. In four alert threads it fires on the reply the
 user then asked that about, and in a fifth on the reply that built the fix they asked
 about. Three fires are false, by a
 read of each: two feature replies late in a session that had loaded diagnosing-bugs, and
@@ -116,7 +118,7 @@ class Session:
         self.prompt = None  # the latest prompt's typed text, "" when the user didn't type it
         self.earlier = set()  # option `a` texts of earlier replies
         self.edited = False  # this turn edited a file in the session's checkout
-        root, first, reply = None, True, None
+        root, first, reply, started = None, True, None, False
         try:
             with open(path, errors="ignore") as transcript:
                 for line in transcript:
@@ -127,14 +129,16 @@ class Session:
                     if not isinstance(entry, dict):
                         continue
                     root = root or entry.get("cwd") or (entry.get("payload") or {}).get("cwd")
-                    self.bug = self.marks_bug(entry, self.bug)
+                    self.bug = self.marks_bug(entry, self.bug, started)
+                    started = started or self.starts_bug(entry)
                     text = transcripts.prompt_text(entry)
                     if text is None:
                         reply = transcripts.reply_text(entry) or reply
                         self.edited = self.edited or edited(entry, root)
                         continue
+                    started = False
                     if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
-                        self.bug = True
+                        self.bug = started = True
                     first = False
                     self.earlier.add(recommended(reply))
                     self.prompt, self.edited, reply = text, False, None
@@ -143,11 +147,10 @@ class Session:
         self.earlier.discard(None)
 
     @staticmethod
-    def marks_bug(entry, bug):
-        """Whether the session is in bug work after entry: diagnosing-bugs or bug-route's
-        context starts it, and another workflow skill loading ends it."""
-        if loads := routine_stop.loaded_skills(entry):
-            return loads[-1] == "diagnosing-bugs"
+    def starts_bug(entry):
+        """True when entry starts bug work: diagnosing-bugs loads, or bug-route's context."""
+        if "diagnosing-bugs" in routine_stop.loaded_skills(entry):
+            return True
         content = (entry.get("message") or {}).get("content") if entry.get("isMeta") is True else None
         first = content if isinstance(content, str) else next(
             (part.get("text", "") for part in content or [] if isinstance(part, dict)), "") \
@@ -155,8 +158,19 @@ class Session:
         if isinstance(first, str) and bug_route.LOADED.match(first):
             return True
         attachment = entry.get("attachment") if entry.get("type") == "attachment" else None
-        return bug or isinstance(attachment, dict) and attachment.get("hookEvent") == "UserPromptSubmit" \
+        return isinstance(attachment, dict) and attachment.get("hookEvent") == "UserPromptSubmit" \
             and ROUTED in json.dumps(attachment.get("content"))
+
+    @staticmethod
+    def marks_bug(entry, bug, started=False):
+        """Whether the session is in bug work after entry. starts_bug starts it, and another
+        workflow skill loading ends it, unless bug work started in the same turn (started):
+        the router's Bug route goes on to plan and autopilot in that turn."""
+        if Session.starts_bug(entry):
+            return True
+        if routine_stop.loaded_skills(entry):
+            return bug and started
+        return bug
 
 
 def recommended(reply):
