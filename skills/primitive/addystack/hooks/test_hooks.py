@@ -2801,6 +2801,26 @@ class MergeGate(unittest.TestCase):
                 self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
         self.assertIsNone(self.reason("gh pr merge 12", said=("merge #13",)))  # a typed go isn't held to its PRs
 
+    def test_a_pick_reads_a_bare_pr_beside_one_that_names_this_repo_as_another_repos(self):
+        # Nov 10, 2026: a coordinator's card offered "merge #55 and dotfiles #36" for addystack
+        # #55 and dotfiles #36. Read in dotfiles, its bare #55 is addystack's, so this repo, r,
+        # stands in for each side in turn.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for text, go in [("merge #12 and dotfiles#36", True), ("merge r#12 and dotfiles#36", True),
+                         ("merge dotfiles#36 and #12", True), ("merge #36 and dotfiles#12", False),
+                         ("merge #12 and r#36", False), ("merge #12 and o/r#36", False),
+                         ("merge r#36 and #12", False), ("merge #12 and other/r#36", True),
+                         # A range's bare end is in its other end's repo.
+                         ("merge r#10 through #14", True), ("merge #10 through r#14", True),
+                         ("merge r#10-#14", True), ("merge dotfiles#10 through #14", False),
+                         ("merge #10 through dotfiles#14", False), ("merge dotfiles#10-#14", False),
+                         ("merge #1 and r#10 through #14", True)]:
+            with self.subTest(text=text):
+                reason = self.reason("gh pr merge 12", said=(
+                    "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
+                self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
+
     def workflow(self, text, name="ci.yml"):
         """Commit a workflow to main; PRs made after it branch from it."""
         path = pathlib.Path(self.writer, ".github", "workflows", name)

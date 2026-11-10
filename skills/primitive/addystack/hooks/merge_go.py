@@ -13,7 +13,14 @@ merging don't match. MergeGo in test_hooks.py holds the real prompts this was bu
 each with its source: every one merge-gate denied for want of a go, and the nearest misses."""
 import re
 
-REF = r"(?:(?:[\w.-]+/)?[\w.-]+#\d+|#?\d+)"
+# A repo's name before " #N", as in "dotfiles #36", but no word a sentence puts there:
+# "merge after #36" waits, "merge except #36" refuses, and "PR #36", "stack #3", or
+# "merge 5 #36" names no repo.
+NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|but|except|not|without|with|on|onto|into|in|from"
+            r"|for|of|by|to|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those"
+            r"|prs?|pull|issues?|stacks?|branch|merge)")
+REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/)?[a-z][\w.-]*"
+REF =r"(?:(?:[\w.-]+/)?[\w.-]+#\d+|#?\d+)"
 REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
 STATE = r"(?:ready|passing|green|safe|done|verified)"
 TARGET = (rf"(?:\s+(?:it(?: all)?|them(?: all|,? the (?:full|whole) list)?|both(?: open)?(?: prs| stacks)?|all(?: of them)?"

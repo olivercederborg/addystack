@@ -114,7 +114,7 @@ def run(*cmd):
     return result.stdout.decode(errors="surrogateescape")
 
 # A PR an option names, read word by word in merge_go's REF forms: 12, #12, skills#12,
-# owner/skills#12, and 10-14 or #10-#14. Two joined by "through", "to", or "-" are a range.
+# owner/skills#12, skills #12 joined into skills#12, and 10-14 or #10-#14. Two joined by "through", "to", or "-" are a range.
 # "the 2 PRs" is a count, and "v2" a name, not a PR; a bare "the 13" reads as #13.
 PART = r"(?:(?:([\w.-]+)/)?([\w.-]+)#|#)?(\d+)"
 WORD = re.compile(rf"{PART}(?:-{PART})?")
@@ -122,26 +122,38 @@ COUNT = re.compile(r"\bthe \d+ prs?\b", re.I)
 
 def names(text, pr, owner, repo):
     """Whether an option's text names pr in owner/repo, alone or in a range of this repo's
-    PRs, or names no PR at all ("merge them"). A word that starts like a PR, with a digit or
+    PRs, or names no PR at all ("merge them"). A PR with its repo, "dotfiles #36" or
+    dotfiles#36, is in that repo. A bare one, "#55", is in any repo, unless another PR in the
+    text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
+    bare end is in its other end's repo. A word that starts like a PR, with a digit or
     holding a #, but doesn't read as one, names something it can't place, so it isn't pr."""
-    here = lambda found, at: all(not part or part.lower() == want.lower()
-                                 for part, want in ((found.group(at), owner), (found.group(at + 1), repo)))
+    import merge_go
+    same = lambda part, want: not part or part.lower() == want.lower()
+    here = lambda found, at: same(found.group(at), owner) and same(found.group(at + 1), repo)
+    text = re.sub(rf"(?<![^\s(])({merge_go.REPO})\s+(?=#\d)", r"\1", text, flags=re.I)  # "dotfiles #36"
     text = re.sub(r"\s*-\s*", "-", COUNT.sub(" ", text)).replace(",", " ").replace("&", " ")  # merge_go's REFS joins
     words = [word.strip("()").rstrip(".!?;:") for word in text.split()]
-    spans, last = [], None  # last: the previous PR word's index and its high end
+    refs = []
     for at, word in enumerate(words):
         if not (word[:1].isdigit() or "#" in word):
             continue
         found = WORD.fullmatch(word)
         if not found:
             return False
-        low = (here(found, 1), int(found.group(3)))
-        high = (here(found, 4), int(found.group(6))) if found.group(6) else low
+        refs.append((at, found))
+    # Each end: whether its repo is this one, or None when it names no repo.
+    end = lambda found, at: (here(found, at) if found.group(at + 1) else None, int(found.group(at + 2)))
+    spans, last = [], None  # last: the previous PR word's index and its high end
+    for at, found in refs:
+        low = end(found, 1)
+        high = end(found, 4) if found.group(6) else low
         spans.append((low, high))
         if last and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-"):
             spans.append((last[1], low))
         last = (at, high)
-    return not spans or any(a[0] and b[0] and a[1] <= pr <= b[1] for a, b in spans)
+    bare = not any(here_ for span in spans for here_, _ in span)
+    side = lambda one, other: one if one is not None else other if other is not None else bare
+    return not spans or any(side(a[0], b[0]) and side(b[0], a[0]) and a[1] <= pr <= b[1] for a, b in spans)
 
 def answered(found):
     """The reply the latest prompt answers: the last one before it, past messages T3 says
