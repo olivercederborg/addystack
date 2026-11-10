@@ -1956,6 +1956,9 @@ class LongTermFix(unittest.TestCase):
         self.assertTrue(self.asks(before=[], after=[self.LOADED, autopilot]))
         self.assertTrue(self.asks(before=[], after=[self.ROUTED, autopilot]))
         self.assertFalse(self.asks(before=[self.LOADED], after=[autopilot]))
+        self.assertTrue(self.asks(before=[], said="/diagnosing-bugs the export fails", after=[autopilot]))
+        self.assertFalse(self.asks(before=[self.LOADED, claude_said("look")],
+                                   said="<command-name>/verify-work</command-name><command-args>x</command-args>"))
 
     def test_bug_routes_context_still_names_the_route(self):
         """The hook spots bug-route.py's context by this phrase."""
@@ -2016,6 +2019,10 @@ class LongTermFix(unittest.TestCase):
         self.assertTrue(self.asks(before=[self.LOADED, claude_said("look"), other]))
         # The same recommendation, made before bug work started, was never asked about.
         self.assertTrue(self.asks(before=[claude_said("plan the export"), earlier], after=[self.LOADED]))
+        self.assertTrue(self.asks(before=[claude_said("plan the export"), earlier], said="/diagnosing-bugs it fails"))
+        # Nor was one that answered a watch wake, which the hook skips.
+        wake = claude_said("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching")
+        self.assertTrue(self.asks(before=[self.LOADED, wake, earlier]))
 
     def test_wakes_notices_questions_and_children_pass(self):
         for said in ("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching",

@@ -136,21 +136,21 @@ class Session:
                     if not isinstance(entry, dict):
                         continue
                     root = root or entry.get("cwd") or (entry.get("payload") or {}).get("cwd")
+                    text = transcripts.prompt_text(entry)
+                    if text is not None:  # close the turn before the prompt's own skill load counts
+                        if self.bug and self.prompt and not bug_route.NOTICE.match(self.prompt):
+                            self.earlier.add(recommended(reply))  # a reply the hook could have asked about
+                        started = False
+                        self.sent = "\n".join(transcripts.texts(transcripts.text_parts(entry) or []))
+                        if first and ALERT.match(self.sent):
+                            self.bug = started = True
+                        first = first and not text  # an injected AGENTS.md entry isn't the user's first message
+                        self.prompt, self.edited, reply = text, False, None
                     self.bug = self.marks_bug(entry, self.bug, started)
                     started = started or self.starts_bug(entry)
-                    text = transcripts.prompt_text(entry)
                     if text is None:
                         reply = transcripts.reply_text(entry) or reply
                         self.edited = self.edited or edited(entry, root)
-                        continue
-                    started = False
-                    self.sent = "\n".join(transcripts.texts(transcripts.text_parts(entry) or []))
-                    if first and ALERT.match(self.sent):
-                        self.bug = started = True
-                    first = first and not text  # an injected AGENTS.md entry isn't the user's first message
-                    if self.bug:  # the hook only asked about a recommendation made in bug work
-                        self.earlier.add(recommended(reply))
-                    self.prompt, self.edited, reply = text, False, None
         except (OSError, TypeError):
             pass
         self.earlier.discard(None)
