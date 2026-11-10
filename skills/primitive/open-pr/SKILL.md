@@ -135,7 +135,7 @@ show the test that fails on the base and passes here, or the command output.
 - **Links**: link issues and plans rather than copying them. Use the repo's
   issue-linking phrase (for example `Closes EX-12`), or "Part of" when the issue isn't
   fully done.
-- **Words**: the glossary's terms from `CONTEXT.md`, when the repo has one.
+- **Words**: the terms in the `domain-modeling` glossary (`CONTEXT.md`), when the repo has one.
 - **Title**: the outcome in the imperative, under 70 characters.
 - **Describe only.** Code review belongs to `verify-work` and `review-loop`. Put known
   gaps in the `[!WARNING]` callout, and move it above the first line when it holds

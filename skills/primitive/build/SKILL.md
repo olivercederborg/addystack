@@ -26,7 +26,7 @@ build had to differ from the plan).
 - **Contract**: the interfaces approved with `architect`, when there are any. Build
   inside them; a change to one stops the build for the user, or, with autonomy, goes
   back through `architect`.
-- **Domain terms**: read `CONTEXT.md` so names use the glossary's terms.
+- **Domain terms**: read the `domain-modeling` glossary (`CONTEXT.md`) so names use its terms.
 - **Standards**: the repo's guidance and conventions, and the **Lenses** skills from
   the chat format.
 - **Branch**: confirm the current branch owns the change. In a stack, use the lowest
