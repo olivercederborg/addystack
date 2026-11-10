@@ -41,8 +41,9 @@ turn block, so older replies are undercounted. Known limits:
   doesn't list, a fix after a step such as "run the test, then add a guard", and one that
   names Linear or a cycle. A doc-only "add the notes" asks.
 - A message that only mentions "long-term" or "root cause" passes as if it asked.
-- An edit counts by its tool call: a shell write doesn't count, a failed edit does, and a
-  Codex patch counts wherever it lands.
+- An edit counts by its tool call: a shell write doesn't count, and a failed edit does.
+- A Codex tool call that only mentions a skill's SKILL.md, such as a search, reads as a
+  load in routine_stop.loaded_skills, so it can start or end bug work.
 - stop_hook_active is shared by every Stop hook, so when another sends the reply back
   first, this one passes on the resent reply."""
 import importlib, json, os, re, sys
@@ -83,6 +84,8 @@ NOT_CHANGE = re.compile(r"(?:wrap\s+up|archive|ask|babysit|check|close|create|de
 PREFIX = re.compile(r"\A\s*(?:(?:yes|no|go)\s*[:,—-]\s*)?(?:then\s+|now\s+|also\s+|first\s+)?", re.I)
 # Claude Code's file tools, and Codex's patch tool.
 EDITS = {"Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"}
+# The files a Codex patch touches. Inside an exec call's code, its newlines are escaped.
+PATCH_FILE = re.compile(r"\*\*\* (?:Add|Update|Delete) File: ([^\n\\]+)")
 # A merge ships a change the hook already saw built, so stop:merge never asks.
 FIX_CLASSES = {"routine", "decision", "stop:push", "stop:prod", "stop:post", "stop:credential"}
 
@@ -99,7 +102,7 @@ def fix_option(option):
 
 def edited(entry, root):
     """True when entry is a tool call that edits a file under root: a Claude Code file
-    tool, or a Codex patch."""
+    tool, or a Codex patch, called directly or from an exec call's code."""
     if entry.get("type") == "assistant":
         content = (entry.get("message") or {}).get("content")
         calls = [(part.get("name"), (part.get("input") or {}).get("file_path") or (part.get("input") or {}).get("notebook_path"))
@@ -107,7 +110,13 @@ def edited(entry, root):
             if isinstance(content, list) else []
     elif entry.get("type") == "response_item":
         payload = entry.get("payload") or {}
-        calls = [(payload.get("name"), None)] if payload.get("type") in ("function_call", "custom_tool_call") else []
+        if payload.get("type") not in ("function_call", "custom_tool_call"):
+            return False
+        name, code = payload.get("name"), str(payload.get("input") or payload.get("arguments") or "")
+        if name == "exec" and "tools.apply_patch(" in code:
+            name = "apply_patch"
+        calls = [(name, path.strip()) for path in PATCH_FILE.findall(code)] if name == "apply_patch" else []
+        calls = calls or [(name, None)]
     else:
         return False
     for name, path in calls:

@@ -2000,6 +2000,13 @@ class LongTermFix(unittest.TestCase):
         self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[edit]))
         codex = {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "apply_patch", "input": "…"}}
         self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[codex]))
+        # Codex now calls the patch tool from an exec call's code; a patch outside the checkout doesn't count.
+        def wrapped(path):
+            code = 'text(await tools.apply_patch("*** Begin Patch\\n*** Update File: ' + path + '\\n@@\\n-a\\n+b\\n*** End Patch"))'
+            return {"type": "response_item", "payload": {"type": "custom_tool_call", "name": "exec", "input": code}}
+        self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[wrapped("/repo/src/pdf.ts")]))
+        self.assertTrue(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[wrapped("src/pdf.ts")]))
+        self.assertFalse(self.asks(self.reply(self.SHIP), before=[self.LOADED, cwd], after=[wrapped("/tmp/report.md")]))
         self.assertTrue(self.asks(self.reply({**self.SHIP, "class": "stop:merge", "text": "merge it"}),
                                   before=[self.LOADED, cwd], after=[edit]))
         done = "✅ **Fixed.**\n\n" + block({"state": "done", "needs": [], "options": []})
