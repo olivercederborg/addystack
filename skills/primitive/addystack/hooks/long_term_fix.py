@@ -135,7 +135,7 @@ class Session:
     def __init__(self, path):
         self.bug = False  # diagnosing-bugs loaded, bug-route fired, or an alert thread
         self.prompt = None  # the latest prompt's typed text, "" when the user didn't type it
-        self.earlier = set()  # option `a` texts of earlier replies in bug work
+        self.earlier = set()  # option `a` texts of earlier replies since this bug work started
         self.edited = False  # this turn edited a file in the session's checkout
         root, first, reply, started = None, True, None, False
         try:
@@ -150,8 +150,8 @@ class Session:
                     root = root or entry.get("cwd") or (entry.get("payload") or {}).get("cwd")
                     text = transcripts.prompt_text(entry)
                     if text is not None:  # close the turn before the prompt's own skill load counts
-                        if self.bug and self.prompt and not bug_route.NOTICE.match(self.prompt):
-                            self.earlier.add(recommended(reply))  # a reply the hook could have asked about
+                        if self.prompt and not bug_route.NOTICE.match(self.prompt):
+                            self.earlier.add(recommended(reply))  # a reply to the user's own message
                         started = False
                         if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
                             self.bug = started = True
