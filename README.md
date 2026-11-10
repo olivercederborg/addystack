@@ -45,12 +45,10 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 `skills/preferences/` and `skills/preset/` hold the maintainer's own skills and a team's.
 They're outside the release: each sets `metadata.internal: true`, so `npx skills add`
 installs one only when `--skill` names it or `INSTALL_INTERNAL_SKILLS=1` is set. `update`
-never adds or removes one, and `doctor` doesn't check them. The skills CLI updates an
-installed copy when it reads the kit's tree through GitHub's API: with no token for a
-public kit, and through `GITHUB_TOKEN`, `GH_TOKEN`, or a signed-in `gh` for a private
-one. Without that access it falls back to a git clone, where it calls them deleted
-upstream and skips them, and an interactive `npx skills update -g` offers to remove
-them, unless `INSTALL_INTERNAL_SKILLS=1` is set.
+never adds or removes one, and `doctor` doesn't check them. When the skills CLI checks
+for updates through a git clone instead of GitHub's API, it leaves internal skills out,
+calls them deleted upstream, and an interactive run offers to remove them. Set
+`INSTALL_INTERNAL_SKILLS=1` when you update to keep them in.
 
 ## Config
 
