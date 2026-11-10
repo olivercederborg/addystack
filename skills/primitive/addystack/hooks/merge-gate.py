@@ -148,15 +148,18 @@ def names(text, pr, owner, repo, merging=()):
         refs.append((at, found))
     # Each end: whether its repo is this one, or None when it names no repo.
     end = lambda found, at: (here(found, at) if found.group(at + 1) else None, int(found.group(at + 2)))
-    spans, last = [], None  # last: the previous PR word's index and its high end
+    spans, last = [], None  # last: the previous PR word's index and whether its span is a range
     for at, found in refs:
         low = end(found, 1)
         high = end(found, 4) if found.group(6) else low
-        if last and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-"):
+        joined = bool(last) and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-")
+        if joined and (last[1] or found.group(6)):  # "#10 through dotfiles #12 through #14" hides #12's repo
+            return False
+        if joined:
             spans[-1] = (spans[-1][0], high)  # "#10 through #14" is one range, not three
         else:
             spans.append((low, high))
-        last = (at, high)
+        last = (at, joined or bool(found.group(6)))
     bare = not any(here_ for span in spans for here_, _ in span)
     side = lambda one, other: one if one is not None else other if other is not None else bare
     placed = [(side(a[0], b[0]) and side(b[0], a[0]), a[1], b[1]) for a, b in spans]
