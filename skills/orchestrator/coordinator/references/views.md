@@ -96,7 +96,7 @@ What a change does, shown concretely: the command, call, screen, or tree before 
 and its size when the reader weighs it.
 
 ````markdown
-**#44 closes a way around the merge check.**
+✅ **#44 closes a way around the merge check.**
 
 Before: `gh pr merge 39 && gh pr merge 41`: your go for #39 also merged #41, unchecked.
 

@@ -6,7 +6,7 @@ reply-shape's rules are taste, set by what the reader needs at that moment, and 
 checks only the reply's machine contracts. A merge option the user picks with a bare
 letter counts as a go only when its text is a literal merge request (merge_go.py), so
 "merge #90 once its webhook test passes, then deploy" costs them a typed go. In the 60
-days to Nov 10, 2026, 30 of 363 merge options in delivered T3 replies weren't plain, in
+days to Nov 10, 2026, 27 of 347 merge options in delivered T3 replies weren't plain, in
 13 threads, and the user picked 11 of them with a bare letter. An option of class
 `stop:merge` that only marks PRs ready, with no merge in its text, passes. The turn
 block's own validity is routine_stop.py's send-back.
@@ -20,8 +20,9 @@ user's next typed message, none showed a catch: 4,674 replies past 100 words dre
 one in 38% of cases against 46% of all replies, 2 of 118 "is this idiomatic?" asks
 followed an unsourced Pick, and the fact table rules and scope-grill checks fired on 0
 to 9 delivered replies with no ask after any; the Assuming line's 3 were the Oct 31
-round it was built from. Meanwhile they sent drafts back 1,320 times in 60 days. The user's call on Nov 10, 2026: primitives composed per context, not word
-or row counts.
+round it was built from. Meanwhile they sent drafts back about 1,320 times in 60 days.
+The user's call on Nov 10, 2026: primitives composed per context, not word or row
+counts.
 
 Claude Code continues through additionalContext and Codex through decision: block, as
 in bare_references.py, and stop_hook_active keeps it to one send per stop. T3 delegated
