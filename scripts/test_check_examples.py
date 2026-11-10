@@ -137,6 +137,13 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(bad.replace(turn, standing)), ["'fix 3' (3 → currency column) needs its short name "
                                                                  "beside it, as in \"48 (optional email variables)\""])
 
+    def test_every_ship_gate_example_shows_what_the_reader_accepts(self):
+        # Agents copy examples before rules, so each ship gate in views shows the You accept view.
+        views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
+        gate = views[views.index("## Ship gate"):views.index("## Choosing between shapes")]
+        examples = [block for _, block in check_examples.example_blocks(gate.splitlines())]
+        self.assertEqual(["| You accept |" in "\n".join(block) for block in examples], [True, True])
+
     def test_every_skill_passes(self):
         root = pathlib.Path(__file__).resolve().parent.parent
         for skill in [*sorted(root.glob("skills/*/*/SKILL.md")), *[p for p in [root / "replies.md"] if p.is_file()],

@@ -4993,6 +4993,27 @@ class ReplyBudget(unittest.TestCase):
         example = "✅ **The rules show one.**\n\n````markdown\n" + self.fact(rows=("| Cause | x |", self.ROWS[0])) + "\n````\n"
         self.assertEqual(reply_budget.fact_problems(example), [])
 
+    def test_a_ship_gates_accept_view_is_free(self):
+        # The user, Nov 10, 2026, on a two-PR merge card: "i need a better like categorized overview of what
+        # im actually accepting and what each PR is doing". The view under the fact table: a column per PR.
+        kinds = ("New", "Changes", "Edits", "Goes live", "Left out")
+        cell = "a short phrase of about nine words on this kind"
+        def accept(*prs):
+            return ("| You accept | " + " | ".join(prs) + " |\n|" + "---|" * (len(prs) + 1) + "\n"
+                    + "".join(f"| {kind} | " + " | ".join([cell] * len(prs)) + " |\n" for kind in kinds) + "\n")
+        for prs in (("#32",), ("addystack #55", "dotfiles #36"), ("#1", "#2", "#3")):
+            with self.subTest(prs=prs):
+                reply = self.fact(below=accept(*prs))
+                self.assertEqual((self.bounce(reply), reply_budget.fact_problems(reply)), ("", []))
+                self.assertEqual(reply_budget.words(reply), 9)  # only the headline counts
+        # Past three PRs each gets its own table, and each stays a view.
+        four = self.fact(below="".join(accept(f"#{n}") for n in range(1, 5)))
+        self.assertEqual((self.bounce(four), reply_budget.words(four)), ("", 9))
+        # One table with a row group per PR passes six rows, so its words count.
+        grouped = self.fact(below="| PR | You accept |\n|---|---|\n" + "".join(f"| #{n} {kind} | {cell} |\n" for n in (1, 2)
+                                                                             for kind in kinds) + "\n")
+        self.assertGreater(reply_budget.words(grouped), reply_budget.BUDGET)
+
     def test_a_fact_tables_pick_and_source_rows_count(self):
         pick = "| Pick | Yes, so every hook crash gets logged in one place. |"
         rows = {"no source": ((pick,), True),
