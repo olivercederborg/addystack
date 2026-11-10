@@ -171,6 +171,11 @@ class RequireWritingForAgents(unittest.TestCase):
             'S=$(mktemp -d); for order in ../skills; do H=$S/$order; printf x > "$H/AGENTS.md"; done',
             'T=$(mktemp -d)/../skills; printf x > "$T/AGENTS.md"',
             'T=$(mktemp -d); ln -s ~/.claude/skills "$T/link"; printf x > "$T/link/CLAUDE.md"',
+            # verify-work: a name bound again after the mktemp.
+            "T=$(mktemp -d) && T=~/.claude && echo rule >> $T/CLAUDE.md",
+            'T=$(mktemp -d) || T=~/.claude; echo rule >> "$T/CLAUDE.md"',
+            'T=$(mktemp -d) T=~/.claude; echo rule >> "$T/CLAUDE.md"',
+            'T=$(mktemp -d) && cd ~/r && T=skills/build && printf x > "$T/SKILL.md"',
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command))
@@ -266,6 +271,7 @@ class RequireWritingForAgents(unittest.TestCase):
             'T=$(mktemp -d "${TMPDIR:-/tmp}/rr.XXXX"); echo stale > "$T/AGENTS.md"',
             'T=$(mktemp -d -t probe); H=$T; mkdir -p "$H/home"; printf x > "$H/home/AGENTS.md"',
             'T=$(mktemp -d); H=$T/home; P=$H/skills; mkdir -p "$P"; printf x > "$P/SKILL.md"',
+            "T=$(mktemp -d) && mkdir -p \"$T/skills/x\" && H=$T/home && printf hi > \"$T/skills/x/SKILL.md\"",
             "R=/tmp/r1probe; for f in $R/new/build/references/*; do b=$(basename $f); cp $f $R/old/build/references/$b; done",
             # Names in comments or text aren't targets, so these pass where main denied them.
             "python3 - <<'EOF'\np = 'notes.md'\nwith open('x') as p:\n    pass\nopen(p, 'w')  # SKILL.md\nEOF",

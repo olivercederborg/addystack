@@ -154,14 +154,17 @@ def resolve(target, command):
 LINKS = re.compile(r"\bln\s|\bcp\s+-\w*[ls]|\b(?:symlink|symlink_to|hardlink_to|link)\(")
 
 
-def in_mktemp(text, command, depth=3):
+def in_mktemp(text, command, depth=3, name=None):
     """Whether a binding's text is a new folder mktemp made right in the temp folder, or a
     path inside one, followed depth names deep (`H=$T`, `H=$T/home`, `H=$T/$order` with
-    plain values). Never when the command makes a link, or a path climbs out with `..`."""
+    plain values). Never when the command makes a link, a path climbs out with `..`, or the
+    text goes on to bind name again (`T=$(mktemp -d) && T=~/.claude`), which the binding
+    scan reads as part of this one."""
     call = re.match(r"\s*[\"']?\$\(mktemp\b([^()]*)\)(/[^\s;&|<>()`'\"$]*)?[\"']?(?:\s|$)", text)
     if call:
+        rebound = name and re.search(rf"(?<![\w.$]){re.escape(name)}\s*=", text[call.end():])
         return new_temp_folder(call.group(1)) and ".." not in (call.group(2) or "").split("/") \
-            and not LINKS.search(command)
+            and not LINKS.search(command) and not rebound
     below = re.fullmatch(r"\s*[\"']?\$\{?([A-Za-z_]\w*)\}?(/[^\s;&|<>()`'\"]*)?[\"']?\s*", text)
     if not depth or not below:
         return False
@@ -176,7 +179,7 @@ def in_mktemp(text, command, depth=3):
                              for t in values):
             return False
     texts = value_bindings(below.group(1), command)
-    return bool(texts) and all(in_mktemp(t, command, depth - 1) for t in texts)
+    return bool(texts) and all(in_mktemp(t, command, depth - 1, below.group(1)) for t in texts)
 
 
 def new_temp_folder(args):
@@ -211,7 +214,7 @@ def substituted(target, command, limit=16, partial=False):
     for name in names:
         values = set()
         for text in value_bindings(name, command):
-            if in_mktemp(text, command):
+            if in_mktemp(text, command, name=name):
                 values.add(MKTEMP)
                 continue
             if re.match(r"\s*[\"']?\$\(mktemp\b", text):
