@@ -30,6 +30,7 @@ import t3_child, turn_block  # noqa: E402
 FOLD = re.compile(r"<details>.*?</details>", re.S)
 ZONE = re.compile(r"^\*\*(Next|Done|Needs you)\*\*")
 LABEL = re.compile(r"^\s*(?:[-*] )?\*\*(Decide|Review|Do)\*\*")
+READER = ("Decide", "Review", "Do")
 NUMS = r"\d+(?!\.\d)(?:\s*(?:[–-]|,|and|or|to|&)\s*\d+)*"
 KEYWORD = re.compile(
     r"\b(?:items?|rules?|findings?|rows?|milestones?|questions?|decisions?|lessons?|nits?|"
@@ -80,16 +81,26 @@ def plain(line):
     return re.sub(r"[*_]{1,2}", "", line)
 
 
-def zone_lines(lines):
-    """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere."""
+def reader_rows(text):
+    """The lines of the Decide, Review, and Do rows of reply-shape's fact table, as
+    reply_budget reads it from the reply: the same table, labels, and cells its limits
+    apply to. The line numbers hold in shown()'s lines too."""
+    import reply_budget  # here, since reply_budget imports this module
+    table = reply_budget.fact_table(text)
+    return {row.at for row in table.rows if reply_budget.listed(row.label, READER)} if table else set()
+
+
+def zone_lines(lines, rows=frozenset()):
+    """Next, Done, and Needs you lines, plus Decide, Review, and Do items anywhere, as a
+    note or at one of rows, the fact table's reader rows."""
     zone = None
-    for line in lines:
+    for n, line in enumerate(lines):
         head = ZONE.match(line)
         if head:
             zone = head.group(1)
         elif zone == "Needs you" and line.strip() and not line.lstrip().startswith(("-", "*")):
             zone = None
-        if zone or LABEL.match(line):
+        if zone or LABEL.match(line) or n in rows:
             yield line
 
 
@@ -144,10 +155,11 @@ def problems(text, names={}):
     """One line per bare number in the reply's Next, Needs you, and Done lines. A number
     that is an item's id in names, from the turn block, gets that item's name beside it:
     "'fix 3' (3 → currency column) in: …"."""
-    lines = visible(text)
+    # Code as blank lines, so each line keeps the number reader_rows gives it.
+    lines = visible(text, blank_code=True)
     known = defined(lines)
     found = []
-    for line in zone_lines(lines):
+    for line in zone_lines(lines, reader_rows(text)):
         for ref in bare_numbers(line):
             numbers = dict.fromkeys(re.findall(r"\d+", ref))
             if set(numbers) <= known:

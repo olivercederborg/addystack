@@ -100,6 +100,15 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(card), ["the decision card's Pick cites no source; add a **Source** line"])
         self.assertEqual(problems(card.replace("publish it.", "publish it.\n\n**Source**: the launch doc")), [])
 
+    def test_a_fact_table_keeps_its_limits(self):
+        table = ("# Skill\n\n````markdown\n✅ **Exports no longer time out.**\n\n| Change | `Export` pages its rows. |\n"
+                 "|---|---|\n| Risk | ⚠️ A year of rows still takes about 40 s. |\n{row}\n````\n")
+        self.assertEqual(problems(table.format(row="| Proof | 12 of 12 tests pass. |")), [])
+        self.assertEqual(problems(table.format(row="| Cause | Every row loaded at once. |")),
+                         ['the fact table: "Cause" isn\'t one of its labels'])
+        long = "| Proof | " + "word " * 21 + "|"  # the writing target, under the hook's send-back limit
+        self.assertEqual(problems(table.format(row=long)), ["the fact table: its Proof value runs 21 words, over 20"])
+
     def test_a_turn_block_in_an_example_must_parse(self):
         turn = '<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"publish"}]} -->'
         with_block = GOOD.replace("*recommended*\n````", f"*recommended*\n\n{turn}\n````")

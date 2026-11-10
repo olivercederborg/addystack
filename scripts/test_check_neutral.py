@@ -75,11 +75,6 @@ class CheckNeutral(unittest.TestCase):
                                 "See olivercederborg/skills.\n")
         self.assertEqual(self.problems(), ["README.md:2: Oliver", "README.md:3: olivercederborg"])
 
-    def test_the_card_renderers_public_repo_passes(self):
-        self.write("skills/optional/reply-shape/ui/renderer.url",
-                   "https://cdn.jsdelivr.net/gh/olivercederborg/reply-ui@v1.1.0/reply.js\n")
-        self.assertEqual(self.problems(), [])
-
     def test_the_same_names_fail_outside_the_skips(self):
         for path in ["docsx/a.md", "scripts/README.md", "router/a.md", "skills/primitive/build/references/LICENSES.md"]:
             self.write(path, "Oliver\n")

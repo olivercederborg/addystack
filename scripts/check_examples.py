@@ -22,6 +22,8 @@ with four or more backticks. Inside one, this fails on:
   back in live replies;
 - a decision card whose Pick cites no source, as `hooks/reply_budget.py` sends back in live
   replies.
+- a fact table past reply-shape's limits, as `hooks/reply_budget.py` sends back in live
+  replies, with each value held to the 20-word target.
 
 It checks every SKILL.md, plus `replies.md` and reply-shape's references.
 
@@ -92,6 +94,8 @@ def check_block(start, block):
     if MARKER.match(text) and reply_budget.over(reply_budget.words(text)):
         problems.append((start, f"headline and notes run {reply_budget.words(text)} words; "
                                 f"reply-shape keeps them under {reply_budget.BUDGET}"))
+    for clause in reply_budget.fact_problems(text, reply_budget.FACT_WORDS):
+        problems.append((start, f"the fact table: {clause}"))
     if reply_budget.unsourced(text):
         problems.append((start, "the decision card's Pick cites no source; add a **Source** line"))
     for problem in bare_references.problems(text, names):
