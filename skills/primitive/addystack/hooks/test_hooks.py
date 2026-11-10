@@ -2857,7 +2857,8 @@ class MergeGate(unittest.TestCase):
                      "merge #10 through #14, leave #12", "merge #12, retest #12", "merge #12, omit #10-#14",
                      "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12", "merge r #10-#14, r #12",
                      # review-loop r1: the joined form too, which no typed go was held to before.
-                     "merge dotfiles#12", "merge dotfiles#1", "merge #55 and dotfiles#12"]:
+                     "merge dotfiles#12", "merge dotfiles#1", "merge #55 and dotfiles#12",
+                     "merge #10-dotfiles#14"]:  # round 2: a joined repo at a range's end
             with self.subTest(text=text):
                 self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
         # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.

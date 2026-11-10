@@ -25,8 +25,9 @@ NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|exc
             r"|issues?|stacks?|branch|merge|fix|push|rebase|revert|verify|deploy|release|review|close)")
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[a-z][\w.-]*)"  # owner/12306, but not a bare 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
-# Whether a text names a PR with its repo: "dotfiles #36" or dotfiles#36, but not #53-#55.
-REPO_NAMED = re.compile(rf"{REPO_REF.pattern}|(?<![#\w./-])(?:[\w.-]+/)?[\w.-]+#\d", re.I)
+# Whether a text names a PR with its repo: "dotfiles #36", dotfiles#36, or #10-dotfiles#14,
+# but not #53-#55.
+REPO_NAMED = re.compile(rf"{REPO_REF.pattern}|(?<![#\w./])(?:[\w.-]+/)?[\w.-]*[a-z][\w.-]*#\d", re.I)
 REF = rf"(?:(?:[\w.-]+/)?[\w.-]+#\d+|{REPO}\s+#\d+|#?\d+)"
 REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
 STATE = r"(?:ready|passing|green|safe|done|verified)"
