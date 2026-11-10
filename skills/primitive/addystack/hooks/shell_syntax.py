@@ -42,6 +42,8 @@ FUNCTION = re.compile(r"\w\s*\(\s*\)\s*[{(]|\bfunction\s+\w")
 EVAL = re.compile(r"(?<![\w$-])eval(?![\w-])")
 # `coproc` and `time` open a compound command the loop parser doesn't track.
 PREFIX = re.compile(r"(?<![\w$.-])(?:coproc|time)(?![\w.-])")
+# What the shell left from the command before the condition: the guard, run first, resets it.
+LAST_STATE = re.compile(r"\$(?:\?|_(?!\w)|\{[?_]\}|\{?PIPESTATUS)")
 WAIT = re.compile(r"(?<![\w$-])(?:until|while)(?![\w-])(?!\s+(?:IFS=\S*\s+)?read\b)")
 # Any loop word, wherever it stands, so a loop the pairing can't see still counts.
 LOOP_WORD = re.compile(r"(?<![\w$-])(?:for|select|while|until)(?![\w-])")
@@ -162,6 +164,9 @@ def bound_waits(command, timeout_ms=None):
                 or max(sleeps) >= 60 or seconds < LEAST):
             return [], []
         keyword_end = start + len(match.group())
+        do = re.search(r"(?:[;\n&|]|\A)\s*do(?![\w-])", code[keyword_end:end])
+        if not do or LAST_STATE.search(command[keyword_end:keyword_end + do.start()]):
+            return [], []
         edits.append((keyword_end, 0, f' {GUARD}{seconds} ] || {{ echo "gave up waiting: the command ran {seconds}s,'
                                       f' the limit bash-rewrite.py sets" >&2; exit 124; }};'))
         notes.append(f"gave the `{match.group()}` loop a guard that exits 124 once the command has run {seconds}s; "

@@ -1062,10 +1062,14 @@ class BashRewrite(unittest.TestCase):
                 ("( case $y in a) ;; esac; until [ -f x ]; do sleep 1; done; true ) | cat", {}),
                 ("( echo \\); until [ -f x ]; do sleep 1; done; echo \\( ) | cat", {}),
                 ("( echo ${y%)}; until [ -f x ]; do sleep 1; done; echo ${y#(} ) | cat", {}),
-                # Codex r4: a group behind `!`, `coproc`, or `time` isn't alone.
+                # Codex r4: a group behind `!`, `coproc`, or `time` isn't alone, and a condition
+                # that reads the previous command's status would read the guard's.
                 ("! {\n  until false; do sleep 0.01; done\n} | cat; echo CONTINUED", {}),
                 ('coproc WORK {\n  until false; do sleep 0.01; done\n}\nwait "$WORK_PID"; echo CONTINUED', {}),
-                ("time { until [ -f x ]; do sleep 1; done; } | cat", {})]:
+                ("time { until [ -f x ]; do sleep 1; done; } | cat", {}),
+                ('false; while [ "$?" -ne 0 ]; do sleep 1; false; done', {}),
+                ("make; until [ ${PIPESTATUS[0]} -eq 0 ]; do sleep 1; make; done", {}),
+                ("touch x; until test -s $_; do sleep 1; done", {})]:
             with self.subTest(command=command, flags=flags):
                 self.assertIsNone(bounded(command, **flags))
 
