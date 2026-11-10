@@ -2035,6 +2035,11 @@ class LongTermFix(unittest.TestCase):
         # Nor was one that answered a watch wake, which the hook skips.
         wake = claude_said("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching")
         self.assertTrue(self.asks(before=[self.LOADED, wake, earlier]))
+        # A new bug starts afresh: the same words about the last bug don't count as asked.
+        verify = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Skill", "input": {"skill": "verify-work"}}]}}
+        last_bug = [self.LOADED, claude_said("fix the export bug"), earlier, claude_said("review the docs"), verify]
+        self.assertTrue(self.asks(before=last_bug, said="fix the login bug", after=[self.LOADED]))
+        self.assertIsNone(self.run_on(before=[self.LOADED, claude_said("fix the export bug"), earlier]))
 
     def test_wakes_notices_questions_and_children_pass(self):
         for said in ("Update on pull request #12 (https://github.com/o/r/pull/12), which T3 Code is watching",

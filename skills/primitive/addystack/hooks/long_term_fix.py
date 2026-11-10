@@ -157,7 +157,10 @@ class Session:
                             self.bug = started = True
                         first = first and not text  # an injected AGENTS.md entry isn't the user's first message
                         self.prompt, self.edited, reply = text, False, None
+                    was = self.bug
                     self.bug = self.marks_bug(entry, self.bug, started)
+                    if self.bug and not was:
+                        self.earlier.clear()  # a new bug: the last one's recommendations weren't about it
                     started = started or self.starts_bug(entry)
                     if text is None:
                         reply = transcripts.reply_text(entry) or reply
