@@ -220,8 +220,9 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 
 Several PRs, in one repo or across repos, share one fact table: its header row is
 `Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
-PR in that order, each Edits led by its size. Past three PRs, the one view is a table per PR,
-since columns grow too narrow and row groups would pass a view's six rows.
+PR in that order, headed by its link and review rating, each Edits led by its size. Past
+three PRs, the one view is a table per PR, since columns grow too narrow and row groups
+would pass a view's six rows.
 
 ````markdown
 🟡 **Merge #124 then #125, so a retried upload stops double-booking?**
@@ -233,7 +234,7 @@ since columns grow too narrow and row groups would pass a view's six rows.
 | Proof | verify-work Done on both at head · CI · no restack |
 | Undo | Revert #125, then #124, and drop the index. |
 
-| You accept | [#124](https://github.com/acme/app/pull/124) uploads | [#125](https://github.com/acme/app/pull/125) server |
+| You accept | [#124](https://github.com/acme/app/pull/124) uploads · 8/10 | [#125](https://github.com/acme/app/pull/125) server · 9/10 |
 | --- | --- | --- |
 | New | a unique index on receipts' upload id | the upload id on each receipt the API returns |
 | Changes | a retry gets its first receipt back | none |
