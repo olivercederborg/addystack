@@ -218,7 +218,7 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 - `b` → no: keep #124 as a draft
 ````
 
-Several PRs, in one repo or across repos, share one fact table: its header row is
+A ship gate is a card, not a report, so several PRs, in one repo or across repos, share one fact table: its header row is
 `Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
 PR in that order, headed by its link and review rating, each Edits led by its size. Past
 three PRs, the one view is a table per PR, since columns grow too narrow and row groups

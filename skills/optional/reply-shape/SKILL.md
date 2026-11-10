@@ -24,11 +24,11 @@ and the other options go in one fold. Hold to this until the reader says "normal
    whether, or a best guess in concrete units and how sure you are. A ⏳ headline names
    what it waits on and how long it has run, and time left only when a past run or this
    run's progress measures it.
-2. **Fact table** for one subject, such as a PR, a decision, or a check: two columns,
-   right under the headline. A reply whose whole point is one sentence has none. Several
-   things get **items** instead: a list item per PR, finding, option, or running job,
-   its name in bold and a short clause, details under it or in the fold. Group by
-   the thing, and findings by severity under a bold **Must fix**, then **Cleanups**.
+2. **Fact table** for one subject, such as a PR or a check: two columns, right under
+   the headline. A one-sentence reply has none. A report on several things gets
+   **items** instead: a list item per PR, finding, option, or running job, its name in
+   bold and a short clause, details under it or in the fold. Group by the thing, and
+   findings by severity under a bold **Must fix**, then **Cleanups**.
    - **Header row**: the subject: a PR as a link, then what it changes, its state, and
      size; or one word, such as Problem or Change, then the point.
    - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
@@ -46,9 +46,9 @@ and the other options go in one fold. Hold to this until the reader says "normal
    an answer, the next step, in the reader's own format when their instructions define
    one. When the work is finished, `**Done**` and one line naming what's still open;
    when only the reader's merge go is left, the reply is a ship gate instead. When only
-   background work is left, the reply is the ⏳ headline and one `then: …` clause naming
-   what you'll do when it lands, with no table: "⏳ **CI on #12, 6 min in**, then: fix
-   any failure".
+   background work is left, the reply is the ⏳ headline, an item per job if several, and
+   one `then: …` clause, what you'll do when it lands, with no table:
+   "⏳ **CI on #12, 6 min in**, then: fix any failure".
 
 **Budget**: a fact that fits no row or view goes in the fold, and any other prose above
 it stays under 60 words. A mid-turn progress message is one line.
@@ -134,8 +134,8 @@ smallest option, often leaving things as they are.
 - **One picture** a turn, only for UI, a chart, or when asked; read
   [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
-- **Blank lines**: chat joins lines with no blank line between, so separate lines with
-  one or make them list items.
+- **Blank lines**: chat joins adjacent lines, so separate them with a blank line or
+  make them list items.
 
 ## Before sending
 
