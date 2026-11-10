@@ -203,7 +203,7 @@ cell, `none` when empty, and no row that's empty for all:
 | Changes | the upload API answers a retry with the first receipt |
 | Edits | the upload handler and its test; one migration |
 | Goes live | the deploy runs the migration on about 80,000 receipts |
-| Left out | duplicates made before it stay |
+| Left out | retries from the mobile app, which skip this API |
 
 <details><summary>Idiom sources · review rounds</summary>
 
@@ -240,7 +240,7 @@ since columns grow too narrow and row groups would pass a view's six rows.
 | Changes | a retry gets its first receipt back | none |
 | Edits | +120 −30: upload handler, its test, a migration | +60 −12: receipt type and its serializer |
 | Goes live | the deploy runs the migration | none |
-| Left out | old duplicates stay | the app doesn't show the id yet |
+| Left out | mobile app retries, which skip this API | the app doesn't show the id yet |
 
 ---
 
