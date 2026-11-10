@@ -220,7 +220,7 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 
 Several PRs, in one repo or across repos, share one fact table: its header row is
 `Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
-PR in that order, each Edits led by its size. Past three PRs, each PR gets its own table,
+PR in that order, each Edits led by its size. Past three PRs, the one view is a table per PR,
 since columns grow too narrow and row groups would pass a view's six rows.
 
 ````markdown

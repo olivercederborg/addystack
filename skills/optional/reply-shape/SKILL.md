@@ -105,8 +105,8 @@ as a review's findings with their drafts, or a planning round's questions.
    - **Message** to a person: the header row is `To`, then who gets it; Cost is what it
      commits the reader to; the draft follows in full, in their own voice.
    - **Ship gate**, a push or merge: the header row is the PR or the stack in merge
-     order, and the view is what the reader accepts, by kind, a column per PR, as
-     [views](references/views.md#ship-gate) shows.
+     order, and the view is what the reader accepts, by kind, a column per PR, or a
+     table each past three, as [views](references/views.md#ship-gate) shows.
    - **UI**: the screenshot or recording, and the one thing to judge as a Review row.
    - **Stuck**, a check still failing after two fixes: each fix and why it failed, and
      the assumption the premise test checked as Why.
