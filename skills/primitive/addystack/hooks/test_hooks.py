@@ -2861,7 +2861,7 @@ class MergeGate(unittest.TestCase):
         self.scenario(prs={11: None, 12: None})
         self.verify(11)
         self.assertIsNone(self.reason("gh stack merge 12", said=("merge #11-#12 and dotfiles #36",)))
-        for text in ["merge #10-#12, exclude #11", "merge #12, retest #11"]:
+        for text in ["merge #10-#12, exclude #11", "merge #12, retest #11", "merge #12, exclude #11-#10"]:
             with self.subTest(text=text):
                 self.assertIn("isn't a merge of #12", self.reason("gh stack merge 12", said=(text,)))
                 reason = self.reason("gh stack merge 12", said=(
