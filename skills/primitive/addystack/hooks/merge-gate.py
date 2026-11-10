@@ -198,8 +198,8 @@ def letter_miss(reply, key):
 def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last
     of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
-    go is a literal go (merge_go.py), held to the PRs it names when it names one as
-    "dotfiles #36", or a key that picks an option of the reply it answered (answered,
+    go is a literal go (merge_go.py), held to the PRs it names when it names one with its
+    repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
     and no PR of numbers in another repo (names).
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
@@ -208,7 +208,7 @@ def user_go(numbers, owner, repo):
     pr = numbers[-1]
     try:
         import sqlite3, t3_child, transcripts, turn_block
-        from merge_go import literal_go, REPO_REF
+        from merge_go import literal_go, REPO_NAMED
         in_t3 = bool(os.environ.get("T3CODE_CLI_PATH"))  # where only T3's database tells another agent from the user
         try:
             with contextlib.closing(t3_child.connect()) as db:
@@ -226,9 +226,10 @@ def user_go(numbers, owner, repo):
         prompt = found[-1].prompt if found else ""
         said = f'the user\'s "{prompt.strip()}"'
         if literal_go(prompt):
-            # A word before " #N" may be a step or a refusal NOT_REPO misses ("skip #12"), so a
-            # typed go that names a PR that way is held to its PRs, as a pick is.
-            if not REPO_REF.search(prompt) or names(prompt, pr, owner, repo, numbers):
+            # A typed go that names a PR with its repo is held to its PRs, as a pick is:
+            # "merge dotfiles#12" is no go for #12 here, and a word before " #N" may be a
+            # step or a refusal NOT_REPO misses ("skippy #12").
+            if not REPO_NAMED.search(prompt) or names(prompt, pr, owner, repo, numbers):
                 return True, None
             return False, f"{said} isn't a merge of #{pr}"
         key = turn_block.PICK.fullmatch(prompt)

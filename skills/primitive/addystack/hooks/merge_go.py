@@ -18,13 +18,15 @@ import re
 # A repo's name before " #N", as in "dotfiles #36", but no word a sentence puts there:
 # "merge after #36" waits, "merge #55, skip #36" refuses, "merge #55 and fix #36" adds a
 # step, and "PR #36", "stack #3", or "merge 5 #36" names no repo. No list holds every such
-# word, so merge-gate.py holds a go in this form to the PRs it names (REPO_REF).
+# word, so merge-gate.py holds a go that names a repo to the PRs it names (REPO_NAMED).
 NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
             r"|no|never|dont|skip|drop|ignore|hold|without|with|on|onto|into|in|from|for|of|by|to"
             r"|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those|prs?|pull"
             r"|issues?|stacks?|branch|merge|fix|push|rebase|revert|verify|deploy|release|review|close)")
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[a-z][\w.-]*)"  # owner/12306, but not a bare 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
+# Whether a text names a PR with its repo: "dotfiles #36" or dotfiles#36, but not #53-#55.
+REPO_NAMED = re.compile(rf"{REPO_REF.pattern}|(?<![#\w./-])(?:[\w.-]+/)?[\w.-]+#\d", re.I)
 REF = rf"(?:(?:[\w.-]+/)?[\w.-]+#\d+|{REPO}\s+#\d+|#?\d+)"
 REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
 STATE = r"(?:ready|passing|green|safe|done|verified)"

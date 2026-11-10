@@ -2541,8 +2541,8 @@ class MergeGate(unittest.TestCase):
                    "great, lets merge the pr", "Can you please merge it.", "can you merge all the PRs that are ready",
                    "a, and merge it when it’s passing ci", "merge both, then `a`", "merge #17 and #18 -> c",
                    "sounds good mark them ready for review and merge in that order", "  merge the stack of #53-#55 ",
-                   "merge dotfiles#1", "merge sam/dotfiles#1",
-                   "go ahead and merge dotfiles#1 and skills#118",
+                   # A go that names a repo is held to its PRs, so these name #12 here.
+                   "merge r#12", "merge o/r#12", "go ahead and merge r#12 and skills#118",
                    # Oct 25, 2026: denied as a go until "the ones" counted as a target.
                    "can you just merge the ones that are ready to be merged now?", "merge those",
                    "merge the ready ones",
@@ -2852,7 +2852,9 @@ class MergeGate(unittest.TestCase):
         for text in ["merge #36, skippy #12", "merge #36 and dontt #12", "merge #36 and dotfiles #12",
                      "merge dotfiles #12", "merge #12 and r #36", "merge #10-#14, exclude #12",
                      "merge #10 through #14, leave #12", "merge #12, retest #12", "merge #12, omit #10-#14",
-                     "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12", "merge r #10-#14, r #12"]:
+                     "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12", "merge r #10-#14, r #12",
+                     # review-loop r1: the joined form too, which no typed go was held to before.
+                     "merge dotfiles#12", "merge dotfiles#1", "merge #55 and dotfiles#12"]:
             with self.subTest(text=text):
                 self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
         # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.
