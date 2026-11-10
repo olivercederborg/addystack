@@ -157,10 +157,35 @@ class RequireWritingForAgents(unittest.TestCase):
             "python3 -I - <<'PY'\nimport re,pathlib\np=pathlib.Path('review-loop/SKILL.md'); t=p.read_text()\n"
             "new=\"\"\"1. Apply each fix\"\"\"\nt=t.replace('x', new)\np.write_text(t)\nPY",
             "cd /tmp/correct-eval && python3 - <<'EOF'\np=\"AGENTS.md\"; s=open(p).read()\ns=s.replace('a','b')\nopen(p,'w').write(s)\nEOF",
-            "D=$(mktemp -d); mkdir -p $D/seed/old && printf -- '---\\nname: old\\n---\\n' > $D/seed/old/SKILL.md",
             "mkdir -p /tmp/fos-docs && for f in SKILL.md accounts.md; do executor apps skills --file $f"
             " | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"content\"])' > /tmp/fos-docs/$f; done",
-            'd=$(mktemp -d); cd ~/code/addystack\ncp replies.md hooks/reply-shape-context.py reply-shape/SKILL.md "$d/"',
+            # A folder mktemp makes where agents read skills, a path that climbs out of a
+            # new one, or a variable bound to one and to something else.
+            "T=$(mktemp -d ~/.claude/skills/probe.XXXX); printf x > $T/SKILL.md",
+            "T=$(mktemp -d -p ~/.claude/skills); printf x > $T/SKILL.md",
+            "T=$(mktemp -d); H=$T/../../Users/me/.claude; echo rule >> $H/CLAUDE.md",
+            "T=$(mktemp -d); echo rule >> $T/../AGENTS.md",
+            "T=$(mktemp -d); T=~/.claude; echo rule >> $T/CLAUDE.md",
+            'T=$(mktemp -d -p .); printf x > "$T/SKILL.md"', 'T=$(mktemp -d arm.XXXX); printf x > "$T/SKILL.md"',
+            'T=$(mktemp -d /tmp/skill-evals/arm.XXXXXX); printf x > "$T/SKILL.md"',
+            'S=$(mktemp -d); for order in ../skills; do H=$S/$order; printf x > "$H/AGENTS.md"; done',
+            'T=$(mktemp -d)/../skills; printf x > "$T/AGENTS.md"',
+            'T=$(mktemp -d); ln -s ~/.claude/skills "$T/link"; printf x > "$T/link/CLAUDE.md"',
+            # verify-work: a name bound again after the mktemp, and a copy that keeps links.
+            "T=$(mktemp -d) && T=~/.claude && echo rule >> $T/CLAUDE.md",
+            'T=$(mktemp -d) || T=~/.claude; echo rule >> "$T/CLAUDE.md"',
+            'T=$(mktemp -d) T=~/.claude; echo rule >> "$T/CLAUDE.md"',
+            'T=$(mktemp -d) && cd ~/r && T=skills/build && printf x > "$T/SKILL.md"',
+            'T=$(mktemp -d); cp -R ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp -a ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp --recursive ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -a ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/verify-work/SKILL.md"',
+            'T=$(mktemp -d); tar -xf skills.tar -C "$T"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); cp -Rf ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); cp -av ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -avz ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/build/SKILL.md"',
+            'T=$(mktemp -d); tar -C "$T" -xf skills.tar; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); ditto ~/.agents/skills "$T/s"; printf x >> "$T/s/build/SKILL.md"',
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command))
@@ -246,6 +271,22 @@ class RequireWritingForAgents(unittest.TestCase):
             "set -e; R=/tmp/r1probe; mkdir -p $R/old $R/new; git archive 88088c0 build shared/format.md | tar -x -C $R/old; "
             "cp shared/format.md $R/old/build/references/format.md",
             'd=$(mktemp -d); cp reply-shape/references/views.md "$d/reply-shape/references/views.md"',
+            # Recorded Oct 26 to Nov 5, 2026: fixtures in a new mktemp folder, which no agent reads.
+            "D=$(mktemp -d); mkdir -p $D/seed/old && printf -- '---\\nname: old\\n---\\n' > $D/seed/old/SKILL.md",
+            'd=$(mktemp -d); cd ~/code/addystack\ncp replies.md hooks/reply-shape-context.py reply-shape/SKILL.md "$d/"',
+            "R=$(mktemp -d /tmp/vw-run.XXXX); H=$R/home; mkdir -p $H/skills/build; "
+            "printf -- '---\\nname: build\\n---\\n' > $H/skills/build/SKILL.md; echo R=$R",
+            "S=$(mktemp -d); for order in A B; do H=$S/$order; mkdir -p $H/.claude; "
+            "printf '# Mine\\n' > $H/.claude/CLAUDE.md; done",
+            'T=$(mktemp -d "${TMPDIR:-/tmp}/rr.XXXX"); echo stale > "$T/AGENTS.md"',
+            'T=$(mktemp -d -t probe); H=$T; mkdir -p "$H/home"; printf x > "$H/home/AGENTS.md"',
+            'T=$(mktemp -d); H=$T/home; P=$H/skills; mkdir -p "$P"; printf x > "$P/SKILL.md"',
+            # A copy that follows links holds files, not links.
+            'T=$(mktemp -d); cp -RL ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp -R --dereference ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -avL ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/build/SKILL.md"',
+            'T=$(mktemp -d); cp -pf a.md "$T/"; printf x > "$T/SKILL.md"',
+            "T=$(mktemp -d) && mkdir -p \"$T/skills/x\" && H=$T/home && printf hi > \"$T/skills/x/SKILL.md\"",
             "R=/tmp/r1probe; for f in $R/new/build/references/*; do b=$(basename $f); cp $f $R/old/build/references/$b; done",
             # Names in comments or text aren't targets, so these pass where main denied them.
             "python3 - <<'EOF'\np = 'notes.md'\nwith open('x') as p:\n    pass\nopen(p, 'w')  # SKILL.md\nEOF",
