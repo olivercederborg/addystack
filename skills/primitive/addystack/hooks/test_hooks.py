@@ -4549,7 +4549,8 @@ class ReplyBudget(unittest.TestCase):
             self.assertEqual(self.bounce("**Size**: 2 PRs · ~8 files", transcript_path=transcript.name), "")
 
     def test_bounces_a_past_wall_of_text(self):
-        self.assertIn("come to 141 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
+        # 141 words before short items went free; its "Settings row" and "Rename" items are short.
+        self.assertIn("come to 108 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
         self.assertIn("under 60", self.bounce(self.SNOOP, turn_id="t1"))
 
     def test_sends_back_only_above_one_hundred_words(self):
@@ -4902,6 +4903,29 @@ class ReplyBudget(unittest.TestCase):
                          ["its Undo value runs 25 words, over 20"])  # check_examples holds examples to the target
         escaped = (*self.ROWS[:3], "| Undo | Revert `a \\| b`, then the merge. |")
         self.assertEqual(self.bounce(self.fact(rows=escaped)), "")
+
+    def test_short_items_are_a_fact_table_in_list_form(self):
+        # A bold name and a clause within ITEM_SEND_BACK words don't count, up to a short
+        # table's rows; a longer item or list, the details under an item, and a fact label count.
+        item = "- **Currency column**: rows stop at amount, so the export misses the ticket's last column.\n"
+        def reply(*items):
+            return "🔴 **Not ready: two bugs.**\n\n**Must fix**\n\n" + "".join(items) + "\n---\n\n**Done**. Still open: none.\n"
+        self.assertEqual(reply_budget.clause([item]), reply_budget.ITEM_WORDS)
+        self.assertEqual(reply_budget.words(reply(*[item] * reply_budget.TABLE_ROWS)), 4 + 2)
+        self.assertEqual(reply_budget.words(reply(*[item] * (reply_budget.TABLE_ROWS + 1))), 4 + 2 + 7 * 14)
+        wrapped = "- **Currency column**: rows stop at amount, so the export\n  misses the ticket's last column.\n"
+        self.assertEqual(reply_budget.words(reply(wrapped)), 4 + 2)
+        long = "- **Currency column**: " + "word " * (reply_budget.ITEM_SEND_BACK + 1) + "\n"
+        self.assertEqual(reply_budget.words(reply(long)), 4 + 2 + 2 + 16)
+        detail = item + "  - the test expects the wrong header too\n"
+        self.assertEqual(reply_budget.words(reply(detail)), 4 + 2 + 7)
+        self.assertEqual(reply_budget.words(reply("  " + item)), 4 + 2 + 14)  # only a top-level item
+        self.assertEqual(reply_budget.words(reply("- **Risk**: the export misses a column.\n")), 4 + 2 + 6)
+
+    def test_reply_shape_states_the_item_limit(self):
+        rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
+        self.assertIn("its name in bold and a clause of at most 12 words", rules)
+        self.assertEqual(reply_budget.ITEM_WORDS, 12)
 
     def test_reply_shape_states_the_fact_tables_limits(self):
         # The rules an agent writes to and the limits it's sent back for are one list.

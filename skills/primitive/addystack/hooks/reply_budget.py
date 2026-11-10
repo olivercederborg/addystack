@@ -76,7 +76,18 @@ and one of them had a listed label, the first fact table written. Its Pick and S
 count for the source check, and numbered steps under a table with a Do row are that Do's
 steps, as under a Do note. Known limits: a fact table whose every label is off the list
 reads as a comparison view, as before, and so does one below a lead-in sentence or under a
-headline without its marker."""
+headline without its marker.
+
+reply-shape's items, a report's list of several things, are the same fact table in list
+form: a top-level list item that opens with a bold name that isn't a fact label, then a
+clause of at most ITEM_WORDS words. Up to TABLE_ROWS of them don't count when each clause
+runs at most ITEM_SEND_BACK words; a longer item or list, and the details under an item,
+count. Counting every item word sent back 13 of 45 eval replies written under the items
+rule on Nov 10, 2026, against 4 of 45 under the fact table, while their visible words
+matched (medians 108 and 113); with the clause rule, a 25-word clause exemption let the
+wall of text that started this hook pass, and a 15-word one still sends it back at 108
+words. Over 8,990 delivered T3 replies from the 60 days to Nov 10, it frees 164 of the
+4,302 the count put over 100, and sends back none it passed."""
 import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
 
@@ -98,6 +109,10 @@ BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#{1,6}\s|`{3,}|~{3,}|([-*_
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 TABLE_ROWS = 6  # the most body rows a table can hold and still be a view
+# An item: a top-level list line that opens with its name in bold, "- **Currency column**: …".
+ITEM_LEAD = re.compile(r"^[-*+]\s+\*\*([^*\n]+?):?\*\*:?")
+ITEM_WORDS = 12  # reply-shape's clause after an item's name
+ITEM_SEND_BACK = 15  # an item whose clause runs past this counts, as FACT_SEND_BACK is to FACT_WORDS
 # reply-shape's fact table: its labels, row cap, and words per value (target, send-back).
 FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Queued",
                "Pick", "Source", "Cost", "Decide", "Review", "Do")
@@ -280,6 +295,7 @@ def glance(reply):
     fact = fact_table(reply)
     do_rows = {row.at for row in fact.rows if listed(row.label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
+    items, lead = [], 0  # lead: the open item's text column, 0 when none
     column = 0  # the open Do item's text column: a table left of it ends the item
     for n, line in enumerate(lines[:end]):
         if n in short:
@@ -300,8 +316,30 @@ def glance(reply):
             item = ITEM.match(line)
             column = item.end() if item else 1
         do, step = bool(DO.search(line)) or (do and line[:1].isspace()), 0
+        name = ITEM_LEAD.match(line)
+        if name and not listed(name.group(1).strip()):  # a fact label, such as Do, is a note
+            items.append([line])
+            lead = ITEM.match(line).end()
+            continue
+        if lead and len(line) - len(line.lstrip()) >= lead and not ITEM.match(line):
+            items[-1].append(line)  # the item's wrapped line
+            continue
+        lead = 0
         kept.append(line)
-    return kept
+    # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_SEND_BACK words,
+    # are a fact table in list form, so like a short table they don't count. A longer item
+    # or list, and the details under an item, count.
+    free = len(items) <= TABLE_ROWS
+    return kept + [line for item in items if not free or clause(item) > ITEM_SEND_BACK for line in item]
+
+
+def count(lines):
+    return sum(1 for line in lines for token in line.split() if WORD.search(token))
+
+
+def clause(item):
+    """The words of an item after its bold name."""
+    return count([ITEM_LEAD.sub("", item[0]), *item[1:]])
 
 
 def words(reply):
@@ -309,7 +347,7 @@ def words(reply):
     grill_words."""
     if grill_round(reply):
         return grill_words(reply)
-    return sum(1 for line in glance(reply) for token in line.split() if WORD.search(token))
+    return count(glance(reply))
 
 
 # The round format's fixed labels, which scope-grill's budget leaves out (decision D-R13-2).
