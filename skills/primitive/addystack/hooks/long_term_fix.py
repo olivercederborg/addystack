@@ -139,7 +139,7 @@ class Session:
                     started = False
                     if first and ALERT.match("\n".join(transcripts.texts(transcripts.text_parts(entry) or []))):
                         self.bug = started = True
-                    first = False
+                    first = first and not text  # an injected AGENTS.md entry isn't the user's first message
                     self.earlier.add(recommended(reply))
                     self.prompt, self.edited, reply = text, False, None
         except (OSError, TypeError):

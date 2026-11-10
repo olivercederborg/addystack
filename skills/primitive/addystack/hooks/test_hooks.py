@@ -1938,6 +1938,8 @@ class LongTermFix(unittest.TestCase):
         self.assertTrue(self.asks(before=[banner]))
         self.assertTrue(self.asks(before=[self.ROUTED]))
         self.assertTrue(self.asks(before=[], said=self.ALERT))
+        self.assertTrue(self.asks(before=[claude_said("# AGENTS.md instructions for /repo\n\nFollow the router.")],
+                                  said=self.ALERT))
         self.assertTrue(self.asks(before=[claude_said("/diagnosing-bugs the export fails")], said="fix it"))
         # Not bug work: no skill, a quoted alert, another hook's context, or a later workflow skill.
         self.assertFalse(self.asks(before=[]))
