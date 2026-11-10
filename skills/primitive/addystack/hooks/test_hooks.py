@@ -2819,6 +2819,8 @@ class MergeGate(unittest.TestCase):
                          # review-loop r1, Nov 10, 2026: a range's bare end isn't also a PR of its own.
                          ("merge r#10 through #12", True), ("merge r #10 through #12", True),
                          ("merge #12 through r#14", True),
+                         # The same round: a refusal of a range written high to low.
+                         ("merge #10-#14, exclude #14-#12", False),
                          # The card's own form, a space between repo and PR.
                          ("merge #12 and dotfiles #36", True), ("merge r #12 and dotfiles #36", True),
                          ("merge R #12", True), ("merge o/r #12", True), ("merge dotfiles #12", False),
@@ -2847,7 +2849,7 @@ class MergeGate(unittest.TestCase):
         for text in ["merge #36, skippy #12", "merge #36 and dontt #12", "merge #36 and dotfiles #12",
                      "merge dotfiles #12", "merge #12 and r #36", "merge #10-#14, exclude #12",
                      "merge #10 through #14, leave #12", "merge #12, retest #12", "merge #12, omit #10-#14",
-                     "merge #12 and dotfiles #12"]:
+                     "merge #12 and dotfiles #12", "merge #10-#14, exclude #14-#12"]:
             with self.subTest(text=text):
                 self.assertIn(f"the user's \"{text}\" isn't a merge of #12", self.reason("gh pr merge 12", said=(text,)))
         # gh stack merge takes every PR below the top one, so a go can't place any of them elsewhere.

@@ -159,7 +159,8 @@ def names(text, pr, owner, repo, merging=()):
     bare = not any(here_ for span in spans for here_, _ in span)
     side = lambda one, other: one if one is not None else other if other is not None else bare
     placed = [(side(a[0], b[0]) and side(b[0], a[0]), a[1], b[1]) for a, b in spans]
-    if any(not ours and low <= n <= high for ours, low, high in placed for n in {pr, *merging}):
+    held = lambda low, high: any(min(low, high) <= n <= max(low, high) for n in {pr, *merging})  # "#14-#12" too
+    if any(not ours and held(low, high) for ours, low, high in placed):
         return False
     return not spans or any(ours and low <= pr <= high for ours, low, high in placed)
 
