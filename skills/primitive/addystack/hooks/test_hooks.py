@@ -5061,6 +5061,9 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I'll merge them myself")), [])
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I’ll merge them myself")), [])
         self.assertTrue(reply_budget.unplain(self.merge_gate_reply("mark #12 ready, then you merge it after CI")))
+        # Codex review, round 1: a ruled-out merge passes, and an inflected one is a merge.
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #17 ready, but don't merge")), [])
+        self.assertTrue(reply_budget.unplain(self.merge_gate_reply("start merging #12 after CI passes")))
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
         self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
 

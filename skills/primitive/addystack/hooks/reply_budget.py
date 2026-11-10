@@ -584,8 +584,16 @@ def pick_lines(shown, n):
     return kept
 
 
-# A merge the option asks for: "merge #12", not "I'll merge them myself" after marking ready.
-MERGES = re.compile(r"(?<!\bI'll )(?<!\bI will )\bmerge", re.I)
+# A merge the option asks for, "merge #12" or "start merging #12", not one it leaves to the user or
+# rules out: "I'll merge them myself" or "don't merge" after marking ready.
+MERGES = re.compile(r"\bmerg(?:e|es|ed|ing)\b", re.I)
+NOT_ASKED = re.compile(r"(?:\bI'll|\bI will|\bdon't|\bdo not|\bnot|\bnever|\bwithout)\s+(?:\w+\s+){0,2}$", re.I)
+
+
+def asks_merge(text):
+    """True when the option's text asks for a merge rather than leaving or ruling one out."""
+    text = text.replace("’", "'")
+    return any(not NOT_ASKED.search(text[:match.start()]) for match in MERGES.finditer(text))
 
 
 def unplain(reply):
@@ -595,7 +603,7 @@ def unplain(reply):
     except turn_block.Malformed:
         return []  # routine_stop.py sends a reply without a valid block back
     return [option for option in options
-            if option.cls == "stop:merge" and MERGES.search(option.text.replace("’", "'"))
+            if option.cls == "stop:merge" and asks_merge(option.text)
             and not merge_go.literal_go(option.text)]
 
 
