@@ -237,8 +237,8 @@ would pass a view's six rows.
 
 | You accept | [#124](https://github.com/acme/app/pull/124) uploads · 8/10 | [#125](https://github.com/acme/app/pull/125) server · 9/10 |
 | --- | --- | --- |
-| New | a unique index on receipts' upload id | the upload id on each receipt the API returns |
-| Changes | a retry gets its first receipt back | none |
+| New | a unique index on receipts' upload id | an upload id field on receipts |
+| Changes | a retry gets its first receipt back | the receipts API returns each upload id |
 | Edits | +120 −30 in 4 files: upload handler, its test, a migration | +60 −12 in 2 files: receipt type, its serializer |
 | Goes live | the deploy runs the migration | none |
 | Left out | a message that the upload was reused | the app doesn't show the id yet |
