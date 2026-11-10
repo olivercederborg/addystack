@@ -151,11 +151,14 @@ def resolve(target, command):
 
 
 # A link or hard link can point a path inside a new folder anywhere, and so can a copy or an
-# unpack that keeps links: `cp -R` or `-a` without `-L`, `rsync -a` or `-l`, `tar -x`. Every
-# skill in ~/.agents/skills is a link into a kit, so a write in such a copy edits the kit.
+# unpack that keeps links: `cp -R`, `-r`, or `-a` without `-L`, `rsync -a` or `-l` without
+# `-L`, an unpacking `tar`, `ditto`, `pax`, `unzip`, or `cpio`. Every skill in
+# ~/.agents/skills is a link into a kit, so a write in such a copy edits the kit.
+FLAG = r"[^;&|\n]*\s(?:-(?!-)\w*{}|{})"  # a short flag anywhere in a cluster, or a long one
 LINKS = re.compile(r"\bln\s|\bcp\s+-\w*[ls]|\b(?:symlink|symlink_to|hardlink_to|link)\("
-                   r"|\bcp\b(?=[^;&|\n]*\s(?:-\w*[Rra]|--recursive|--archive)\b)(?![^;&|\n]*\s-\w*L)"
-                   r"|\brsync\b(?=[^;&|\n]*\s(?:-\w*[al]|--archive|--links)\b)|\btar\s+-?\w*x")
+                   rf"|\bcp\b(?={FLAG.format('[Rra]', '--recursive|--archive')})(?!{FLAG.format('L', '--dereference')})"
+                   rf"|\brsync\b(?={FLAG.format('[al]', '--archive|--links')})(?!{FLAG.format('L', '--copy-links')})"
+                   rf"|\btar\b(?:\s+\w*x|(?={FLAG.format('x', '--extract|--get')}))|\b(?:ditto|pax|unzip|cpio)\b")
 
 
 def in_mktemp(text, command, depth=3, name=None):

@@ -181,6 +181,11 @@ class RequireWritingForAgents(unittest.TestCase):
             'T=$(mktemp -d); cp --recursive ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
             'T=$(mktemp -d); rsync -a ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/verify-work/SKILL.md"',
             'T=$(mktemp -d); tar -xf skills.tar -C "$T"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); cp -Rf ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); cp -av ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -avz ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/build/SKILL.md"',
+            'T=$(mktemp -d); tar -C "$T" -xf skills.tar; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); ditto ~/.agents/skills "$T/s"; printf x >> "$T/s/build/SKILL.md"',
         ]:
             with self.subTest(command=command):
                 self.assertTrue(self.bash(command))
@@ -278,6 +283,9 @@ class RequireWritingForAgents(unittest.TestCase):
             'T=$(mktemp -d); H=$T/home; P=$H/skills; mkdir -p "$P"; printf x > "$P/SKILL.md"',
             # A copy that follows links holds files, not links.
             'T=$(mktemp -d); cp -RL ~/.agents/skills "$T/"; printf x >> "$T/skills/verify-work/SKILL.md"',
+            'T=$(mktemp -d); cp -R --dereference ~/.agents/skills "$T/"; printf x >> "$T/skills/build/SKILL.md"',
+            'T=$(mktemp -d); rsync -avL ~/.agents/skills/ "$T/s/"; printf x >> "$T/s/build/SKILL.md"',
+            'T=$(mktemp -d); cp -pf a.md "$T/"; printf x > "$T/SKILL.md"',
             "T=$(mktemp -d) && mkdir -p \"$T/skills/x\" && H=$T/home && printf hi > \"$T/skills/x/SKILL.md\"",
             "R=/tmp/r1probe; for f in $R/new/build/references/*; do b=$(basename $f); cp $f $R/old/build/references/$b; done",
             # Names in comments or text aren't targets, so these pass where main denied them.
