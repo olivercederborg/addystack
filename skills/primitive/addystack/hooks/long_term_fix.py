@@ -34,9 +34,15 @@ about. Three fires are false, by a
 read of each: two feature replies late in a session that had loaded diagnosing-bugs, and
 one that offered to "reproduce, fix" before it knew the fix. Two are production hotfixes,
 where the quick fix should stay. Only 213 of the 625 final replies in bug work carried a
-turn block, so older replies are undercounted. Known limits: fix_option reads the option's
-words, so a fix phrased with a verb it doesn't list passes, and an edit outside the
-session's starting checkout doesn't count."""
+turn block, so older replies are undercounted. Known limits:
+- fix_option reads the option's first words, so these pass: a fix phrased with a verb it
+  doesn't list, a fix after a step such as "run the test, then add a guard", and one that
+  names Linear or a cycle. A doc-only "add the notes" asks.
+- A message that only mentions "long-term" or "root cause" passes as if it asked.
+- An edit counts by its tool call: a shell write doesn't count, a failed edit does, and a
+  Codex patch counts wherever it lands.
+- stop_hook_active is shared by every Stop hook, so when another sends the reply back
+  first, this one passes on the resent reply."""
 import importlib, json, os, re, sys
 from pathlib import Path
 
