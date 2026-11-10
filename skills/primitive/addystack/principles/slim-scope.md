@@ -1,9 +1,9 @@
 # Slim scope
 
-**Apply when** you're shaping a plan, a stack, a review round, or a `Next` list.
+**Apply when** you're sizing a plan, a stack, its PR count, or a review round.
 
-Recommend the smallest option that meets the agreed goal. A wider shape becomes a
-one-line follow-up.
+Recommend the smallest shape that meets the agreed goal. A wider shape becomes a
+one-line follow-up. A fix's correctness isn't traded for size.
 
 **Why:** "its getting way too out of hand. lets keep it simple" · "73 PRs is still
 ALOT".

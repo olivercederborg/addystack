@@ -31,12 +31,11 @@ after one read.
 - **Add a snippet when the fix would otherwise be ambiguous, or when the comment argues
   for a different pattern** (test style, call shape, structure): show it before and
   after. Keep any example the card already showed.
-  - **Fix the cause:** before a fix goes in, name the root cause. Compare a fix at the
-    cause, a fix at the symptom, and the library's own analogous API against the repo's
-    rules, and show that comparison in the card. When the fix at the cause fits the
-    PR's scope, suggest it. When it would grow the PR well past that scope, suggest the
-    in-scope fix, or none, and name the root cause as a possible follow-up. Until the
-    comparison is done, state the problem with no fix.
+  - **Fix the cause:** before a fix goes in, name the root cause, and show in the card a
+    fix at the cause, a fix at the symptom, and the library's own analogous API. Suggest
+    the correct, idiomatic, long-term one, then the smallest; when it reaches other
+    features or domains, suggest the in-scope fix, or none, with the cause as a
+    follow-up. Until the comparison is done, state the problem with no fix.
   - **Exact replacement of the anchored lines** in one file: a `suggestion` block with
     only the after code, at its real indentation. It replaces every line in the range,
     and GitHub shows it as before and after with an apply button. Name any import or
