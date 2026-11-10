@@ -27,8 +27,8 @@ and the other options go in one fold. Hold to this until the reader says "normal
 2. **Fact table** for one subject, such as a PR or a check: two columns, right under
    the headline. A one-sentence reply has none. A report on several things gets
    **items** instead: a list item per PR, finding, option, or running job, its name in
-   bold and a short clause, details under it or in the fold. Group by the thing, and
-   findings by severity under a bold **Must fix**, then **Cleanups**.
+   bold and a clause of at most 12 words, details under it or in the fold. Group by
+   the thing, and findings by severity under a bold **Must fix**, then **Cleanups**.
    - **Header row**: the subject: a PR as a link, then what it changes, its state, and
      size; or one word, such as Problem or Change, then the point.
    - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
