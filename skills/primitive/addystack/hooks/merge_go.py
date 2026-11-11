@@ -138,30 +138,33 @@ def names(text, pr, owner, repo, merging=()):
 
 
 def unplaced(text):
-    """Why names() places a PR of text in no repo, whatever merge holds it, as (ref, why)
-    pairs, or [] when it places each one somewhere. A bare PR after one named with its
-    repo, as #59 in "merge addystack #56 and #59", is in none; so is a range whose ends name
-    two repos or that runs high to low, as "#14-#12", and every PR of a text that names a
-    repo and names one PR twice, or holds a word spans() can't read. The fix for the first
-    is naming each PR's repo: "merge addystack #56 and addystack #59"."""
+    """The PRs of text that names() places in no repo, whatever merge holds them, as (ref,
+    why) pairs, or [] when it places each one somewhere. names() decides, for a merge of
+    each end of each range alone, in every repo the text names and in one it doesn't, and
+    why only labels the cause: a bare PR after one named with its repo, as #59 in "merge
+    addystack #56 and #59", a range across two repos or written high to low, or one PR named
+    twice beside a repo. A word spans() can't read places none. The fix for the first is
+    naming each PR's repo: "merge addystack #56 and addystack #59"."""
     read, unread = spans(text)
     if unread:
         return [unread]
-    repo = lambda end: "/".join(filter(None, end[0]))
-    shown = lambda end: f"{repo(end)} #{end[1]}" if end[0] else f"#{end[1]}"
-    ref = lambda span: shown(span[0]) if span[0] == span[1] else f"{shown(span[0])}-{shown(span[1])}"
+    repos = {(end[0][0] or "", end[0][1]) for span in read for end in span if end[0]} | {("", "\0")}
+    placed = lambda n: any(names(text, n, owner, repo, (n,)) for owner, repo in repos)
+    named = [bool(low[0] or high[0]) for low, high in read]
+    spread = [(min(low[1], high[1]), max(low[1], high[1])) for low, high in read]
+    twice = any(named) and any(max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:])
+    shown = lambda end: f"{'/'.join(filter(None, end[0]))} #{end[1]}" if end[0] else f"#{end[1]}"
+    ref = lambda low, high: shown(low) if low == high else f"{shown(low)}-{shown(high)}"
     # Two ends name one repo when their names match and their owners don't differ.
     other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
-    found, named = [], False  # named: whether an earlier span names a repo
-    for low, high in read:
+
+    def why(at, low, high):
         if low[0] and high[0] and other(low[0], high[0]):
-            found.append((ref((low, high)), "spans two repos"))
-        elif low[1] > high[1]:  # names() reads a range low to high only
-            found.append((ref((low, high)), f"runs high to low: write {ref((high, low))}"))
-        elif not (low[0] or high[0]) and named:
-            found.append((ref((low, high)), "follows a PR named with its repo, so it's in none"))
-        named = named or bool(low[0] or high[0])
-    spread = [(min(low[1], high[1]), max(low[1], high[1])) for low, high in read]
-    if named and any(max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:]):
-        return [(ref(span), "names a PR twice, beside a PR named with its repo") for span in read]
-    return found
+            return "spans two repos"
+        if low[1] > high[1]:
+            return f"runs high to low: write {ref(high, low)}"
+        if not named[at] and any(named[:at]):
+            return "follows a PR named with its repo, so it's in none"
+        return "names a PR twice, beside a PR named with its repo" if twice else "is in no repo"
+    return [(ref(low, high), why(at, low, high)) for at, (low, high) in enumerate(read)
+            if not (placed(low[1]) and placed(high[1]))]

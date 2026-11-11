@@ -5138,7 +5138,8 @@ class ReplyBudget(unittest.TestCase):
               "merge #10 through #14", "merge r#10 through #14", "merge #10 through r#14", "merge r #10-#14",
               "merge #55 and dotfiles #36", "merge #12 and dotfiles#36", "merge #1 and r#10 through #14",
               "merge #12 and sam/12306 #36", "merge #12 and 1password #36", "merge #10-#14 and #12",
-              "merge r #11, r #12", "merge dotfiles#1 and addystack#62", "merge the 2 prs", "merge them")
+              "merge r #11, r #12", "merge dotfiles#1 and addystack#62", "merge the 2 prs", "merge them",
+              "merge #12-#10 and #10-#12")  # verify-work: the second range places what the first can't
     UNPLACED = {"merge addystack #56 and #59 and skills #313 and #315": ["#59", "#315"],
                 "merge dotfiles #36 and #12": ["#12"], "merge dotfiles #36, #12": ["#12"],
                 "merge acme/app#62 and #63": ["#63"],
