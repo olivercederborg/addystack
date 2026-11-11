@@ -6,7 +6,7 @@ deferring a change.
 Recommend the smallest option that meets the agreed goal, and build its right shape now.
 It waits only when someone else owns it, it can't be built yet (no API, dependency, or
 design), it would dismiss an approval for a change none of the PR's approvers asked for,
-or the user set the boundary. Then it's a one-line follow-up, unbuilt in this run: no
+or the user or a reviewer set the boundary. Then it's a one-line follow-up, unbuilt in this run: no
 separate or stacked PR unless asked. A change an approver asked for is built now, in their
 PR or an open draft above it: they re-approve it quickly, and a new PR needs a review of
 its own. A draft, no users, or no approvals make now the cheapest time.
