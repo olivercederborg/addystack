@@ -109,6 +109,13 @@ class CheckExamplesTest(unittest.TestCase):
         long = "| Proof | " + "word " * 21 + "|"  # the writing target, under the hook's send-back limit
         self.assertEqual(problems(table.format(row=long)), ["the fact table: its Proof value runs 21 words, over 20"])
 
+    def test_a_merge_option_must_be_the_plain_request(self):
+        turn = ('<!-- turn {{"state":"stop","needs":[],"options":[{{"key":"a","class":"stop:merge","text":"{text}"}}]}} -->')
+        card = GOOD.replace("`a` → publish", "`a` → {text}").replace("*recommended*\n````", "*recommended*\n\n" + turn + "\n````")
+        self.assertEqual(problems(card.format(text="merge #12 and #13")), [])
+        self.assertEqual(problems(card.format(text="merge #12, then deploy")),
+                         ["merge option `a` isn't the plain request merge-gate takes as a go"])
+
     def test_a_turn_block_in_an_example_must_parse(self):
         turn = '<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"publish"}]} -->'
         with_block = GOOD.replace("*recommended*\n````", f"*recommended*\n\n{turn}\n````")
@@ -136,6 +143,23 @@ class CheckExamplesTest(unittest.TestCase):
         standing = turn.replace('"needs":[', '"needs":[],"standing":[')
         self.assertEqual(problems(bad.replace(turn, standing)), ["'fix 3' (3 → currency column) needs its short name "
                                                                  "beside it, as in \"48 (optional email variables)\""])
+
+    def test_every_ship_gate_example_shows_what_the_reader_accepts(self):
+        # Agents copy examples before rules, so each ship gate in views shows the You accept view.
+        views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
+        gate = views[views.index("## Ship gate"):views.index("## Choosing between shapes")]
+        examples = [block for _, block in check_examples.example_blocks(gate.splitlines())]
+        self.assertEqual(len(examples), 2)
+        kinds = ["New", "Changes", "Edits", "Goes live", "Left out"]
+        for block in examples:
+            with self.subTest(example=block[0]):
+                at = next(n for n, line in enumerate(block) if line.startswith("| You accept |"))
+                prs = len(check_examples.reply_budget.cells(block[at])) - 1
+                rows = {cells[0].strip(): [cell.strip() for cell in cells[1:]]
+                        for line in block[at + 2:at + 2 + len(kinds)]
+                        for cells in [check_examples.reply_budget.cells(line)]}
+                self.assertEqual(list(rows), kinds)  # every kind, in order
+                self.assertTrue(all(len(values) == prs and all(values) for values in rows.values()), rows)
 
     def test_every_skill_passes(self):
         root = pathlib.Path(__file__).resolve().parent.parent

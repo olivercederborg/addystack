@@ -23,7 +23,9 @@ with four or more backticks. Inside one, this fails on:
 - a decision card whose Pick cites no source, as `hooks/reply_budget.py` sends back in live
   replies.
 - a fact table past reply-shape's limits, as `hooks/reply_budget.py` sends back in live
-  replies, with each value held to the 20-word target.
+  replies, with each value held to the 20-word target;
+- a merge option whose text isn't the plain request merge-gate takes as a go, as
+  `hooks/reply_budget.py` sends back in live replies.
 
 It checks every SKILL.md, plus `replies.md` and reply-shape's references.
 
@@ -98,6 +100,8 @@ def check_block(start, block):
         problems.append((start, f"the fact table: {clause}"))
     if reply_budget.unsourced(text):
         problems.append((start, "the decision card's Pick cites no source; add a **Source** line"))
+    for option in reply_budget.unplain(text):
+        problems.append((start, f"merge option `{option.key}` isn't the plain request merge-gate takes as a go"))
     for problem in bare_references.problems(text, names):
         # The cited line ends the problem; the longest match, in case one line ends another.
         offset = max((i for i, line in enumerate(block) if line.strip() and problem.endswith(f" in: {line.strip()}")),

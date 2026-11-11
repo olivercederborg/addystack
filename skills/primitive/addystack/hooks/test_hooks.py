@@ -4549,7 +4549,9 @@ class ReplyBudget(unittest.TestCase):
             self.assertEqual(self.bounce("**Size**: 2 PRs · ~8 files", transcript_path=transcript.name), "")
 
     def test_bounces_a_past_wall_of_text(self):
-        self.assertIn("come to 141 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
+        # 141 words before short items went free; its "Settings row" and "Rename" items are
+        # short, and "**Changed**" is their group's label.
+        self.assertIn("come to 107 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
         self.assertIn("under 60", self.bounce(self.SNOOP, turn_id="t1"))
 
     def test_sends_back_only_above_one_hundred_words(self):
@@ -4903,6 +4905,53 @@ class ReplyBudget(unittest.TestCase):
         escaped = (*self.ROWS[:3], "| Undo | Revert `a \\| b`, then the merge. |")
         self.assertEqual(self.bounce(self.fact(rows=escaped)), "")
 
+    def test_short_items_are_a_fact_table_in_list_form(self):
+        # A bold name and a clause within ITEM_SEND_BACK words don't count, up to a short
+        # table's rows; a longer item or list, the details under an item, and a fact label count.
+        item = "- **Currency column**: rows stop at amount, so the export misses the ticket's last column.\n"
+        def reply(*items):
+            return "🔴 **Not ready: two bugs.**\n\n**Must fix**\n\n" + "".join(items) + "\n---\n\n**Done**. Still open: none.\n"
+        self.assertEqual(reply_budget.clause([item]), reply_budget.ITEM_WORDS)
+        self.assertEqual(reply_budget.words(reply(*[item] * reply_budget.TABLE_ROWS)), 4)  # with its group label
+        self.assertEqual(reply_budget.words(reply(*[item] * (reply_budget.TABLE_ROWS + 1))), 4 + 2 + 7 * 14)
+        wrapped = "- **Currency column**: rows stop at amount, so the export\n  misses the ticket's last column.\n"
+        self.assertEqual(reply_budget.words(reply(wrapped)), 4)
+        long = "- **Currency column**: " + "word " * (reply_budget.ITEM_SEND_BACK + 1) + "\n"
+        self.assertEqual(reply_budget.words(reply(long)), 4 + 2 + 16)
+        detail = item + "  - the test expects the wrong header too\n"
+        self.assertEqual(reply_budget.words(reply(detail)), 4 + 7)
+        self.assertEqual(reply_budget.words(reply("  " + item)), 4 + 2 + 14)  # only a top-level item, so the label counts
+        self.assertEqual(reply_budget.words(reply("- **Risk**: the export misses a column.\n")), 4 + 2 + 6)
+
+    def test_an_items_reader_rows_and_group_label_are_its_table(self):
+        # The project view the user picked blind on Nov 10, 2026: items grouped under a label,
+        # each with its Review, Decide, or Do line under it, and the Do's steps.
+        reply = ("🟡 **CSV export: three things wait on you.**\n\n**Waiting on you**\n\n"
+                 "- **Currency column (#41)**: ready to merge; #42 merges on top of it.\n"
+                 "  - Review: verify-work is done and review scored 10/10.\n"
+                 "- **SMTP password**: blocks testing #42's email on staging.\n"
+                 "  - **Do**: only you have the mail provider's login.\n"
+                 "    1. Log in to the mail provider.\n    2. Copy the SMTP password.\n"
+                 "\n---\n\n**Done**. Still open: none.\n")
+        self.assertEqual(reply_budget.words(reply), 7)
+        long_row = reply.replace("verify-work is done and review scored 10/10.", "word " * (reply_budget.FACT_SEND_BACK + 1))
+        self.assertEqual(reply_budget.words(long_row), 7 + 1 + 26)  # a row past a fact value's limit counts
+        prose = reply.replace("  - Review: verify-work is done and review scored 10/10.\n", "  - verify-work is done and review scored 10/10.\n")
+        self.assertEqual(reply_budget.words(prose), 7 + 7)  # other details under an item count
+        alone = "🟡 **One thing.**\n\n**Waiting on you**\n\nThe merge go for #41.\n\n---\n\n**Done**. Still open: none.\n"
+        self.assertEqual(reply_budget.words(alone), 2 + 3 + 5)  # a bold line over prose isn't a group label
+        second = reply.replace("  - **Do**:", "  - Decide: merge it today, or after the email ships?\n  - **Do**:")
+        self.assertEqual(reply_budget.words(second), 7 + 8)  # only the first reader line is the row, so the Do counts
+        label = reply.replace("**Waiting on you**", "**" + "word " * (reply_budget.ITEM_WORDS + 1) + "**")
+        self.assertEqual(reply_budget.words(label), 7 + 13)  # a label past an item's clause counts
+        detached = reply.replace("  - Review:", "Then a paragraph at the margin.\n  - Review:")
+        self.assertEqual(reply_budget.words(detached), 7 + 6 + 8)  # a line after the margin left its item
+
+    def test_reply_shape_states_the_item_limit(self):
+        rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
+        self.assertIn("its name in bold and a clause of at most 12 words", rules)
+        self.assertEqual(reply_budget.ITEM_WORDS, 12)
+
     def test_reply_shape_states_the_fact_tables_limits(self):
         # The rules an agent writes to and the limits it's sent back for are one list.
         rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
@@ -4993,6 +5042,27 @@ class ReplyBudget(unittest.TestCase):
         example = "✅ **The rules show one.**\n\n````markdown\n" + self.fact(rows=("| Cause | x |", self.ROWS[0])) + "\n````\n"
         self.assertEqual(reply_budget.fact_problems(example), [])
 
+    def test_a_ship_gates_accept_view_is_free(self):
+        # The user, Nov 10, 2026, on a two-PR merge card: "i need a better like categorized overview of what
+        # im actually accepting and what each PR is doing". The view under the fact table: a column per PR.
+        kinds = ("New", "Changes", "Edits", "Goes live", "Left out")
+        cell = "a short phrase of about nine words on this kind"
+        def accept(*prs):
+            return ("| You accept | " + " | ".join(prs) + " |\n|" + "---|" * (len(prs) + 1) + "\n"
+                    + "".join(f"| {kind} | " + " | ".join([cell] * len(prs)) + " |\n" for kind in kinds) + "\n")
+        for prs in (("#32",), ("addystack #55", "dotfiles #36"), ("#1", "#2", "#3")):
+            with self.subTest(prs=prs):
+                reply = self.fact(below=accept(*prs))
+                self.assertEqual((self.bounce(reply), reply_budget.fact_problems(reply)), ("", []))
+                self.assertEqual(reply_budget.words(reply), 9)  # only the headline counts
+        # Past three PRs each gets its own table, and each stays a view.
+        four = self.fact(below="".join(accept(f"#{n}") for n in range(1, 5)))
+        self.assertEqual((self.bounce(four), reply_budget.words(four)), ("", 9))
+        # One table with a row group per PR passes six rows, so its words count.
+        grouped = self.fact(below="| PR | You accept |\n|---|---|\n" + "".join(f"| #{n} {kind} | {cell} |\n" for n in (1, 2)
+                                                                             for kind in kinds) + "\n")
+        self.assertGreater(reply_budget.words(grouped), reply_budget.BUDGET)
+
     def test_a_fact_tables_pick_and_source_rows_count(self):
         pick = "| Pick | Yes, so every hook crash gets logged in one place. |"
         rows = {"no source": ((pick,), True),
@@ -5018,6 +5088,48 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.words(steps), 11)
         no_do = steps.replace("| Do |", "| Why |")
         self.assertEqual(reply_budget.words(no_do), 11 + 2 + 3 * 70)  # with the two step numbers
+
+
+    def merge_gate_reply(self, *texts, cls="stop:merge"):
+        options = [{"key": key, "class": cls, "text": text} for key, text in zip("ab", texts)]
+        listed = "\n".join(f"- `{option['key']}` → {option['text']}" for option in options)
+        return ("🟡 **Merge #90?**\n\n---\n\n**Next**\n\n" + listed + "\n\n"
+                + block({"state": "stop", "needs": [], "options": options}))
+
+    def test_sends_back_a_merge_option_with_another_step(self):
+        # Delivered on Oct 27, 2026: a bare `a` on it wasn't a go merge-gate could take.
+        text = "merge #90 once its dev webhook test passes, then deploy production from the main checkout on main"
+        reason = self.bounce(self.merge_gate_reply(text))
+        self.assertIn(f"`a` → {text}", reason)
+        self.assertIn("merge #12 and #13", reason)
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:  # Codex review, round 2
+            transcript.write(json.dumps({"type": "user", "message": {"content": "normal replies please"}}) + "\n")
+            transcript.flush()
+            self.assertIn("merge #12 and #13", self.bounce(self.merge_gate_reply(text), transcript_path=transcript.name))
+        long = "✅ **Eight PRs moved.**\n\n" + "".join(f"- **#{n}**: {' '.join(['word'] * 12)}\n" for n in range(8))
+        self.assertIn("a bold item per thing", self.bounce(long))  # an item reply isn't told to become a fact table
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("merge #124 and #125")), [])
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #5394–#5397 ready for review")), [])
+        # Delivered on Oct 31, 2026: marking ready, with the merge left to the user, isn't a merge option.
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I'll merge them myself")), [])
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("yes: mark #132–#140 ready; I’ll merge them myself")), [])
+        self.assertTrue(reply_budget.unplain(self.merge_gate_reply("mark #12 ready, then you merge it after CI")))
+        # Codex review, round 1: a ruled-out merge passes, and an inflected one is a merge.
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #17 ready, but don't merge")), [])
+        self.assertTrue(reply_budget.unplain(self.merge_gate_reply("start merging #12 after CI passes")))
+        self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
+        self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
+
+    def test_a_merge_option_across_repos_is_what_merge_go_takes(self):
+        # The check defers to merge_go, so a go it takes across repos passes and one with a
+        # step after it goes back, for repo-qualified refs and several PRs in two repos.
+        for text in ("merge addystack #62 and skills #317", "merge #55 and dotfiles #36",
+                     "merge dotfiles#1 and addystack#62", "merge acme/app#62 and acme/web#317"):
+            self.assertTrue(merge_go.literal_go(text), text)
+            self.assertEqual(reply_budget.unplain(self.merge_gate_reply(text)), [], text)
+        for text in ("merge addystack #62 and skills #317, then deploy", "merge #62 after skills #317 lands"):
+            self.assertFalse(merge_go.literal_go(text), text)
+            self.assertTrue(reply_budget.unplain(self.merge_gate_reply(text)), text)
 
 
 class BareReferences(unittest.TestCase):

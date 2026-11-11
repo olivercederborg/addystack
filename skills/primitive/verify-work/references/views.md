@@ -176,6 +176,17 @@ and its unpushed commits. Its rows:
 - **Proof**: the passing checks and the restack state.
 - **Undo**: how to roll it back.
 
+Its view is what the reader accepts, so they can say yes without opening the PR: a
+table headed `You accept`, then the PR, or the branch for a push with no PR, with a short
+phrase per cell, `none` when empty, and no row that's empty for all:
+
+- **New**: what didn't exist before, such as a command or an index.
+- **Changes**: behavior that changes for an agent, a user, or a caller.
+- **Edits**: the files, grouped, as in "6 skills name it; 14 synced copies of one line".
+- **Goes live**: what runs once it lands, such as a deploy or a setup step, and who
+  runs it.
+- **Left out**: what it doesn't do that the reader might expect.
+
 ````markdown
 🟡 **Merge #124, so a retried upload stops creating a second receipt?**
 
@@ -185,6 +196,14 @@ and its unpushed commits. Its rows:
 | Risk | ⚠️ Review 8/10: the timeout path has no test. |
 | Proof | verify-work Done at head · CI · tests 41/41 · no restack |
 | Undo | Revert #124, then drop the index. |
+
+| You accept | [#124](https://github.com/acme/app/pull/124) |
+| --- | --- |
+| New | a unique index on each receipt's upload id |
+| Changes | the upload API answers a retry with the first receipt |
+| Edits | the upload handler and its test; one migration |
+| Goes live | the deploy runs the migration on about 80,000 receipts |
+| Left out | a message telling the user their upload was reused |
 
 <details><summary>Idiom sources · review rounds</summary>
 
@@ -200,30 +219,35 @@ Idiom sources: none recorded. Review: two rounds, one finding left open.
 - `b` → no: keep #124 as a draft
 ````
 
-Several PRs share one table: its header row is `Stack`, a Risk names its PR, and a
-table under it lists each PR in merge order with its own size and rating.
+A ship gate is a card, not a report, so several PRs, in one repo or across repos, share one fact table: its header row is
+`Stack`, then the PRs in merge order, and a Risk names its PR. The view gets a column per
+PR in that order, headed by its link and review rating, each Edits led by its size. Past
+three PRs, the one view is a table per PR, since columns grow too narrow and row groups
+would pass a view's six rows.
 
 ````markdown
-🟡 **Merge the upload stack, #124 to #126?**
+🟡 **Merge #124 then #125, so a retried upload stops double-booking?**
 
-| Stack | 3 PRs, bottom first · all draft · +184 −182 in 9 files |
+| Stack | #124 then #125, bottom first · both draft · +180 −42 in 6 files |
 |---|---|
 | Risk | ⚠️ #124 adds a unique index on receipts, and blast-radius wasn't run. |
 | Risk | ⚠️ #124's review is 8/10: the timeout path has no test. |
-| Proof | verify-work Done on each at head · CI · no restack |
-| Undo | Revert #126, then #125, then #124, and drop the index. |
+| Proof | verify-work Done on both at head · CI · no restack |
+| Undo | Revert #125, then #124, and drop the index. |
 
-| PR | Changes | Size · review |
+| You accept | [#124](https://github.com/acme/app/pull/124) uploads · 8/10 | [#125](https://github.com/acme/app/pull/125) server · 9/10 |
 | --- | --- | --- |
-| [#124](https://github.com/acme/app/pull/124) | uploads: a retry reuses its receipt | +120 −30 in 4 files · 8/10 |
-| [#125](https://github.com/acme/app/pull/125) | server: receipts carry their upload id | +60 −12 in 2 files · 9/10 |
-| [#126](https://github.com/acme/app/pull/126) | cleanup: the old dedupe job is gone | +4 −140 in 3 files · 10/10 |
+| New | a unique index on receipts' upload id | an upload id field on receipts |
+| Changes | a retry gets its first receipt back | the receipts API returns each upload id |
+| Edits | +120 −30 in 4 files: upload handler, its test, a migration | +60 −12 in 2 files: receipt type, its serializer |
+| Goes live | the deploy runs the migration | none |
+| Left out | a message that the upload was reused | the app doesn't show the id yet |
 
 ---
 
 **Next**
 
-- **`a` → merge #124, #125 and #126** · *recommended*
+- **`a` → merge #124 and #125** · *recommended*
 - `b` → no: keep the stack as drafts
 ````
 
@@ -301,52 +325,38 @@ on `**Done**`, and a report with a routine next step is the same table above
 ````
 
 **A message to a person**: the header row is `To`, Cost is what it commits the reader
-to, and the draft follows in full.
+to, and the draft follows in full. **A production write**: the header row is what runs
+and where, Effect counts the rows it touches from real data, and Undo says how they come
+back.
+
+**Several things**: an item each, grouped by the thing, findings by severity.
 
 ````markdown
-🟡 **Post this reply to Sam on #88?**
+🔴 **Not ready: the export leaves out the ticket's currency column.**
 
-| To | Sam, as a reply to their review comment on #88 |
-|---|---|
-| Why | They asked whether a retry can charge twice. It can't, and a test shows it. |
-| Cost | Commits you to the follow-up PR this week. |
+**Must fix**
 
-> Good catch. A retry reuses the first charge's key, so the bank drops the second one,
-> and `retry.test.ts` covers it. I'll move the key into the client in a follow-up this
-> week.
+- **Currency column**: rows stop at amount; the ticket's header ends in `currency` · `export.ts:41` → fix
+- **Commas in descriptions**: unquoted, so "Rent, January" adds a column · `export.ts:58` → fix
+
+**Cleanups**
+
+- **JSON option**: the ticket never asked for it · `export.ts:12` → fix
+
+<details><summary>Checks: ⚠️ lint not set up · ✅ tests 2/2, but one expects the wrong header</summary>
+
+✅ typecheck · a real run printed `2026-01-31,Rent, January,900.00`.
+
+- `export.ts:41` · verified by that run: three columns, the ticket's header has four · source: the ticket
+- `export.ts:58` · verified by that run: "Rent, January" split in two · source: RFC 4180
+- `export.ts:12` · verified by reading the ticket: no JSON · source: the ticket
+- **Mock-only test**, Cleanup · `export.test.ts:8` → fix · it checks its own mock, never the export · verified by reading the test
+
+</details>
 
 ---
 
 **Next**
 
-- **`a` → post it** · *recommended*
-- `b` → no: leave the comment unanswered
+- **`a` → fix the currency column, quoting, JSON option, and mock test** · *recommended*
 ````
-
-**A production write**: the header row is what runs and where, Effect counts the rows it
-touches from real data, and Undo says how they come back.
-
-````markdown
-🟡 **Backfill the missing VAT rate on 412 receipts in production?**
-
-| Write | One `UPDATE` on `receipts` in production: sets `vat_rate` where it's null |
-|---|---|
-| Risk | ⚠️ 9 of the 412 have no VAT line, so they get 0%. |
-| Effect | 412 of 80,300 receipts change, in 37 companies, counted on the replica. |
-| Proof | A dry run on a copy changed 412 rows in 0.4 s. |
-| Undo | The old values are saved in `receipts_vat_backup`; one statement restores them. |
-| Cost | Exports already sent keep the old totals. |
-
----
-
-**Next**
-
-- **`a` → run the backfill in production** · *recommended*
-- `b` → no: leave the rates empty
-````
-
-## Pages
-
-When Markdown can't show it, such as a highlight on part of a name across many renames,
-two trees side by side, or a UI, publish a page. Keep the same markers there: struck through for removed and a green highlight for added.
-Check the exact page at 728px and 390px wide before it goes out.

@@ -22,6 +22,13 @@ after one. Of that week's 215 Pick cards with a decision recommended, it sends b
 two of the weekly's three cases among them (D-r75a); the third, a plan review, has no
 **Pick**. A ship gate, post, or push passes, since its view carries the checks. The note
 joins any other send-back, so it's one per stop.
+A merge option goes back too when its text isn't the plain request merge-gate takes as a go
+(merge_go.literal_go), such as "merge #90, then deploy": a bare-letter pick of it costs the
+user a typed go. In the 60 days to Nov 10, 2026, 27 of 347 merge options in delivered T3
+replies weren't plain, in 13 threads, and the user picked 11 of them with a bare letter. An
+option of class `stop:merge` that only marks PRs ready passes. Known limits: it reads merge
+words, so "ready to merge" reads as a merge and "don't forget to merge" or "land #12" as none;
+merge-gate.py still refuses any pick that isn't a literal go.
 A delegated child whose brief has a "Reply rules: on" line plays the user's session, so it
 is sent back like one.
 
@@ -69,12 +76,28 @@ and one of them had a listed label, the first fact table written. Its Pick and S
 count for the source check, and numbered steps under a table with a Do row are that Do's
 steps, as under a Do note. Known limits: a fact table whose every label is off the list
 reads as a comparison view, as before, and so does one below a lead-in sentence or under a
-headline without its marker."""
+headline without its marker.
+
+reply-shape's items, a report's list of several things, are the same fact table in list
+form: a top-level list item that opens with a bold name that isn't a fact label, then a
+clause of at most ITEM_WORDS words. Up to TABLE_ROWS of them don't count when each clause
+runs at most ITEM_SEND_BACK words; a longer item or list, and the details under an item,
+count. Counting every item word sent back 13 of 45 eval replies written under the items
+rule on Nov 10, 2026, against 4 of 45 under the fact table, while their visible words
+matched (medians 108 and 113); with the clause rule, a 25-word clause exemption let the
+wall of text that started this hook pass, and a 15-word one still sends it back at 108
+words. The table's other parts go free under items too: a group's bold label over its
+items, the table's header, and a Decide, Review, or Do line under an item, a reader row,
+within FACT_SEND_BACK words, with a Do line's numbered steps. Without them, all three
+project views the user picked blind on Nov 10, 2026 went back at 107 to 127 words; with
+them they count 34, 73, and 51. A label runs at most ITEM_WORDS words, and only the
+first reader line under an item, before any line back at the margin, is its row. Over 8,990 delivered T3 replies from the 60 days to Nov
+10, items free 171 of the 4,302 the count put over 100, and send back none it passed."""
 import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import bare_references, t3_child, transcripts, turn_block  # noqa: E402
+import bare_references, merge_go, t3_child, transcripts, turn_block  # noqa: E402
 
 BUDGET = 60  # reply-shape's writing target, which check_examples holds examples to
 SEND_BACK = 100  # the send-back limit: a glance above it goes back
@@ -91,6 +114,14 @@ BLOCK_START = re.compile(r"^\s*(?:[-*+]\s|\d+[.)]\s|>|#{1,6}\s|`{3,}|~{3,}|([-*_
 ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+")
 HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
 TABLE_ROWS = 6  # the most body rows a table can hold and still be a view
+# An item: a top-level list line that opens with its name in bold, "- **Currency column**: …".
+ITEM_LEAD = re.compile(r"^[-*+]\s+\*\*([^*\n]+?):?\*\*:?")
+ITEM_WORDS = 12  # reply-shape's clause after an item's name
+ITEM_SEND_BACK = 15  # an item whose clause runs past this counts, as FACT_SEND_BACK is to FACT_WORDS
+# A reader item under an item, "  - Decide: …", is that item's Decide, Review, or Do row.
+ITEM_ROW = re.compile(r"^\s+[-*+]\s+(?:\*\*)?(Decide|Review|Do)(?:\*\*)?\s*:", re.I)
+# A group's label over its items, "**Must fix**" or "**Running**".
+GROUP = re.compile(r"^\*\*[^*\n]+\*\*:?\s*$")
 # reply-shape's fact table: its labels, row cap, and words per value (target, send-back).
 FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Queued",
                "Pick", "Source", "Cost", "Decide", "Review", "Do")
@@ -273,7 +304,11 @@ def glance(reply):
     fact = fact_table(reply)
     do_rows = {row.at for row in fact.rows if listed(row.label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
+    items, lead = [], 0  # lead: the open item's text column, 0 when none
+    rows, groups = [], []  # each item's reader row; the group labels over items
+    under = False  # whether the lines since the last item still sit under it
     column = 0  # the open Do item's text column: a table left of it ends the item
+    following = [next((line for line in lines[n + 1:end] if line.strip()), "") for n in range(end)]
     for n, line in enumerate(lines[:end]):
         if n in short:
             if n in do_rows:  # the numbered steps under the fact table are this Do's
@@ -293,8 +328,50 @@ def glance(reply):
             item = ITEM.match(line)
             column = item.end() if item else 1
         do, step = bool(DO.search(line)) or (do and line[:1].isspace()), 0
+        name = ITEM_LEAD.match(line)
+        if name and not listed(name.group(1).strip()):  # a fact label, such as Do, is a note
+            items.append([line])
+            rows.append([])
+            lead, under = ITEM.match(line).end(), True
+            continue
+        if lead and len(line) - len(line.lstrip()) >= lead and not ITEM.match(line):
+            items[-1].append(line)  # the item's wrapped line
+            continue
+        row = ITEM_ROW.match(line) if under and line[:1].isspace() and not rows[-1] else None
+        if row:  # an item's first reader line is its row; a second is detail
+            rows[-1].append(line)
+            do = row.group(1).casefold() == "do"  # its numbered steps are the Do's
+            continue
+        if GROUP.match(line) and is_item(following[n]) and count([line]) <= ITEM_WORDS:
+            groups.append(line)
+            continue
+        lead = 0
+        under = under and line[:1].isspace()
         kept.append(line)
-    return kept
+    # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_SEND_BACK words,
+    # are a fact table in list form, so like a short table they don't count, and neither
+    # do their group labels, the table's header, or a reader row under one within
+    # FACT_SEND_BACK words. A longer item, row, label, or list, an item's second reader
+    # line, and other details under an item count.
+    if len(items) > TABLE_ROWS:
+        return kept + groups + [line for item, under in zip(items, rows) for line in item + under]
+    return kept + [line for item, under in zip(items, rows)
+                   for line in (item if clause(item) > ITEM_SEND_BACK else []) + [
+                       row for row in under if count([row]) > FACT_SEND_BACK]]
+
+
+def is_item(line):
+    name = ITEM_LEAD.match(line)
+    return bool(name) and not listed(name.group(1).strip())
+
+
+def count(lines):
+    return sum(1 for line in lines for token in line.split() if WORD.search(token))
+
+
+def clause(item):
+    """The words of an item after its bold name."""
+    return count([ITEM_LEAD.sub("", item[0]), *item[1:]])
 
 
 def words(reply):
@@ -302,7 +379,7 @@ def words(reply):
     grill_words."""
     if grill_round(reply):
         return grill_words(reply)
-    return sum(1 for line in glance(reply) for token in line.split() if WORD.search(token))
+    return count(glance(reply))
 
 
 # The round format's fixed labels, which scope-grill's budget leaves out (decision D-R13-2).
@@ -579,6 +656,40 @@ def pick_lines(shown, n):
     return kept
 
 
+# A merge the option asks for, "merge #12" or "start merging #12", not one it leaves to the user or
+# rules out: "I'll merge them myself" or "don't merge" after marking ready.
+MERGES = re.compile(r"\bmerg(?:e|es|ed|ing)\b", re.I)
+NOT_ASKED = re.compile(r"(?:\bI'll|\bI will|\bdon't|\bdo not|\bnot|\bnever|\bwithout)\s+(?:\w+\s+){0,2}$", re.I)
+
+
+def asks_merge(text):
+    """True when the option's text asks for a merge rather than leaving or ruling one out."""
+    text = text.replace("’", "'")
+    return any(not NOT_ASKED.search(text[:match.start()]) for match in MERGES.finditer(text))
+
+
+def unplain(reply):
+    """The reply's merge options whose text merge_go doesn't read as a literal go."""
+    try:
+        options = turn_block.parse(reply).options
+    except turn_block.Malformed:
+        return []  # routine_stop.py sends a reply without a valid block back
+    return [option for option in options
+            if option.cls == "stop:merge" and asks_merge(option.text)
+            and not merge_go.literal_go(option.text)]
+
+
+def merge_feedback(reply):
+    """The send-back text for merge options merge-gate wouldn't take as a go, or None."""
+    found = unplain(reply)
+    if not found:
+        return None
+    listing = "; ".join(f"`{option.key}` → {option.text}" for option in found)
+    return (f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
+            "Write each as the merge alone, such as \"merge #12 and #13\", with any step before or after it "
+            "in the reply or another option, the same in Next and the turn block, then resend the whole reply.")
+
+
 def main():
     try:
         event = json.loads(sys.stdin.read())
@@ -590,11 +701,11 @@ def main():
     if bare_references.delegated_child(event) and not t3_child.rules_on(bare_references.first_brief(event)):
         return
     reply = event.get("last_assistant_message") or ""
-    if running(reply) or opted_out(event):
-        return
+    # The merge option is a contract merge-gate reads, so "normal replies" doesn't turn it off.
+    shape = () if running(reply) or opted_out(event) else (
+        problem(event, reply), fact_feedback(reply), SOURCE_FEEDBACK if unsourced(reply) else None)
     # One send per stop, so a fact table's limits and a missing source ride along with any other problem.
-    feedback = " ".join(filter(None, (problem(event, reply), fact_feedback(reply),
-                                      SOURCE_FEEDBACK if unsourced(reply) else None)))
+    feedback = " ".join(filter(None, (*shape, merge_feedback(reply))))
     if feedback:
         send_back(event, feedback)
 
@@ -617,7 +728,7 @@ def problem(event, reply):
     return (
         f"Your reply's headline and notes come to {count} words; reply-shape keeps them under {BUDGET}. The user "
         "reads each reply at a glance. Send your whole reply again as one, in the shape your reply rules give: "
-        "a headline of at most 12 words, then its fact table, or under rules without one the one view that fits "
+        "a headline of at most 12 words, then its fact table, or a bold item per thing with its details in the fold and its risks and reader items under it, or under rules without one the one view that fits "
         "the content or none and at most three notes of at most 15 words, and the same closing and turn block. Keep every risk, decision, and step the user must take, "
         "and move checks and evidence to the one fold. T3 shows only a turn's last message and folds the rest "
         "away, so the resent reply has to stand on its own. Add no note about the change.")
