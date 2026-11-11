@@ -115,6 +115,9 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(card.format(text="merge #12 and #13")), [])
         self.assertEqual(problems(card.format(text="merge #12, then deploy")),
                          ["merge option `a` isn't the plain request merge-gate takes as a go"])
+        self.assertEqual(problems(card.format(text="merge addystack #12 and skills #13")), [])
+        self.assertEqual(problems(card.format(text="merge addystack #12 and #13")),
+                         ["merge option `a` names #13, which merge-gate places in no repo; name each PR's repo"])
 
     def test_a_turn_block_in_an_example_must_parse(self):
         turn = '<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"publish"}]} -->'
