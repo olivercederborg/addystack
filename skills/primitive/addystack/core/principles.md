@@ -11,4 +11,4 @@ How {{user}} wants work done. Before applying a principle, read its file in full
 - **[explain-the-number]({{kit}}/principles/explain-the-number.md)**: about to trust, report, or act on a measured number. Name what limits it and what else it could be measuring.
 - **[attack-the-premise]({{kit}}/principles/attack-the-premise.md)**: two fixes failed the same check. Test their shared assumption.
 - **[encode-lessons-in-structure]({{kit}}/principles/encode-lessons-in-structure.md)**: a correction repeats, or a rule is being added. Enforce it, and delete the prose.
-- **[slim-scope]({{kit}}/principles/slim-scope.md)**: shaping a plan, stack, review round, or `Next` list, or deferring a change. Recommend the smallest option, and build its right shape now.
+- **[slim-scope]({{kit}}/principles/slim-scope.md)**: shaping a plan, stack, review round, or `Next` list, or deferring a change, such as to keep an approval. Recommend the smallest option, and build its right shape now, including an approver's ask in their PR.
