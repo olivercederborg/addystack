@@ -206,8 +206,7 @@ from, with its numbered finding lines and receipt.
 
 With no Blocker or Cleanup left, new or earlier, and no run owed, say "Nothing further",
 name the delta checked, and record Done for the new head. Optional finds go on one
-folded line, `Also seen (Optional): <a few words each>`, without numbers or cards; hand
-one back as a fix only when it carries a real risk, such as a security gap.
+folded line, `Also seen (Optional): <a few words each>`, without numbers or cards.
 
 **Done when:** the verdict is given and recorded, or a `known` re-check stopped.
 

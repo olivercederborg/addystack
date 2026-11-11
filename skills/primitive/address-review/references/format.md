@@ -10,7 +10,9 @@ or Cleanup, done when nothing needs fixing.
 
 - **Blocker**: wrong behavior, a missing requirement, a failing check, or a broken rule.
 - **Cleanup**: slop, scope creep, or a non-idiomatic pattern with a clear better form.
-- **Optional**: a real improvement that can wait.
+- **Optional**: a nicety with no correctness or maintenance cost. A finding with either
+  cost is a Blocker or Cleanup, fixed in this change unless the slim-scope principle says
+  it waits.
 
 **Findings** follow the verdict, one line each, worst first, at most three visible (the
 rest go in the fold with the evidence): ``**1** · Blocker · <what breaks, in a few plain

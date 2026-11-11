@@ -27,7 +27,8 @@ Blocker: wrong behavior, data loss, security, a failing check, or a broken rule.
 Cleanup: scope creep, or a changed line no test protects, shown by a mutant of it that passes.
 When the intent asks for a minimal change, Cleanup also covers each part of the diff the
 intent still meets without, shown by the checks passing with it removed.
-Optional: a real improvement that can wait.
+Optional: a nicety with no correctness or maintenance cost; a finding with either is a
+Blocker or Cleanup.
 Label a finding Pre-existing when the change didn't cause, newly reach, or worsen it,
 whatever its severity.
 Give a complete, independent review. No findings is a valid result; say so.
