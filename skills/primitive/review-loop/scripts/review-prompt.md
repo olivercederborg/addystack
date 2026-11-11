@@ -24,7 +24,8 @@ command and mark the finding unproven. For a rule the repo documents, quote it a
 line that breaks it. Leave out anything you did not show, such as style, naming, or
 structure no documented rule names, and risks that need a future change to matter.
 Blocker: wrong behavior, data loss, security, a failing check, or a broken rule.
-Cleanup: scope creep, or a changed line no test protects, shown by a mutant of it that passes.
+Cleanup: scope creep, a changed line no test protects (shown by a mutant of it that passes),
+or a maintenance cost the change adds, such as logic it writes twice (cite each copy).
 When the intent asks for a minimal change, Cleanup also covers each part of the diff the
 intent still meets without, shown by the checks passing with it removed.
 Optional: a nicety with no correctness or maintenance cost; a finding with either is a
