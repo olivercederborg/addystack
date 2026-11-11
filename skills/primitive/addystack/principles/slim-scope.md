@@ -8,8 +8,8 @@ It waits only when someone else owns it, it can't be built yet (no API, dependen
 design), it would dismiss an approval for a change none of the PR's approvers asked for,
 or the user set the boundary. Then it's a one-line follow-up, unbuilt in this run: no
 separate or stacked PR unless asked. A change an approver asked for is built now, in their
-PR or an open one above it: they re-approve it quickly, and a new PR needs a review of its
-own. A draft, no users, or no approvals make now the cheapest time.
+PR or an open draft above it: they re-approve it quickly, and a new PR needs a review of
+its own. A draft, no users, or no approvals make now the cheapest time.
 
 **Why:** "its getting way too out of hand. lets keep it simple" · "but isnt it the best
 long term solution ?".
