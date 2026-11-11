@@ -140,7 +140,7 @@ await publish(job);
 
 - **1** · Blocker · a retry after finalizing skips publish · `export.ts:12` → fix
 - **2** · Cleanup · the tests still pass with `publish` deleted · `export.test.ts:30` → fix
-- **3** · Optional · `prepareRows` only forwards · `export.ts:4` → skip: removed in #4620
+- **3** · Optional · the retry log could name the job first · `export.ts:20` → skip: wording only
 
 <details><summary>Checks: ❌ tests 11/12 · ✅ 3 passed, and evidence</summary>
 
@@ -151,7 +151,7 @@ Checked base `a1b2c3d` · head `e4f5a6b`
 - **1** · `src/export.ts:12` · verified by a failing test at the PR head · source: retry in `payments.ts`
 
 ```json
-{"patch_id": "7c41d09e5b2a8f63e1d47a90c2b5e8f13a6d9c04", "reviewed": {"base": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "head": "e4f5a6b7c8d90123456789abcdef0123456789ab"}, "recorded_at": "2026-10-24T09:12:40Z", "verifier": {"session_id": "s-31f0", "agent_id": "a-9c2e", "agent_type": "work-verifier"}, "verdict": "not-done", "evidence": {}, "findings": ["1 · Blocker · a retry after finalizing skips publish · export.ts:12 → fix", "2 · Cleanup · the tests still pass with publish deleted · export.test.ts:30 → fix", "3 · Optional · prepareRows only forwards · export.ts:4 → skip: removed in #4620"], "required": {}}
+{"patch_id": "7c41d09e5b2a8f63e1d47a90c2b5e8f13a6d9c04", "reviewed": {"base": "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "head": "e4f5a6b7c8d90123456789abcdef0123456789ab"}, "recorded_at": "2026-10-24T09:12:40Z", "verifier": {"session_id": "s-31f0", "agent_id": "a-9c2e", "agent_type": "work-verifier"}, "verdict": "not-done", "evidence": {}, "findings": ["1 · Blocker · a retry after finalizing skips publish · export.ts:12 → fix", "2 · Cleanup · the tests still pass with publish deleted · export.test.ts:30 → fix", "3 · Optional · the retry log could name the job first · export.ts:20 → skip: wording only"], "required": {}}
 ```
 
 </details>
