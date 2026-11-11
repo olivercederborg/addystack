@@ -153,7 +153,7 @@ def unplaced(text):
     # names() changes its answer only at a range's bounds, so a range's PRs are its bounds,
     # each next to them, and every other range's that fall inside it: "#1-#5000" asks a few.
     bounds = {n + step for low, high in read for n in (low[1], high[1]) for step in (-1, 0, 1)}
-    held = lambda low, high: [n for n in bounds if min(low[1], high[1]) <= n <= max(low[1], high[1])]
+    probes = lambda low, high: [n for n in bounds if min(low[1], high[1]) <= n <= max(low[1], high[1])]
     named = [bool(low[0] or high[0]) for low, high in read]
     spread = [(min(low[1], high[1]), max(low[1], high[1])) for low, high in read]
     twice = any(named) and any(max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:])
@@ -171,4 +171,4 @@ def unplaced(text):
             return "follows a PR named with its repo, so it's in none"
         return "names a PR twice, beside a PR named with its repo" if twice else "is in no repo"
     return [(ref(low, high), why(at, low, high)) for at, (low, high) in enumerate(read)
-            if not all(placed(n) for n in held(low, high))]
+            if not all(placed(n) for n in probes(low, high))]
