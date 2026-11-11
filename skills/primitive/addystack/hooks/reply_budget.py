@@ -696,22 +696,22 @@ def unplaced(reply):
 
 def merge_feedback(reply):
     """The send-back text for merge options merge-gate wouldn't take as a go, or None."""
-    plain, placed = unplain(reply), unplaced(reply)
-    if not (plain or placed):
+    not_plain, lost = unplain(reply), unplaced(reply)
+    if not (not_plain or lost):
         return None
     sent = []
-    if plain:
-        listing = "; ".join(f"`{option.key}` → {option.text}" for option in plain)
+    if not_plain:
+        listing = "; ".join(f"`{option.key}` → {option.text}" for option in not_plain)
         sent.append(f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
                     "Write each as the merge alone, such as \"merge #12 and #13\", with any step before or after it "
                     "in the reply or another option.")
-    if placed:
+    if lost:
         listing = "; ".join(f"`{option.key}` → {option.text} ({', '.join(f'{ref} {why}' for ref, why in refs)})"
-                            for option, refs in placed)
-        sent.append(f"merge-gate places these merge options' PRs in no repo, so a pick of one merges none of them: "
+                            for option, refs in lost)
+        sent.append(f"These merge options name PRs merge-gate places in no repo, so a pick is no go for those PRs: "
                     f"{listing}. Name each PR's repo, such as \"merge addystack #56, addystack #59 and skills #313\", "
                     "or, for PRs of one repo, none, such as \"merge #56 and #59\".")
-    return " ".join(sent) + " Write it the same in Next and the turn block, then resend the whole reply."
+    return " ".join(sent) + " Write each option the same in Next and the turn block, then resend the whole reply."
 
 
 def main():
