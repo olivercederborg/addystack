@@ -105,7 +105,7 @@ follow-up finding with why.
 
 - **1** · Blocker · a timed-out charge charges again · `retry.ts:40` · both → fix, above
 - **2** · Cleanup · backoff never caps · `retry.ts:12` · Codex → fix
-- **3** · Cleanup · no timeout-path test · `retry.test.ts` · Claude → skip: unreachable
+- **3** · Cleanup · no timeout-path test · `retry.test.ts` · Claude → fix
 
 <details><summary>Checks: ✅ 3 passed · Claude 2, Codex 2, 1 shared, 1 dropped</summary>
 
