@@ -86,8 +86,12 @@ count. Counting every item word sent back 13 of 45 eval replies written under th
 rule on Nov 10, 2026, against 4 of 45 under the fact table, while their visible words
 matched (medians 108 and 113); with the clause rule, a 25-word clause exemption let the
 wall of text that started this hook pass, and a 15-word one still sends it back at 108
-words. Over 8,990 delivered T3 replies from the 60 days to Nov 10, it frees 164 of the
-4,302 the count put over 100, and sends back none it passed."""
+words. The table's other parts go free under items too: a group's bold label over its
+items, the table's header, and a Decide, Review, or Do line under an item, a reader row,
+within FACT_SEND_BACK words, with a Do line's numbered steps. Without them, all three
+project views the user picked blind on Nov 10, 2026 went back at 107 to 127 words; with
+them they count 34, 73, and 51. Over 8,990 delivered T3 replies from the 60 days to Nov
+10, items free 171 of the 4,302 the count put over 100, and send back none it passed."""
 import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
 
@@ -113,6 +117,10 @@ TABLE_ROWS = 6  # the most body rows a table can hold and still be a view
 ITEM_LEAD = re.compile(r"^[-*+]\s+\*\*([^*\n]+?):?\*\*:?")
 ITEM_WORDS = 12  # reply-shape's clause after an item's name
 ITEM_SEND_BACK = 15  # an item whose clause runs past this counts, as FACT_SEND_BACK is to FACT_WORDS
+# A reader item under an item, "  - Decide: …", is that item's Decide, Review, or Do row.
+ITEM_ROW = re.compile(r"^\s+[-*+]\s+(?:\*\*)?(Decide|Review|Do)(?:\*\*)?\s*:", re.I)
+# A group's label over its items, "**Must fix**" or "**Running**".
+GROUP = re.compile(r"^\*\*[^*\n]+\*\*:?\s*$")
 # reply-shape's fact table: its labels, row cap, and words per value (target, send-back).
 FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Queued",
                "Pick", "Source", "Cost", "Decide", "Review", "Do")
@@ -296,7 +304,9 @@ def glance(reply):
     do_rows = {row.at for row in fact.rows if listed(row.label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
     items, lead = [], 0  # lead: the open item's text column, 0 when none
+    rows, groups = [], []  # each item's reader rows; the group labels over items
     column = 0  # the open Do item's text column: a table left of it ends the item
+    following = [next((line for line in lines[n + 1:end] if line.strip()), "") for n in range(end)]
     for n, line in enumerate(lines[:end]):
         if n in short:
             if n in do_rows:  # the numbered steps under the fact table are this Do's
@@ -319,18 +329,37 @@ def glance(reply):
         name = ITEM_LEAD.match(line)
         if name and not listed(name.group(1).strip()):  # a fact label, such as Do, is a note
             items.append([line])
+            rows.append([])
             lead = ITEM.match(line).end()
             continue
         if lead and len(line) - len(line.lstrip()) >= lead and not ITEM.match(line):
             items[-1].append(line)  # the item's wrapped line
             continue
+        row = ITEM_ROW.match(line) if items and line[:1].isspace() else None
+        if row:
+            rows[-1].append(line)
+            do = row.group(1).casefold() == "do"  # its numbered steps are the Do's
+            continue
+        if GROUP.match(line) and is_item(following[n]):
+            groups.append(line)
+            continue
         lead = 0
         kept.append(line)
     # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_SEND_BACK words,
-    # are a fact table in list form, so like a short table they don't count. A longer item
-    # or list, and the details under an item, count.
-    free = len(items) <= TABLE_ROWS
-    return kept + [line for item in items if not free or clause(item) > ITEM_SEND_BACK for line in item]
+    # are a fact table in list form, so like a short table they don't count, and neither
+    # do their group labels, the table's header, or a reader row under one within
+    # FACT_SEND_BACK words. A longer item, row, or list, and other details under an item,
+    # count.
+    if len(items) > TABLE_ROWS:
+        return kept + groups + [line for item, under in zip(items, rows) for line in item + under]
+    return kept + [line for item, under in zip(items, rows)
+                   for line in (item if clause(item) > ITEM_SEND_BACK else []) + [
+                       row for row in under if count([row]) > FACT_SEND_BACK]]
+
+
+def is_item(line):
+    name = ITEM_LEAD.match(line)
+    return bool(name) and not listed(name.group(1).strip())
 
 
 def count(lines):

@@ -4549,8 +4549,9 @@ class ReplyBudget(unittest.TestCase):
             self.assertEqual(self.bounce("**Size**: 2 PRs · ~8 files", transcript_path=transcript.name), "")
 
     def test_bounces_a_past_wall_of_text(self):
-        # 141 words before short items went free; its "Settings row" and "Rename" items are short.
-        self.assertIn("come to 108 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
+        # 141 words before short items went free; its "Settings row" and "Rename" items are
+        # short, and "**Changed**" is their group's label.
+        self.assertIn("come to 107 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
         self.assertIn("under 60", self.bounce(self.SNOOP, turn_id="t1"))
 
     def test_sends_back_only_above_one_hundred_words(self):
@@ -4911,16 +4912,34 @@ class ReplyBudget(unittest.TestCase):
         def reply(*items):
             return "🔴 **Not ready: two bugs.**\n\n**Must fix**\n\n" + "".join(items) + "\n---\n\n**Done**. Still open: none.\n"
         self.assertEqual(reply_budget.clause([item]), reply_budget.ITEM_WORDS)
-        self.assertEqual(reply_budget.words(reply(*[item] * reply_budget.TABLE_ROWS)), 4 + 2)
+        self.assertEqual(reply_budget.words(reply(*[item] * reply_budget.TABLE_ROWS)), 4)  # with its group label
         self.assertEqual(reply_budget.words(reply(*[item] * (reply_budget.TABLE_ROWS + 1))), 4 + 2 + 7 * 14)
         wrapped = "- **Currency column**: rows stop at amount, so the export\n  misses the ticket's last column.\n"
-        self.assertEqual(reply_budget.words(reply(wrapped)), 4 + 2)
+        self.assertEqual(reply_budget.words(reply(wrapped)), 4)
         long = "- **Currency column**: " + "word " * (reply_budget.ITEM_SEND_BACK + 1) + "\n"
-        self.assertEqual(reply_budget.words(reply(long)), 4 + 2 + 2 + 16)
+        self.assertEqual(reply_budget.words(reply(long)), 4 + 2 + 16)
         detail = item + "  - the test expects the wrong header too\n"
-        self.assertEqual(reply_budget.words(reply(detail)), 4 + 2 + 7)
-        self.assertEqual(reply_budget.words(reply("  " + item)), 4 + 2 + 14)  # only a top-level item
+        self.assertEqual(reply_budget.words(reply(detail)), 4 + 7)
+        self.assertEqual(reply_budget.words(reply("  " + item)), 4 + 2 + 14)  # only a top-level item, so the label counts
         self.assertEqual(reply_budget.words(reply("- **Risk**: the export misses a column.\n")), 4 + 2 + 6)
+
+    def test_an_items_reader_rows_and_group_label_are_its_table(self):
+        # The project view the user picked blind on Nov 10, 2026: items grouped under a label,
+        # each with its Review, Decide, or Do line under it, and the Do's steps.
+        reply = ("🟡 **CSV export: three things wait on you.**\n\n**Waiting on you**\n\n"
+                 "- **Currency column (#41)**: ready to merge; #42 merges on top of it.\n"
+                 "  - Review: verify-work is done and review scored 10/10.\n"
+                 "- **SMTP password**: blocks testing #42's email on staging.\n"
+                 "  - **Do**: only you have the mail provider's login.\n"
+                 "    1. Log in to the mail provider.\n    2. Copy the SMTP password.\n"
+                 "\n---\n\n**Done**. Still open: none.\n")
+        self.assertEqual(reply_budget.words(reply), 7)
+        long_row = reply.replace("verify-work is done and review scored 10/10.", "word " * (reply_budget.FACT_SEND_BACK + 1))
+        self.assertEqual(reply_budget.words(long_row), 7 + 1 + 26)  # a row past a fact value's limit counts
+        prose = reply.replace("  - Review: verify-work is done and review scored 10/10.\n", "  - verify-work is done and review scored 10/10.\n")
+        self.assertEqual(reply_budget.words(prose), 7 + 7)  # other details under an item count
+        alone = "🟡 **One thing.**\n\n**Waiting on you**\n\nThe merge go for #41.\n\n---\n\n**Done**. Still open: none.\n"
+        self.assertEqual(reply_budget.words(alone), 2 + 3 + 5)  # a bold line over prose isn't a group label
 
     def test_reply_shape_states_the_item_limit(self):
         rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())
