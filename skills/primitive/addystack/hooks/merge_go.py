@@ -144,8 +144,8 @@ REWRITE = "write each PR as #12 or repo #12 and each range as #10-#14, each numb
 def unplaced(text):
     """The PRs of text that names() places in no repo, whatever merge holds them, as (ref,
     why) pairs, or [] when it places each one somewhere. names() decides, for a merge of
-    each PR alone, in every repo the text names and in one it doesn't; why names the cause
-    only where the text settles it: a bare PR after one named with its repo, as #59 in
+    each PR alone, in every repo the text names and in one it doesn't; why names every
+    cause the text settles, each with its fix: a bare PR after one named with its repo, as #59 in
     "merge addystack #56 and #59", or a range across two repos or written high to low. A
     text names() refuses whole, one that names a number twice beside a repo name (even two
     repos' own #145, or app #1 beside me/app #1) or holds a word spans() can't read, gets
@@ -161,26 +161,25 @@ def unplaced(text):
     shown = lambda end: f"{'/'.join(filter(None, end[0]))} #{end[1]}" if end[0] else f"#{end[1]}"
     ref = lambda low, high: shown(low) if low == high else f"{shown(low)}-{shown(high)}"
     named = [bool(low[0] or high[0]) for low, high in read]
+    # Two ends name one repo when their names match and their owners don't differ.
+    other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
+
+    def causes(at, low, high):  # each cause the text settles, with its fix
+        found = ["spans two repos: list each repo's PRs"] if low[0] and high[0] and other(low[0], high[0]) else []
+        found += [f"runs high to low: write {ref((low[0], high[1]), (high[0], low[1]))}"] if low[1] > high[1] else []
+        found += ["follows a PR named with its repo, so it's in none: name its repo"] if not named[at] and any(named[:at]) else []
+        return "; ".join(found)
+    settled = [(ref(low, high), causes(at, low, high)) for at, (low, high) in enumerate(read)]
     if shared and any(named):  # names() refuses every PR of such a text
         return [(", ".join(ref(*read[at]) for at in shared),
                  "share a number beside a repo name, so merge-gate places none of this option's PRs: "
-                 "name each PR once, and give two repos' same number a merge option each")]
+                 "name each PR once, and give two repos' same number a merge option each")] + [
+                    (where, why) for where, why in settled if why]
     repos = {(end[0][0] or "", end[0][1]) for span in read for end in span if end[0]} | {("", "\0")}
     placed = lambda n: any(names(text, n, owner, repo, (n,)) for owner, repo in repos)
     # names() changes its answer only at a range's bounds, so a range's PRs are its bounds,
     # each next to them, and every other range's that fall inside it: "#1-#5000" asks a few.
     bounds = {n + step for low, high in read for n in (low[1], high[1]) for step in (-1, 0, 1)}
     probes = lambda low, high: [n for n in bounds if min(low[1], high[1]) <= n <= max(low[1], high[1])]
-    # Two ends name one repo when their names match and their owners don't differ.
-    other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
-
-    def why(at, low, high):
-        if low[0] and high[0] and other(low[0], high[0]):
-            return "spans two repos: list each repo's PRs"
-        if low[1] > high[1]:
-            return f"runs high to low: write {ref(high, low)}"
-        if not named[at] and any(named[:at]):
-            return "follows a PR named with its repo, so it's in none: name its repo"
-        return f"is in no repo: {REWRITE}"
-    return [(ref(low, high), why(at, low, high)) for at, (low, high) in enumerate(read)
+    return [(where, why or f"is in no repo: {REWRITE}") for (low, high), (where, why) in zip(read, settled)
             if not all(placed(n) for n in probes(low, high))]

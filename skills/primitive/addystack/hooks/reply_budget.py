@@ -703,7 +703,8 @@ def merge_feedback(reply):
     if not_plain:
         listing = "; ".join(f"`{option.key}` → {option.text}" for option in not_plain)
         sent.append(f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
-                    "Write each as the merge alone, such as \"merge #12 and #13\", with any step before or after it "
+                    "Write each as the merge alone, such as \"merge #12 and #13\", or across repos with each PR's "
+                    "repo, such as \"merge addystack #56 and skills #313\", with any step before or after it "
                     "in the reply or another option.")
     if lost:
         listing = "; ".join(f"`{option.key}` → {option.text} ({', '.join(f'{ref} {why}' for ref, why in refs)})"

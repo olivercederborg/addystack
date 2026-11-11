@@ -5180,6 +5180,15 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(why("merge #10-#14-#16"), ["doesn't read as a PR or a range of two" + unread])
         self.assertEqual(why("merge #14-#12"), ["runs high to low: write #12-#14"])
         self.assertEqual(why("merge dotfiles#10-skills#14"), ["spans two repos: list each repo's PRs"])
+        # review-loop r3: every cause the text settles goes back at once, so following the
+        # notes gives an option merge-gate places.
+        high, late = "runs high to low: write #12-#14", "follows a PR named with its repo, so it's in none: name its repo"
+        self.assertEqual(why("merge app#10 and #14-#12"), [f"{high}; {late}"])
+        self.assertEqual(merge_go.unplaced("merge app#1 and web#1 and app#14-#12"),
+                         [("app #1, web #1", whole), ("app #14-#12", "runs high to low: write app #12-#14")])
+        for fixed in ("merge app#10 and app#12-#14", "merge app#1 and app#12-#14", "merge web#1", "merge app#10 and app#11"):
+            self.assertEqual(merge_go.unplaced(fixed), [], fixed)
+        self.assertIn("merge addystack #56 and skills #313", self.bounce(self.merge_gate_reply("merge app#10 and #11, then deploy")))
         # A plain option and an unplaced one go back in one send.
         reason = self.bounce(self.merge_gate_reply("merge #90, then deploy", "merge dotfiles #36 and #12"))
         self.assertIn("aren't the plain request", reason)
