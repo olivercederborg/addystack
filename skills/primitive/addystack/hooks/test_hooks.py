@@ -5120,6 +5120,17 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("review #53, then merge it", cls="routine")), [])
         self.assertEqual([o.key for o in reply_budget.unplain(self.merge_gate_reply("merge #124 and #125", "no: merge #124 only"))], ["b"])
 
+    def test_a_merge_option_across_repos_is_what_merge_go_takes(self):
+        # The check defers to merge_go, so a go it takes across repos passes and one with a
+        # step after it goes back, for repo-qualified refs and several PRs in two repos.
+        for text in ("merge addystack #62 and skills #317", "merge #55 and dotfiles #36",
+                     "merge dotfiles#1 and addystack#62", "merge acme/app#62 and acme/web#317"):
+            self.assertTrue(merge_go.literal_go(text), text)
+            self.assertEqual(reply_budget.unplain(self.merge_gate_reply(text)), [], text)
+        for text in ("merge addystack #62 and skills #317, then deploy", "merge #62 after skills #317 lands"):
+            self.assertFalse(merge_go.literal_go(text), text)
+            self.assertTrue(reply_budget.unplain(self.merge_gate_reply(text)), text)
+
 
 class BareReferences(unittest.TestCase):
     HOOK = "bare_references.py"
