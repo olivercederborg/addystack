@@ -5146,7 +5146,9 @@ class ReplyBudget(unittest.TestCase):
                 "merge #10 through dotfiles #12 through #14": ["#14"], "merge #10-dotfiles#12 to #14": ["#14"],
                 "merge r #10-#14, r #12": ["r #10-#14", "r #12"], "merge #12 and dotfiles #12": ["#12", "dotfiles #12"],
                 "merge dotfiles#10-skills#14": ["dotfiles #10-skills #14"], "merge #14-#12": ["#14-#12"],
-                "merge #14 through #12": ["#14-#12"], "merge #10-#14-#16": ["#10-#14-#16"]}
+                "merge #14 through #12": ["#14-#12"], "merge #10-#14-#16": ["#10-#14-#16"],
+                # verify-work: a backwards range's ends merge through the other refs, its middle in none.
+                "merge #14-#10 and #10 and #14": ["#14-#10"]}
 
     def test_a_merge_option_whose_prs_merge_gate_places_in_no_repo_goes_back(self):
         # Nov 11, 2026: a coordinator offered the first UNPLACED text, the user picked it, and
@@ -5176,8 +5178,8 @@ class ReplyBudget(unittest.TestCase):
             read, _ = merge_go.spans(text)
             repos = {(end[0][0] or "o", end[0][1]) for span in read for end in span if end[0]} | {("o", "zz")}
             return any(merge_go.names(text, n, owner, repo, (n,)) for owner, repo in repos)
-        # Each end the gate reads, or every number of a text it can't read.
-        numbers = lambda text: ({n for span in merge_go.spans(text)[0] for _, n in span}
+        # Every PR of each range the gate reads, or every number of a text it can't read.
+        numbers = lambda text: ({n for (_, a), (_, b) in merge_go.spans(text)[0] for n in range(min(a, b), max(a, b) + 1)}
                                 or {int(n) for n in re.findall(r"\d+", text) if merge_go.spans(text)[1]})
         for text in self.PLACED:
             for n in numbers(text):

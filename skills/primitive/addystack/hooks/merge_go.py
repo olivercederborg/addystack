@@ -111,8 +111,8 @@ def names(text, pr, owner, repo, merging=()):
     before it may be a refusal or a step NOT_REPO misses, as in "merge #10-#14, exclude #12",
     and so does a text that names a repo and names one PR twice. A word that starts like a
     PR, with a digit or holding a #, but doesn't read as one, names something it can't place,
-    so it isn't pr. merge-gate.py holds a go to it; unplaced reads the same rules from the
-    text alone."""
+    so it isn't pr. merge-gate.py holds a go to it, and unplaced asks it about the text
+    alone."""
     read, unread = spans(text)
     if unread:
         return False
@@ -140,8 +140,8 @@ def names(text, pr, owner, repo, merging=()):
 def unplaced(text):
     """The PRs of text that names() places in no repo, whatever merge holds them, as (ref,
     why) pairs, or [] when it places each one somewhere. names() decides, for a merge of
-    each end of each range alone, in every repo the text names and in one it doesn't, and
-    why only labels the cause: a bare PR after one named with its repo, as #59 in "merge
+    each PR alone, in every repo the text names and in one it doesn't, and why only labels
+    the cause: a bare PR after one named with its repo, as #59 in "merge
     addystack #56 and #59", a range across two repos or written high to low, or one PR named
     twice beside a repo. A word spans() can't read places none. The fix for the first is
     naming each PR's repo: "merge addystack #56 and addystack #59"."""
@@ -150,6 +150,10 @@ def unplaced(text):
         return [unread]
     repos = {(end[0][0] or "", end[0][1]) for span in read for end in span if end[0]} | {("", "\0")}
     placed = lambda n: any(names(text, n, owner, repo, (n,)) for owner, repo in repos)
+    # names() changes its answer only at a range's bounds, so a range's PRs are its bounds,
+    # each next to them, and every other range's that fall inside it: "#1-#5000" asks a few.
+    bounds = {n + step for low, high in read for n in (low[1], high[1]) for step in (-1, 0, 1)}
+    held = lambda low, high: [n for n in bounds if min(low[1], high[1]) <= n <= max(low[1], high[1])]
     named = [bool(low[0] or high[0]) for low, high in read]
     spread = [(min(low[1], high[1]), max(low[1], high[1])) for low, high in read]
     twice = any(named) and any(max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:])
@@ -167,4 +171,4 @@ def unplaced(text):
             return "follows a PR named with its repo, so it's in none"
         return "names a PR twice, beside a PR named with its repo" if twice else "is in no repo"
     return [(ref(low, high), why(at, low, high)) for at, (low, high) in enumerate(read)
-            if not (placed(low[1]) and placed(high[1]))]
+            if not all(placed(n) for n in held(low, high))]
