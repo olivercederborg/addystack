@@ -1,6 +1,7 @@
 # Slim scope
 
-**Apply when** you're shaping a plan, a stack, a review round, or a `Next` list.
+**Apply when** you're shaping a plan, a stack, a review round, or a `Next` list, or
+deferring a change.
 
 Recommend the smallest option that meets the agreed goal, and build its right shape now.
 It waits only when someone else owns it, it can't be built yet (no API, dependency, or

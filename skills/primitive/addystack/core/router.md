@@ -63,7 +63,7 @@ Stop before the next action when it is one of these:
   requesting changes on it, a reply to a human reviewer, a reviewer request, or a new
   issue or ticket. Draft it and stop. Replies to bots go out.
 - **A push to a branch someone else owns**, or one that would dismiss someone's
-  approval. slim-scope decides if it waits.
+  approval.
 - **A missing credential**, account, or secret you can't create, once the next action
   needs it.
 - **A check that still fails** after the fix attack-the-premise's test pointed to.
