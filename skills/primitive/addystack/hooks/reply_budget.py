@@ -26,9 +26,14 @@ A merge option goes back too when its text isn't the plain request merge-gate ta
 (merge_go.literal_go), such as "merge #90, then deploy": a bare-letter pick of it costs the
 user a typed go. In the 60 days to Nov 10, 2026, 27 of 347 merge options in delivered T3
 replies weren't plain, in 13 threads, and the user picked 11 of them with a bare letter. An
-option of class `stop:merge` that only marks PRs ready passes. Known limits: it reads merge
-words, so "ready to merge" reads as a merge and "don't forget to merge" or "land #12" as none;
-merge-gate.py still refuses any pick that isn't a literal go.
+option of class `stop:merge` that only marks PRs ready passes. A plain one goes back when it
+names a PR merge-gate places in no repo (merge_go.unplaced, which reads names()' rules): on
+Nov 11 a coordinator offered "merge addystack #56 and #59 and skills #313 and #315", whose
+bare #59 and #315 follow a PR named with its repo, the user picked it, and merge-gate
+refused both. Over the same 346 options, that sends back 4 more, all bare PRs after a
+dotfiles one that the user picked. Known limits: it reads merge words, so "ready to merge"
+reads as a merge and "don't forget to merge" or "land #12" as none, and it can't know which
+PRs a merge will hold; merge-gate.py still refuses any pick that isn't a go for them.
 A delegated child whose brief has a "Reply rules: on" line plays the user's session, so it
 is sent back like one.
 
@@ -668,26 +673,47 @@ def asks_merge(text):
     return any(not NOT_ASKED.search(text[:match.start()]) for match in MERGES.finditer(text))
 
 
-def unplain(reply):
-    """The reply's merge options whose text merge_go doesn't read as a literal go."""
+def merge_options(reply):
+    """The reply's options of class stop:merge that ask for a merge."""
     try:
         options = turn_block.parse(reply).options
     except turn_block.Malformed:
         return []  # routine_stop.py sends a reply without a valid block back
-    return [option for option in options
-            if option.cls == "stop:merge" and asks_merge(option.text)
-            and not merge_go.literal_go(option.text)]
+    return [option for option in options if option.cls == "stop:merge" and asks_merge(option.text)]
+
+
+def unplain(reply):
+    """The reply's merge options whose text merge_go doesn't read as a literal go."""
+    return [option for option in merge_options(reply) if not merge_go.literal_go(option.text)]
+
+
+def unplaced(reply):
+    """(option, refs) for each literal-go merge option naming a PR merge-gate places in no
+    repo (merge_go.unplaced), so a pick of it merges none of those PRs."""
+    return [(option, refs) for option in merge_options(reply)
+            if merge_go.literal_go(option.text) and (refs := merge_go.unplaced(option.text))]
 
 
 def merge_feedback(reply):
     """The send-back text for merge options merge-gate wouldn't take as a go, or None."""
-    found = unplain(reply)
-    if not found:
+    not_plain, lost = unplain(reply), unplaced(reply)
+    if not (not_plain or lost):
         return None
-    listing = "; ".join(f"`{option.key}` → {option.text}" for option in found)
-    return (f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
-            "Write each as the merge alone, such as \"merge #12 and #13\", with any step before or after it "
-            "in the reply or another option, the same in Next and the turn block, then resend the whole reply.")
+    sent = []
+    if not_plain:
+        listing = "; ".join(f"`{option.key}` → {option.text}" for option in not_plain)
+        sent.append(f"These merge options aren't the plain request merge-gate takes as the user's go: {listing}. "
+                    "Write each as the merge alone, such as \"merge #12 and #13\", or across repos with each PR's "
+                    "repo, such as \"merge addystack #56 and skills #313\", with any step before or after it "
+                    "in the reply or another option.")
+    if lost:
+        listing = "; ".join(f"`{option.key}` → {option.text} ({' · '.join(f'{ref} {why}' for ref, why in refs)})"
+                            for option, refs in lost)
+        sent.append(f"These merge options name PRs merge-gate places in no repo, so a pick is no go for those PRs: "
+                    f"{listing}. Fix each as its note says: a bare PR after one named with its repo takes its own "
+                    "repo, as in \"merge addystack #56, addystack #59 and skills #313\", and PRs of one repo can all "
+                    "go bare, as in \"merge #56 and #59\".")
+    return " ".join(sent) + " Write each option the same in Next and the turn block, then resend the whole reply."
 
 
 def main():

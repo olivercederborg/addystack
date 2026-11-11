@@ -5131,6 +5131,89 @@ class ReplyBudget(unittest.TestCase):
             self.assertFalse(merge_go.literal_go(text), text)
             self.assertTrue(reply_budget.unplain(self.merge_gate_reply(text)), text)
 
+    # A placed option's PRs each land in some repo; an unplaced one names a PR merge-gate's
+    # names() refuses in every repo. The gate cases are MergeGate's, from #57 and #59.
+    PLACED = ("merge addystack #56, addystack #59, skills #313 and skills #315", "merge #56 and #59",
+              "merge acme/app#62 and acme/web#317", "merge acme/app #62 and acme/web #317", "merge #10-#14",
+              "merge #10 through #14", "merge r#10 through #14", "merge #10 through r#14", "merge r #10-#14",
+              "merge #55 and dotfiles #36", "merge #12 and dotfiles#36", "merge #1 and r#10 through #14",
+              "merge #12 and sam/12306 #36", "merge #12 and 1password #36", "merge #10-#14 and #12",
+              "merge r #11, r #12", "merge dotfiles#1 and addystack#62", "merge the 2 prs", "merge them",
+              "merge #12-#10 and #10-#12")  # verify-work: the second range places what the first can't
+    UNPLACED = {"merge addystack #56 and #59 and skills #313 and #315": ["#59", "#315"],
+                "merge dotfiles #36 and #12": ["#12"], "merge dotfiles #36, #12": ["#12"],
+                "merge acme/app#62 and #63": ["#63"],
+                "merge #10 through dotfiles #12 through #14": ["#14"], "merge #10-dotfiles#12 to #14": ["#14"],
+                "merge r #10-#14, r #12": ["r #10-#14, r #12"], "merge #12 and dotfiles #12": ["#12, dotfiles #12"],
+                "merge dotfiles#10-skills#14": ["dotfiles #10-skills #14"], "merge #14-#12": ["#14-#12"],
+                "merge #14 through #12": ["#14-#12"], "merge #10-#14-#16": ["#10-#14-#16"],
+                # verify-work: a backwards range's ends merge through the other refs, its middle in none.
+                "merge #14-#10 and #10 and #14": ["#14-#10"]}
+
+    def test_a_merge_option_whose_prs_merge_gate_places_in_no_repo_goes_back(self):
+        # Nov 11, 2026: a coordinator offered the first UNPLACED text, the user picked it, and
+        # merge-gate refused #59 and #315 as "not a merge of"; the user then typed the first
+        # PLACED text, which passed.
+        text = "merge addystack #56 and #59 and skills #313 and #315"
+        reason = self.bounce(self.merge_gate_reply(text))
+        self.assertIn(f"`a` → {text} (#59 follows a PR named with its repo, so it's in none: name its repo · "
+                      "#315 follows a PR named with its repo, so it's in none: name its repo)", reason)
+        self.assertIn("merge addystack #56, addystack #59 and skills #313", reason)
+        for text in self.PLACED:
+            self.assertTrue(merge_go.literal_go(text), text)
+            self.assertEqual(self.bounce(self.merge_gate_reply(text)), "", text)
+        for text, refs in self.UNPLACED.items():
+            self.assertTrue(merge_go.literal_go(text), text)
+            [(option, found)] = reply_budget.unplaced(self.merge_gate_reply(text))
+            self.assertEqual([ref for ref, _ in found], refs, text)
+        # review-loop r1 and r2: a cause the text settles gets its fix, and a text the gate
+        # refuses whole gets one note with a form that places, since which PR a ref means
+        # (app #1 beside me/app #1) is the agent's to say.
+        why = lambda text: [why for _, why in merge_go.unplaced(text)]
+        whole = ("share a number beside a repo name, so merge-gate places none of this option's PRs: "
+                 "name each PR once, and give two repos' same number a merge option each")
+        for text, refs in [("merge snoop #145 and ikasu #145", "snoop #145, ikasu #145"), ("merge r #10-#14, r #12", "r #10-#14, r #12"),
+                           ("merge app #1 and me/app #1", "app #1, me/app #1"), ("merge app #10, app #20 and web #20", "app #20, web #20")]:
+            self.assertEqual(merge_go.unplaced(text), [(refs, whole)], text)
+        unread = ", so merge-gate places none of this option's PRs: " + merge_go.REWRITE
+        self.assertEqual(why("merge #10 through #12 through #14"), ["chains a range onto another" + unread])
+        self.assertEqual(why("merge #10-#14-#16"), ["doesn't read as a PR or a range of two" + unread])
+        self.assertEqual(why("merge #14-#12"), ["runs high to low: write #12-#14"])
+        self.assertEqual(why("merge dotfiles#10-skills#14"), ["spans two repos: list each repo's PRs"])
+        # verify-work: a range across two repos with one number lists into a shared number.
+        self.assertEqual(why("merge dotfiles#14-acme/app#14"), ["spans two repos: give each repo's #14 a merge option of its own"])
+        self.assertEqual(why("merge dotfiles#14-acme/app#12"), ["spans two repos: list each repo's PRs"])
+        # review-loop r3: every cause the text settles goes back at once, so following the
+        # notes gives an option merge-gate places.
+        high, late = "runs high to low: write #12-#14", "follows a PR named with its repo, so it's in none: name its repo"
+        self.assertEqual(why("merge app#10 and #14-#12"), [f"{high}; {late}"])
+        self.assertEqual(merge_go.unplaced("merge app#1 and web#1 and app#14-#12"),
+                         [("app #1, web #1", whole), ("app #14-#12", "runs high to low: write app #12-#14")])
+        for fixed in ("merge app#10 and app#12-#14", "merge app#1 and app#12-#14", "merge web#1", "merge app#10 and app#11",
+                      "merge dotfiles #14", "merge acme/app #14", "merge dotfiles #14 and acme/app #12"):
+            self.assertEqual(merge_go.unplaced(fixed), [], fixed)
+        self.assertIn("merge addystack #56 and skills #313", self.bounce(self.merge_gate_reply("merge app#10 and #11, then deploy")))
+        # A plain option and an unplaced one go back in one send.
+        reason = self.bounce(self.merge_gate_reply("merge #90, then deploy", "merge dotfiles #36 and #12"))
+        self.assertIn("aren't the plain request", reason)
+        self.assertIn("`b` → merge dotfiles #36 and #12 (#12 follows", reason)
+
+    def test_unplaced_agrees_with_merge_gates_names(self):
+        # The check reads the gate's own rules: each PR a placed text names merges alone in
+        # some repo, and an unplaced text names a PR that no repo merges.
+        def placeable(text, n):
+            read, _ = merge_go.spans(text)
+            repos = {(end[0][0] or "o", end[0][1]) for span in read for end in span if end[0]} | {("o", "zz")}
+            return any(merge_go.names(text, n, owner, repo, (n,)) for owner, repo in repos)
+        # Every PR of each range the gate reads, or every number of a text it can't read.
+        numbers = lambda text: ({n for (_, a), (_, b) in merge_go.spans(text)[0] for n in range(min(a, b), max(a, b) + 1)}
+                                or {int(n) for n in re.findall(r"\d+", text) if merge_go.spans(text)[1]})
+        for text in self.PLACED:
+            for n in numbers(text):
+                self.assertTrue(placeable(text, n), (text, n))
+        for text in self.UNPLACED:
+            self.assertFalse(all(placeable(text, n) for n in numbers(text)), text)
+
 
 class BareReferences(unittest.TestCase):
     HOOK = "bare_references.py"

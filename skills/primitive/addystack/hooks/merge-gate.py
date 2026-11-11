@@ -113,70 +113,6 @@ def run(*cmd):
         raise RuntimeError(f"`{' '.join(cmd[:4])}` failed: {result.stderr.decode(errors='replace').strip()[:200]}")
     return result.stdout.decode(errors="surrogateescape")
 
-# A PR an option names, read word by word in merge_go's REF forms: 12, #12, skills#12,
-# owner/skills#12, skills #12 read as skills#12, and 10-14 or #10-#14. Two joined by
-# "through", "to", or "-" are a range. "the 2 PRs" is a count, and "v2" a name, not a PR;
-# a bare "the 13" reads as #13.
-PART = r"(?:(?:([\w.-]+)/)?([\w.-]+)#|#)?(\d+)"
-WORD = re.compile(rf"{PART}(?:-{PART})?")
-COUNT = re.compile(r"\bthe \d+ prs?\b", re.I)
-
-def names(text, pr, owner, repo, merging=()):
-    """Whether an option's text names pr in owner/repo, alone or in a range of this repo's
-    PRs, or names no PR at all ("merge them"). A PR with its repo, "dotfiles #36" or
-    dotfiles#36, is in that repo. A bare one, "#55", is in any repo, unless another PR in the
-    text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
-    bare end is in its other end's repo. A bare PR after one that names a repo, as #12 in
-    "merge dotfiles #36 and #12", may be in that repo, so it's in none. A text that places a
-    PR the merge holds (pr and merging) in another repo, or in none, names none: the word
-    before it may be a refusal or a step NOT_REPO misses, as in "merge #10-#14, exclude #12",
-    and so does a text that names a repo and names one PR twice. A word that starts like a
-    PR, with a digit or holding a #, but doesn't read as one, names something it can't place,
-    so it isn't pr."""
-    import merge_go
-    same = lambda part, want: not part or part.lower() == want.lower()
-    here = lambda found, at: same(found.group(at), owner) and same(found.group(at + 1), repo)
-    text = merge_go.REPO_REF.sub(r"\1", text)  # "dotfiles #36" reads as dotfiles#36
-    text = re.sub(r"\s*-\s*", "-", COUNT.sub(" ", text)).replace(",", " ").replace("&", " ")  # merge_go's REFS joins
-    words = [word.strip("()").rstrip(".!?;:") for word in text.split()]
-    refs = []
-    for at, word in enumerate(words):
-        if not (word[:1].isdigit() or "#" in word):
-            continue
-        found = WORD.fullmatch(word)
-        if not found:
-            return False
-        refs.append((at, found))
-    # Each end: whether its repo is this one, or None when it names no repo.
-    end = lambda found, at: (here(found, at) if found.group(at + 1) else None, int(found.group(at + 2)))
-    spans, last = [], None  # last: the previous PR word's index and whether its span is a range
-    for at, found in refs:
-        low = end(found, 1)
-        high = end(found, 4) if found.group(6) else low
-        joined = bool(last) and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-")
-        if joined and (last[1] or found.group(6)):  # "#10 through dotfiles #12 through #14" hides #12's repo
-            return False
-        if joined:
-            spans[-1] = (spans[-1][0], high)  # "#10 through #14" is one range, not three
-        else:
-            spans.append((low, high))
-        last = (at, joined or bool(found.group(6)))
-    bare = not any(here_ for span in spans for here_, _ in span)
-    side = lambda one, other: one if one is not None else other if other is not None else bare
-    after_repo = [any(point[0] is not None for span in spans[:i] for point in span) for i in range(len(spans))]
-    placed = [(side(a[0], b[0]) and side(b[0], a[0]) and not (a[0] is None and b[0] is None and late), a[1], b[1])
-              for (a, b), late in zip(spans, after_repo)]
-    held = lambda low, high: any(min(low, high) <= n <= max(low, high) for n in {pr, *merging})  # "#14-#12" too
-    if any(not ours and held(low, high) for ours, low, high in placed):
-        return False
-    # A text that names a repo and names a PR twice may refuse it the second time, even
-    # with this repo's name: "merge exclude #10-#14, exclude #12" in a repo named exclude.
-    spread = [(min(low, high), max(low, high)) for _, low, high in placed]
-    if any(point[0] is not None for span in spans for point in span) and any(
-            max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:]):
-        return False
-    return not spans or any(ours and low <= pr <= high for ours, low, high in placed)
-
 def answered(found):
     """The reply the latest prompt answers: the last one before it, past messages T3 says
     another agent sent (Exchange.agent) that landed in the same turn, such as a worker's
@@ -207,14 +143,14 @@ def user_go(numbers, owner, repo):
     go is a literal go (merge_go.py), held to the PRs it names when it names one with its
     repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
-    and no PR of numbers in another repo (names).
+    and no PR of numbers in another repo (merge_go.names).
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
     pick needs that reply's turn block, so an earlier reply's option, a reply without one,
     or a block in a message another agent sent gives no go."""
     pr = numbers[-1]
     try:
         import sqlite3, t3_child, transcripts, turn_block
-        from merge_go import literal_go, REPO_NAMED
+        from merge_go import literal_go, names, REPO_NAMED
         in_t3 = bool(os.environ.get("T3CODE_CLI_PATH"))  # where only T3's database tells another agent from the user
         try:
             with contextlib.closing(t3_child.connect()) as db:
