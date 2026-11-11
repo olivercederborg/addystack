@@ -43,5 +43,5 @@ Controls, where flagging was wrong:
    and log format changed; outcomes matched. → parity: Done, with the wording as a note.
    *Orchestrator: Effect v4 migration, 2026-10-22, da9112c1 → f8c6c40e*
 8. "I wouldn't approve yet: 1 blocker. Any caller still using the old `filter[...]` …":
-   the API wasn't live and had no callers. → contract: check exposure first; a break no
-   one can hit is Optional at most. *Flatten Transaction Query Parameters, 2026-10-06, 8f436d16 → 640b996d*
+   the API wasn't live and had no callers. → contract: check exposure first; a compatibility
+   break with no callers needs no shim: drop it. *Flatten Transaction Query Parameters, 2026-10-06, 8f436d16 → 640b996d*

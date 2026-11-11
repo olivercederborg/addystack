@@ -105,8 +105,8 @@ handles it. Give each item one call:
 - **Decline**: the claim is wrong, or the change isn't worth the risk. The evidence
   covers every path the claim names, so a path you haven't run rules out Decline. A
   "no rule asks for X" reason names the conventions doc you read in full.
-- **Defer**: valid but out of scope, such as a problem the PR didn't cause, newly reach,
-  or worsen (pre-existing). Name the follow-up in a few words.
+- **Defer**: valid, but the slim-scope principle says it waits. Name the follow-up in a
+  few words.
 - **No change**: already handled.
 
 Show the triage as one-line items, worst first, three visible and the rest in the fold:
@@ -184,7 +184,7 @@ Resolve defaults:
   the remote PR head's SHA (after a restack too). Resolve.
 - **Decline**: reply with the decisive reason. Resolve bot threads, and leave human
   threads for the reviewer.
-- **Defer**: reply with why it waits, such as out of scope, and name the follow-up,
+- **Defer**: reply with why it waits and name the follow-up,
   with the issue link when the user had one created. Leave the thread open.
 - **No change**: resolve bot threads. On a human thread, reply with where it's handled
   and leave it for the reviewer.
