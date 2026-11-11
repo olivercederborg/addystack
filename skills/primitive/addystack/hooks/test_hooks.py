@@ -4940,6 +4940,12 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.words(prose), 7 + 7)  # other details under an item count
         alone = "🟡 **One thing.**\n\n**Waiting on you**\n\nThe merge go for #41.\n\n---\n\n**Done**. Still open: none.\n"
         self.assertEqual(reply_budget.words(alone), 2 + 3 + 5)  # a bold line over prose isn't a group label
+        second = reply.replace("  - **Do**:", "  - Decide: merge it today, or after the email ships?\n  - **Do**:")
+        self.assertEqual(reply_budget.words(second), 7 + 8)  # only the first reader line is the row, so the Do counts
+        label = reply.replace("**Waiting on you**", "**" + "word " * (reply_budget.ITEM_WORDS + 1) + "**")
+        self.assertEqual(reply_budget.words(label), 7 + 13)  # a label past an item's clause counts
+        detached = reply.replace("  - Review:", "Then a paragraph at the margin.\n  - Review:")
+        self.assertEqual(reply_budget.words(detached), 7 + 6 + 8)  # a line after the margin left its item
 
     def test_reply_shape_states_the_item_limit(self):
         rules = " ".join((REPO / "skills" / "optional" / "reply-shape" / "SKILL.md").read_text().split())

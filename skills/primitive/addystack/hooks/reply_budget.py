@@ -90,7 +90,8 @@ words. The table's other parts go free under items too: a group's bold label ove
 items, the table's header, and a Decide, Review, or Do line under an item, a reader row,
 within FACT_SEND_BACK words, with a Do line's numbered steps. Without them, all three
 project views the user picked blind on Nov 10, 2026 went back at 107 to 127 words; with
-them they count 34, 73, and 51. Over 8,990 delivered T3 replies from the 60 days to Nov
+them they count 34, 73, and 51. A label runs at most ITEM_WORDS words, and only the
+first reader line under an item, before any line back at the margin, is its row. Over 8,990 delivered T3 replies from the 60 days to Nov
 10, items free 171 of the 4,302 the count put over 100, and send back none it passed."""
 import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
@@ -304,7 +305,8 @@ def glance(reply):
     do_rows = {row.at for row in fact.rows if listed(row.label, ("Do",))} if fact else set()
     kept, do, step = [], False, 0  # step: the open step's text column, 0 when none
     items, lead = [], 0  # lead: the open item's text column, 0 when none
-    rows, groups = [], []  # each item's reader rows; the group labels over items
+    rows, groups = [], []  # each item's reader row; the group labels over items
+    under = False  # whether the lines since the last item still sit under it
     column = 0  # the open Do item's text column: a table left of it ends the item
     following = [next((line for line in lines[n + 1:end] if line.strip()), "") for n in range(end)]
     for n, line in enumerate(lines[:end]):
@@ -330,26 +332,27 @@ def glance(reply):
         if name and not listed(name.group(1).strip()):  # a fact label, such as Do, is a note
             items.append([line])
             rows.append([])
-            lead = ITEM.match(line).end()
+            lead, under = ITEM.match(line).end(), True
             continue
         if lead and len(line) - len(line.lstrip()) >= lead and not ITEM.match(line):
             items[-1].append(line)  # the item's wrapped line
             continue
-        row = ITEM_ROW.match(line) if items and line[:1].isspace() else None
-        if row:
+        row = ITEM_ROW.match(line) if under and line[:1].isspace() and not rows[-1] else None
+        if row:  # an item's first reader line is its row; a second is detail
             rows[-1].append(line)
             do = row.group(1).casefold() == "do"  # its numbered steps are the Do's
             continue
-        if GROUP.match(line) and is_item(following[n]):
+        if GROUP.match(line) and is_item(following[n]) and count([line]) <= ITEM_WORDS:
             groups.append(line)
             continue
         lead = 0
+        under = under and line[:1].isspace()
         kept.append(line)
     # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_SEND_BACK words,
     # are a fact table in list form, so like a short table they don't count, and neither
     # do their group labels, the table's header, or a reader row under one within
-    # FACT_SEND_BACK words. A longer item, row, or list, and other details under an item,
-    # count.
+    # FACT_SEND_BACK words. A longer item, row, label, or list, an item's second reader
+    # line, and other details under an item count.
     if len(items) > TABLE_ROWS:
         return kept + groups + [line for item, under in zip(items, rows) for line in item + under]
     return kept + [line for item, under in zip(items, rows)
