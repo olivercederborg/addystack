@@ -22,7 +22,7 @@ didn't cause or worsen. A new path that drops what sibling code uses (an error's
 reason, a retry flag) is this change's finding, even with unchanged text. When nobody
 can hit it yet (a flag is off, no
 users, or the real configured input can't trigger it, checked without printing
-secrets), say so; it's Optional, called **fix**.
+secrets), say so; it's Cleanup at most and needs no shim.
 
 **Cards**: a decision uses the [decision card](views.md#decision-card-example). A fix that changes the flow or
 design gets a finding card, and the worst one is the reply's shape, on the surface: a

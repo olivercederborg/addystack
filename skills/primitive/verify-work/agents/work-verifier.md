@@ -44,4 +44,4 @@ Controls, where flagging was wrong:
    *Orchestrator: Effect v4 migration, 2026-10-22, da9112c1 → f8c6c40e*
 8. "I wouldn't approve yet: 1 blocker. Any caller still using the old `filter[...]` …":
    the API wasn't live and had no callers. → contract: check exposure first; a break no
-   one can hit is Optional, called fix. *Flatten Transaction Query Parameters, 2026-10-06, 8f436d16 → 640b996d*
+   one can hit needs no shim: drop it. *Flatten Transaction Query Parameters, 2026-10-06, 8f436d16 → 640b996d*
