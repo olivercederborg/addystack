@@ -5131,6 +5131,59 @@ class ReplyBudget(unittest.TestCase):
             self.assertFalse(merge_go.literal_go(text), text)
             self.assertTrue(reply_budget.unplain(self.merge_gate_reply(text)), text)
 
+    # A placed option's PRs each land in some repo; an unplaced one names a PR merge-gate's
+    # names() refuses in every repo. The gate cases are MergeGate's, from #57 and #59.
+    PLACED = ("merge addystack #56, addystack #59, skills #313 and skills #315", "merge #56 and #59",
+              "merge acme/app#62 and acme/web#317", "merge acme/app #62 and acme/web #317", "merge #10-#14",
+              "merge #10 through #14", "merge r#10 through #14", "merge #10 through r#14", "merge r #10-#14",
+              "merge #55 and dotfiles #36", "merge #12 and dotfiles#36", "merge #1 and r#10 through #14",
+              "merge #12 and sam/12306 #36", "merge #12 and 1password #36", "merge #10-#14 and #12",
+              "merge r #11, r #12", "merge dotfiles#1 and addystack#62", "merge the 2 prs", "merge them")
+    UNPLACED = {"merge addystack #56 and #59 and skills #313 and #315": ["#59", "#315"],
+                "merge dotfiles #36 and #12": ["#12"], "merge dotfiles #36, #12": ["#12"],
+                "merge acme/app#62 and #63": ["#63"],
+                "merge #10 through dotfiles #12 through #14": ["#14"], "merge #10-dotfiles#12 to #14": ["#14"],
+                "merge r #10-#14, r #12": ["r #10-#14", "r #12"], "merge #12 and dotfiles #12": ["#12", "dotfiles #12"],
+                "merge dotfiles#10-skills#14": ["dotfiles #10-skills #14"], "merge #14-#12": ["#14-#12"],
+                "merge #14 through #12": ["#14-#12"], "merge #10-#14-#16": ["#10-#14-#16"]}
+
+    def test_a_merge_option_whose_prs_merge_gate_places_in_no_repo_goes_back(self):
+        # Nov 11, 2026: a coordinator offered the first UNPLACED text, the user picked it, and
+        # merge-gate refused #59 and #315 as "not a merge of"; the user then typed the first
+        # PLACED text, which passed.
+        text = "merge addystack #56 and #59 and skills #313 and #315"
+        reason = self.bounce(self.merge_gate_reply(text))
+        self.assertIn(f"`a` → {text} (#59 follows a PR named with its repo, so it's in none, "
+                      "#315 follows a PR named with its repo, so it's in none)", reason)
+        self.assertIn("Name each PR's repo", reason)
+        for text in self.PLACED:
+            self.assertTrue(merge_go.literal_go(text), text)
+            self.assertEqual(self.bounce(self.merge_gate_reply(text)), "", text)
+        for text, refs in self.UNPLACED.items():
+            self.assertTrue(merge_go.literal_go(text), text)
+            [(option, found)] = reply_budget.unplaced(self.merge_gate_reply(text))
+            self.assertEqual([ref for ref, _ in found], refs, text)
+        # A plain option and an unplaced one go back in one send.
+        reason = self.bounce(self.merge_gate_reply("merge #90, then deploy", "merge dotfiles #36 and #12"))
+        self.assertIn("aren't the plain request", reason)
+        self.assertIn("`b` → merge dotfiles #36 and #12 (#12 follows", reason)
+
+    def test_unplaced_agrees_with_merge_gates_names(self):
+        # The check reads the gate's own rules: each PR a placed text names merges alone in
+        # some repo, and an unplaced text names a PR that no repo merges.
+        def placeable(text, n):
+            read, _ = merge_go.spans(text)
+            repos = {(end[0][0] or "o", end[0][1]) for span in read for end in span if end[0]} | {("o", "zz")}
+            return any(merge_go.names(text, n, owner, repo, (n,)) for owner, repo in repos)
+        # Each end the gate reads, or every number of a text it can't read.
+        numbers = lambda text: ({n for span in merge_go.spans(text)[0] for _, n in span}
+                                or {int(n) for n in re.findall(r"\d+", text) if merge_go.spans(text)[1]})
+        for text in self.PLACED:
+            for n in numbers(text):
+                self.assertTrue(placeable(text, n), (text, n))
+        for text in self.UNPLACED:
+            self.assertFalse(all(placeable(text, n) for n in numbers(text)), text)
+
 
 class BareReferences(unittest.TestCase):
     HOOK = "bare_references.py"

@@ -68,6 +68,8 @@ addystack adds the two-option cap and each option's class.
   - `stop:merge`: merging or marking ready. A merge option's text is the plain merge
     request with no other step, as in "merge #12 and #13", since only that counts as the
     user's go when they pick it; a ready-only option, such as "mark #12 ready", isn't one.
+    Across repos it names each PR's repo, as in "merge addystack #56 and skills #313":
+    merge-gate places a bare PR after one named with its repo in no repo.
   - `stop:push`: a force-push to a shared branch, or a push to a branch someone else
     owns or one that would dismiss an approval.
   - `stop:post`: a message to a person.
