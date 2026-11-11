@@ -47,8 +47,9 @@ unless the user asked for a full pass.
 ## 2. Check
 
 A Blocker or Cleanup needs a failure you can show, cited by file:line: a check that fails
-at the head, an input and its wrong result, a doc line the change made false, or a rule
-it breaks. Anything weaker is Optional.
+at the head, an input and its wrong result, a doc line the change made false, a rule it
+breaks, or a maintenance cost it adds, such as logic it writes twice. Optional is a nicety
+with neither cost; a cost you can't show yet needs more checking, not a lower label.
 
 - **Scope**: everything asked, nothing more. Speculative options, future-proof
   abstractions, extra endpoints, and code for a Not in scope item are scope creep
