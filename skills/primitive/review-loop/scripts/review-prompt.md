@@ -29,8 +29,8 @@ Cleanup: scope creep, a changed line no test protects (shown by a mutant of it t
 or a maintenance cost the change adds, such as logic it writes twice (cite each copy).
 When the intent asks for a minimal change, Cleanup also covers each part of the diff the
 intent still meets without, shown by the checks passing with it removed.
-Optional: a nicety with no correctness or maintenance cost; a finding with either is a
-Blocker or Cleanup.
+Optional: a nicety with no correctness or maintenance cost; one with either that the
+change caused or worsened is a Blocker or Cleanup.
 Label a finding Pre-existing when the change didn't cause, newly reach, or worsen it,
 whatever its severity.
 Give a complete, independent review. No findings is a valid result; say so.
