@@ -5156,9 +5156,9 @@ class ReplyBudget(unittest.TestCase):
         # PLACED text, which passed.
         text = "merge addystack #56 and #59 and skills #313 and #315"
         reason = self.bounce(self.merge_gate_reply(text))
-        self.assertIn(f"`a` → {text} (#59 follows a PR named with its repo, so it's in none, "
-                      "#315 follows a PR named with its repo, so it's in none)", reason)
-        self.assertIn("Name each PR's repo", reason)
+        self.assertIn(f"`a` → {text} (#59 follows a PR named with its repo, so it's in none: name its repo, "
+                      "#315 follows a PR named with its repo, so it's in none: name its repo)", reason)
+        self.assertIn("merge addystack #56, addystack #59 and skills #313", reason)
         for text in self.PLACED:
             self.assertTrue(merge_go.literal_go(text), text)
             self.assertEqual(self.bounce(self.merge_gate_reply(text)), "", text)
@@ -5166,6 +5166,14 @@ class ReplyBudget(unittest.TestCase):
             self.assertTrue(merge_go.literal_go(text), text)
             [(option, found)] = reply_budget.unplaced(self.merge_gate_reply(text))
             self.assertEqual([ref for ref, _ in found], refs, text)
+        # review-loop r1: each cause carries its own fix, since naming repos can't fix all.
+        why = lambda text: [why for _, why in merge_go.unplaced(text)]
+        self.assertEqual(why("merge snoop #145 and ikasu #145"), ["shares its number with another repo's PR, which "
+                         "merge-gate reads as one PR named twice: offer each repo's merge as its own option"] * 2)
+        self.assertEqual(why("merge r #10-#14, r #12"), ["names a PR twice beside a repo: name it once"] * 2)
+        self.assertEqual(why("merge #10 through #12 through #14"), ["chains a range onto another: write one range or list the PRs"])
+        self.assertEqual(why("merge #14-#12"), ["runs high to low: write #12-#14"])
+        self.assertEqual(why("merge dotfiles#10-skills#14"), ["spans two repos: list each repo's PRs"])
         # A plain option and an unplaced one go back in one send.
         reason = self.bounce(self.merge_gate_reply("merge #90, then deploy", "merge dotfiles #36 and #12"))
         self.assertIn("aren't the plain request", reason)

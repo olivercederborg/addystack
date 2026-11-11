@@ -103,8 +103,8 @@ def check_block(start, block):
     for option in reply_budget.unplain(text):
         problems.append((start, f"merge option `{option.key}` isn't the plain request merge-gate takes as a go"))
     for option, refs in reply_budget.unplaced(text):
-        problems.append((start, f"merge option `{option.key}` names {', '.join(ref for ref, _ in refs)}, "
-                                "which merge-gate places in no repo; name each PR's repo"))
+        problems.append((start, f"merge option `{option.key}` names a PR merge-gate places in no repo: "
+                                + "; ".join(f"{ref} {why}" for ref, why in refs)))
     for problem in bare_references.problems(text, names):
         # The cited line ends the problem; the longest match, in case one line ends another.
         offset = max((i for i, line in enumerate(block) if line.strip() and problem.endswith(f" in: {line.strip()}")),

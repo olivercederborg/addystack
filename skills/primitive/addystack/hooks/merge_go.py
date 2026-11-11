@@ -70,8 +70,8 @@ def spans(text):
     """(spans, unread): the PRs text names, in order, each a range of two ends (repo,
     number), with repo an (owner or None, name) pair or None for a bare end, and a lone PR a
     range of one. unread is None, or the (word, why) that stops the read: a word that starts
-    like a PR, with a digit or holding a #, but doesn't read as one, or a range chained
-    through a middle end that hides that end's repo, as "#10 through dotfiles #12 through #14"."""
+    like a PR, with a digit or holding a #, but doesn't read as one, or a range chained onto
+    another, as "#10 through dotfiles #12 through #14", which can hide its middle end's repo."""
     text = REPO_REF.sub(r"\1", text)  # "dotfiles #36" reads as dotfiles#36
     text = re.sub(r"\s*-\s*", "-", COUNT.sub(" ", text)).replace(",", " ").replace("&", " ")  # REFS joins
     words = [word.strip("()").rstrip(".!?;:") for word in text.split()]
@@ -81,7 +81,7 @@ def spans(text):
             continue
         found = WORD.fullmatch(word)
         if not found:
-            return [], (word, "doesn't read as a PR")
+            return [], (word, "doesn't read as a PR: write it as #12 or repo #12")
         refs.append((at, found))
     end = lambda found, at: ((found.group(at), found.group(at + 1)) if found.group(at + 1) else None,
                              int(found.group(at + 2)))
@@ -91,7 +91,7 @@ def spans(text):
         high = end(found, 4) if found.group(6) else low
         joined = bool(last) and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-")
         if joined and (last[1] or found.group(6)):
-            return [], (words[at], "chains a range through a PR named with its repo")
+            return [], (words[at], "chains a range onto another: write one range or list the PRs")
         if joined:
             read[-1] = (read[-1][0], high)  # "#10 through #14" is one range, not three
         else:
@@ -141,10 +141,10 @@ def unplaced(text):
     """The PRs of text that names() places in no repo, whatever merge holds them, as (ref,
     why) pairs, or [] when it places each one somewhere. names() decides, for a merge of
     each PR alone, in every repo the text names and in one it doesn't, and why only labels
-    the cause: a bare PR after one named with its repo, as #59 in "merge
-    addystack #56 and #59", a range across two repos or written high to low, or one PR named
-    twice beside a repo. A word spans() can't read places none. The fix for the first is
-    naming each PR's repo: "merge addystack #56 and addystack #59"."""
+    the cause and its fix: a bare PR after one named with its repo, as #59 in "merge
+    addystack #56 and #59", fixed by naming its repo, a range across two repos or written
+    high to low, or one number named twice beside a repo, even two repos' own #145, which
+    takes a merge option each. A word spans() can't read places none."""
     read, unread = spans(text)
     if unread:
         return [unread]
@@ -162,13 +162,19 @@ def unplaced(text):
     # Two ends name one repo when their names match and their owners don't differ.
     other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
 
+    repo = lambda at: next((end[0] for end in read[at] if end[0]), None)
+    overlaps = lambda at: [b for b in range(len(read)) if b != at
+                           and max(spread[at][0], spread[b][0]) <= min(spread[at][1], spread[b][1])]
+
     def why(at, low, high):
         if low[0] and high[0] and other(low[0], high[0]):
-            return "spans two repos"
+            return "spans two repos: list each repo's PRs"
         if low[1] > high[1]:
             return f"runs high to low: write {ref(high, low)}"
         if not named[at] and any(named[:at]):
-            return "follows a PR named with its repo, so it's in none"
-        return "names a PR twice, beside a PR named with its repo" if twice else "is in no repo"
+            return "follows a PR named with its repo, so it's in none: name its repo"
+        if twice and any(repo(at) and repo(b) and other(repo(at), repo(b)) for b in overlaps(at)):
+            return "shares its number with another repo's PR, which merge-gate reads as one PR named twice: offer each repo's merge as its own option"
+        return "names a PR twice beside a repo: name it once" if twice else "is in no repo"
     return [(ref(low, high), why(at, low, high)) for at, (low, high) in enumerate(read)
             if not all(placed(n) for n in probes(low, high))]
