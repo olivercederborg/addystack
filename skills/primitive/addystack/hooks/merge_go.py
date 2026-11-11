@@ -55,3 +55,83 @@ LITERAL_GO = re.compile(rf"{OPENER}{LEAD}?(?:{OPENER}{CORES}|{ASK}{LEAD}?{CORES}
 def literal_go(text):
     # A go is short; the cap also keeps the lead runs from going quadratic on a paste.
     return len(text) <= 200 and LITERAL_GO.fullmatch(text.strip().replace("’", "'")) is not None
+
+
+# A PR a text names, read word by word in REF's forms: 12, #12, skills#12,
+# owner/skills#12, skills #12 read as skills#12, and 10-14 or #10-#14. Two joined by
+# "through", "to", or "-" are a range. "the 2 PRs" is a count, and "v2" a name, not a PR;
+# a bare "the 13" reads as #13.
+PART = r"(?:(?:([\w.-]+)/)?([\w.-]+)#|#)?(\d+)"
+WORD = re.compile(rf"{PART}(?:-{PART})?")
+COUNT = re.compile(r"\bthe \d+ prs?\b", re.I)
+
+
+def spans(text):
+    """(spans, unread): the PRs text names, in order, each a range of two ends (repo,
+    number), with repo an (owner or None, name) pair or None for a bare end, and a lone PR a
+    range of one. unread is None, or the (word, why) that stops the read: a word that starts
+    like a PR, with a digit or holding a #, but doesn't read as one, or a range chained
+    through a middle end that hides that end's repo, as "#10 through dotfiles #12 through #14"."""
+    text = REPO_REF.sub(r"\1", text)  # "dotfiles #36" reads as dotfiles#36
+    text = re.sub(r"\s*-\s*", "-", COUNT.sub(" ", text)).replace(",", " ").replace("&", " ")  # REFS joins
+    words = [word.strip("()").rstrip(".!?;:") for word in text.split()]
+    refs = []
+    for at, word in enumerate(words):
+        if not (word[:1].isdigit() or "#" in word):
+            continue
+        found = WORD.fullmatch(word)
+        if not found:
+            return [], (word, "doesn't read as a PR")
+        refs.append((at, found))
+    end = lambda found, at: ((found.group(at), found.group(at + 1)) if found.group(at + 1) else None,
+                             int(found.group(at + 2)))
+    read, last = [], None  # last: the previous PR word's index and whether its span is a range
+    for at, found in refs:
+        low = end(found, 1)
+        high = end(found, 4) if found.group(6) else low
+        joined = bool(last) and last[0] == at - 2 and words[at - 1].lower() in ("through", "to", "-")
+        if joined and (last[1] or found.group(6)):
+            return [], (words[at], "chains a range through a PR named with its repo")
+        if joined:
+            read[-1] = (read[-1][0], high)  # "#10 through #14" is one range, not three
+        else:
+            read.append((low, high))
+        last = (at, joined or bool(found.group(6)))
+    return read, None
+
+
+def names(text, pr, owner, repo, merging=()):
+    """Whether an option's text names pr in owner/repo, alone or in a range of this repo's
+    PRs, or names no PR at all ("merge them"). A PR with its repo, "dotfiles #36" or
+    dotfiles#36, is in that repo. A bare one, "#55", is in any repo, unless another PR in the
+    text names this repo, so "#55" beside "dotfiles #36" isn't a dotfiles PR, and a range's
+    bare end is in its other end's repo. A bare PR after one that names a repo, as #12 in
+    "merge dotfiles #36 and #12", may be in that repo, so it's in none. A text that places a
+    PR the merge holds (pr and merging) in another repo, or in none, names none: the word
+    before it may be a refusal or a step NOT_REPO misses, as in "merge #10-#14, exclude #12",
+    and so does a text that names a repo and names one PR twice. A word that starts like a
+    PR, with a digit or holding a #, but doesn't read as one, names something it can't place,
+    so it isn't pr. merge-gate.py holds a go to it."""
+    read, unread = spans(text)
+    if unread:
+        return False
+    same = lambda part, want: not part or part.lower() == want.lower()
+    # Each end: whether its repo is this one, or None when it names no repo.
+    here = lambda end: None if end[0] is None else same(end[0][0], owner) and same(end[0][1], repo)
+    found = [tuple((here(point), point[1]) for point in span) for span in read]
+    bare = not any(here_ for span in found for here_, _ in span)
+    side = lambda one, other: one if one is not None else other if other is not None else bare
+    after_repo = [any(point[0] is not None for span in found[:i] for point in span) for i in range(len(found))]
+    placed = [(side(a[0], b[0]) and side(b[0], a[0]) and not (a[0] is None and b[0] is None and late), a[1], b[1])
+              for (a, b), late in zip(found, after_repo)]
+    held = lambda low, high: any(min(low, high) <= n <= max(low, high) for n in {pr, *merging})  # "#14-#12" too
+    if any(not ours and held(low, high) for ours, low, high in placed):
+        return False
+    # A text that names a repo and names a PR twice may refuse it the second time, even
+    # with this repo's name: "merge exclude #10-#14, exclude #12" in a repo named exclude.
+    spread = [(min(low, high), max(low, high)) for _, low, high in placed]
+    if any(point[0] is not None for span in found for point in span) and any(
+            max(a[0], b[0]) <= min(a[1], b[1]) for i, a in enumerate(spread) for b in spread[i + 1:]):
+        return False
+    return not found or any(ours and low <= pr <= high for ours, low, high in placed)
+
