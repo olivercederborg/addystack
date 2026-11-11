@@ -5144,7 +5144,7 @@ class ReplyBudget(unittest.TestCase):
                 "merge dotfiles #36 and #12": ["#12"], "merge dotfiles #36, #12": ["#12"],
                 "merge acme/app#62 and #63": ["#63"],
                 "merge #10 through dotfiles #12 through #14": ["#14"], "merge #10-dotfiles#12 to #14": ["#14"],
-                "merge r #10-#14, r #12": ["r #10-#14", "r #12"], "merge #12 and dotfiles #12": ["#12", "dotfiles #12"],
+                "merge r #10-#14, r #12": ["r #10-#14, r #12"], "merge #12 and dotfiles #12": ["#12, dotfiles #12"],
                 "merge dotfiles#10-skills#14": ["dotfiles #10-skills #14"], "merge #14-#12": ["#14-#12"],
                 "merge #14 through #12": ["#14-#12"], "merge #10-#14-#16": ["#10-#14-#16"],
                 # verify-work: a backwards range's ends merge through the other refs, its middle in none.
@@ -5166,12 +5166,18 @@ class ReplyBudget(unittest.TestCase):
             self.assertTrue(merge_go.literal_go(text), text)
             [(option, found)] = reply_budget.unplaced(self.merge_gate_reply(text))
             self.assertEqual([ref for ref, _ in found], refs, text)
-        # review-loop r1: each cause carries its own fix, since naming repos can't fix all.
+        # review-loop r1 and r2: a cause the text settles gets its fix, and a text the gate
+        # refuses whole gets one note with a form that places, since which PR a ref means
+        # (app #1 beside me/app #1) is the agent's to say.
         why = lambda text: [why for _, why in merge_go.unplaced(text)]
-        self.assertEqual(why("merge snoop #145 and ikasu #145"), ["shares its number with another repo's PR, which "
-                         "merge-gate reads as one PR named twice: offer each repo's merge as its own option"] * 2)
-        self.assertEqual(why("merge r #10-#14, r #12"), ["names a PR twice beside a repo: name it once"] * 2)
-        self.assertEqual(why("merge #10 through #12 through #14"), ["chains a range onto another: write one range or list the PRs"])
+        whole = ("share a number beside a repo name, so merge-gate places none of this option's PRs: "
+                 "name each PR once, and give two repos' same number a merge option each")
+        for text, refs in [("merge snoop #145 and ikasu #145", "snoop #145, ikasu #145"), ("merge r #10-#14, r #12", "r #10-#14, r #12"),
+                           ("merge app #1 and me/app #1", "app #1, me/app #1"), ("merge app #10, app #20 and web #20", "app #20, web #20")]:
+            self.assertEqual(merge_go.unplaced(text), [(refs, whole)], text)
+        unread = ", so merge-gate places none of this option's PRs: " + merge_go.REWRITE
+        self.assertEqual(why("merge #10 through #12 through #14"), ["chains a range onto another" + unread])
+        self.assertEqual(why("merge #10-#14-#16"), ["doesn't read as a PR or a range of two" + unread])
         self.assertEqual(why("merge #14-#12"), ["runs high to low: write #12-#14"])
         self.assertEqual(why("merge dotfiles#10-skills#14"), ["spans two repos: list each repo's PRs"])
         # A plain option and an unplaced one go back in one send.
