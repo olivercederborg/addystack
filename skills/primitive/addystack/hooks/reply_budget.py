@@ -707,7 +707,7 @@ def merge_feedback(reply):
                     "repo, such as \"merge addystack #56 and skills #313\", with any step before or after it "
                     "in the reply or another option.")
     if lost:
-        listing = "; ".join(f"`{option.key}` → {option.text} ({', '.join(f'{ref} {why}' for ref, why in refs)})"
+        listing = "; ".join(f"`{option.key}` → {option.text} ({' · '.join(f'{ref} {why}' for ref, why in refs)})"
                             for option, refs in lost)
         sent.append(f"These merge options name PRs merge-gate places in no repo, so a pick is no go for those PRs: "
                     f"{listing}. Fix each as its note says: a bare PR after one named with its repo takes its own "

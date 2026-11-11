@@ -138,7 +138,8 @@ def names(text, pr, owner, repo, merging=()):
 
 
 # A form merge-gate places every PR of, for an option it can't place as a whole.
-REWRITE = "write each PR as #12 or repo #12 and each range as #10-#14, each number once"
+REWRITE = ("write each PR as #12, or as repo #12 for every PR once one names its repo, each range as "
+           "#10-#14, and each number once")
 
 
 def unplaced(text):
@@ -165,9 +166,15 @@ def unplaced(text):
     other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
 
     def causes(at, low, high):  # each cause the text settles, with its fix
-        found = ["spans two repos: list each repo's PRs"] if low[0] and high[0] and other(low[0], high[0]) else []
-        found += [f"runs high to low: write {ref((low[0], high[1]), (high[0], low[1]))}"] if low[1] > high[1] else []
-        found += ["follows a PR named with its repo, so it's in none: name its repo"] if not named[at] and any(named[:at]) else []
+        if low[0] and high[0] and other(low[0], high[0]):  # its own fix makes the range two PRs
+            if low[1] == high[1]:
+                return f"spans two repos: give each repo's #{low[1]} a merge option of its own"
+            return "spans two repos: list each repo's PRs"
+        found = []
+        if low[1] > high[1]:
+            found.append(f"runs high to low: write {ref((low[0], high[1]), (high[0], low[1]))}")
+        if not named[at] and any(named[:at]):
+            found.append("follows a PR named with its repo, so it's in none: name its repo")
         return "; ".join(found)
     settled = [(ref(low, high), causes(at, low, high)) for at, (low, high) in enumerate(read)]
     if shared and any(named):  # names() refuses every PR of such a text
