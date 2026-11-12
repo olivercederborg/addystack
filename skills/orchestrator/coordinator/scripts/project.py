@@ -384,12 +384,14 @@ def _when(stamp: str | None) -> float | None:
         return None
 
 
-def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr) -> tuple[list[tuple[str, str]], dict] | None:
+def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr,
+         hold: bool = True) -> tuple[list[tuple[str, str]], dict] | None:
     """What changed since the last tick that T3 doesn't tell the coordinator, as (key, line)
     pairs due to send, and the state to save once they're sent; None when the coordinator's
     thread can't be read or is archived. While it runs, threads are still read, so a stop or
     a stall is timed from when it happened, but nothing is due and PRs wait, so its own turn
-    settles first. A row's thread is news when
+    settles first; hold=False, for a dry run, checks as if it were idle. A read that fails
+    is named on stderr, which the timer logs. A row's thread is news when
     it stopped, or has a question, through two ticks while its row says running, since a
     completion T3 delivers gets its row fixed by then; when it runs with no new item for
     STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
@@ -400,8 +402,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
+        print(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}", file=sys.stderr)
         return None
-    busy = lead.get("status") in ACTIVE
+    busy = hold and lead.get("status") in ACTIVE
     place = _header(lines, "Checkout").split(" (")[0].strip()
     checkout = Path(place).expanduser() if place else None
     owner = _owner(checkout)
@@ -451,6 +454,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for ref in dict.fromkeys(refs):
         known = state.get("prs", {}).get(ref)
         prs[ref] = view(ref, checkout) or known
+        if prs[ref] is known:
+            print(f"tick: can't read PR {ref}", file=sys.stderr)
         if known and prs[ref] != known:
             change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
             due.append((f"pr:{ref}", f"{ref}: {change}"))
@@ -486,15 +491,15 @@ def _tick(folder: Path, lines: list[str], send: bool) -> int:
         state = json.loads(store.read_text()) if store.exists() else {}
     except ValueError:
         state = {}
-    result = tick(lines, state, time.time())
-    if result is None:
-        print("the coordinator's thread can't be read or is archived: nothing checked")
-        return 0
-    due, after = result
     if not send:
         stamp = folder.parent / TIMER_STAMP
         if not stamp.exists() or time.time() - stamp.stat().st_mtime > 1200:
             print("the tick timer hasn't run in 20 minutes: install it as references/tick.md says")
+    result = tick(lines, state, time.time(), hold=send)
+    if result is None:
+        return 1
+    due, after = result
+    if not send:
         print("\n".join(f"- {line}" for _, line in due) or "nothing new")
         return 0
     if due:

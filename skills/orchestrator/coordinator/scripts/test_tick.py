@@ -259,6 +259,19 @@ class Tick(unittest.TestCase):
         self.assertIn("- remote: its thread is on another machine", result.stdout)
         self.assertEqual((self.sent(), (self.dir / "tick.json").exists()), ([], False))
 
+    def test_a_dry_run_from_the_running_coordinator_still_checks_and_warns(self):
+        self.threads["lead"] = thread("running", 41)
+        self.write_project(remote="running")
+        result = self.tick()
+        self.assertIn("the tick timer hasn't run in 20 minutes", result.stdout)
+        self.assertIn("- remote: its thread is on another machine", result.stdout)
+
+    def test_failed_reads_are_named_on_stderr(self):
+        del self.prs["#12"]
+        self.assertIn("tick: can't read PR #12", self.tick("--send").stderr)
+        del self.threads["lead"]
+        self.assertIn("tick: can't read the coordinator's thread", self.tick("--send", code=1).stderr)
+
     def test_tick_sh_ticks_each_project_and_stamps_its_run(self):
         other = self.dir.parent / "parked"
         other.mkdir()
