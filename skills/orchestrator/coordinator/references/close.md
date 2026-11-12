@@ -14,8 +14,8 @@ there, and reports missing outcomes and anything that breaks across PRs. Send ea
 finding to the worker that owns that code as a fix, and rerun the check after any fix
 that touches what it covered. Record its result under `## Result` in `project.md`.
 
-Then account for every worker as done, replaced, or absorbed. Delete the heartbeat
-and any startup timer, end each [duty](duties.md), remove every watch, and write the
+Then account for every worker as done, replaced, or absorbed. Delete any startup
+timer, end each [duty](duties.md), remove every watch, and write the
 final summary under `## Result`. Then unpin this thread with `t3_thread_organize`.
 
 **Done when:** the integrated check passes at the PRs' current heads, or the user

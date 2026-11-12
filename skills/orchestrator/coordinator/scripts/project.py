@@ -56,7 +56,6 @@ Follow-ups: none
 
 ## Listening
 
-- Heartbeat: none
 - Startup: none
 - Watches: none
 """

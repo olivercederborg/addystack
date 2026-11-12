@@ -143,17 +143,16 @@ inputs or one of Parallel by default's three reasons.
   Listening. On a wake, send the event to the PR's owner once step 3 lets its task
   start, telling it to run babysit's pass and that you keep the watch. When the owner
   reports maintenance done, `unwatch_pull_request` that PR.
-- **The heartbeat**: while any worker is running, waiting, `overdue`, or `unknown`, keep
-  one `schedule_task` with `{type: "interval", everyMs: 3600000}`, bound to this thread,
-  whose prompt names `project.md`'s path to read first. Each tick posts only changes.
-  Delete it with `delete_scheduled_task` when none is, and record its id under
-  Listening.
+- **Between wakes**: the wakes above and the user's messages move the project; no timer
+  wakes this thread. A `Heartbeat` task id still under Listening is from an older
+  version: delete it with `delete_scheduled_task` and drop the line.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
-**Stuck**: a running worker with no new side effect since the last tick: no commit,
-push, or PR activity from a worker with a branch, and no growth in a report-only
-worker's thread `itemCount` (a `t3_thread_read` status read). Read its thread's activity
+**Stuck**: on a wake an hour or more after the last check, a running worker with no new
+side effect since that check: no commit, push, or PR activity from a worker with a
+branch, and no growth in a report-only worker's thread `itemCount` (a `t3_thread_read`
+status read). Read its thread's activity
 for the cause, and `task_cancel` it. That returns `cancel_requested`, so
 `t3_thread_wait` on its thread until the run ends (end the turn when it returns `next`)
 before the retry, or the send steers the dying turn. A task that ended `completed` or

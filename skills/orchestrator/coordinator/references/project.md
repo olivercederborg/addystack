@@ -16,7 +16,7 @@ project with `start` ([phases](phases.md) says when). Its sections:
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.
-- **Listening**: the `Heartbeat` and `Startup` scheduled task ids, or none, and
+- **Listening**: the `Startup` scheduled task id, or none, and
   `Watches`: each watched PR with its owner. Each recurring check is a `Duty <name>`
   line, `<task id> · <cadence> · <source> · until <end> · last <ISO time>, <n> new`, or
   `none (ended <date>: <reason>)` once it ends. Its findings so far are in
@@ -34,8 +34,7 @@ project with `start` ([phases](phases.md) says when). Its sections:
 - **Waits on**: the call, credential, slot, shared resource, or worker it waits for,
   with the time it started waiting. The queue of cards reads this column.
 - **Last side effect**: the newest commit, push, or PR event seen, with its time, or for
-  a report-only worker its thread's `itemCount`. The heartbeat compares against it to
-  find a stuck worker.
+  a report-only worker its thread's `itemCount`. The stuck rule compares against it.
 
 ## Phase end
 

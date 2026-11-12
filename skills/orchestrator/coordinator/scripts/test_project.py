@@ -140,7 +140,7 @@ class Project(Fixture, unittest.TestCase):
         self.assertTrue(text.startswith("# ◆ p\n\nCoordinator: <t3-thread://v2/e/c> · Checkout: ~/p · Mode: personal,"))
         self.assertIn(f"## Decisions\n\n- {TODAY} · first\n\n## Workers", text)
         self.assertIn("|---|---|---|---|---|---|\n| a | — | — | running | — | — |\n\n## Learnings", text)
-        self.assertIn(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Heartbeat: none\n", text)
+        self.assertIn(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Startup: none\n", text)
 
 
 LISTENING = PROJECT[PROJECT.index("## Listening"):]
