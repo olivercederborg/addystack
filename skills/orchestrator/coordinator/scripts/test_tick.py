@@ -175,6 +175,13 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
+    def test_a_pr_merged_before_the_first_look_wakes_it_once(self):
+        self.prs["#12"] = {"state": "MERGED", "isDraft": False}
+        self.tick("--send")
+        self.assertIn("- #12: merged before the tick first saw it\n", self.sent()[0]["message"])
+        self.tick("--send")
+        self.assertEqual(self.sent(), [])
+
     def test_a_worker_on_another_machine_gets_an_hourly_reminder(self):
         self.write_project(remote="running")
         self.tick("--send")

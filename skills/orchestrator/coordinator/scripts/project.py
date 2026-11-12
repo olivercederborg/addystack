@@ -394,7 +394,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     completion T3 delivers gets its row fixed by then; when it runs with no new item for
     STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
     these repeats every REPEAT until its row changes. A PR on an open row or under Watches
-    is news once when it merges, closes, reopens, or turns ready or draft: T3's watch sends
+    is news once when it merges, closes, reopens, or turns ready or draft, or is already
+    merged or closed when first seen: T3's watch sends
     checks, comments, reviews, and conflicts, not those."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
@@ -453,6 +454,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if known and prs[ref] != known:
             change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
             due.append((f"pr:{ref}", f"{ref}: {change}"))
+        elif not known and prs[ref] and prs[ref][0] != "OPEN":  # it may have closed before the first look
+            due.append((f"pr:{ref}", f"{ref}: {prs[ref][0].lower()} before the tick first saw it"))
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     return due, {"threads": threads, "prs": {k: v for k, v in prs.items() if v}, "sent": sent}
 
