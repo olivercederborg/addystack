@@ -204,7 +204,7 @@ class Tick(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
         self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: skills#246"})
         self.tick("--send")
-        self.assertIn("- skills#246: the tick can't tell its owner, so write it as owner/repo#N\n", self.sent()[0]["message"])
+        self.assertIn("- skills#246: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", self.sent()[0]["message"])
 
     def test_a_failed_read_keeps_the_stall_clock(self):
         self.tick("--send")
@@ -216,6 +216,22 @@ class Tick(unittest.TestCase):
         self.age(600)
         self.tick("--send")
         self.assertIn("- build: no new thread item in 61 min\n", self.sent()[0]["message"])
+
+    def test_a_pr_number_without_a_checkout_origin_is_flagged(self):
+        subprocess.run(["rm", "-rf", str(self.checkout)], check=True)
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertIn("- #12: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", message)
+        self.assertNotIn("acme/app#7:", message, "a full owner/repo#N needs no checkout")
+
+    def test_a_reopened_pr_says_so(self):
+        self.tick("--send")
+        self.prs["acme/app#12"] = {"state": "CLOSED", "isDraft": True}
+        self.tick("--send")
+        self.sent()
+        self.prs["acme/app#12"] = {"state": "OPEN", "isDraft": True}
+        self.tick("--send")
+        self.assertIn("- acme/app#12: reopened\n", self.sent()[0]["message"])
 
     def test_a_metadata_update_doesnt_reset_the_stall_clock(self):
         stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - ago))
@@ -257,6 +273,12 @@ class Tick(unittest.TestCase):
                                  "| probe | <t3-thread://v2/env/w2> | running (round 2) |"})
         self.tick("--send")
         self.assertIn("- probe: its row's cells don't match the Workers header", self.sent()[0]["message"])
+        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |":
+                                 "| probe | <t3-thread://v2/env/w2> | done | was running fine |"})
+        self.age(3600)
+        self.threads["w1"] = thread(items=11)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "a done row that mentions running isn't live")
 
     def test_nothing_is_sent_while_the_coordinator_runs_but_workers_are_still_timed(self):
         self.tick("--send")

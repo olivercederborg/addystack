@@ -348,7 +348,10 @@ def _workers(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
     header, rows, odd = _cells(lines[table[0]]), [], []
     for i in table[2:]:
         cells = _cells(lines[i])
-        (rows.append(dict(zip(header, cells))) if len(cells) == len(header) else odd.append(lines[i]))
+        if len(cells) == len(header):
+            rows.append(dict(zip(header, cells)))
+        else:
+            odd.append(lines[i])
     return rows, odd
 
 
@@ -361,15 +364,14 @@ def _listened(lines: list[str], key: str) -> str:
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
     against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
-    it. Without an origin, `#N` stays `#N` and `repo#N` becomes `?/repo#N`, which tick
-    reports. A `none` Watches value names none."""
+    it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
     text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
-        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin
+        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
         refs.add(f"{repo}#{url_n or n or local}")
 
 
@@ -418,7 +420,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     refs = set(watched)
     rows, odd = _workers(lines)
     for line in odd:
-        if re.search(r"\b(running|overdue|unknown|waiting)\b", line):
+        if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a State cell
             first = (_cells(line) or ["?"])[0]
             found.append((f"odd:{first}", f"{first}: its row's cells don't match the Workers header, so the tick "
                                           "can't read it"))
@@ -459,9 +461,10 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
-    for ref in sorted(ref for ref in refs if ref.startswith("?/")):
+    for ref in sorted(ref for ref in refs if ref.startswith("?")):
         refs.discard(ref)
-        found.append((f"owner:{ref}", f"{ref[2:]}: the tick can't tell its owner, so write it as owner/repo#N"))
+        found.append((f"owner:{ref}", f"{ref.lstrip('?/')}: the tick can't tell its repo from the checkout's origin, so "
+                                      "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
     events = []
@@ -473,7 +476,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
             found.append((f"watch:{ref}", f"{ref}: {prs[ref][0].lower()}, and still under Watches"))
         elif known and prs[ref] != known:
-            change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
+            change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
+                      else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
