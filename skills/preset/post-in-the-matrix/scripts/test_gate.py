@@ -180,6 +180,31 @@ class Run(unittest.TestCase):
         self.assertEqual((code, len(calls), state["last_wake"]), (1, 1, NOW))
 
 
+class WakeId(unittest.TestCase):
+    """T3 drops a repeated wakeId for days, so only a retried POST may repeat one."""
+
+    def ids(self, *wakes):
+        hook = pathlib.Path(tempfile.mkdtemp()) / "hook"
+        hook.write_text("https://hooks.example/x\n")
+        sent = []
+        response = mock.MagicMock(status=202)
+        response.__enter__.return_value = response
+        with mock.patch.object(gate.urllib.request, "urlopen",
+                               side_effect=lambda request, timeout: sent.append(json.loads(request.data)) or response):
+            for reasons, last_wake in wakes:
+                gate.wake({"webhook_url_file": str(hook)}, reasons, last_wake)
+        return [body["wakeId"] for body in sent]
+
+    def test_the_next_quiet_wake_gets_a_new_id(self):
+        quiet = ["quiet: no wake for 24 hours"]
+        first, second = self.ids((quiet, NOW - 86400), (quiet, NOW))
+        self.assertNotEqual(first, second)
+
+    def test_a_retried_wake_keeps_its_id(self):
+        first, retry = self.ids((["msg:1"], NOW), (["msg:1"], NOW))
+        self.assertEqual(first, retry)
+
+
 class Naming(unittest.TestCase):
     def test_pr_numbers(self):
         text = ("<https://github.com/acme/app/pull/101|#101 Fix> and "

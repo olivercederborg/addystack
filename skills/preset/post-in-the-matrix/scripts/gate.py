@@ -322,11 +322,14 @@ def save_state(path: Path, state: dict) -> None:
     os.replace(file.name, path)
 
 
-def wake(config: dict, reasons: list[str]) -> None:
-    """POST to the check's webhook. wakeId repeats for the same reasons, so a retried
-    POST runs the check once when its schedule dedupes on {{body.wakeId}}."""
+def wake(config: dict, reasons: list[str], last_wake: float) -> None:
+    """POST to the check's webhook. wakeId hashes the reasons with the last delivered
+    wake, so a retried POST repeats its id and runs the check once when the schedule
+    dedupes on {{body.wakeId}}, while a later wake for the same reasons (the next quiet
+    or fail-open wake) gets a new one. T3 keeps a replay key for days."""
     url = Path(config["webhook_url_file"]).expanduser().read_text().strip()
-    body = {"wakeId": hashlib.sha256("\n".join(reasons).encode()).hexdigest()[:24], "reasons": reasons[:50]}
+    seed = "\n".join([repr(last_wake), *reasons])
+    body = {"wakeId": hashlib.sha256(seed.encode()).hexdigest()[:24], "reasons": reasons[:50]}
     request = urllib.request.Request(url, json.dumps(body).encode(), method="POST",
                                      headers={"Content-Type": "application/json", "User-Agent": USER_AGENT})
     with urllib.request.urlopen(request, timeout=60) as response:
@@ -364,7 +367,8 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
         state.setdefault("last_ok", now)
         if fail_open(state, now=now, minutes=config["fail_open_minutes"]):
             try:
-                wake(config, ["gate failing since " + time.strftime("%H:%M", time.localtime(state["last_ok"]))])
+                wake(config, ["gate failing since " + time.strftime("%H:%M", time.localtime(state["last_ok"]))],
+                     state.get("last_wake", 0))
                 state["last_wake"] = now
             except (OSError, RuntimeError, urllib.error.URLError) as wake_error:
                 print(f"gate: wake failed too: {wake_error}", file=sys.stderr)
@@ -376,7 +380,7 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
         return 0
     if reasons:
         try:
-            wake(config, reasons)
+            wake(config, reasons, state.get("last_wake", 0))
         except (OSError, RuntimeError, urllib.error.URLError) as error:
             print(f"gate: wake failed, next run retries: {error}", file=sys.stderr)
             return 1
