@@ -235,10 +235,12 @@ End by recommending the step the verdict calls for:
 - **Held** by an open finding: post any new findings without approving.
 
 When the recommendation waits on the user's pick, unwatch the PR before ending the turn,
-unless a required check still runs on its head: until they answer, a wake only repeats
-the card. Step 5 re-checks the head when they pick, and starts the watch again after
-posting.
+unless a check `github.sh required N` lists is `pending` on its head. The watch has
+carried the review through any dismissal to this verdict; until the user picks, a push
+or comment waits for them instead of waking the thread to repeat the card. Step 5
+re-checks the head when they pick, re-reviewing a moved one before approving, and
+starts the watch again after posting.
 
 **Done when:** every earlier comment has a status, there is a verdict: approve now, or
-which finding holds it, and a PR waiting on the user's pick is unwatched unless a
-required check still runs.
+which finding holds it, and a PR waiting on the user's pick is unwatched unless a listed
+check is pending.

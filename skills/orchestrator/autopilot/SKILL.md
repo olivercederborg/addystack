@@ -235,6 +235,6 @@ Decisions logged: 14, the 3 that shaped behavior listed here. Optional findings:
   **Decide**.
 - **The fold**: the checks line, the decision log summary, and queued Optional findings.
 
-**Done when:** every layer is a draft PR with its evidence, every open PR is at
-maintenance done or watched, the handoff note is written, and the report names anything
+**Done when:** every layer is a draft PR with its evidence, every open PR ends at an
+outcome of babysit's step 4, the handoff note is written, and the report names anything
 unverified or still open.
