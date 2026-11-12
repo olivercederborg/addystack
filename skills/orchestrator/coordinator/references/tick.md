@@ -18,19 +18,21 @@ the rest:
   stayed stopped through a whole tick: a failed or interrupted run T3 didn't deliver, a
   `t3_thread_launch` worker that finished, or a completion whose row nobody updated.
 - **Asked**: the same, for a thread holding a pending question.
-- **Stuck**: a running thread not updated for an hour.
+- **Stuck**: a running thread with no new item for an hour.
 - **Elsewhere**: a live row whose link names another machine's environment, which
   `t3 thread show` can't read: an hourly reminder to read it.
 - **PR**: a PR on an open row (`running`, `waiting`, `overdue`, `unknown`, or `stuck`) or
-  under Watches merged, closed, reopened, or turned ready or draft. A PR already merged or
-  closed when the tick first sees it counts too, except on the project's first tick, which
-  only records, and when the words after it in its row or Watches entry already name that
-  state, as in `#12 MERGED`.
-- **Owner**: a `repo#N` whose owner the checkout's origin doesn't give.
+  under Watches merged, closed, reopened, or turned ready or draft since the tick last
+  saw it. The first look at a PR only records it.
+- **Watch left on**: a PR under Watches that's merged or closed, even at the first look,
+  since its watch should go.
+- **Owner**: a `repo#N` whose owner the checkout's origin doesn't give. Every other form,
+  `#N`, a range `#20–#22`, a URL, or `owner/repo#N`, resolves to one `owner/repo#N`.
 - **Unreadable**: a live row whose cells don't match the Workers header, or that has no
   thread link.
 
-Each finding except a PR's repeats hourly while it holds, so fixing the row stops it.
+Each finding except a PR change repeats hourly while it holds, so fixing the row or
+Watches stops it.
 While the coordinator's own thread runs, the tick still times its workers but sends
 nothing and leaves PRs for later, so its turn settles first. `tick.json` beside
 `project.md` holds what it last saw; a failed send leaves it unchanged, so the next tick

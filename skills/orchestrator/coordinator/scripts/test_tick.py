@@ -79,7 +79,7 @@ class Tick(unittest.TestCase):
         subprocess.run(["git", "-C", str(self.checkout), "remote", "add", "origin", "git@github.com:acme/app.git"], check=True)
         self.write_project()
         self.threads = {"lead": thread("completed", 40), "w1": thread()}
-        self.prs = {"#12": {"state": "OPEN", "isDraft": True}, "acme/app#7": {"state": "OPEN", "isDraft": False}}
+        self.prs = {"acme/app#12": {"state": "OPEN", "isDraft": True}, "acme/app#7": {"state": "OPEN", "isDraft": False}}
 
     def write_project(self, heartbeat="tick", remote="done", rows=None):
         text = PROJECT.format(checkout=self.checkout, heartbeat=heartbeat, remote=remote)
@@ -165,51 +165,57 @@ class Tick(unittest.TestCase):
         self.assertIn("- build: its thread waits on 1 question(s) its row doesn't show\n", sent["message"])
 
     def test_a_pr_that_merges_or_turns_ready_wakes_it_once(self):
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: acme/app#7 (the user)"})
         self.tick("--send")
-        self.prs["#12"] = {"state": "MERGED", "isDraft": False}
+        self.prs["acme/app#12"] = {"state": "MERGED", "isDraft": False}
         self.prs["acme/app#7"] = {"state": "OPEN", "isDraft": True}
         self.tick("--send")
         [sent] = self.sent()
-        self.assertIn("- #12: merged\n", sent["message"])
+        self.assertIn("- acme/app#12: merged", sent["message"])
         self.assertIn("- acme/app#7: turned draft\n", sent["message"])
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
-    def test_a_pr_that_joins_and_merges_before_a_look_wakes_it_once(self):
-        self.prs["#12"] = {"state": "MERGED", "isDraft": False}
+    def test_a_finished_pr_left_under_watches_repeats_until_unwatched(self):
+        self.prs["acme/app#7"] = {"state": "MERGED", "isDraft": False}
         self.tick("--send")
-        self.assertEqual(self.sent(), [], "the first look on a project only records")
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#7, #13"})
-        self.prs["#13"] = {"state": "CLOSED", "isDraft": False}
+        self.assertIn("- acme/app#7: merged, and still under Watches\n", self.sent()[0]["message"],
+                      "even one that merged before the tick first saw it")
         self.tick("--send")
-        self.assertIn("- #13: closed before the tick first saw it\n", self.sent()[0]["message"])
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none"})
+        self.assertEqual(self.sent(), [])
+        self.age(3600)
+        self.threads["w1"] = thread(items=11)  # the worker is busy, so only the watch repeats
         self.tick("--send")
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#7, #13"})
+        self.assertEqual(len(self.sent()), 1)
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12 (build)"})
+        self.age(3600)
+        self.threads["w1"] = thread(items=12)
         self.tick("--send")
-        self.assertEqual(self.sent(), [], "a PR that leaves and comes back isn't new")
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, #14 MERGED 3f2a"})
-        self.prs["#14"] = {"state": "MERGED", "isDraft": False}
-        self.tick("--send")
-        self.assertEqual(self.sent(), [], "the row already says it merged")
+        self.assertEqual(self.sent(), [])
 
-    def test_a_recorded_state_belongs_to_its_own_pr(self):
+    def test_one_pr_written_two_ways_or_in_a_range_is_checked_once_each(self):
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#12, app#12, #20–#22"})
+        for n in (20, 21, 22):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": False}
         self.tick("--send")
-        self.prs["#13"] = {"state": "MERGED", "isDraft": False}
-        self.prs["#14"] = {"state": "MERGED", "isDraft": False}
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #13 (build), #14 MERGED · #15 unmerged"})
-        self.prs["#15"] = {"state": "MERGED", "isDraft": False}
-        self.tick("--send")
-        message = self.sent()[0]["message"]
-        self.assertIn("- #13: merged before the tick first saw it\n", message)
-        self.assertIn("- #15: merged before the tick first saw it\n", message)
-        self.assertNotIn("#14", message)
+        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#20", "acme/app#21", "acme/app#22"])
 
     def test_a_repo_ref_without_a_known_owner_is_flagged(self):
         subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
         self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: skills#246"})
         self.tick("--send")
         self.assertIn("- skills#246: the tick can't tell its owner, so write it as owner/repo#N\n", self.sent()[0]["message"])
+
+    def test_a_failed_read_keeps_the_stall_clock(self):
+        self.tick("--send")
+        self.age(3060)
+        del self.threads["w1"]
+        self.tick("--send")
+        self.sent()
+        self.threads["w1"] = thread()
+        self.age(600)
+        self.tick("--send")
+        self.assertIn("- build: no new thread item in 61 min\n", self.sent()[0]["message"])
 
     def test_a_metadata_update_doesnt_reset_the_stall_clock(self):
         stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - ago))
@@ -235,17 +241,16 @@ class Tick(unittest.TestCase):
     def test_links_paths_and_refs_parse_as_coordinators_write_them(self):
         self.write_project(rows={"<t3-thread://v2/env/w1> · task t1": "[build](t3-thread://v2/env/w1) · task t1",
                                  "- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12 (build), app#7 and acme/app#7"})
-        self.prs["#12"] = {"state": "OPEN", "isDraft": True}
         self.tick("--send")
         calls = [json.loads(line) for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
-        self.assertEqual(sorted({call["key"] for call in calls}), ["#12", "acme/app#7"])
-        self.assertEqual({call["cwd"] for call in calls if call["key"] == "#12"}, {str(self.checkout.resolve())})
+        self.assertEqual(sorted({call["key"] for call in calls}), ["acme/app#12", "acme/app#7"],
+                         "#12 resolved through the origin of a checkout path with a space")
         self.assertEqual(list(self.state()["threads"]), ["w1"])
 
     def test_a_watches_line_that_says_none_names_no_pr(self):
         self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none (#7 unwatched at handback)"})
         self.tick("--send")
-        self.assertEqual(list(self.state()["prs"]), ["#12"])
+        self.assertEqual(list(self.state()["prs"]), ["acme/app#12"])
 
     def test_a_live_row_the_tick_cant_parse_is_flagged(self):
         self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |":
@@ -257,16 +262,16 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.threads["lead"] = thread("running", 41)
         self.threads["w1"] = thread("failed", 1, 12)
-        self.prs["#12"] = {"state": "MERGED", "isDraft": False}
+        self.prs["acme/app#12"] = {"state": "MERGED", "isDraft": False}
         self.tick("--send")
         self.tick("--send")
         self.assertEqual(self.sent(), [])
-        self.assertEqual(self.state()["prs"]["#12"], ["OPEN", True], "a PR waits for the coordinator's turn to end")
+        self.assertEqual(self.state()["prs"]["acme/app#12"], ["OPEN", True], "a PR waits for the coordinator's turn to end")
         self.threads["lead"] = thread("completed", 41)
         self.tick("--send")
         [sent] = self.sent()
         self.assertIn("- build: its thread stopped (failed)", sent["message"], "its stop was timed while it ran")
-        self.assertIn("- #12: merged\n", sent["message"])
+        self.assertIn("- acme/app#12: merged", sent["message"])
 
     def test_a_stall_is_timed_from_the_threads_last_update(self):
         hour_ago = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3660))
@@ -276,14 +281,14 @@ class Tick(unittest.TestCase):
 
     def test_a_failed_send_keeps_the_state_so_the_next_tick_retries(self):
         self.tick("--send")
-        self.prs["#12"] = {"state": "CLOSED", "isDraft": True}
+        self.prs["acme/app#12"] = {"state": "CLOSED", "isDraft": True}
         before = self.state()
         result = self.tick("--send", code=1, send_code=1)
         self.assertIn("t3 thread send failed", result.stderr)
         self.assertEqual(self.state(), before)
         self.sent()
         self.tick("--send")
-        self.assertIn("- #12: closed\n", self.sent()[0]["message"])
+        self.assertIn("- acme/app#12: closed", self.sent()[0]["message"])
 
     def test_with_the_heartbeat_off_send_does_nothing(self):
         self.write_project(heartbeat="none", remote="running")
@@ -305,8 +310,8 @@ class Tick(unittest.TestCase):
         self.assertIn("- remote: its thread is on another machine", result.stdout)
 
     def test_failed_reads_are_named_on_stderr(self):
-        del self.prs["#12"]
-        self.assertIn("tick: can't read PR #12", self.tick("--send").stderr)
+        del self.prs["acme/app#12"]
+        self.assertIn("tick: can't read PR acme/app#12", self.tick("--send").stderr)
         del self.threads["lead"]
         self.assertIn("tick: can't read the coordinator's thread", self.tick("--send", code=1).stderr)
 

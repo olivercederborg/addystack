@@ -297,7 +297,7 @@ LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # bare, in <…>, o
 # A PR as its URL, owner/repo#N, repo#N (the checkout's owner), or #N (the checkout's repo).
 PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
                     r"|(?<![\w/#])#(\d+)\b")
-REMOTE = re.compile(r"github\.com[:/]([\w.-]+)/")
+REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
 TIMER_STAMP = ".tick"  # touched in the orchestrate folder by scripts/tick.sh on each run
@@ -358,26 +358,26 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str, owner: str, refs: dict[str, str]) -> None:
-    """Adds `owner/repo#N` or `#N` for each PR the text names to refs, with the words between
-    it and the next PR or ` · `, where a coordinator records a state such as `MERGED`,
-    joined across mentions. A `repo#N` without a known owner stays `?/repo#N`, so it's
-    reported. A `none` Watches value names none."""
+def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
+    """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
+    against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
+    it. Without an origin, `#N` stays `#N` and `repo#N` becomes `?/repo#N`, which tick
+    reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    matches = list(PR_REF.finditer(text))
-    for match, after in zip(matches, [*matches[1:], None]):
-        url_repo, url_n, repo, n, local = match.groups()
-        repo = url_repo or (repo if not repo or "/" in repo else f"{owner or '?'}/{repo}")
-        ref = f"{repo or ''}#{url_n or n or local}"
-        refs[ref] = refs.get(ref, "") + " " + text[match.end():after.start() if after else None].split(" · ")[0]
+    text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
+        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
+    owner = origin.split("/")[0] if origin else "?"
+    for url_repo, url_n, repo, n, local in PR_REF.findall(text):
+        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin
+        refs.add(f"{repo}#{url_n or n or local}")
 
 
-def _owner(checkout: Path | None) -> str:
-    """The GitHub owner of the checkout's origin, for a `repo#N` reference."""
+def _origin(checkout: Path | None) -> str:
+    """`owner/repo` of the checkout's GitHub origin, or ""."""
     code, out = _run(["git", "-C", str(checkout), "remote", "get-url", "origin"]) if checkout else (1, "")
     match = REMOTE.search(out) if code == 0 else None
-    return match.group(1) if match else ""
+    return match.group(1).removesuffix(".git") if match else ""
 
 
 def _when(stamp: str | None) -> float | None:
@@ -400,9 +400,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     completion T3 delivers gets its row fixed by then; when it runs with no new item for
     STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
     these repeats every REPEAT until its row changes. A PR on an open row or under Watches
-    is news once when it merges, closes, reopens, or turns ready or draft, or is already
-    merged or closed when first seen on a project the tick already checks and its row or
-    Watches entry doesn't say so: T3's watch sends
+    is news once when it merges, closes, reopens, or turns ready or draft against what the
+    tick last saw, and a merged or closed PR still under Watches repeats like a row: T3's watch sends
     checks, comments, reviews, and conflicts, not those."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
@@ -412,10 +411,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     busy = hold and lead.get("status") in ACTIVE
     place = _header(lines, "Checkout").split(" (")[0].strip()
     checkout = Path(place).expanduser() if place else None
-    owner = _owner(checkout)
+    origin = _origin(checkout)
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    refs: dict[str, str] = {}
-    _pr_refs(_listened(lines, "Watches"), owner, refs)
+    watched: set[str] = set()
+    _pr_refs(_listened(lines, "Watches"), origin, watched)
+    refs = set(watched)
     rows, odd = _workers(lines)
     for line in odd:
         if re.search(r"\b(running|overdue|unknown|waiting)\b", line):
@@ -425,7 +425,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            _pr_refs(row.get(COLUMNS["pr"], ""), owner, refs)
+            _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -440,6 +440,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         now_seen = show(thread)
         if now_seen is None:
             print(f"tick: can't read thread {thread}", file=sys.stderr)
+            if thread in seen:
+                threads[thread] = seen[thread]  # keep its last look, so a stall stays timed
             found.append((f"unread:{thread}", f"{slug}: `t3 thread show` can't read its thread"))
             continue
         before = seen.get(thread, {})
@@ -457,23 +459,24 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
-    for ref in [ref for ref in refs if ref.startswith("?/")]:
-        del refs[ref]
+    for ref in sorted(ref for ref in refs if ref.startswith("?/")):
+        refs.discard(ref)
         found.append((f"owner:{ref}", f"{ref[2:]}: the tick can't tell its owner, so write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
-    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
-    due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT]
-    for ref, noted in refs.items():
+    events = []
+    for ref in sorted(refs):
         known = state.get("prs", {}).get(ref)
         prs[ref] = view(ref, checkout) or known
         if prs[ref] is known:
             print(f"tick: can't read PR {ref}", file=sys.stderr)
-        if known and prs[ref] != known:
+        if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
+            found.append((f"watch:{ref}", f"{ref}: {prs[ref][0].lower()}, and still under Watches"))
+        elif known and prs[ref] != known:
             change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
-            due.append((f"pr:{ref}", f"{ref}: {change}"))
-        elif state and not known and prs[ref] and prs[ref][0] != "OPEN" and not re.search(rf"\b{prs[ref][0]}\b", noted, re.I):
-            due.append((f"pr:{ref}", f"{ref}: {prs[ref][0].lower()} before the tick first saw it"))
+            events.append((f"pr:{ref}", f"{ref}: {change}"))
+    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
+    due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
     return due, {"threads": threads, "prs": kept, "sent": sent}
