@@ -392,26 +392,39 @@ def gather(config: dict, state: dict, now: float) -> set[str]:
     return signals(messages, prs, me=config["slack_user"], now=now, ask_hours=config["ask_hours"])
 
 
+def describe(error: BaseException) -> str:
+    """What to log for an error: its type and HTTP status, plus the text of the gate's own
+    errors. Other errors' text can quote a URL, and the webhook's carries its token."""
+    code = getattr(error, "code", None)
+    text = f": {error}" if isinstance(error, RuntimeError) else ""
+    return type(error).__name__ + (f" {code}" if isinstance(code, int) else "") + text
+
+
 def run(config: dict, dry_run: bool, now: float | None = None) -> int:
     now = time.time() if now is None else now
     state_path = Path(config["state_file"]).expanduser()
     state = load_state(state_path)
+    if not dry_run:
+        # Before the read, so a run that hangs until systemd kills it still counts: a
+        # gate that never succeeded counts from its first run, and the next run finds
+        # no success for the window and wakes the check.
+        if "last_ok" not in state:
+            state["last_ok"] = now
+            save_state(state_path, state)
+        if fail_open(state, now=now, minutes=config["fail_open_minutes"]):
+            since = time.strftime("%H:%M", time.localtime(state["last_ok"]))
+            try:
+                wake(config, [f"gate failing since {since}"], state.get("last_wake", 0))
+                state["last_wake"] = now
+                save_state(state_path, state)
+            except Exception as error:
+                print(f"gate: fail-open wake failed: {describe(error)}", file=sys.stderr)
     try:
         current = gather(config, state, now)
-    except Exception as error:  # whatever broke the read, failing open must still run
-        print(f"gate: read failed: {type(error).__name__}: {error}", file=sys.stderr)
-        if dry_run:
-            return 1
-        # A gate that never succeeded counts its failures from the first one.
-        state.setdefault("last_ok", now)
-        if fail_open(state, now=now, minutes=config["fail_open_minutes"]):
-            try:
-                wake(config, ["gate failing since " + time.strftime("%H:%M", time.localtime(state["last_ok"]))],
-                     state.get("last_wake", 0))
-                state["last_wake"] = now
-            except Exception as wake_error:
-                print(f"gate: wake failed too: {wake_error}", file=sys.stderr)
-        save_state(state_path, state)
+    except Exception as error:  # whatever broke the read, fail-open above counts it
+        print(f"gate: read failed: {describe(error)}", file=sys.stderr)
+        if not dry_run:
+            save_state(state_path, state)
         return 1
     reasons = decide(current, state, now=now, quiet_hours=config["quiet_hours"])
     if dry_run:
@@ -421,7 +434,7 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
         try:
             wake(config, reasons, state.get("last_wake", 0))
         except Exception as error:
-            print(f"gate: wake failed, next run retries: {error}", file=sys.stderr)
+            print(f"gate: wake failed, next run retries: {describe(error)}", file=sys.stderr)
             return 1
         state["last_wake"] = now
         print(f"gate: woke the check: {', '.join(reasons[:10])}")

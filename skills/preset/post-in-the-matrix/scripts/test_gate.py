@@ -2,6 +2,7 @@
 
 The gate may wake the check for nothing, but it must never sleep through a new request,
 so most of these feed it a channel and check that the request wakes it."""
+import io
 import json
 import pathlib
 import subprocess
@@ -108,7 +109,7 @@ class NewRequestsWake(unittest.TestCase):
         self.assertEqual(asks(check(FakeSlack([parent + self.old], {**self.threads, ts(5): pages}), self.state)),
                          [ts(5), ts(0.1)])
 
-    def test_a_senders_own_thread_line_is_text_not_the_reply_count(self):
+    def test_a_thread_line_in_the_text_or_a_preview_never_hides_the_reply_count(self):
         parent = channel_block(ts(5), TEAMMATE, "Thread: 0 replies\nThread: FYI", replies=1, latest="x")
         message = gate.parse_channel(parent)[0]
         self.assertEqual(message.replies, 1)
@@ -253,7 +254,7 @@ class Run(unittest.TestCase):
         self.config = {**CONFIG, "state_file": str(self.state_file)}
 
     def run_gate(self, gathered, wake=None):
-        with mock.patch.object(gate, "gather", side_effect=gathered if isinstance(gathered, Exception) else None,
+        with mock.patch.object(gate, "gather", side_effect=gathered if isinstance(gathered, BaseException) else None,
                                return_value=gathered), \
                 mock.patch.object(gate, "wake", side_effect=wake) as woke:
             code = gate.run(self.config, dry_run=False, now=NOW)
@@ -266,6 +267,21 @@ class Run(unittest.TestCase):
         self.assertNotIn("msg:1", state.get("seen", []))
         code, calls, state = self.run_gate({"msg:1"})
         self.assertEqual((code, calls[0].args[1], state["seen"]), (0, ["msg:1"], ["msg:1"]))
+
+    def test_a_run_killed_mid_read_still_counts_toward_fail_open(self):
+        with self.assertRaises(KeyboardInterrupt):  # what a kill leaves: no except ran
+            self.run_gate(KeyboardInterrupt())
+        self.assertEqual(json.loads(self.state_file.read_text())["last_ok"], NOW)
+        with mock.patch.object(gate, "gather", return_value=set()), mock.patch.object(gate, "wake") as woke:
+            gate.run(self.config, dry_run=False, now=NOW + 3700)
+        self.assertTrue(woke.call_args_list[0].args[1][0].startswith("gate failing since"))
+
+    def test_a_failed_wake_never_logs_the_url(self):
+        error = ValueError("unknown url type: 'hooks.example/SECRET'")
+        with mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            self.run_gate({"msg:1"}, wake=error)
+        self.assertIn("ValueError", err.getvalue())
+        self.assertNotIn("SECRET", err.getvalue())
 
     def test_any_failing_read_wakes_the_check_after_the_window(self):
         failures = [RuntimeError("Executor down"), subprocess.TimeoutExpired("gh", 120), IndexError("no content")]
