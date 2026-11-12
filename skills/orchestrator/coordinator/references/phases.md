@@ -21,8 +21,8 @@ Then follow the pick:
 - **Next phase**: run `scripts/project.py <folder> phase <slug> --result <one line>
   --goal G --proof P`, then return to SKILL.md step 2 with the new goal.
 - **Park**: run `project.py <folder> phase <slug> --result <one line> --park <reason>`.
-  Once no worker is `running`, `waiting`, `overdue`, or `unknown`, delete the heartbeat
-  and startup timer and set their Listening lines to none. Unwatch each merged PR. Keep
+  Once no worker is `running`, `waiting`, `overdue`, or `unknown`, set Heartbeat to none,
+  delete the startup timer, and set its Listening line to none. Unwatch each merged PR. Keep
   each [duty](duties.md) running: a finding worth work reaches the user as a card to
   start the next phase. Keep the thread pinned, and reply with step 5's one-line
   status.
@@ -36,4 +36,4 @@ P`, then return to SKILL.md step 2.
 **Done when:** the integrated check passed or had no unmerged PRs, every binding decision
 and learning is in `standing-rules.md`, every follow-up and named later phase is in
 Goal's Follow-ups, every open PR's owner is `waiting`, and the project is in step 2 of
-its next phase, parked (its heartbeat deleted once no worker runs), or in close.
+its next phase, parked (its Heartbeat none once no worker runs), or in close.

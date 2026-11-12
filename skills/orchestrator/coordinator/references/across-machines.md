@@ -20,7 +20,8 @@ Beyond [t3-delegation's On another machine](t3-delegation.md#on-another-machine)
 - **Brief**: ask for its proof's evidence in its final message.
 - **Queue**: a worker waiting for that machine's root checkout gets `Waits on: <machine>
   checkout` in the Workers table.
-- **Its state**: record its `remoteChild.threadId` and `environmentId` in Workers. The
-  heartbeat and the stuck rule read its status, `itemCount`, and `pendingRequestCount`
-  with `t3_thread_read` and that `environmentId`, since `task_status` lags there and its
+- **Its state**: record its thread's link, which names that machine's environment, and
+  its `remoteChild.threadId` and `environmentId` in Workers. The tick can't read it, so on
+  its hourly reminder read its status, `itemCount`, and `pendingRequestCount` with
+  `t3_thread_read` and that `environmentId`, since `task_status` lags there and its
   question wakes no one here.
