@@ -310,6 +310,15 @@ def pr_states(numbers: set[int], config: dict) -> dict[int, dict]:
     return out
 
 
+def track(named: set[int], state: dict, lookup) -> dict[int, dict]:
+    """The PRs to watch: those named now, and every watched PR still open at the last run,
+    so a review thread's PR stays watched after its link leaves the lookback.
+    lookup(numbers) returns pr_states' shape."""
+    prs = lookup(named | set(state.get("open", [])))
+    state["open"] = sorted(n for n, pr in prs.items() if pr["state"] == "OPEN")
+    return prs
+
+
 # ---- One run --------------------------------------------------------------------------
 
 def load_config(path: str) -> dict:
@@ -363,7 +372,7 @@ def gather(config: dict, state: dict, now: float) -> set[str]:
     theirs = [m for m in messages if m.user != config["slack_user"]]
     named = set().union(*(pr_numbers(m.text, config["repo"]) for m in theirs))
     named |= resolve_linear({k for m in theirs for k in linear_keys(m.text)}, config, state, now)
-    prs = pr_states(named, config)
+    prs = track(named, state, lambda numbers: pr_states(numbers, config))
     return signals(messages, prs, me=config["slack_user"], now=now, ask_hours=config["ask_hours"])
 
 

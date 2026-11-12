@@ -170,6 +170,21 @@ class PullRequestChangesWake(unittest.TestCase):
         self.assertEqual(self.wakes(approved, self.pr("OPEN", "h2", ("APPROVED", "h1"))), [])
 
 
+class Tracking(unittest.TestCase):
+    def test_an_open_pr_stays_watched_after_its_link_ages_out(self):
+        state, asked = {}, []
+        def lookup(states):
+            def fetch(numbers):
+                asked.append(sorted(numbers))
+                return {n: {"state": states[n], "headRefOid": "h", "reviews": []} for n in numbers}
+            return fetch
+        gate.track({12}, state, lookup({12: "OPEN"}))
+        prs = gate.track(set(), state, lookup({12: "MERGED"}))
+        self.assertIn("pr:12:MERGED", gate.signals([], prs, me=ME, now=NOW, ask_hours=72))
+        gate.track(set(), state, lookup({}))
+        self.assertEqual(asked, [[12], [12], []])
+
+
 class Backstops(unittest.TestCase):
     def test_quiet_hours_wake_once_nothing_else_has(self):
         state = {"seen": [], "last_wake": NOW - 3 * 3600}
