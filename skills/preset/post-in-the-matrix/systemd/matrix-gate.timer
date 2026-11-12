@@ -2,8 +2,10 @@
 Description=Run the #plug-into-the-matrix gate every 5 minutes
 
 [Timer]
-OnBootSec=2min
-OnUnitInactiveSec=5min
+# On the clock, not 5 minutes after the last run ended; a run still going when the
+# next one is due finishes first.
+OnCalendar=*:0/5
+AccuracySec=15s
 
 [Install]
 WantedBy=timers.target
