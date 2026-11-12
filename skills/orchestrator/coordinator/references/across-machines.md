@@ -21,6 +21,9 @@ Beyond [t3-delegation's On another machine](t3-delegation.md#on-another-machine)
 - **Queue**: a worker waiting for that machine's root checkout gets `Waits on: <machine>
   checkout` in the Workers table.
 - **Its state**: record its `remoteChild.threadId` and `environmentId` in Workers. The
-  heartbeat and the stuck rule read its status, `itemCount`, and `pendingRequestCount`
-  with `t3_thread_read` and that `environmentId`, since `task_status` lags there and its
-  question wakes no one here.
+  stuck rule reads its status, `itemCount`, and `pendingRequestCount` with
+  `t3_thread_read` and that `environmentId`, since `task_status` lags there.
+- **Its check**: its question, and a `t3_thread_launch` worker's end, wake no one here.
+  While it runs, keep one `schedule_task` bound to this thread with `{type: "once",
+  runAt: <its expected finish>}`, its id beside its row. That wake reads its state and
+  sets the next one if it still runs; delete it once the worker ends.
