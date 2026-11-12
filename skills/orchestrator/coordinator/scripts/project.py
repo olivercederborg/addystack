@@ -320,11 +320,10 @@ def show_thread(thread: str) -> dict | None:
         return None
 
 
-def view_pr(ref: str, checkout: Path | None) -> list | None:
-    """[state, isDraft] of `owner/repo#N`, or of `#N` in the checkout's repo; None when unread."""
+def view_pr(ref: str) -> list | None:
+    """[state, isDraft] of `owner/repo#N`; None when unread."""
     repo, number = ref.split("#")
-    code, out = _run(["gh", "pr", "view", number, *(["-R", repo] if repo else []), "--json", "state,isDraft"],
-                     cwd=checkout if not repo and checkout and checkout.is_dir() else None)
+    code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "state,isDraft"])
     try:
         pr = json.loads(out) if code == 0 else None
         return [pr["state"], pr["isDraft"]] if pr else None
@@ -420,7 +419,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     refs = set(watched)
     rows, odd = _workers(lines)
     for line in odd:
-        if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a State cell
+        if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
             first = (_cells(line) or ["?"])[0]
             found.append((f"odd:{first}", f"{first}: its row's cells don't match the Workers header, so the tick "
                                           "can't read it"))
@@ -470,7 +469,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     events = []
     for ref in sorted(refs):
         known = state.get("prs", {}).get(ref)
-        prs[ref] = view(ref, checkout) or known
+        prs[ref] = view(ref) or known
         if prs[ref] is known:
             print(f"tick: can't read PR {ref}", file=sys.stderr)
         if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
