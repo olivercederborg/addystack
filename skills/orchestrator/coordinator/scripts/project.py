@@ -15,6 +15,9 @@ of the file byte for byte and replaces the file atomically.
                                     the phase's sections, then start the next or park
   project.py DIR start --goal G --proof P
                                     start the next phase on a parked project
+  project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
+                                    report; --send messages it to the coordinator's thread
+                                    and saves DIR/tick.json, while Heartbeat is `tick`
 
 TEXT or VALUE `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -22,10 +25,13 @@ and a label. State starts with one of STATES; detail may follow, as in
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
+import time
 from datetime import date
 from pathlib import Path
 
@@ -281,12 +287,178 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
     return f"phases/{name}"
 
 
+# The tick: the machine's timer runs `tick --send` every 10 minutes (references/tick.md), so
+# the coordinator's model wakes only for news T3 doesn't deliver. A heartbeat that woke it
+# hourly took no action on 91% of its turns.
+ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
+THREAD_ROW = re.compile(r"(running|overdue|unknown)\b")  # a row whose thread should be running
+PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
+LINK = re.compile(r"t3-thread://v2/([^/>\s]+)/([^>\s]+)")
+PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+/[\w.-]+)#(\d+)\b|(?<![\w/#])#(\d+)\b")
+STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
+REPEAT = 3600  # a finding still true this long after it was sent is sent again
+TIMER_STAMP = ".tick"  # touched in the orchestrate folder by scripts/tick.sh on each run
+
+
+def _run(args: list[str], cwd: Path | None = None, stdin: str | None = None) -> tuple[int, str]:
+    try:
+        done = subprocess.run(args, cwd=cwd, input=stdin, capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, str(error)
+    return done.returncode, done.stdout if done.returncode == 0 else done.stderr
+
+
+def show_thread(thread: str) -> dict | None:
+    """The thread's state from `t3 thread show`, or None when it can't be read."""
+    code, out = _run(["t3", "thread", "show", thread, "--json", "--messages", "0"])
+    try:
+        return json.loads(out)["thread"] if code == 0 else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def view_pr(ref: str, checkout: Path | None) -> list | None:
+    """[state, isDraft] of `owner/repo#N`, or of `#N` in the checkout's repo; None when unread."""
+    repo, number = ref.split("#")
+    code, out = _run(["gh", "pr", "view", number, *(["-R", repo] if repo else []), "--json", "state,isDraft"],
+                     cwd=checkout if not repo and checkout and checkout.is_dir() else None)
+    try:
+        pr = json.loads(out) if code == 0 else None
+        return [pr["state"], pr["isDraft"]] if pr else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _header(lines: list[str], field: str) -> str:
+    """A `Field: value` from the line under the title, up to the next ` · `."""
+    line = next((text for text in lines if text.startswith("Coordinator:")), "")
+    match = re.search(rf"(?:^| · ){field}: (.*?)(?= · |$)", line)
+    return match.group(1).strip() if match else ""
+
+
+def _workers(lines: list[str]) -> list[dict[str, str]]:
+    start, end = _section(lines, "Workers")
+    table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
+    if len(table) < 2:
+        return []
+    header = _cells(lines[table[0]])
+    return [dict(zip(header, cells)) for i in table[2:] if len(cells := _cells(lines[i])) == len(header)]
+
+
+def _listened(lines: list[str], key: str) -> str:
+    start, end = _section(lines, "Listening")
+    return next((lines[i][len(f"- {key}:"):].strip() for i in range(start + 1, end)
+                 if lines[i].startswith(f"- {key}:")), "")
+
+
+def _pr_refs(text: str) -> list[str]:
+    return [f"{m[0] or m[2] or ''}#{m[1] or m[3] or m[4]}" for m in PR_REF.findall(text)]
+
+
+def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr) -> tuple[list[tuple[str, str]], dict] | None:
+    """What changed since the last tick that T3 doesn't tell the coordinator, as (key, line)
+    pairs due to send, and the state to save once they're sent; None while the coordinator
+    is running or can't be read, so its own turn settles first. A row's thread is news when
+    it stopped, or has a question, through two ticks while its row says running, since a
+    completion T3 delivers gets its row fixed by then; when it runs with no new item for
+    STALL; or when it's on another machine, which `t3 thread show` can't read. Each of
+    these repeats every REPEAT until its row changes. A PR on an open row or under Watches
+    is news once when it merges, closes, reopens, or turns ready or draft: T3's watch sends
+    checks, comments, reviews, and conflicts, not those."""
+    coordinator = LINK.search(_header(lines, "Coordinator"))
+    lead = coordinator and show(coordinator.group(2))
+    if not lead or lead.get("archived") or lead.get("status") in ACTIVE:
+        return None
+    checkout = Path(_header(lines, "Checkout").split(" (")[0].split()[0]).expanduser() if _header(lines, "Checkout") else None
+    seen, threads, prs, found = state.get("threads", {}), {}, {}, []
+    refs = _pr_refs(_listened(lines, "Watches"))
+    for row in _workers(lines):
+        slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
+        if PR_ROW.match(row_state):
+            refs += _pr_refs(row.get(COLUMNS["pr"], ""))
+        link = LINK.search(row.get(COLUMNS["thread"], ""))
+        if not THREAD_ROW.match(row_state):
+            continue
+        if not link:
+            found.append((f"unlinked:{slug}", f"{slug}: its row says {row_state} but has no thread link to check"))
+            continue
+        place, thread = link.groups()
+        if place != coordinator.group(1):
+            found.append((f"remote:{thread}", f"{slug}: its thread is on another machine, so read its status with "
+                                              f"`t3_thread_read` and environmentId {place}"))
+            continue
+        now_seen = show(thread)
+        if now_seen is None:
+            found.append((f"unread:{thread}", f"{slug}: `t3 thread show` can't read its thread"))
+            continue
+        before = seen.get(thread, {})
+        status, runs, items = now_seen.get("status"), now_seen.get("runCount"), now_seen.get("itemCount")
+        asked = now_seen.get("pendingRequestCount") or 0
+        since = before.get("since", now) if before.get("items") == items else now
+        threads[thread] = {"status": status, "runs": runs, "items": items, "asked": asked, "since": since}
+        held = before.get("status") == status and before.get("runs") == runs  # the same for a whole tick
+        if status not in ACTIVE and held:
+            found.append((f"ended:{thread}:{runs}", f"{slug}: its thread stopped ({status}) while its row says {row_state}"))
+        elif asked and held and before.get("asked") == asked:
+            found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
+        elif status == "running" and now - since >= STALL:
+            found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
+    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
+    due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT]
+    for ref in dict.fromkeys(refs):
+        known = state.get("prs", {}).get(ref)
+        prs[ref] = view(ref, checkout) or known
+        if known and prs[ref] != known:
+            change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
+            due.append((f"pr:{ref}", f"{ref}: {change}"))
+    sent.update({key: now for key, _ in due if not key.startswith("pr:")})
+    return due, {"threads": threads, "prs": {k: v for k, v in prs.items() if v}, "sent": sent}
+
+
+def tick_message(lines: list[str], due: list[tuple[str, str]]) -> str:
+    project = lines[0].removeprefix("# ◆").strip() if lines else "?"
+    return "\n".join([f'<coordinator-tick project="{project}">', *(f"- {line}" for _, line in due),
+                      "</coordinator-tick>",
+                      "Read project.md and handle each line with step 4 of the coordinator skill, loading it only "
+                      "if it isn't in your context. Fix the line's row in project.md, or the tick repeats it hourly."])
+
+
 def _write(path: Path, text: str) -> None:
     handle, tmp = tempfile.mkstemp(dir=path.parent, prefix=".project.md.")
     with os.fdopen(handle, "w") as f:
         f.write(text)
     os.chmod(tmp, path.stat().st_mode if path.exists() else 0o644)  # mkstemp makes it 0600
     os.replace(tmp, path)
+
+
+def _tick(folder: Path, lines: list[str], send: bool) -> int:
+    """Runs tick: with --send only while Listening's Heartbeat is `tick`, saving the state
+    only after the message went out, so a failed send is retried next tick."""
+    if send and _listened(lines, "Heartbeat") != "tick":
+        return 0
+    store = folder / "tick.json"
+    try:
+        state = json.loads(store.read_text()) if store.exists() else {}
+    except ValueError:
+        state = {}
+    result = tick(lines, state, time.time())
+    if result is None:
+        print("the coordinator's thread is running or unreadable: nothing checked")
+        return 0
+    due, after = result
+    if not send:
+        stamp = folder.parent / TIMER_STAMP
+        if not stamp.exists() or time.time() - stamp.stat().st_mtime > 1200:
+            print("the tick timer hasn't run in 20 minutes: install it as references/tick.md says")
+        print("\n".join(f"- {line}" for _, line in due) or "nothing new")
+        return 0
+    if due:
+        code, out = _run(["t3", "thread", "send", LINK.search(_header(lines, "Coordinator")).group(2), "-"],
+                         stdin=tick_message(lines, due))
+        if code:
+            raise ProjectError(f"t3 thread send failed: {out.strip()[:300]}")
+    _write(store, json.dumps(after, indent=1) + "\n")
+    return 0
 
 
 def main(argv: list[str]) -> int:
@@ -316,6 +488,7 @@ def main(argv: list[str]) -> int:
     starting = commands.add_parser("start", allow_abbrev=False)
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
+    commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
     args = parser.parse_args(argv)
     if args.command == "phase" and (args.goal is None) != (args.proof is None):
         ending.error("--goal needs --proof, and --park takes neither")
@@ -347,6 +520,8 @@ def main(argv: list[str]) -> int:
             print(path)
             return 0
         lines = path.read_text().split("\n")
+        if args.command == "tick":
+            return _tick(args.dir, lines, args.send)
         if args.command in ("decide", "learn"):
             body = sys.stdin.read() if args.text == "-" else args.text
             (decide if args.command == "decide" else learn)(lines, body)
