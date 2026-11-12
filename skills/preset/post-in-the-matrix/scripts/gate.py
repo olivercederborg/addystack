@@ -87,7 +87,7 @@ def parse_thread(text: str) -> list[Message]:
     if replies_at < 0:
         return []
     body = text[replies_at:]
-    heads = [m for m in REPLY_HEAD.finditer(body)]
+    heads = list(REPLY_HEAD.finditer(body))
     out = []
     for head, nxt in zip(heads, heads[1:] + [None]):
         block = body[head.end():nxt.start() if nxt else len(body)]
@@ -359,8 +359,8 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
     state = load_state(state_path)
     try:
         current = gather(config, state, now)
-    except (OSError, RuntimeError, ValueError, KeyError, urllib.error.URLError) as error:
-        print(f"gate: read failed: {error}", file=sys.stderr)
+    except Exception as error:  # whatever broke the read, failing open must still run
+        print(f"gate: read failed: {type(error).__name__}: {error}", file=sys.stderr)
         if dry_run:
             return 1
         # A gate that never succeeded counts its failures from the first one.
@@ -370,7 +370,7 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
                 wake(config, ["gate failing since " + time.strftime("%H:%M", time.localtime(state["last_ok"]))],
                      state.get("last_wake", 0))
                 state["last_wake"] = now
-            except (OSError, RuntimeError, urllib.error.URLError) as wake_error:
+            except Exception as wake_error:
                 print(f"gate: wake failed too: {wake_error}", file=sys.stderr)
         save_state(state_path, state)
         return 1
@@ -381,7 +381,7 @@ def run(config: dict, dry_run: bool, now: float | None = None) -> int:
     if reasons:
         try:
             wake(config, reasons, state.get("last_wake", 0))
-        except (OSError, RuntimeError, urllib.error.URLError) as error:
+        except Exception as error:
             print(f"gate: wake failed, next run retries: {error}", file=sys.stderr)
             return 1
         state["last_wake"] = now

@@ -4,6 +4,7 @@ The gate may wake the check for nothing, but it must never sleep through a new r
 so most of these feed it a channel and check that the request wakes it."""
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -174,10 +175,13 @@ class Run(unittest.TestCase):
         code, calls, state = self.run_gate({"msg:1"})
         self.assertEqual((code, calls[0].args[1], state["seen"]), (0, ["msg:1"], ["msg:1"]))
 
-    def test_a_failing_read_wakes_the_check_after_the_window(self):
-        self.state_file.write_text(json.dumps({"last_ok": NOW - 7200, "last_wake": NOW - 7200, "seen": []}))
-        code, calls, state = self.run_gate(RuntimeError("Executor down"))
-        self.assertEqual((code, len(calls), state["last_wake"]), (1, 1, NOW))
+    def test_any_failing_read_wakes_the_check_after_the_window(self):
+        failures = [RuntimeError("Executor down"), subprocess.TimeoutExpired("gh", 120), IndexError("no content")]
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__):
+                self.state_file.write_text(json.dumps({"last_ok": NOW - 7200, "last_wake": NOW - 7200, "seen": []}))
+                code, calls, state = self.run_gate(failure)
+                self.assertEqual((code, len(calls), state["last_wake"]), (1, 1, NOW))
 
 
 class WakeId(unittest.TestCase):
