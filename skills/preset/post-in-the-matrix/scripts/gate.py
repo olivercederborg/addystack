@@ -265,18 +265,19 @@ def gh(*args: str) -> str:
 
 
 def resolve_linear(keys: set[str], config: dict, state: dict, now: float) -> set[int]:
-    """PR numbers for Linear review links, by a PR title search per key. A hit is kept
-    while its link stays in the lookback, since a PR's title can change after; a miss is
-    searched again hourly, since GitHub's search index lags a new PR."""
+    """PR numbers for Linear review links, by a PR title search per key, searched again
+    hourly: an issue can gain PRs, and GitHub's search index lags a new one. Every hit is
+    kept while its link stays in the lookback, since a PR's title can change after."""
     cache = {k: v for k, v in state.get("linear", {}).items() if k in keys}
     found = set()
     for key in sorted(keys):
         entry = cache.get(key)
-        if entry is None or (not entry["prs"] and now - entry["at"] >= 3600):
+        if entry is None or now - entry["at"] >= 3600:
             query = f"{key} in:title" if re.fullmatch(r"[A-Z]+-\d+", key) else f'"{key}" in:title'
             hits = json.loads(gh("pr", "list", "--repo", config["repo"], "--state", "all",
                                  "--search", query, "--json", "number", "--limit", "20"))
-            entry = cache[key] = {"prs": [hit["number"] for hit in hits], "at": now}
+            known = entry["prs"] if entry else []
+            entry = cache[key] = {"prs": sorted({*known, *(hit["number"] for hit in hits)}), "at": now}
         found.update(entry["prs"])
     state["linear"] = cache
     return found

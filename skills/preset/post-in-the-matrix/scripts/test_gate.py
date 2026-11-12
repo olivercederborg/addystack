@@ -233,6 +233,16 @@ class WakeId(unittest.TestCase):
         self.assertEqual(first, retry)
 
 
+class LinearLinks(unittest.TestCase):
+    def test_a_search_runs_again_hourly_and_keeps_earlier_hits(self):
+        state, results = {}, iter([[{"number": 1}], [{"number": 2}]])
+        with mock.patch.object(gate, "gh", side_effect=lambda *args: json.dumps(next(results))) as gh:
+            self.assertEqual(gate.resolve_linear({"DEV-9"}, CONFIG, state, NOW), {1})
+            self.assertEqual(gate.resolve_linear({"DEV-9"}, CONFIG, state, NOW + 600), {1})
+            self.assertEqual(gate.resolve_linear({"DEV-9"}, CONFIG, state, NOW + 3600), {1, 2})
+        self.assertEqual(gh.call_count, 2)
+
+
 class Naming(unittest.TestCase):
     def test_pr_numbers(self):
         text = ("<https://github.com/acme/app/pull/101|#101 Fix> and "
