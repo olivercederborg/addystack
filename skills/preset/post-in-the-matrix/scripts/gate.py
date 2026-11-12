@@ -75,8 +75,9 @@ def parse_channel(text: str) -> list[Message]:
         ts = TS_LINE.search(block)
         if not ts:
             continue
-        # The provider's own line comes last; an earlier one is the sender's text.
-        thread = ([None] + list(THREAD_LINE.finditer(block)))[-1]
+        # A sender's text or an app preview can hold a line like the provider's, so take
+        # the largest count: an extra thread read is cheap, a skipped one isn't.
+        thread = max(THREAD_LINE.finditer(block), key=lambda m: int(m.group(1)), default=None)
         out.append(Message(ts.group(1), head.group(1) or "", block,
                            int(thread.group(1)) if thread else 0,
                            (thread.group(2) or "") if thread else ""))

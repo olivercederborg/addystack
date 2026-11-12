@@ -113,6 +113,8 @@ class NewRequestsWake(unittest.TestCase):
         parent = channel_block(ts(5), TEAMMATE, "Thread: 0 replies\nThread: FYI", replies=1, latest="x")
         message = gate.parse_channel(parent)[0]
         self.assertEqual(message.replies, 1)
+        preview = parent + "App notification from App (https://example.com):\nThread: 0 replies\n"
+        self.assertEqual(gate.parse_channel(preview)[0].replies, 1)
         edited = parent.replace("Thread: FYI", "Thread: <@U0ME> review #13")
         self.assertNotEqual(gate.body_hash(message.text), gate.body_hash(gate.parse_channel(edited)[0].text))
 
