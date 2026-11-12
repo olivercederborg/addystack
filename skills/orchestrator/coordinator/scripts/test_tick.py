@@ -175,12 +175,23 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
-    def test_a_pr_merged_before_the_first_look_wakes_it_once(self):
+    def test_a_pr_that_joins_and_merges_before_a_look_wakes_it_once(self):
         self.prs["#12"] = {"state": "MERGED", "isDraft": False}
         self.tick("--send")
-        self.assertIn("- #12: merged before the tick first saw it\n", self.sent()[0]["message"])
+        self.assertEqual(self.sent(), [], "the first look on a project only records")
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#7, #13"})
+        self.prs["#13"] = {"state": "CLOSED", "isDraft": False}
         self.tick("--send")
-        self.assertEqual(self.sent(), [])
+        self.assertIn("- #13: closed before the tick first saw it\n", self.sent()[0]["message"])
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none"})
+        self.tick("--send")
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#7, #13"})
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "a PR that leaves and comes back isn't new")
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, #14 MERGED 3f2a"})
+        self.prs["#14"] = {"state": "MERGED", "isDraft": False}
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "the row already says it merged")
 
     def test_a_worker_on_another_machine_gets_an_hourly_reminder(self):
         self.write_project(remote="running")

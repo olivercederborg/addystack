@@ -358,15 +358,19 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str, owner: str) -> list[str]:
-    """`owner/repo#N` or `#N` for each PR the text names; a `none` Watches value names none."""
+def _pr_refs(text: str, owner: str) -> dict[str, str]:
+    """`owner/repo#N` or `#N` for each PR the text names, with the words after it up to the
+    next ` · `, where a coordinator records a state such as `MERGED`; a `none` Watches value
+    names none."""
     if text.startswith("none"):
-        return []
-    refs = []
-    for url_repo, url_n, repo, n, local in PR_REF.findall(text):
-        repo = url_repo or (repo if "/" in repo or not repo else f"{owner}/{repo}" if owner else "")
-        refs.append(f"{repo}#{url_n or n or local}" if repo or local else "")
-    return [ref for ref in refs if ref]
+        return {}
+    refs = {}
+    for match in PR_REF.finditer(text):
+        url_repo, url_n, repo, n, local = match.groups()
+        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}" if owner else "")
+        if repo or local:
+            refs[f"{repo or ''}#{url_n or n or local}"] = text[match.end():].split(" · ")[0]
+    return refs
 
 
 def _owner(checkout: Path | None) -> str:
@@ -397,7 +401,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
     these repeats every REPEAT until its row changes. A PR on an open row or under Watches
     is news once when it merges, closes, reopens, or turns ready or draft, or is already
-    merged or closed when first seen: T3's watch sends
+    merged or closed when first seen on a project the tick already checks and its row or
+    Watches entry doesn't say so: T3's watch sends
     checks, comments, reviews, and conflicts, not those."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
@@ -419,7 +424,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            refs += _pr_refs(row.get(COLUMNS["pr"], ""), owner)
+            refs.update(_pr_refs(row.get(COLUMNS["pr"], ""), owner))
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -451,7 +456,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         return [], {**state, "threads": threads}
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT]
-    for ref in dict.fromkeys(refs):
+    for ref, noted in refs.items():
         known = state.get("prs", {}).get(ref)
         prs[ref] = view(ref, checkout) or known
         if prs[ref] is known:
@@ -459,10 +464,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if known and prs[ref] != known:
             change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
             due.append((f"pr:{ref}", f"{ref}: {change}"))
-        elif not known and prs[ref] and prs[ref][0] != "OPEN":  # it may have closed before the first look
+        elif state and not known and prs[ref] and prs[ref][0] != "OPEN" and prs[ref][0].lower() not in noted.lower():
             due.append((f"pr:{ref}", f"{ref}: {prs[ref][0].lower()} before the tick first saw it"))
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
-    return due, {"threads": threads, "prs": {k: v for k, v in prs.items() if v}, "sent": sent}
+    kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
+    return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]]) -> str:
