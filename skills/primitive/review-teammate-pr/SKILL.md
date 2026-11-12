@@ -234,5 +234,11 @@ End by recommending the step the verdict calls for:
 - **Approve, with non-blocking style or follow-up ideas left**: approve with them as a follow-up PR; approve.
 - **Held** by an open finding: post any new findings without approving.
 
-**Done when:** every earlier comment has a status, and there is a verdict: approve
-now, or which finding holds it.
+When the recommendation waits on the user's pick, unwatch the PR before ending the turn,
+unless a required check still runs on its head: until they answer, a wake only repeats
+the card. Step 5 re-checks the head when they pick, and starts the watch again after
+posting.
+
+**Done when:** every earlier comment has a status, there is a verdict: approve now, or
+which finding holds it, and a PR waiting on the user's pick is unwatched unless a
+required check still runs.
