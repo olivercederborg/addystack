@@ -193,6 +193,33 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [], "the row already says it merged")
 
+    def test_a_recorded_state_belongs_to_its_own_pr(self):
+        self.tick("--send")
+        self.prs["#13"] = {"state": "MERGED", "isDraft": False}
+        self.prs["#14"] = {"state": "MERGED", "isDraft": False}
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #13 (build), #14 MERGED · #15 unmerged"})
+        self.prs["#15"] = {"state": "MERGED", "isDraft": False}
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertIn("- #13: merged before the tick first saw it\n", message)
+        self.assertIn("- #15: merged before the tick first saw it\n", message)
+        self.assertNotIn("#14", message)
+
+    def test_a_repo_ref_without_a_known_owner_is_flagged(self):
+        subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: skills#246"})
+        self.tick("--send")
+        self.assertIn("- skills#246: the tick can't tell its owner, so write it as owner/repo#N\n", self.sent()[0]["message"])
+
+    def test_a_metadata_update_doesnt_reset_the_stall_clock(self):
+        stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - ago))
+        self.threads["w1"] = thread(updatedAt=stamp(600))
+        self.tick("--send")
+        self.age(3060)
+        self.threads["w1"] = thread(updatedAt=stamp(0))  # a title change, no new item
+        self.tick("--send")
+        self.assertIn("- build: no new thread item in 61 min\n", self.sent()[0]["message"])
+
     def test_a_worker_on_another_machine_gets_an_hourly_reminder(self):
         self.write_project(remote="running")
         self.tick("--send")

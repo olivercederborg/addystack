@@ -358,19 +358,19 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str, owner: str) -> dict[str, str]:
-    """`owner/repo#N` or `#N` for each PR the text names, with the words after it up to the
-    next ` · `, where a coordinator records a state such as `MERGED`; a `none` Watches value
-    names none."""
+def _pr_refs(text: str, owner: str, refs: dict[str, str]) -> None:
+    """Adds `owner/repo#N` or `#N` for each PR the text names to refs, with the words between
+    it and the next PR or ` · `, where a coordinator records a state such as `MERGED`,
+    joined across mentions. A `repo#N` without a known owner stays `?/repo#N`, so it's
+    reported. A `none` Watches value names none."""
     if text.startswith("none"):
-        return {}
-    refs = {}
-    for match in PR_REF.finditer(text):
+        return
+    matches = list(PR_REF.finditer(text))
+    for match, after in zip(matches, [*matches[1:], None]):
         url_repo, url_n, repo, n, local = match.groups()
-        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}" if owner else "")
-        if repo or local:
-            refs[f"{repo or ''}#{url_n or n or local}"] = text[match.end():].split(" · ")[0]
-    return refs
+        repo = url_repo or (repo if not repo or "/" in repo else f"{owner or '?'}/{repo}")
+        ref = f"{repo or ''}#{url_n or n or local}"
+        refs[ref] = refs.get(ref, "") + " " + text[match.end():after.start() if after else None].split(" · ")[0]
 
 
 def _owner(checkout: Path | None) -> str:
@@ -414,7 +414,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     checkout = Path(place).expanduser() if place else None
     owner = _owner(checkout)
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    refs = _pr_refs(_listened(lines, "Watches"), owner)
+    refs: dict[str, str] = {}
+    _pr_refs(_listened(lines, "Watches"), owner, refs)
     rows, odd = _workers(lines)
     for line in odd:
         if re.search(r"\b(running|overdue|unknown|waiting)\b", line):
@@ -424,7 +425,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            refs.update(_pr_refs(row.get(COLUMNS["pr"], ""), owner))
+            _pr_refs(row.get(COLUMNS["pr"], ""), owner, refs)
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -438,12 +439,16 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             continue
         now_seen = show(thread)
         if now_seen is None:
+            print(f"tick: can't read thread {thread}", file=sys.stderr)
             found.append((f"unread:{thread}", f"{slug}: `t3 thread show` can't read its thread"))
             continue
         before = seen.get(thread, {})
         status, runs, items = now_seen.get("status"), now_seen.get("runCount"), now_seen.get("itemCount")
         asked = now_seen.get("pendingRequestCount") or 0
-        since = _when(now_seen.get("updatedAt")) or (before.get("since", now) if before.get("items") == items else now)
+        # The item count dates activity; updatedAt, which metadata such as a title also moves,
+        # dates only a new count or the first look.
+        since = before["since"] if before.get("items") == items and "since" in before else (
+            _when(now_seen.get("updatedAt")) or now)
         threads[thread] = {"status": status, "runs": runs, "items": items, "asked": asked, "since": since}
         held = before.get("status") == status and before.get("runs") == runs  # the same for a whole tick
         if status not in ACTIVE and held:
@@ -452,6 +457,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
+    for ref in [ref for ref in refs if ref.startswith("?/")]:
+        del refs[ref]
+        found.append((f"owner:{ref}", f"{ref[2:]}: the tick can't tell its owner, so write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
@@ -464,7 +472,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if known and prs[ref] != known:
             change = prs[ref][0].lower() if prs[ref][0] != known[0] else ("turned draft" if prs[ref][1] else "marked ready")
             due.append((f"pr:{ref}", f"{ref}: {change}"))
-        elif state and not known and prs[ref] and prs[ref][0] != "OPEN" and prs[ref][0].lower() not in noted.lower():
+        elif state and not known and prs[ref] and prs[ref][0] != "OPEN" and not re.search(rf"\b{prs[ref][0]}\b", noted, re.I):
             due.append((f"pr:{ref}", f"{ref}: {prs[ref][0].lower()} before the tick first saw it"))
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
