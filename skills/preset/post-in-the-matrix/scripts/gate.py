@@ -15,8 +15,8 @@ POSTs to the check's T3 webhook only when one of these appeared since its last w
 The woken check still decides everything; the gate only decides whether it runs. So a
 signal here is a superset of what the check acts on, and a run that finds nothing to do
 is the gate's only false positive. A wake also goes out when `quiet_hours` pass with
-none, and when the gate itself has failed for `fail_open_minutes`, so a broken gate
-falls back to the old cadence rather than to silence.
+none, and once every `fail_open_minutes` while the gate itself is failing, so a broken
+gate still runs the check, whose own read then reports what broke.
 
   gate.py --config FILE             check once, and wake the check if anything is new
   gate.py --config FILE --dry-run   print what it would send, and change nothing
