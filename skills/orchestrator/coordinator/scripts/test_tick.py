@@ -52,6 +52,8 @@ args = sys.argv[1:]
 repo = args[args.index("-R") + 1] if "-R" in args else ""
 prs = json.load(open(os.environ["FAKE"] + "/prs.json"))
 key = f"{repo}#{args[2]}"
+with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
+    out.write(json.dumps({"key": key, "cwd": os.getcwd()}) + "\n")
 if key not in prs:
     sys.exit("no pull requests found")
 print(json.dumps(prs[key]))
@@ -72,12 +74,15 @@ class Tick(unittest.TestCase):
         for name, body in [("t3", FAKE_T3), ("gh", FAKE_GH)]:
             (self.fake / "bin" / name).write_text(body)
             (self.fake / "bin" / name).chmod(0o755)
+        self.checkout = self.root / "check out"  # a space, as a real path may have
+        subprocess.run(["git", "init", "-q", str(self.checkout)], check=True)
+        subprocess.run(["git", "-C", str(self.checkout), "remote", "add", "origin", "git@github.com:acme/app.git"], check=True)
         self.write_project()
         self.threads = {"lead": thread("completed", 40), "w1": thread()}
         self.prs = {"#12": {"state": "OPEN", "isDraft": True}, "acme/app#7": {"state": "OPEN", "isDraft": False}}
 
     def write_project(self, heartbeat="tick", remote="done", rows=None):
-        text = PROJECT.format(checkout=self.root, heartbeat=heartbeat, remote=remote)
+        text = PROJECT.format(checkout=self.checkout, heartbeat=heartbeat, remote=remote)
         for old, new in (rows or {}).items():
             text = text.replace(old, new)
         (self.dir / "project.md").write_text(text)
@@ -181,6 +186,27 @@ class Tick(unittest.TestCase):
         self.write_project(rows={"<t3-thread://v2/env/w1> · task t1": "task t1"})
         self.tick("--send")
         self.assertIn("- build: its row says running but has no thread link to check\n", self.sent()[0]["message"])
+
+    def test_links_paths_and_refs_parse_as_coordinators_write_them(self):
+        self.write_project(rows={"<t3-thread://v2/env/w1> · task t1": "[build](t3-thread://v2/env/w1) · task t1",
+                                 "- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12 (build), app#7 and acme/app#7"})
+        self.prs["#12"] = {"state": "OPEN", "isDraft": True}
+        self.tick("--send")
+        calls = [json.loads(line) for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(sorted({call["key"] for call in calls}), ["#12", "acme/app#7"])
+        self.assertEqual({call["cwd"] for call in calls if call["key"] == "#12"}, {str(self.checkout.resolve())})
+        self.assertEqual(list(self.state()["threads"]), ["w1"])
+
+    def test_a_watches_line_that_says_none_names_no_pr(self):
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none (#7 unwatched at handback)"})
+        self.tick("--send")
+        self.assertEqual(list(self.state()["prs"]), ["#12"])
+
+    def test_a_live_row_the_tick_cant_parse_is_flagged(self):
+        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |":
+                                 "| probe | <t3-thread://v2/env/w2> | running (round 2) |"})
+        self.tick("--send")
+        self.assertIn("- probe: its row's cells don't match the Workers header", self.sent()[0]["message"])
 
     def test_nothing_is_checked_while_the_coordinator_runs(self):
         self.tick("--send")

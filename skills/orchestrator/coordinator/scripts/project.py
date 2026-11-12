@@ -293,8 +293,11 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
 THREAD_ROW = re.compile(r"(running|overdue|unknown)\b")  # a row whose thread should be running
 PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
-LINK = re.compile(r"t3-thread://v2/([^/>\s]+)/([^>\s]+)")
-PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+/[\w.-]+)#(\d+)\b|(?<![\w/#])#(\d+)\b")
+LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # bare, in <…>, or a Markdown link's (…)
+# A PR as its URL, owner/repo#N, repo#N (the checkout's owner), or #N (the checkout's repo).
+PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
+                    r"|(?<![\w/#])#(\d+)\b")
+REMOTE = re.compile(r"github\.com[:/]([\w.-]+)/")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
 TIMER_STAMP = ".tick"  # touched in the orchestrate folder by scripts/tick.sh on each run
@@ -336,13 +339,17 @@ def _header(lines: list[str], field: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def _workers(lines: list[str]) -> list[dict[str, str]]:
+def _workers(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
+    """The Workers rows as {column: cell}, and the rows whose cells don't match the header."""
     start, end = _section(lines, "Workers")
     table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
     if len(table) < 2:
-        return []
-    header = _cells(lines[table[0]])
-    return [dict(zip(header, cells)) for i in table[2:] if len(cells := _cells(lines[i])) == len(header)]
+        return [], []
+    header, rows, odd = _cells(lines[table[0]]), [], []
+    for i in table[2:]:
+        cells = _cells(lines[i])
+        (rows.append(dict(zip(header, cells))) if len(cells) == len(header) else odd.append(lines[i]))
+    return rows, odd
 
 
 def _listened(lines: list[str], key: str) -> str:
@@ -351,8 +358,22 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str) -> list[str]:
-    return [f"{m[0] or m[2] or ''}#{m[1] or m[3] or m[4]}" for m in PR_REF.findall(text)]
+def _pr_refs(text: str, owner: str) -> list[str]:
+    """`owner/repo#N` or `#N` for each PR the text names; a `none` Watches value names none."""
+    if text.startswith("none"):
+        return []
+    refs = []
+    for url_repo, url_n, repo, n, local in PR_REF.findall(text):
+        repo = url_repo or (repo if "/" in repo or not repo else f"{owner}/{repo}" if owner else "")
+        refs.append(f"{repo}#{url_n or n or local}" if repo or local else "")
+    return [ref for ref in refs if ref]
+
+
+def _owner(checkout: Path | None) -> str:
+    """The GitHub owner of the checkout's origin, for a `repo#N` reference."""
+    code, out = _run(["git", "-C", str(checkout), "remote", "get-url", "origin"]) if checkout else (1, "")
+    match = REMOTE.search(out) if code == 0 else None
+    return match.group(1) if match else ""
 
 
 def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr) -> tuple[list[tuple[str, str]], dict] | None:
@@ -369,13 +390,21 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived") or lead.get("status") in ACTIVE:
         return None
-    checkout = Path(_header(lines, "Checkout").split(" (")[0].split()[0]).expanduser() if _header(lines, "Checkout") else None
+    place = _header(lines, "Checkout").split(" (")[0].strip()
+    checkout = Path(place).expanduser() if place else None
+    owner = _owner(checkout)
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    refs = _pr_refs(_listened(lines, "Watches"))
-    for row in _workers(lines):
+    refs = _pr_refs(_listened(lines, "Watches"), owner)
+    rows, odd = _workers(lines)
+    for line in odd:
+        if re.search(r"\b(running|overdue|unknown|waiting)\b", line):
+            first = (_cells(line) or ["?"])[0]
+            found.append((f"odd:{first}", f"{first}: its row's cells don't match the Workers header, so the tick "
+                                          "can't read it"))
+    for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            refs += _pr_refs(row.get(COLUMNS["pr"], ""))
+            refs += _pr_refs(row.get(COLUMNS["pr"], ""), owner)
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
