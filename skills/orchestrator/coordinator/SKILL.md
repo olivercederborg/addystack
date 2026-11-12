@@ -143,14 +143,16 @@ inputs or one of Parallel by default's three reasons.
   Listening. On a wake, send the event to the PR's owner once step 3 lets its task
   start, telling it to run babysit's pass and that you keep the watch. When the owner
   reports maintenance done, `unwatch_pull_request` that PR.
-- **The tick**: while any worker is running, waiting, `overdue`, or `unknown`, Listening's
-  Heartbeat is `tick` (`scripts/project.py <folder> listen Heartbeat tick`), and `none`
-  once none is. This machine's [tick](references/tick.md) timer then checks the project
-  every 10 minutes, and messages this thread only with news T3 doesn't send, such as a
-  worker that stopped while its row says running. Its message opens `<coordinator-tick>`:
-  handle each line as this step says and fix its row, or the line repeats hourly. When
-  you set `tick`, run `project.py <folder> tick` once to see that the timer runs. A wait
-  for a time, such as a rate-limit reset, gets a `once` `schedule_task` at that time.
+- **The tick**: while any worker is running, waiting, `overdue`, or `unknown`, or a PR
+  is under Watches, Listening's Heartbeat is `tick` (`scripts/project.py <folder> listen
+  Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
+  scheduled task's id: `delete_scheduled_task` it first. This machine's
+  [tick](references/tick.md) timer then checks the project every 10 minutes, and
+  messages this thread only with news T3 doesn't send, such as a worker that stopped
+  while its row says running. Its message opens `<coordinator-tick>`: handle each line as
+  this step says and fix its row, or the line repeats hourly. When you set `tick`, run
+  `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
+  a rate-limit reset, gets a `once` `schedule_task` at that time.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
