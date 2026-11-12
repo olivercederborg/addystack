@@ -1,0 +1,12 @@
+[Unit]
+Description=Wake the #plug-into-the-matrix check when the channel or a PR it names changed
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h
+# gate.py runs gh, so it needs gh's directory on PATH.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 %h/.agents/skills/post-in-the-matrix/scripts/gate.py --config %h/.config/post-in-the-matrix/gate.json
+TimeoutStartSec=10min
