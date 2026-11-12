@@ -49,11 +49,11 @@ elif sys.argv[1:3] == ["thread", "send"]:
 FAKE_GH = r"""#!/usr/bin/env python3
 import json, os, sys
 args = sys.argv[1:]
-repo = args[args.index("-R") + 1] if "-R" in args else ""
+repo = args[args.index("-R") + 1]
 prs = json.load(open(os.environ["FAKE"] + "/prs.json"))
 key = f"{repo}#{args[2]}"
 with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
-    out.write(json.dumps({"key": key, "cwd": os.getcwd()}) + "\n")
+    out.write(json.dumps({"key": key}) + "\n")
 if key not in prs:
     sys.exit("no pull requests found")
 print(json.dumps(prs[key]))
