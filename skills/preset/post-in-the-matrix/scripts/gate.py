@@ -75,7 +75,8 @@ def parse_channel(text: str) -> list[Message]:
         ts = TS_LINE.search(block)
         if not ts:
             continue
-        thread = THREAD_LINE.search(block)
+        # The provider's own line comes last; an earlier one is the sender's text.
+        thread = ([None] + list(THREAD_LINE.finditer(block)))[-1]
         out.append(Message(ts.group(1), head.group(1) or "", block,
                            int(thread.group(1)) if thread else 0,
                            (thread.group(2) or "") if thread else ""))
@@ -83,15 +84,14 @@ def parse_channel(text: str) -> list[Message]:
 
 
 def parse_thread(text: str) -> list[Message]:
-    """The replies in one slack_read_thread result, without the parent."""
-    replies_at = text.find("=== THREAD REPLIES")
-    if replies_at < 0:
-        return []
-    body = text[replies_at:]
-    heads = list(REPLY_HEAD.finditer(body))
+    """The replies in one slack_read_thread page, without the parent."""
+    heads = list(REPLY_HEAD.finditer(text))
     out = []
     for head, nxt in zip(heads, heads[1:] + [None]):
-        block = body[head.end():nxt.start() if nxt else len(body)]
+        if not head.group(0).startswith("--- Reply"):
+            continue
+        block = text[head.end():nxt.start() if nxt else len(text)]
+        block = block.split("=== THREAD REPLIES", 1)[0]
         ts, who = TS_LINE.search(block), FROM_LINE.search(block)
         if ts:
             out.append(Message(ts.group(1), (who.group(1) or "") if who else "", block))
@@ -133,7 +133,8 @@ def linear_keys(text: str) -> set[str]:
 
 # ---- The decision ---------------------------------------------------------------------
 
-VOLATILE = re.compile(r"^(?:Thread|Reactions): .*$", re.M)
+VOLATILE = re.compile(r"^(?:Thread: \d+ repl(?:y|ies)(?: \(latest: [^)]*\))?"
+                      r"|Reactions: [\w+-]+ \(\d+\)(?:, [\w+-]+ \(\d+\))*)\s*$", re.M)
 
 
 def body_hash(text: str) -> str:
@@ -249,9 +250,16 @@ def read_channel(slack, config: dict, state: dict, now: float) -> list[Message]:
         if cached and not young and cached["latest"] == parent.latest and cached["count"] == parent.replies:
             threads[parent.ts] = cached
             continue
-        read = slack("slack_read_thread", {"channel_id": channel, "message_ts": parent.ts})
+        replies, cursor = [], None
+        while True:
+            read = slack("slack_read_thread", {"channel_id": channel, "message_ts": parent.ts,
+                                               **({"cursor": cursor} if cursor else {})})
+            replies += parse_thread(read["messages"])
+            cursor = next_cursor(read.get("pagination_info", ""))
+            if not cursor:
+                break
         threads[parent.ts] = {"latest": parent.latest, "count": parent.replies,
-                              "replies": [asdict(r) for r in parse_thread(read.get("messages", ""))]}
+                              "replies": [asdict(r) for r in replies]}
     state["threads"] = threads
     return parents + [Message(**r) for t in threads.values() for r in t["replies"]]
 

@@ -36,7 +36,8 @@ def thread_text(parent_ts, replies):
 
 
 class FakeSlack:
-    """slack(name, input) over a channel of pages and threads, counting thread reads."""
+    """slack(name, input) over a channel of pages and threads, counting thread reads. A
+    thread given as a list is pages."""
 
     def __init__(self, pages, threads=None):
         self.pages, self.threads, self.thread_reads = pages, threads or {}, []
@@ -49,7 +50,12 @@ class FakeSlack:
                 if more else "There are no more messages available."
             return {"messages": "Channel: #c (C1)\n\n" + self.pages[index], "pagination_info": info}
         self.thread_reads.append(tool_input["message_ts"])
-        return {"messages": self.threads[tool_input["message_ts"]]}
+        thread = self.threads[tool_input["message_ts"]]
+        if isinstance(thread, str):
+            return {"messages": thread}
+        index = int(tool_input.get("cursor", "0"))
+        info = f"use cursor: `{index + 1}`" if index + 1 < len(thread) else "There are no more messages in this thread."
+        return {"messages": thread[index], "pagination_info": info}
 
 
 def check(slack, state, prs=None, now=NOW):
@@ -93,6 +99,21 @@ class NewRequestsWake(unittest.TestCase):
         new = channel_block(ts(0.2), TEAMMATE, "<@U0ME> review #13", replies=1, latest="c")
         threads = {**self.threads, ts(0.2): thread_text(ts(0.2), [(ts(0.1), TEAMMATE, "ci: green now")])}
         self.assertEqual(asks(check(FakeSlack([new + self.old], threads), self.state)), [ts(0.2), ts(0.1)])
+
+    def test_a_reply_on_a_later_thread_page_wakes(self):
+        parent = channel_block(ts(5), TEAMMATE, "stack is up", replies=101, latest="x")
+        pages = [thread_text(ts(5), [(ts(4.5), ME, "approved")]),
+                 f"--- Reply 101 of 101 ---\nFrom: Sam <sam@example.com> ({TEAMMATE})\n"
+                 f"Message TS: {ts(0.1)}\n<@U0ME> re-review #13\n"]
+        self.assertEqual(asks(check(FakeSlack([parent + self.old], {**self.threads, ts(5): pages}), self.state)),
+                         [ts(5), ts(0.1)])
+
+    def test_a_senders_own_thread_line_is_text_not_the_reply_count(self):
+        parent = channel_block(ts(5), TEAMMATE, "Thread: 0 replies\nThread: FYI", replies=1, latest="x")
+        message = gate.parse_channel(parent)[0]
+        self.assertEqual(message.replies, 1)
+        edited = parent.replace("Thread: FYI", "Thread: <@U0ME> review #13")
+        self.assertNotEqual(gate.body_hash(message.text), gate.body_hash(gate.parse_channel(edited)[0].text))
 
     def test_a_request_on_a_later_page_wakes(self):
         new = channel_block(ts(0.1), TEAMMATE, "<@U0ME> review #13")
