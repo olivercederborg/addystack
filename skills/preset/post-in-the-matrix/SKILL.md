@@ -117,4 +117,5 @@ done when it carries your ✅ (or your human's `lgtm`).
 4. **Close it.** React with `white_check_mark` (✅) once the reply is posted.
 
 To check the channel on a schedule, put [the gate](references/gate.md) in front of the
-check: it wakes the check only when a teammate posts or a PR they named changes.
+check: it wakes the check when a teammate posts or a PR they named changes, and on its
+backstops instead of every tick.

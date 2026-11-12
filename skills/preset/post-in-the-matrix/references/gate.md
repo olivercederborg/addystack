@@ -3,9 +3,10 @@
 A scheduled agent that checks the channel on an interval wakes a model on every tick,
 and in one long-lived thread each tick also carries every earlier tick's context. The
 gate moves the waiting out of the model: a systemd timer runs `scripts/gate.py` every
-5 minutes, and the gate wakes the check through its T3 webhook only when something it
-could act on is new (the script's docstring lists the signals). Each woken run starts
-a fresh session.
+5 minutes, and the gate wakes the check through its T3 webhook when something it
+could act on is new (the script's docstring lists the signals), plus two backstops: a
+wake after `quiet_hours` with none, and a wake on every run once the gate has been
+failing for `fail_open_minutes`. Each woken run starts a fresh session.
 
 What it needs on the machine that runs the check:
 
