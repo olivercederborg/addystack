@@ -185,6 +185,32 @@ class Tracking(unittest.TestCase):
         self.assertEqual(asked, [[12], [12], []])
 
 
+class IncompleteReads(unittest.TestCase):
+    """A read that came back partial fails, so it counts toward fail-open, and leaves
+    what the gate watches as it was."""
+
+    def test_a_slack_reply_without_messages_fails(self):
+        with self.assertRaises(KeyError):
+            gate.read_channel(lambda name, tool_input: {}, CONFIG, {}, NOW)
+
+    def test_a_graphql_error_other_than_not_found_fails(self):
+        reply = {"data": {"repository": {"p66": None}}, "errors": [{"type": "RATE_LIMITED", "message": "slow down"}]}
+        done = subprocess.CompletedProcess(["gh"], 1, json.dumps(reply), "")
+        with mock.patch.object(gate.subprocess, "run", return_value=done), self.assertRaises(RuntimeError):
+            gate.pr_states({66}, {"repo": "o/r", "github_login": "me"})
+
+    def test_a_number_that_isnt_a_pr_is_skipped(self):
+        reply = {"data": {"repository": {"p3": None}}, "errors": [{"type": "NOT_FOUND", "message": "no PR"}]}
+        done = subprocess.CompletedProcess(["gh"], 1, json.dumps(reply), "")
+        with mock.patch.object(gate.subprocess, "run", return_value=done):
+            self.assertEqual(gate.pr_states({3}, {"repo": "o/r", "github_login": "me"}), {})
+
+    def test_a_watched_pr_the_lookup_missed_stays_watched(self):
+        state = {"open": [66]}
+        gate.track(set(), state, lambda numbers: {})
+        self.assertEqual(state["open"], [66])
+
+
 class Backstops(unittest.TestCase):
     def test_quiet_hours_wake_once_nothing_else_has(self):
         state = {"seen": [], "last_wake": NOW - 3 * 3600}

@@ -236,7 +236,7 @@ def read_channel(slack, config: dict, state: dict, now: float) -> list[Message]:
     while True:
         page = slack("slack_read_channel", {"channel_id": channel, "oldest": oldest, "limit": 100,
                                             **({"cursor": cursor} if cursor else {})})
-        parents += parse_channel(page.get("messages", ""))
+        parents += parse_channel(page["messages"])  # a reply without it is a failed read
         cursor = next_cursor(page.get("pagination_info", ""))
         if not cursor:
             break
@@ -298,11 +298,17 @@ def pr_states(numbers: set[int], config: dict) -> dict[int, dict]:
         run = subprocess.run(["gh", "api", "graphql", "-f", f"query={query}"],
                              capture_output=True, text=True, timeout=120)
         try:
-            repo = json.loads(run.stdout)["data"]["repository"]
+            reply = json.loads(run.stdout)
+            repo = reply["data"]["repository"]
         except (ValueError, KeyError, TypeError):
             raise RuntimeError(f"gh api graphql: {run.stderr.strip()[:300]}")
+        # NOT_FOUND is a number that isn't a PR, such as an issue; any other error leaves
+        # a null that would read as one, so the read failed.
+        failed = [e for e in reply.get("errors") or [] if e.get("type") != "NOT_FOUND"]
+        if failed:
+            raise RuntimeError(f"gh api graphql: {failed[0].get('message', failed[0])}"[:300])
         for pr in repo.values():
-            if pr:  # null: a number that isn't a PR, such as an issue
+            if pr:
                 out[pr["number"]] = {"state": pr["state"], "headRefOid": pr["headRefOid"],
                                      "reviews": [{"state": r["state"], "commit": (r.get("commit") or {}).get("oid", ""),
                                                   "at": r.get("submittedAt") or ""}
@@ -312,10 +318,12 @@ def pr_states(numbers: set[int], config: dict) -> dict[int, dict]:
 
 def track(named: set[int], state: dict, lookup) -> dict[int, dict]:
     """The PRs to watch: those named now, and every watched PR still open at the last run,
-    so a review thread's PR stays watched after its link leaves the lookback.
+    so a review thread's PR stays watched after its link leaves the lookback. One the
+    lookup didn't return stays watched, since only a closed PR leaves.
     lookup(numbers) returns pr_states' shape."""
-    prs = lookup(named | set(state.get("open", [])))
-    state["open"] = sorted(n for n, pr in prs.items() if pr["state"] == "OPEN")
+    was_open = set(state.get("open", []))
+    prs = lookup(named | was_open)
+    state["open"] = sorted({n for n, pr in prs.items() if pr["state"] == "OPEN"} | (was_open - prs.keys()))
     return prs
 
 
