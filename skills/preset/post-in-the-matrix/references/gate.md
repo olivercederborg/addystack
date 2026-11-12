@@ -31,8 +31,8 @@ What it needs on the machine that runs the check:
 | `state_file` | where the gate keeps what it saw, such as `~/.local/state/post-in-the-matrix/gate.json` |
 | `ask_hours` | how old a teammate's post may be and still wake the check; default 72, the check's own window |
 | `lookback_days` | how far back it reads the channel for PRs to follow; default 30 |
-| `quiet_hours` | wake anyway after this long with no wake; default 24 |
-| `fail_open_minutes` | wake anyway once the gate has failed this long; default 60 |
+| `quiet_hours` | wake anyway after this long with no wake, which retries what a failed run left undone; default 2 |
+| `fail_open_minutes` | once the gate has failed this long, wake on every run until a read succeeds; default 60 |
 
 Keep `ask_hours` and `lookback_days` at least as wide as the check's own windows, so
 the gate sees everything the check would act on.

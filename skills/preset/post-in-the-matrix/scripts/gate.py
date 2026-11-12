@@ -15,8 +15,9 @@ POSTs to the check's T3 webhook only when one of these appeared since its last w
 The woken check still decides everything; the gate only decides whether it runs. So a
 signal here is a superset of what the check acts on, and a run that finds nothing to do
 is the gate's only false positive. A wake also goes out when `quiet_hours` pass with
-none, and once every `fail_open_minutes` while the gate itself is failing, so a broken
-gate still runs the check, whose own read then reports what broke.
+none, which retries whatever a failed run left undone, and on every run once the gate
+itself has failed for `fail_open_minutes`, so a broken gate falls back to the old
+cadence and the check's own read reports what broke.
 
   gate.py --config FILE             check once, and wake the check if anything is new
   gate.py --config FILE --dry-run   print what it would send, and change nothing
@@ -43,7 +44,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 USER_AGENT = "post-in-the-matrix-gate/1"
-DEFAULTS = {"ask_hours": 72, "lookback_days": 30, "quiet_hours": 24, "fail_open_minutes": 60}
+DEFAULTS = {"ask_hours": 72, "lookback_days": 30, "quiet_hours": 2, "fail_open_minutes": 60}
 
 
 @dataclass(frozen=True)
@@ -163,10 +164,8 @@ def decide(current: set[str], state: dict, *, now: float, quiet_hours: float) ->
 
 
 def fail_open(state: dict, *, now: float, minutes: float) -> bool:
-    """Whether a failing gate should wake the check anyway: it has failed for `minutes`,
-    and no wake went out in that time, so the check's own read reports the failure."""
-    window = minutes * 60
-    return now - state.get("last_ok", now) >= window and now - state.get("last_wake", 0) >= window
+    """Whether a failing gate should wake the check anyway: it has failed for `minutes`."""
+    return now - state.get("last_ok", now) >= minutes * 60
 
 
 # ---- Reading Slack through Executor ---------------------------------------------------

@@ -142,14 +142,14 @@ class PullRequestChangesWake(unittest.TestCase):
 
 class Backstops(unittest.TestCase):
     def test_quiet_hours_wake_once_nothing_else_has(self):
-        state = {"seen": [], "last_wake": NOW - 25 * 3600}
-        self.assertEqual(len(gate.decide(set(), state, now=NOW, quiet_hours=24)), 1)
-        self.assertEqual(gate.decide(set(), {"seen": [], "last_wake": NOW - 3600}, now=NOW, quiet_hours=24), [])
+        state = {"seen": [], "last_wake": NOW - 3 * 3600}
+        self.assertEqual(len(gate.decide(set(), state, now=NOW, quiet_hours=2)), 1)
+        self.assertEqual(gate.decide(set(), {"seen": [], "last_wake": NOW - 3600}, now=NOW, quiet_hours=2), [])
 
-    def test_fail_open_after_failing_for_the_window(self):
-        self.assertTrue(gate.fail_open({"last_ok": NOW - 3700, "last_wake": NOW - 3700}, now=NOW, minutes=60))
+    def test_fail_open_on_every_run_once_failing_for_the_window(self):
         self.assertFalse(gate.fail_open({"last_ok": NOW - 600, "last_wake": NOW - 9999}, now=NOW, minutes=60))
-        self.assertFalse(gate.fail_open({"last_ok": NOW - 9999, "last_wake": NOW - 600}, now=NOW, minutes=60))
+        self.assertTrue(gate.fail_open({"last_ok": NOW - 3700, "last_wake": NOW - 3700}, now=NOW, minutes=60))
+        self.assertTrue(gate.fail_open({"last_ok": NOW - 9999, "last_wake": NOW - 300}, now=NOW, minutes=60))
 
 
 class Run(unittest.TestCase):
