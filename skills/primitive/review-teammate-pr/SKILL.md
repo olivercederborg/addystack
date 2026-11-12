@@ -197,8 +197,8 @@ approves is what posts.
 
 ## 5. Post
 
-- Re-check the PR head first. If it moved, re-verify the drafts against the new code
-  and show what changed.
+- Re-check the PR head first. If it moved, review the new commits as step 6 does and
+  re-verify the drafts against them before approving or posting.
 - Post the new inline comments together as one review, and replies to existing threads
   separately. The recommended step approves, with `github.sh approve N SHA [drafts.json]`,
   only when no kept finding holds the approval; otherwise it posts the drafts with `github.sh review
@@ -235,12 +235,12 @@ End by recommending the step the verdict calls for:
 - **Held** by an open finding: post any new findings without approving.
 
 When the recommendation waits on the user's pick, unwatch the PR before ending the turn,
-unless a check `github.sh required N` lists is `pending` on its head. The watch has
+unless a check is pending on its head: one `github.sh required N` lists, or any check
+when it prints `no required checks on <base>`. The watch has
 carried the review through any dismissal to this verdict; until the user picks, a push
 or comment waits for them instead of waking the thread to repeat the card. Step 5
-re-checks the head when they pick, re-reviewing a moved one before approving, and
-starts the watch again after posting.
+re-checks the head when they pick, and starts the watch again after posting.
 
 **Done when:** every earlier comment has a status, there is a verdict: approve now, or
-which finding holds it, and a PR waiting on the user's pick is unwatched unless a listed
+which finding holds it, and a PR waiting on the user's pick is unwatched unless a counted
 check is pending.

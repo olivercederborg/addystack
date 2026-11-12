@@ -151,13 +151,14 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   wake runs another pass.
 - **Waiting on the user**: the pass ends on a Stop, at this step or an earlier one, such
   as replies to approve, a push that would dismiss an approval, or a Linear call. This
-  bullet takes precedence over the one above. When this pass pushed nothing and no
-  check `github.sh required N` lists is `pending` on any PR in scope, call
-  `unwatch_pull_request` for each PR in scope, as at **Done**. A person's comment or a
-  rerun then waits for the user's answer, which runs the next pass from step 1, instead
-  of waking the thread to repeat its card, and the thread reaches their inbox instead of
-  showing Waiting. That next pass watches again if it then waits on GitHub. While a
-  listed check is pending, keep the watch, so a failure gets fixed before they answer.
+  bullet takes precedence over the one above. When this pass pushed nothing and no check
+  is pending on any PR in scope (the checks `github.sh required N` lists, or every check
+  when it prints `no required checks on <base>`), call `unwatch_pull_request` for each
+  PR in scope, as at **Done**. A person's comment or a rerun then waits for the user's
+  answer, which runs the next pass from step 1, instead of waking the thread to repeat
+  its card, and the thread reaches their inbox instead of showing Waiting. That next
+  pass watches again if it then waits on GitHub. While such a check is pending, keep the
+  watch, so a failure gets fixed before they answer.
 - **Done**: call `unwatch_pull_request` for each PR in scope, watched or not, so the
   thread returns to the user's inbox. Then stop at the user's merge rule for the repo's
   trust value, and report. Merging or marking ready waits for whatever that rule needs.
@@ -168,5 +169,5 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
 
 **Done when:** maintenance is done and the watch is removed; or each unfinished PR in
 scope is watched and the report names what the next wake waits for; or the pass ends on
-a Stop with no listed check pending and every PR in scope unwatched. In a coordinator's
+a Stop with no counted check pending and every PR in scope unwatched. In a coordinator's
 worker, the report to the coordinator names which one.
