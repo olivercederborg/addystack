@@ -146,8 +146,9 @@ def signals(messages: list[Message], prs: dict[int, dict], *, me: str, now: floa
             ask_hours: float) -> set[str]:
     """Everything the check could act on now, one string per fact. A string the last wake
     didn't see is news. prs maps a number to {state, headRefOid, reviews}, where reviews
-    are your human's, oldest first, each {state, commit}. Only an approval or its
-    dismissal counts: a comment or a change request leaves the check nothing to do."""
+    are your human's, oldest first, each {state, commit, at}. Only an approval or its
+    dismissal counts: a comment or a change request leaves the check nothing to do. An
+    approval is known by when it was sent, so approving the same head again is news."""
     out = {f"msg:{m.ts}:{body_hash(m.text)}" for m in messages
            if m.user != me and float(m.ts) >= now - ask_hours * 3600}
     for number, pr in prs.items():
@@ -156,10 +157,10 @@ def signals(messages: list[Message], prs: dict[int, dict], *, me: str, now: floa
         decisive = [r for r in pr["reviews"] if r["state"] in ("APPROVED", "DISMISSED")]
         if decisive:
             review = decisive[-1]
-            fact = f"pr:{number}:{review['state'].lower()}:{review['commit'][:9]}"
-            if review["state"] == "DISMISSED":
-                fact += f":head:{pr['headRefOid'][:9]}"
-            out.add(fact)
+            if review["state"] == "APPROVED":
+                out.add(f"pr:{number}:approved:{review['commit'][:9]}:{review['at']}")
+            else:
+                out.add(f"pr:{number}:dismissed:{review['commit'][:9]}:head:{pr['headRefOid'][:9]}")
     return out
 
 
@@ -291,7 +292,7 @@ def pr_states(numbers: set[int], config: dict) -> dict[int, dict]:
     for start in range(0, len(ordered), 50):
         fields = " ".join(
             f'p{n}: pullRequest(number: {n}) {{ number state headRefOid '
-            f'reviews(last: 20, author: "{config["github_login"]}") {{ nodes {{ state commit {{ oid }} }} }} }}'
+            f'reviews(last: 20, author: "{config["github_login"]}") {{ nodes {{ state submittedAt commit {{ oid }} }} }} }}'
             for n in ordered[start:start + 50])
         query = f'query {{ repository(owner: "{owner}", name: "{name}") {{ {fields} }} }}'
         run = subprocess.run(["gh", "api", "graphql", "-f", f"query={query}"],
@@ -303,7 +304,8 @@ def pr_states(numbers: set[int], config: dict) -> dict[int, dict]:
         for pr in repo.values():
             if pr:  # null: a number that isn't a PR, such as an issue
                 out[pr["number"]] = {"state": pr["state"], "headRefOid": pr["headRefOid"],
-                                     "reviews": [{"state": r["state"], "commit": (r.get("commit") or {}).get("oid", "")}
+                                     "reviews": [{"state": r["state"], "commit": (r.get("commit") or {}).get("oid", ""),
+                                                  "at": r.get("submittedAt") or ""}
                                                  for r in pr["reviews"]["nodes"]]}
     return out
 

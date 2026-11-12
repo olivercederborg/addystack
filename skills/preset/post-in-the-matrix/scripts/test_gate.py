@@ -137,7 +137,8 @@ class NewRequestsWake(unittest.TestCase):
 
 class PullRequestChangesWake(unittest.TestCase):
     def pr(self, state="OPEN", head="h1", *reviews):
-        return {12: {"state": state, "headRefOid": head, "reviews": [{"state": s, "commit": c} for s, c in reviews]}}
+        return {12: {"state": state, "headRefOid": head,
+                     "reviews": [{"state": r[0], "commit": r[1], "at": r[2] if len(r) > 2 else "t1"} for r in reviews]}}
 
     def wakes(self, before, after):
         state = {}
@@ -149,7 +150,12 @@ class PullRequestChangesWake(unittest.TestCase):
         self.assertEqual(self.wakes(self.pr(), self.pr("MERGED")), ["pr:12:MERGED"])
 
     def test_approval_wakes(self):
-        self.assertEqual(self.wakes(self.pr(), self.pr("OPEN", "h1", ("APPROVED", "h1"))), ["pr:12:approved:h1"])
+        self.assertEqual(self.wakes(self.pr(), self.pr("OPEN", "h1", ("APPROVED", "h1"))), ["pr:12:approved:h1:t1"])
+
+    def test_approving_the_same_head_again_wakes(self):
+        approved = self.pr("OPEN", "h1", ("APPROVED", "h1", "t1"))
+        again = self.pr("OPEN", "h1", ("APPROVED", "h1", "t1"), ("CHANGES_REQUESTED", "h1", "t2"), ("APPROVED", "h1", "t3"))
+        self.assertEqual(self.wakes(approved, again), ["pr:12:approved:h1:t3"])
 
     def test_dismissal_and_each_new_head_while_dismissed_wake(self):
         approved = self.pr("OPEN", "h1", ("APPROVED", "h1"))
