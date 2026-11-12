@@ -67,35 +67,59 @@ def ts(hours_ago):
     return f"{NOW - hours_ago * 3600:.6f}"
 
 
+def asks(reasons):
+    """The message timestamps among a run's reasons to wake."""
+    return sorted(r.split(":")[1] for r in reasons if r.startswith("msg:"))
+
+
 class NewRequestsWake(unittest.TestCase):
     def setUp(self):
-        self.old = channel_block(ts(48), TEAMMATE, "<@U0ME> review #12", replies=1, latest="a")
-        self.threads = {ts(48): thread_text(ts(48), [(ts(47), ME, "approved · #12")])}
+        self.old = channel_block(ts(100), TEAMMATE, "<@U0ME> review #12", replies=1, latest="a")
+        self.threads = {ts(100): thread_text(ts(100), [(ts(99), ME, "approved · #12")])}
         self.state = {}
         check(FakeSlack([self.old], self.threads), self.state)
 
     def test_a_new_post_wakes(self):
         new = channel_block(ts(0.1), TEAMMATE, "<@U0ME> review #13")
-        self.assertIn(f"msg:{ts(0.1)}", check(FakeSlack([new + self.old], self.threads), self.state, now=NOW))
+        self.assertEqual(asks(check(FakeSlack([new + self.old], self.threads), self.state)), [ts(0.1)])
 
     def test_a_new_reply_under_an_old_parent_wakes(self):
         old = self.old.replace("Thread: 1 replies (latest: a)", "Thread: 2 replies (latest: b)")
-        threads = {ts(48): thread_text(ts(48), [(ts(47), ME, "approved · #12"),
-                                                 (ts(0.1), TEAMMATE, "<@U0ME> re-review #12")])}
-        self.assertEqual(check(FakeSlack([old], threads), self.state), [f"msg:{ts(0.1)}"])
+        threads = {ts(100): thread_text(ts(100), [(ts(99), ME, "approved · #12"),
+                                                   (ts(0.1), TEAMMATE, "<@U0ME> re-review #12")])}
+        self.assertEqual(asks(check(FakeSlack([old], threads), self.state)), [ts(0.1)])
 
     def test_a_new_post_that_already_has_replies_wakes(self):
         new = channel_block(ts(0.2), TEAMMATE, "<@U0ME> review #13", replies=1, latest="c")
         threads = {**self.threads, ts(0.2): thread_text(ts(0.2), [(ts(0.1), TEAMMATE, "ci: green now")])}
-        self.assertEqual(check(FakeSlack([new + self.old], threads), self.state), sorted([f"msg:{ts(0.1)}", f"msg:{ts(0.2)}"]))
+        self.assertEqual(asks(check(FakeSlack([new + self.old], threads), self.state)), [ts(0.2), ts(0.1)])
 
     def test_a_request_on_a_later_page_wakes(self):
         new = channel_block(ts(0.1), TEAMMATE, "<@U0ME> review #13")
-        self.assertIn(f"msg:{ts(0.1)}", check(FakeSlack([self.old, new], self.threads), self.state))
+        self.assertEqual(asks(check(FakeSlack([self.old, new], self.threads), self.state)), [ts(0.1)])
 
     def test_a_post_without_a_user_id_still_wakes(self):
         bot = f"=== Message from Some App at 2027-01-15 10:00:00 CET === \nMessage TS: {ts(0.1)}\nreview #13\n\n"
-        self.assertIn(f"msg:{ts(0.1)}", check(FakeSlack([bot + self.old], self.threads), self.state))
+        self.assertEqual(asks(check(FakeSlack([bot + self.old], self.threads), self.state)), [ts(0.1)])
+
+    def test_an_fyi_edited_into_a_request_wakes(self):
+        fyi = channel_block(ts(1), TEAMMATE, "fyi #13 is up")
+        check(FakeSlack([fyi + self.old], self.threads), self.state)
+        edited = channel_block(ts(1), TEAMMATE, "<@U0ME> review #13")
+        self.assertEqual(asks(check(FakeSlack([edited + self.old], self.threads), self.state)), [ts(1)])
+
+    def test_an_edited_young_reply_wakes_though_the_thread_looks_unchanged(self):
+        parent = channel_block(ts(5), TEAMMATE, "stack is up", replies=1, latest="x")
+        threads = {**self.threads, ts(5): thread_text(ts(5), [(ts(4), TEAMMATE, "fyi")])}
+        check(FakeSlack([parent + self.old], threads), self.state)
+        threads[ts(5)] = thread_text(ts(5), [(ts(4), TEAMMATE, "<@U0ME> re-review #13")])
+        self.assertEqual(asks(check(FakeSlack([parent + self.old], threads), self.state)), [ts(4)])
+
+    def test_a_new_reaction_sleeps(self):
+        post = channel_block(ts(1), TEAMMATE, "<@U0ME> review #13")
+        check(FakeSlack([post + self.old], self.threads), self.state)
+        reacted = post.replace("Reactions: eyes (1)", "Reactions: eyes (1), lgtm (1)")
+        self.assertEqual(check(FakeSlack([reacted + self.old], self.threads), self.state), [])
 
     def test_nothing_new_sleeps_and_reads_no_thread_again(self):
         slack = FakeSlack([self.old], self.threads)

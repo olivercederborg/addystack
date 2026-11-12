@@ -133,13 +133,23 @@ def linear_keys(text: str) -> set[str]:
 
 # ---- The decision ---------------------------------------------------------------------
 
+VOLATILE = re.compile(r"^(?:Thread|Reactions): .*$", re.M)
+
+
+def body_hash(text: str) -> str:
+    """A message's text without its reply count and reactions, hashed, so an edit (say,
+    an FYI that gains a mention) is news while a new reaction or reply count isn't."""
+    return hashlib.sha256(VOLATILE.sub("", text).strip().encode()).hexdigest()[:10]
+
+
 def signals(messages: list[Message], prs: dict[int, dict], *, me: str, now: float,
             ask_hours: float) -> set[str]:
     """Everything the check could act on now, one string per fact. A string the last wake
     didn't see is news. prs maps a number to {state, headRefOid, reviews}, where reviews
     are your human's, oldest first, each {state, commit}. Only an approval or its
     dismissal counts: a comment or a change request leaves the check nothing to do."""
-    out = {f"msg:{m.ts}" for m in messages if m.user != me and float(m.ts) >= now - ask_hours * 3600}
+    out = {f"msg:{m.ts}:{body_hash(m.text)}" for m in messages
+           if m.user != me and float(m.ts) >= now - ask_hours * 3600}
     for number, pr in prs.items():
         if pr["state"] in ("MERGED", "CLOSED"):
             out.add(f"pr:{number}:{pr['state']}")
@@ -216,8 +226,9 @@ class Executor:
 
 
 def read_channel(slack, config: dict, state: dict, now: float) -> list[Message]:
-    """Every message and reply in the lookback, reading a thread only when its latest
-    reply moved since the last run. slack(name, input) calls one Slack MCP tool."""
+    """Every message and reply in the lookback. A thread is read again when its latest
+    reply moved since the last run, or while it holds a reply young enough to be an ask,
+    since an edit moves neither. slack(name, input) calls one Slack MCP tool."""
     channel = config["channel"]
     oldest = str(int(now - config["lookback_days"] * 86400))
     parents, cursor = [], None
@@ -233,7 +244,8 @@ def read_channel(slack, config: dict, state: dict, now: float) -> list[Message]:
         if not parent.replies:
             continue
         cached = cache.get(parent.ts)
-        if cached and cached["latest"] == parent.latest and cached["count"] == parent.replies:
+        young = cached and any(float(r["ts"]) >= now - config["ask_hours"] * 3600 for r in cached["replies"])
+        if cached and not young and cached["latest"] == parent.latest and cached["count"] == parent.replies:
             threads[parent.ts] = cached
             continue
         read = slack("slack_read_thread", {"channel_id": channel, "message_ts": parent.ts})
