@@ -18,16 +18,20 @@ the rest:
   stayed stopped through a whole tick: a failed or interrupted run T3 didn't deliver, a
   `t3_thread_launch` worker that finished, or a completion whose row nobody updated.
 - **Asked**: the same, for a thread holding a pending question.
-- **Stuck**: a running thread with no new item for an hour.
+- **Stuck**: a running thread not updated for an hour.
 - **Elsewhere**: a live row whose link names another machine's environment, which
   `t3 thread show` can't read: an hourly reminder to read it.
 - **PR**: a PR on an open row (`running`, `waiting`, `overdue`, `unknown`, or `stuck`) or
-  under Watches merged, closed, reopened, or turned ready or draft.
+  under Watches merged, closed, reopened, or turned ready or draft, or was already merged
+  or closed when the tick first saw it.
+- **Unreadable**: a live row whose cells don't match the Workers header, or that has no
+  thread link.
 
-Each finding except a PR's repeats hourly while it holds, so fixing the row stops it. While
-the coordinator's own thread runs, the tick checks nothing, so its turn settles first.
-`tick.json` beside `project.md` holds what it last saw; a failed send leaves it unchanged,
-so the next tick sends again.
+Each finding except a PR's repeats hourly while it holds, so fixing the row stops it.
+While the coordinator's own thread runs, the tick still times its workers but sends
+nothing and leaves PRs for later, so its turn settles first. `tick.json` beside
+`project.md` holds what it last saw; a failed send leaves it unchanged, so the next tick
+sends again. A thread or PR it can't read is named on stderr, in the timer's log.
 
 ## Install
 
