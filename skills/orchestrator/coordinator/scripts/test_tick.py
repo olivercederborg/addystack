@@ -208,16 +208,26 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertIn("- probe: its row's cells don't match the Workers header", self.sent()[0]["message"])
 
-    def test_nothing_is_checked_while_the_coordinator_runs(self):
+    def test_nothing_is_sent_while_the_coordinator_runs_but_workers_are_still_timed(self):
         self.tick("--send")
         self.threads["lead"] = thread("running", 41)
+        self.threads["w1"] = thread("failed", 1, 12)
         self.prs["#12"] = {"state": "MERGED", "isDraft": False}
-        before = self.state()
         self.tick("--send")
-        self.assertEqual((self.sent(), self.state()), ([], before))
+        self.tick("--send")
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(self.state()["prs"]["#12"], ["OPEN", True], "a PR waits for the coordinator's turn to end")
         self.threads["lead"] = thread("completed", 41)
         self.tick("--send")
-        self.assertIn("- #12: merged\n", self.sent()[0]["message"], "its turn over, the change is still news")
+        [sent] = self.sent()
+        self.assertIn("- build: its thread stopped (failed)", sent["message"], "its stop was timed while it ran")
+        self.assertIn("- #12: merged\n", sent["message"])
+
+    def test_a_stall_is_timed_from_the_threads_last_update(self):
+        hour_ago = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 3660))
+        self.threads["w1"] = thread(updatedAt=hour_ago)
+        self.tick("--send")
+        self.assertIn("- build: no new thread item in 61 min\n", self.sent()[0]["message"])
 
     def test_a_failed_send_keeps_the_state_so_the_next_tick_retries(self):
         self.tick("--send")

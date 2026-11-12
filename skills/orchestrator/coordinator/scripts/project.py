@@ -32,7 +32,7 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
@@ -376,20 +376,31 @@ def _owner(checkout: Path | None) -> str:
     return match.group(1) if match else ""
 
 
+def _when(stamp: str | None) -> float | None:
+    """Seconds since the epoch for T3's ISO time, or None."""
+    try:
+        return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp() if stamp else None
+    except ValueError:
+        return None
+
+
 def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr) -> tuple[list[tuple[str, str]], dict] | None:
     """What changed since the last tick that T3 doesn't tell the coordinator, as (key, line)
-    pairs due to send, and the state to save once they're sent; None while the coordinator
-    is running or can't be read, so its own turn settles first. A row's thread is news when
+    pairs due to send, and the state to save once they're sent; None when the coordinator's
+    thread can't be read or is archived. While it runs, threads are still read, so a stop or
+    a stall is timed from when it happened, but nothing is due and PRs wait, so its own turn
+    settles first. A row's thread is news when
     it stopped, or has a question, through two ticks while its row says running, since a
     completion T3 delivers gets its row fixed by then; when it runs with no new item for
-    STALL; or when it's on another machine, which `t3 thread show` can't read. Each of
+    STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
     these repeats every REPEAT until its row changes. A PR on an open row or under Watches
     is news once when it merges, closes, reopens, or turns ready or draft: T3's watch sends
     checks, comments, reviews, and conflicts, not those."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
-    if not lead or lead.get("archived") or lead.get("status") in ACTIVE:
+    if not lead or lead.get("archived"):
         return None
+    busy = lead.get("status") in ACTIVE
     place = _header(lines, "Checkout").split(" (")[0].strip()
     checkout = Path(place).expanduser() if place else None
     owner = _owner(checkout)
@@ -423,7 +434,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         before = seen.get(thread, {})
         status, runs, items = now_seen.get("status"), now_seen.get("runCount"), now_seen.get("itemCount")
         asked = now_seen.get("pendingRequestCount") or 0
-        since = before.get("since", now) if before.get("items") == items else now
+        since = _when(now_seen.get("updatedAt")) or (before.get("since", now) if before.get("items") == items else now)
         threads[thread] = {"status": status, "runs": runs, "items": items, "asked": asked, "since": since}
         held = before.get("status") == status and before.get("runs") == runs  # the same for a whole tick
         if status not in ACTIVE and held:
@@ -432,6 +443,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
+    if busy:
+        return [], {**state, "threads": threads}
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT]
     for ref in dict.fromkeys(refs):
@@ -472,7 +485,7 @@ def _tick(folder: Path, lines: list[str], send: bool) -> int:
         state = {}
     result = tick(lines, state, time.time())
     if result is None:
-        print("the coordinator's thread is running or unreadable: nothing checked")
+        print("the coordinator's thread can't be read or is archived: nothing checked")
         return 0
     due, after = result
     if not send:
