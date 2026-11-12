@@ -22,8 +22,11 @@ the rest:
 - **Elsewhere**: a live row whose link names another machine's environment, which
   `t3 thread show` can't read: an hourly reminder to read it.
 - **PR**: a PR on an open row (`running`, `waiting`, `overdue`, `unknown`, or `stuck`) or
-  under Watches merged, closed, reopened, or turned ready or draft, or was already merged
-  or closed when the tick first saw it.
+  under Watches merged, closed, reopened, or turned ready or draft. A PR already merged or
+  closed when the tick first sees it counts too, except on the project's first tick, which
+  only records, and when the words after it in its row or Watches entry already name that
+  state, as in `#12 MERGED`.
+- **Owner**: a `repo#N` whose owner the checkout's origin doesn't give.
 - **Unreadable**: a live row whose cells don't match the Workers header, or that has no
   thread link.
 
