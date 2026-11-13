@@ -66,8 +66,7 @@ def match(thread, repo, number, prefixes):
               if linked_repo == repo and source not in ("stack", "stack-dismissed")]
     if direct:
         return "linked", any(direct)
-    other_repo = any(linked_repo != repo and source not in ("stack", "stack-dismissed")
-                     for linked_repo, source, _ in own)
+    other_repo = any(linked_repo != repo and source != "stack-dismissed" for linked_repo, source, _ in own)
     if number in named and not other_repo:
         return "title", False
     stacked = [watching for linked_repo, source, watching in own if linked_repo == repo and source == "stack"]

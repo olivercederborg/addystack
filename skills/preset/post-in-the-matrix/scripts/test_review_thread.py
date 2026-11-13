@@ -77,6 +77,7 @@ class HolderTest(unittest.TestCase):
     def test_title_with_another_repos_link_is_not_this_pr(self):
         items = [thread("skills", "◎ #62 · a", [pr(62, repo="octo/skills")])]
         self.assertIsNone(found(items, 62))
+        self.assertIsNone(found([thread("s", "◎ #62 · a", [pr(62, "stack", repo="octo/skills")])], 62))
         self.assertEqual(found(items, 62, repo="octo/skills")["match"], "linked")
 
     def test_unsettled_beats_settled_then_newest(self):
