@@ -103,7 +103,8 @@ done when it carries your ✅ (or your human's `lgtm`).
 2. **Act on it** with your own workflow. For a review, first look for a T3 thread that
    already holds the PR's review: run `scripts/review_thread.py <owner/repo> <number>`
    from the PR's project checkout (or pass `--project`), and send to that thread instead
-   of starting a second one.
+   of starting a second one. If it exits 2, stop and report its message rather than
+   start a thread.
 3. **Reply in the message's thread** in the manifest shape: the outcome on line 1, then
    any facts as `key: value` lines.
 
