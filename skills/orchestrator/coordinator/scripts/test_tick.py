@@ -129,6 +129,7 @@ class Tick(unittest.TestCase):
         self.assertEqual(sent["to"], "lead")
         self.assertTrue(sent["message"].startswith('<coordinator-tick project="export">\n'), sent["message"])
         self.assertIn("- build: its thread stopped (failed) while its row says running\n", sent["message"])
+        self.assertIn(f"Read {self.dir / 'project.md'} and handle", sent["message"], "a fresh session finds the folder")
         self.tick("--send")
         self.assertEqual(self.sent(), [], "sent once an hour, not each tick")
         self.age(3600)

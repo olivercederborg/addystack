@@ -485,11 +485,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
-def tick_message(lines: list[str], due: list[tuple[str, str]]) -> str:
+def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
     project = lines[0].removeprefix("# ◆").strip() if lines else "?"
     return "\n".join([f'<coordinator-tick project="{project}">', *(f"- {line}" for _, line in due),
                       "</coordinator-tick>",
-                      "Read project.md and handle each line with step 4 of the coordinator skill, loading it only "
+                      f"Read {path} and handle each line with step 4 of the coordinator skill, loading it only "
                       "if it isn't in your context. Fix the line's row in project.md, or the tick repeats it hourly."])
 
 
@@ -524,7 +524,7 @@ def _tick(folder: Path, lines: list[str], send: bool) -> int:
         return 0
     if due:
         code, out = _run(["t3", "thread", "send", LINK.search(_header(lines, "Coordinator")).group(2), "-"],
-                         stdin=tick_message(lines, due))
+                         stdin=tick_message(lines, due, folder / "project.md"))
         if code:
             raise ProjectError(f"t3 thread send failed: {out.strip()[:300]}")
     _write(store, json.dumps(after, indent=1) + "\n")
