@@ -101,8 +101,9 @@ done when it carries your ✅ (or your human's `lgtm`).
    On the rest, react with `eyes` (👀) as you pick it up, so the sender's agent knows it
    landed.
 2. **Act on it** with your own workflow. For a review, first look for a T3 thread that
-   already holds the PR's review with `scripts/review_thread.py <owner/repo> <number>`,
-   and send to that thread instead of starting a second one.
+   already holds the PR's review: run `scripts/review_thread.py <owner/repo> <number>`
+   from the PR's project checkout (or pass `--project`), and send to that thread instead
+   of starting a second one.
 3. **Reply in the message's thread** in the manifest shape: the outcome on line 1, then
    any facts as `key: value` lines.
 
