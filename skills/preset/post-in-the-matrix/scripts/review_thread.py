@@ -3,8 +3,8 @@
 
     review_thread.py <owner/repo> <number> [--project PATH] [--title-prefix TEXT ...]
 
-Asks T3 each time (`t3 thread list --json`: every top-level thread of the project, with
-its open linked PRs), so nothing is cached. Only review threads count: a thread whose
+Asks T3 each time (`t3 thread list --json`: every active top-level thread of the project,
+with its open linked PRs), so nothing is cached. An archived review thread counts as none. Only review threads count: a thread whose
 title starts with a review prefix ("Review #", "◎ #", plus any --title-prefix) and one or
 more PR numbers ("◎ #5815+#5816", "◎ #3848 #5823"). One of them holds the PR when, in this
 order:
@@ -98,12 +98,11 @@ def hidden_links(items, prefixes):
 
 def lookup(repo, number, prefixes, project=None, list_json=None):
     items = read_list(project, list_json)
-    thread = holder(items, repo, number, prefixes)
-    if thread is None and len(items) >= PAGE and not list_json:
+    if len(items) >= PAGE and not list_json:
         # The CLI reads pages newest first, so a thread that turned active mid-read can fall
-        # between two pages. Read again before answering "none".
-        items = items + read_list(project, None)
-        thread = holder(items, repo, number, prefixes)
+        # between two pages. A second read catches it; its entries replace the first's.
+        items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
+    thread = holder(items, repo, number, prefixes)
     if thread is None and (hidden := hidden_links(items, prefixes)):
         raise ValueError(f"can't rule out a holder: review threads {', '.join(map(str, hidden[:3]))} "
                          "link more open PRs than the list shows")

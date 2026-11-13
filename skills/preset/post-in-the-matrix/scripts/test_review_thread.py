@@ -116,8 +116,8 @@ class HolderTest(unittest.TestCase):
             with contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(review_thread.main([REPO, "1"]), 2)
 
-    def test_a_full_page_with_no_holder_is_read_twice(self):
-        page = [thread(f"t{i}", f"Work {i}") for i in range(100)]
+    def test_a_full_page_is_read_twice(self):
+        page = [thread(f"t{i}", f"Work {i}") for i in range(99)] + [thread("old", "Review #5 · a", settled=True)]
         later = page + [thread("moved", "◎ #5 · a", [pr(5)])]
         replies = [mock.Mock(returncode=0, stdout=json.dumps(page), stderr=""),
                    mock.Mock(returncode=0, stdout=json.dumps(later), stderr="")]
