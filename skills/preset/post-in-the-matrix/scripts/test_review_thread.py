@@ -57,6 +57,12 @@ class HolderTest(unittest.TestCase):
         items = [thread("work", "Fix the export for #42", [pr(42)])]
         self.assertIsNone(found(items, 42))
 
+    def test_a_title_naming_several_prs_holds_each(self):
+        items = [thread("pair", "◎ #5651 #5679 · a", settled=True), thread("plus", "◎ #5815+#5816 · b")]
+        self.assertEqual((found(items, 5679)["threadId"], found(items, 5651)["threadId"]), ("pair", "pair"))
+        self.assertEqual(found(items, 5816)["threadId"], "plus")
+        self.assertIsNone(found(items, 5680))
+
     def test_title_number_must_end_at_a_word_boundary(self):
         items = [thread("long", "Review #5739 · x"), thread("word", "Review #57abc"), thread("pre", "Preview #57")]
         self.assertIsNone(found(items, 57))

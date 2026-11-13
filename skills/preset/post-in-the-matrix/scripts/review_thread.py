@@ -5,8 +5,9 @@
 
 Asks T3 each time (`t3 thread list --json`: every top-level thread of the project, with
 its open linked PRs), so nothing is cached. Only review threads count: a thread whose
-title starts with a review prefix ("Review #", "◎ #", plus any --title-prefix) and a PR
-number. One of them holds the PR when, in this order:
+title starts with a review prefix ("Review #", "◎ #", plus any --title-prefix) and one or
+more PR numbers ("◎ #5815+#5816", "◎ #3848 #5823"). One of them holds the PR when, in this
+order:
 
 1. "linked": it links the PR itself (not as a stack neighbour or a dismissed one);
 2. "title": its title names the PR's number, and it links no other repo's PR by that number;
@@ -40,13 +41,13 @@ def read_list(project, list_json):
     return items
 
 
-def review_number(title, prefixes):
-    """The PR number a review thread's title names, or None for any other thread."""
+def review_numbers(title, prefixes):
+    """The PR numbers a review thread's title names; empty for any other thread."""
     for prefix in prefixes:
-        found = re.match(re.escape(prefix) + r"(\d+)(?![\w])", title or "")
+        found = re.match(re.escape(prefix) + r"(\d+(?:[ +,]+#\d+)*)(?![\w])", title or "")
         if found:
-            return int(found.group(1))
-    return None
+            return {int(number) for number in re.findall(r"\d+", found.group(1))}
+    return set()
 
 
 def links(thread, number):
@@ -57,7 +58,8 @@ def links(thread, number):
 
 def match(thread, repo, number, prefixes):
     """(kind, watching) when this review thread holds the PR, else None."""
-    if thread.get("relationshipToParent") == "subagent" or review_number(thread.get("title"), prefixes) is None:
+    named = review_numbers(thread.get("title"), prefixes)
+    if thread.get("relationshipToParent") == "subagent" or not named:
         return None
     own = links(thread, number)
     direct = [watching for linked_repo, source, watching in own
@@ -66,7 +68,7 @@ def match(thread, repo, number, prefixes):
         return "linked", any(direct)
     other_repo = any(linked_repo != repo and source not in ("stack", "stack-dismissed")
                      for linked_repo, source, _ in own)
-    if review_number(thread.get("title"), prefixes) == number and not other_repo:
+    if number in named and not other_repo:
         return "title", False
     stacked = [watching for linked_repo, source, watching in own if linked_repo == repo and source == "stack"]
     return ("stack", any(stacked)) if stacked else None
@@ -91,7 +93,7 @@ def holder(items, repo, number, prefixes):
 def hidden_links(items, prefixes):
     """Review threads whose list entry shows fewer open PRs than they link."""
     return [thread.get("threadId") for thread in items
-            if review_number(thread.get("title"), prefixes) is not None
+            if review_numbers(thread.get("title"), prefixes)
             and (thread.get("openPullRequestCount") or 0) > len(thread.get("pullRequests") or [])]
 
 
