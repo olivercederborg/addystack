@@ -100,7 +100,8 @@ def lookup(repo, number, prefixes, project=None, list_json=None):
     items = read_list(project, list_json)
     if len(items) >= PAGE and not list_json:
         # The CLI reads pages newest first, so a thread that turned active mid-read can fall
-        # between two pages. A second read catches it; its entries replace the first's.
+        # between two pages. A second read catches it unless it moves again during that read;
+        # the second read's entries replace the first's.
         items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
     thread = holder(items, repo, number, prefixes)
     if thread is None and (hidden := hidden_links(items, prefixes)):
