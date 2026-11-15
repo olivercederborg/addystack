@@ -39,6 +39,7 @@ weeks, excused each time because the file already used it."""
 from __future__ import annotations
 
 import codecs
+import os
 import re
 import subprocess
 import sys
@@ -498,4 +499,5 @@ def report(base: str, head: str) -> str:
 if __name__ == "__main__":
     if len(sys.argv) != 3:
         raise SystemExit("Usage: casts.py <base> <head>")
+    os.chdir(_git("rev-parse", "--show-toplevel").strip())  # paths and pathspecs are the repo's, wherever it runs
     print(report(sys.argv[1], sys.argv[2]))

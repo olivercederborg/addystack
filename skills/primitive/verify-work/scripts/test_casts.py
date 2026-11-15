@@ -225,6 +225,13 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/new.ts": "const row = raw as Row\n"})
         self.assertEqual([sum(g.same_folder.values()) for g in groups], [2])
 
+    def test_it_reviews_the_whole_repo_from_a_subdirectory(self):
+        self.write({"src/a.ts": "const a = raw as Row\n", "other/b.ts": "const b = raw as Row\n"})
+        self.commit("change")
+        out = subprocess.run([sys.executable, str(SCRIPTS / "casts.py"), "main", "feat"], cwd=self.repo / "src",
+                             capture_output=True, text=True, check=True).stdout
+        self.assertIn("2 new at other/b.ts:1; src/a.ts:1", out)
+
 
 if __name__ == "__main__":
     unittest.main()
