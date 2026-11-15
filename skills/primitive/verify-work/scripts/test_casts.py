@@ -136,6 +136,10 @@ class Casts(unittest.TestCase):
                                       "src/invoice.ts": "const row = invoice.record as Row\n"})
         self.assertEqual(([g.shape for g in groups], moved), (["record as Row"], 0))
 
+    def test_a_path_with_a_space_or_a_quote_is_read(self):
+        groups, _, _ = self.scan({"src/my file.ts": "const a = raw as Row\n", 'src/say "hi".ts': "const b = raw as Hi\n"})
+        self.assertEqual(sorted(hit.path for g in groups for hit in g.new), ['src/my file.ts', 'src/say "hi".ts'])
+
 
 if __name__ == "__main__":
     unittest.main()

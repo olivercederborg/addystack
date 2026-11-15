@@ -32,6 +32,7 @@ not a precedent: in the same audit, `sql as never` grew from 0 to 99 casts acros
 repo's check files in two weeks, excused each time because the file already used it."""
 from __future__ import annotations
 
+import codecs
 import re
 import subprocess
 import sys
@@ -228,6 +229,15 @@ def _import_lines(lines: list[tuple[str, str]]) -> set[int]:
     return found
 
 
+def _path(header: str) -> str:
+    """The path in a `--- a/…` or `+++ b/…` line's rest: Git ends a path that has a space
+    with a tab, and quotes one with a quote, backslash, or control character in it."""
+    header = header.rstrip("\t")
+    if header.startswith('"') and header.endswith('"'):
+        header = codecs.escape_decode(header[1:-1].encode())[0].decode(errors="replace")
+    return header[2:] if header[:2] in ("a/", "b/") else ""
+
+
 def _diff_lines(base: str, head: str):
     """(path, side, line number) for each added (+) and removed (-) line."""
     patch = _git("diff", "--no-color", "--no-ext-diff", "-M", "-U0", f"{base}...{head}", "--", *CODE)
@@ -235,9 +245,9 @@ def _diff_lines(base: str, head: str):
     old_line = new_line = 0
     for raw in patch.splitlines():
         if raw.startswith("--- "):
-            old_path = raw[6:] if raw.startswith("--- a/") else ""
+            old_path = _path(raw[4:])
         elif raw.startswith("+++ "):
-            new_path = raw[6:] if raw.startswith("+++ b/") else ""
+            new_path = _path(raw[4:])
         elif raw.startswith("@@"):
             match = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)", raw)
             old_line, new_line = int(match.group(1)), int(match.group(2))
@@ -257,7 +267,7 @@ class _Files:
 
     def lines(self, path: str) -> list[tuple[str, str]]:
         if path not in self.cache:
-            text = _git("cat-file", "-p", f"{self.rev}:{path}", check=False)
+            text = _git("cat-file", "-p", f"{self.rev}:{path}")
             split_lines = split(text)
             self.cache[path] = (split_lines, _import_lines(split_lines), text.split("\n"))
         return self.cache[path][0]
