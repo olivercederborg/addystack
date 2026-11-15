@@ -232,6 +232,12 @@ def _operand_start(code: str, end: int) -> int:
                 depth += (code[i] == closer) - (code[i] == opener)
                 if depth == 0:
                     break
+            if closer == ")" and i and code[i - 1] == ">":  # a generic call's type arguments
+                depth = 0
+                for i in range(i - 1, -1, -1):
+                    depth += (code[i] == ">") - (code[i] == "<")
+                    if depth == 0:
+                        break
         while i and (code[i - 1].isalnum() or code[i - 1] in "_$." or code[i - 2:i] == "?."):
             i -= 2 if code[i - 2:i] == "?." else 1
         if i == start:

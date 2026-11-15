@@ -232,6 +232,10 @@ class Casts(unittest.TestCase):
                              capture_output=True, text=True, check=True).stdout
         self.assertIn("2 new at other/b.ts:1; src/a.ts:1", out)
 
+    def test_a_generic_call_is_part_of_its_operand(self):
+        self.assertEqual([k for _, k, _ in casts.shapes("f(customer<unknown>() as Row)", "")],
+                         ["customer<unknown>() as Row"])
+
 
 if __name__ == "__main__":
     unittest.main()
