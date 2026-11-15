@@ -99,9 +99,12 @@ class Casts(unittest.TestCase):
         self.assertEqual([s for s, _ in casts.shapes("const c = {} as unknown as Client", "")],
                          ["… as unknown as Client"])
 
-    def test_a_cast_on_a_string_or_template_literal_is_listed(self):
-        groups, _, _ = self.scan({"src/fixtures.ts": 'const t = "INVALID_TYPE" as any\nconst r = `/x/${id}` as Route\n'})
-        self.assertEqual(sorted(g.shape for g in groups), ["… as Route", "… as any"])
+    def test_a_cast_on_a_literal_or_a_non_null_assertion_is_listed(self):
+        groups, _, _ = self.scan({"src/fixtures.ts": (
+            'const t = "INVALID_TYPE" as any\nconst r = `/x/${id}` as Route\n'
+            "const k = 'DK' as CountryCode\nconst el = byId(id)! as HTMLElement\n")})
+        self.assertEqual(sorted(g.shape for g in groups),
+                         ["… as CountryCode", "… as HTMLElement", "… as Route", "… as any"])
 
     def test_a_string_in_a_type_keeps_its_text(self):
         groups, _, _ = self.scan({"src/jobs.ts": 'const h = raw as RunHandle<"export">\n'})

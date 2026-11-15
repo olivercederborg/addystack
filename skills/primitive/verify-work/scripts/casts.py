@@ -39,7 +39,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 CODE = ("*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs")
-CAST = re.compile(r"(?:([\w$][\w$.]*)|[)\]}'\"`])\s*\bas\s+(?!const\b)(?=[\w$({\[<'\"`])")
+CAST = re.compile(r"(?:([\w$][\w$.]*)|[)\]}'\"`!])\s*\bas\s+(?!const\b)(?=[\w$({\[<'\"`])")
 ALIAS = re.compile(r"^\s*(import\b|export\s*(type\s*)?[{*])")
 SUPPRESSION = re.compile(r"(@ts-(?:expect-error|ignore|nocheck))\b:?\s*(.*)|"
                          r"((?:eslint|oxlint)-disable(?:-next-line|-line)?)\b\s*(.*)|"
