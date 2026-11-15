@@ -33,8 +33,9 @@ of a type suppression, or of a lint rule about casts or types, that covers its l
 Twins group by shape: the operand's last name and the type for a cast (`sql as never`,
 whether `sql` or `target.sql`), the directive and its rules for a suppression. Each group
 counts its twins at the base in the same file, in the same folder, and elsewhere, each
-file read as the new ones are. A twin is the cause spreading, not a precedent: in the same audit, `sql as never` grew from 0 to 99 casts across one
-repo's check files in two weeks, excused each time because the file already used it."""
+file read as the new ones are. A twin is the cause spreading, not a precedent: in the
+same audit, `sql as never` grew from 0 to 99 casts across one repo's check files in two
+weeks, excused each time because the file already used it."""
 from __future__ import annotations
 
 import codecs
