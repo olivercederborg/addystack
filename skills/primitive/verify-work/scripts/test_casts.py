@@ -204,6 +204,16 @@ class Casts(unittest.TestCase):
             'const message = "save \\\ntext as Draft"\nconst out = `${raw as Col}`\n')})
         self.assertEqual(sorted(g.shape for g in groups), ["raw as Col", "raw as Row"])
 
+    def test_a_type_ends_before_satisfies_and_a_type_changed_on_the_next_line_is_new(self):
+        self.assertEqual([k for _, k, _ in casts.shapes("const v = raw as Row satisfies Row", "")], ["raw as Row"])
+        self.assertEqual([k for _, k, _ in casts.shapes("const v = raw as Row instanceof Row", "")], ["raw as Row"])
+        self.write({"src/value.ts": "const value = raw as\n  OldType\n"})
+        self.commit("old")
+        self.git("branch", "-f", "main")
+        groups, _, _ = self.scan({"src/value.ts": "const value = raw as\n  NewType\n",
+                                  "src/union.ts": "const f = undefined as\n  | undefined\n  | Fetch\n"})
+        self.assertEqual(sorted(g.shape for g in groups), ["raw as NewType", "undefined as | undefined"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,7 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
 CODE = ("*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs")
-CAST = re.compile(r"(?:([\w$][\w$.]*)|[)\]}'\"`!])\s*\bas\s+(?!const\b)(?=[\w$({\[<'\"`])")
+CAST = re.compile(r"(?:([\w$][\w$.]*)|[)\]}'\"`!])\s*\bas\s+(?!const\b)(?=[\w$({\[<'\"`|&])")
 # An import or export clause, where `as` renames: `import { a as b }`, `import * as x`, `export { a as b }`.
 ALIAS = re.compile(r"\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?(?:\{[^}]*\}|\*\s*as\s+[\w$]+)")
 # The first line of an import or export list that goes on to the next lines.
@@ -183,14 +183,16 @@ def split(text: str) -> list[tuple[str, str]]:
 
 def _type_end(text: str) -> int:
     """Where a cast's target type ends in text that starts with it: brackets balance, and a
-    closer with no opener, or `;`, `,`, `=`, `?`, `:`, `||`, `&&`, or arithmetic outside
-    brackets, ends it."""
+    closer with no opener, or `;`, `,`, `=`, `?`, `:`, `||`, `&&`, arithmetic, `satisfies`,
+    `instanceof`, or `in` outside brackets, ends it."""
     depth, i = 0, 0
     while i < len(text):
         char = text[i]
         if text.startswith("=>", i):
             i += 2
             continue
+        if depth == 0 and re.match(r"\s+(satisfies|instanceof|in)\b", text[i:]):
+            break
         if char in "(<[{":
             depth += 1
         elif char in ")>]}":
@@ -368,12 +370,20 @@ def scan(base: str, head: str) -> tuple[list[Group], list[Hit], int]:
     how many added ones a removal matched as moved or kept)."""
     base_sha = _git("merge-base", base, head).strip()
     old, new_files = _Files(base_sha), _Files(head)
-    added, removed = [], Counter()
-    for path, side, number in _diff_lines(base, head):
-        if side == "-":
-            removed.update(key for _, key, _ in old.hits(path, number))
-        else:
-            added += [Hit(path, number, *hit) for hit in new_files.hits(path, number)]
+    added, removed, seen = [], Counter(), set()
+    for path, side, changed in _diff_lines(base, head):
+        files = old if side == "-" else new_files
+        lines = files.lines(path)
+        # A changed type on its own line changes the cast on the line above.
+        above = [changed - 1] if changed > 1 and re.search(r"\bas\s*$", lines[changed - 2][0]) else []
+        for number in [*above, changed]:
+            if (path, side, number) in seen:
+                continue
+            seen.add((path, side, number))
+            if side == "-":
+                removed.update(key for _, key, _ in old.hits(path, number))
+            else:
+                added += [Hit(path, number, *hit) for hit in new_files.hits(path, number)]
     moved, new = 0, []
     for hit in added:
         if removed[hit.key]:
