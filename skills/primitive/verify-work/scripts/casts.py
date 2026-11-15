@@ -14,9 +14,10 @@ What it lists, in TypeScript and JavaScript files, tests included:
 
 What it leaves out:
 - a moved or kept one: the diff removes the same cast (the same operand expression and
-  type) or the same suppression over the same code (a file-wide one by its directive
-  alone), in any file, so a move, a rename, a rewrite that keeps the cast, or a reason
-  added to an existing disable isn't new.
+  type) or the same suppression over the same code (a file-wide or range one, such as
+  `eslint-disable` or `biome-ignore-start`, by its directive alone), in any file, so a
+  move, a rename, a rewrite that keeps the cast, or a reason added to an existing
+  disable isn't new.
 - a shape text can't see: guards, fallbacks, swallowed errors, `!` non-null assertions.
   An audit of one team's merged history (Nov 2026) found text matching sees casts and
   suppressions, and 39% of its hits were moved or kept code, which this script leaves out.
