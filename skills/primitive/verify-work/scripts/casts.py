@@ -13,24 +13,27 @@ What it lists, in TypeScript and JavaScript files, tests included:
   each only where it starts its comment, as the tools read it.
 
 What it leaves out:
-- a moved or kept one: the diff removes the same cast (the same operand and type) or
-  suppression elsewhere, in any file, so a move, a rename, a rewrite that keeps the cast, or a reason added to an
-  existing disable isn't new.
+- a moved or kept one: the diff removes the same cast (the same operand expression and
+  type) or the same suppression over the same code, in any file, so a move, a rename, a
+  rewrite that keeps the cast, or a reason added to an existing disable isn't new.
 - a shape text can't see: guards, fallbacks, swallowed errors, `!` non-null assertions.
   An audit of one team's merged history (Nov 2026) found text matching sees casts and
   suppressions, and 39% of its hits were moved or kept code, which this script leaves out.
 
+Known limits of reading text rather than TypeScript's syntax tree: JSX text such as
+`<p>save as Draft</p>` reads as a cast; a type that spans lines keeps only its first
+line, so a change inside a multi-line object type isn't seen.
+
 A new one with a written reason is listed apart, since the reason is the call to judge:
 a suppression's own description (`-- why`, `biome-ignore <rule>: why`, text after
-`@ts-expect-error`); for a cast, a comment on its line or the line above that says why it
-casts (it names the cast, a type, or an approval), or the description of a type
-suppression, or of a lint rule about casts or types, on its line or the line above.
+`@ts-expect-error`); for a cast, a comment of a few words on its line or the line above
+that says why it casts (it names the cast, a type, or an approval), or the description
+of a type suppression, or of a lint rule about casts or types, that covers its line.
 
 Twins group by shape: the operand's last name and the type for a cast (`sql as never`,
 whether `sql` or `target.sql`), the directive and its rules for a suppression. Each group
 counts its twins at the base in the same file, in the same folder, and elsewhere, each
-file read as the new ones are. A twin is the cause spreading,
-not a precedent: in the same audit, `sql as never` grew from 0 to 99 casts across one
+file read as the new ones are. A twin is the cause spreading, not a precedent: in the same audit, `sql as never` grew from 0 to 99 casts across one
 repo's check files in two weeks, excused each time because the file already used it."""
 from __future__ import annotations
 
