@@ -162,6 +162,7 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str]]:
     raw, at = raw or code, 0
     while match := CAST.search(code, at):
         end = match.end() + _type_end(code[match.end():])
+        end = match.end() + len(code[match.end():end].rstrip())  # a trailing comment is blanked in code, not raw
         at = max(end, match.end())  # `x as unknown as T` is one cast
         if target := re.sub(r"\s+", " ", raw[match.end():end]).strip():
             operand = (match.group(1) or "…").rsplit(".", 1)[-1]

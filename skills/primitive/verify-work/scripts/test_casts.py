@@ -64,6 +64,15 @@ class Casts(unittest.TestCase):
         })
         self.assertEqual((groups, reasoned, moved), ([], [], 2))
 
+    def test_a_moved_cast_whose_trailing_comment_changed_is_not_new(self):
+        self.write({"src/a.ts": "const v = raw as Value // set by the loader\n"})
+        self.commit("comment")
+        self.git("switch", "-q", "-c", "move")
+        (self.repo / "src/a.ts").unlink()
+        self.write({"src/b.ts": "export const v = raw as Value\n"})
+        self.commit("move")
+        self.assertEqual(casts.scan("feat", "move"), ([], [], 1))
+
     def test_aliases_const_strings_and_comments_are_not_casts(self):
         groups, reasoned, _ = self.scan({"src/other.ts": (
             'import { a as b } from "./a"\nimport * as path from "node:path"\nimport {\n  c as d,\n} from "./c"\n'
