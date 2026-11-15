@@ -41,7 +41,10 @@ from pathlib import PurePosixPath
 
 CODE = ("*.ts", "*.tsx", "*.mts", "*.cts", "*.js", "*.jsx", "*.mjs", "*.cjs")
 CAST = re.compile(r"(?:([\w$][\w$.]*)|[)\]}'\"`!])\s*\bas\s+(?!const\b)(?=[\w$({\[<'\"`])")
-ALIAS = re.compile(r"^\s*(import\b|export\s*(type\s*)?[{*])")
+# An import or export clause, where `as` renames: `import { a as b }`, `import * as x`, `export { a as b }`.
+ALIAS = re.compile(r"\b(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?(?:\{[^}]*\}|\*\s*as\s+[\w$]+)")
+# The first line of an import or export list that goes on to the next lines.
+OPEN_LIST = re.compile(r"^\s*(?:import|export)\s+(?:type\s+)?(?:[\w$]+\s*,\s*)?\{[^}]*$")
 SUPPRESSION = re.compile(r"(@ts-(?:expect-error|ignore|nocheck))\b:?\s*(.*)|"
                          r"((?:eslint|oxlint)-disable(?:-next-line|-line)?)\b\s*(.*)|"
                          r"(biome-ignore(?:-all|-start)?)\s+([^:]*?)\s*(?::\s*(.*))?$")
@@ -196,8 +199,7 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str]]:
             found.append((f"{match.group(3)} {rules}".strip(), why.strip()))
         else:
             found.append((f"{match.group(5)} {match.group(6)}".strip(), (match.group(7) or "").strip()))
-    if ALIAS.match(code):
-        return found
+    code = ALIAS.sub(lambda clause: " " * len(clause.group(0)), code)
     reason = comment if comment and WHY.search(comment) and not found else ""
     raw, at = raw or code, 0
     while match := CAST.search(code, at):
@@ -214,7 +216,7 @@ def _import_lines(lines: list[tuple[str, str]]) -> set[int]:
     """Line numbers inside a multi-line `import {` or `export {` list, where `a as b` is an alias."""
     inside, found = False, set()
     for number, (code, _) in enumerate(lines, 1):
-        if re.match(r"\s*(import|export)\b[^;]*\{[^}]*$", code):
+        if OPEN_LIST.match(code):
             inside = True
         elif inside:
             found.add(number)

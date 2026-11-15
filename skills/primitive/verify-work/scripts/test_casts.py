@@ -116,6 +116,12 @@ class Casts(unittest.TestCase):
             "const tick = /`/\nconst value = raw as Value\nconst m = /foo as Bar/g\nconst half = a / b as number\n")})
         self.assertEqual(sorted(g.shape for g in groups), ["b as number", "raw as Value", "… as AddressInfo"])
 
+    def test_a_cast_in_an_exported_function_or_after_an_import_on_its_line_is_listed(self):
+        groups, _, _ = self.scan({"src/decode.ts": (
+            "export function decode(raw: unknown) {\n  return raw as string\n}\n"
+            'import { x } from "./x"; const row = data as Row\nexport { y as z }; const k = key as Key\n')})
+        self.assertEqual(sorted(g.shape for g in groups), ["data as Row", "key as Key", "raw as string"])
+
 
 if __name__ == "__main__":
     unittest.main()
