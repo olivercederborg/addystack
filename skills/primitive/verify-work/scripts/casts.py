@@ -336,8 +336,13 @@ def _count_twins(base: _Files, groups: dict[str, Group]) -> None:
     the files that could hold one, and each is read whole, as the new ones are."""
     if not groups:
         return
-    pattern = r"(^|[^[:alnum:]_$])as([[:space:]]|$)|@ts-|eslint-disable|oxlint-disable|biome-ignore"
-    listed = _git("grep", "-l", "-z", "-I", "-E", pattern, base.rev, "--", *CODE, check=False)
+    patterns = {r"(^|[^[:alnum:]_$])as[[:space:]]*$"}  # a cast whose type is on the next line
+    for shape in groups:
+        if SUPPRESSION.match(shape):
+            patterns.add(_ere(shape.split()[0]))
+        else:  # the type's first word, after any space
+            patterns.add(r"as[[:space:]]+" + _ere(re.match(r"[\w$]+|.", shape.split(" as ", 1)[1]).group(0)))
+    listed = _git("grep", "-l", "-z", "-I", "-E", "|".join(sorted(patterns)), base.rev, "--", *CODE, check=False)
     for entry in filter(None, listed.split("\0")):
         path = entry.removeprefix(f"{base.rev}:")
         for number in range(1, len(base.lines(path)) + 1):
@@ -351,6 +356,10 @@ def _count_twins(base: _Files, groups: dict[str, Group]) -> None:
                     group.same_folder[path] += 1
                 else:
                     group.elsewhere += 1
+
+
+def _ere(text: str) -> str:
+    return re.sub(r"([.\[\](){}*+?|^$\\])", r"\\\1", text)
 
 
 def _sites(hits: list[Hit]) -> str:
