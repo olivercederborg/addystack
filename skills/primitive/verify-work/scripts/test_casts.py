@@ -122,6 +122,12 @@ class Casts(unittest.TestCase):
             'import { x } from "./x"; const row = data as Row\nexport { y as z }; const k = key as Key\n')})
         self.assertEqual(sorted(g.shape for g in groups), ["data as Row", "key as Key", "raw as string"])
 
+    def test_a_cast_whose_type_is_on_the_next_line_is_listed_and_arithmetic_ends_a_type(self):
+        groups, _, _ = self.scan({"src/value.ts": (
+            "const value = raw as\n  Value; const other = x as Other\nconst sum = left as number + (right as number)\n")})
+        self.assertEqual(sorted(g.shape for g in groups),
+                         ["left as number", "raw as Value", "right as number", "x as Other"])
+
 
 if __name__ == "__main__":
     unittest.main()

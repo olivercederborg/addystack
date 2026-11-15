@@ -167,7 +167,8 @@ def split(text: str) -> list[tuple[str, str]]:
 
 def _type_end(text: str) -> int:
     """Where a cast's target type ends in text that starts with it: brackets balance, and a
-    closer with no opener, or `;`, `,`, `=`, `?`, `:`, `||`, `&&` outside brackets, ends it."""
+    closer with no opener, or `;`, `,`, `=`, `?`, `:`, `||`, `&&`, or arithmetic outside
+    brackets, ends it."""
     depth, i = 0, 0
     while i < len(text):
         char = text[i]
@@ -180,7 +181,7 @@ def _type_end(text: str) -> int:
             if depth == 0:
                 break
             depth -= 1
-        elif depth == 0 and (char in ";,=?:" or text.startswith(("||", "&&"), i)):
+        elif depth == 0 and (char in ";,=?:+-*/%" or text.startswith(("||", "&&"), i)):
             break
         i += 1
     return i
@@ -263,7 +264,13 @@ class _Files:
         if not 0 < number <= len(lines):
             return []
         code, comment = lines[number - 1]
-        found = [(shape, reason) for shape, reason in shapes(code, comment, self.cache[path][2][number - 1])
+        raw = self.cache[path][2][number - 1]
+        if re.search(r"\bas\s*$", code) and number < len(lines):  # the type starts on the next line
+            after = lines[number][0]
+            lead = len(after) - len(after.lstrip())
+            cut = lead + _type_end(after[lead:])
+            code, raw = f"{code} {after[:cut]}", f"{raw} {self.cache[path][2][number][:cut]}"
+        found = [(shape, reason) for shape, reason in shapes(code, comment, raw)
                  if not (" as " in shape and number in self.cache[path][1])]
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
