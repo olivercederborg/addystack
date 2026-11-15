@@ -12,8 +12,8 @@ What it lists, in TypeScript and JavaScript files, tests included:
 - a lint suppression: `eslint-disable*`, `oxlint-disable*`, `biome-ignore`.
 
 What it leaves out:
-- a moved or kept one: the diff removes the same cast or suppression elsewhere, in any
-  file, so a move, a rename, a rewrite that keeps the cast, or a reason added to an
+- a moved or kept one: the diff removes the same cast (the same operand and type) or
+  suppression elsewhere, in any file, so a move, a rename, a rewrite that keeps the cast, or a reason added to an
   existing disable isn't new.
 - a shape text can't see: guards, fallbacks, swallowed errors, `!` non-null assertions.
   An audit of one team's merged history (Nov 2026) found text matching sees casts and
@@ -63,6 +63,7 @@ class Hit:
     path: str
     line: int
     shape: str  # what twins share: `sql as never`, `eslint-disable-next-line no-console`
+    key: str  # what a move keeps: the whole operand for a cast (`target.sql as never`), else the shape
     reason: str  # the written reason, or ""
 
 
@@ -187,19 +188,21 @@ def _type_end(text: str) -> int:
     return i
 
 
-def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str]]:
+def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]:
     """Each cast and suppression on one line, from split() and the line as written, as
-    (shape, the reason the line itself gives)."""
+    (shape, key, the reason the line itself gives)."""
     found = []
     if match := SUPPRESSION.search(comment):
         if match.group(1):
-            found.append((match.group(1), match.group(2).strip()))
+            found.append((match.group(1), match.group(1), match.group(2).strip()))
         elif match.group(3):
             rules, _, why = match.group(4).partition("--")
             rules = ", ".join(sorted(rule.strip() for rule in rules.split(",") if rule.strip()))
-            found.append((f"{match.group(3)} {rules}".strip(), why.strip()))
+            shape = f"{match.group(3)} {rules}".strip()
+            found.append((shape, shape, why.strip()))
         else:
-            found.append((f"{match.group(5)} {match.group(6)}".strip(), (match.group(7) or "").strip()))
+            shape = f"{match.group(5)} {match.group(6)}".strip()
+            found.append((shape, shape, (match.group(7) or "").strip()))
     code = ALIAS.sub(lambda clause: " " * len(clause.group(0)), code)
     reason = comment if comment and WHY.search(comment) and not found else ""
     raw, at = raw or code, 0
@@ -208,8 +211,8 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str]]:
         end = match.end() + len(code[match.end():end].rstrip())  # a trailing comment is blanked in code, not raw
         at = max(end, match.end())  # `x as unknown as T` is one cast
         if target := re.sub(r"\s+", " ", raw[match.end():end]).strip():
-            operand = (match.group(1) or "…").rsplit(".", 1)[-1]
-            found.append((f"{operand} as {target}", reason))
+            operand = match.group(1) or "…"
+            found.append((f"{operand.rsplit('.', 1)[-1]} as {target}", f"{operand} as {target}", reason))
     return found
 
 
@@ -259,7 +262,7 @@ class _Files:
             self.cache[path] = (split_lines, _import_lines(split_lines), text.split("\n"))
         return self.cache[path][0]
 
-    def hits(self, path: str, number: int) -> list[tuple[str, str]]:
+    def hits(self, path: str, number: int) -> list[tuple[str, str, str]]:
         lines = self.lines(path)
         if not 0 < number <= len(lines):
             return []
@@ -270,14 +273,13 @@ class _Files:
             lead = len(after) - len(after.lstrip())
             cut = lead + _type_end(after[lead:])
             code, raw = f"{code} {after[:cut]}", f"{raw} {self.cache[path][2][number][:cut]}"
-        found = [(shape, reason) for shape, reason in shapes(code, comment, raw)
-                 if not (" as " in shape and number in self.cache[path][1])]
+        found = [hit for hit in shapes(code, comment, raw) if not (" as " in hit[0] and number in self.cache[path][1])]
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
             suppression = shapes("", above[1])
             # A suppression above with its own reason covers the cast it allows.
-            why = suppression[0][1] if suppression else above[1] if WHY.search(above[1]) else ""
-            found = [(shape, reason or why) for shape, reason in found]
+            why = suppression[0][2] if suppression else above[1] if WHY.search(above[1]) else ""
+            found = [(shape, key, reason or why) for shape, key, reason in found]
         return found
 
 
@@ -289,13 +291,13 @@ def scan(base: str, head: str) -> tuple[list[Group], list[Hit], int]:
     added, removed = [], Counter()
     for path, side, number in _diff_lines(base, head):
         if side == "-":
-            removed.update(shape for shape, _ in old.hits(path, number))
+            removed.update(key for _, key, _ in old.hits(path, number))
         else:
-            added += [Hit(path, number, shape, reason) for shape, reason in new_files.hits(path, number)]
+            added += [Hit(path, number, *hit) for hit in new_files.hits(path, number)]
     moved, new = 0, []
     for hit in added:
-        if removed[hit.shape]:
-            removed[hit.shape] -= 1
+        if removed[hit.key]:
+            removed[hit.key] -= 1
             moved += 1
         else:
             new.append(hit)
@@ -323,7 +325,7 @@ def _count_twins(base: str, groups: dict[str, Group]) -> None:
         (code, comment), = split(text) or [("", "")]
         if re.match(r"\s*\*", text):
             continue  # a JSDoc line
-        for shape, _ in shapes(code, comment, text):
+        for shape, _, _ in shapes(code, comment, text):
             if (group := groups.get(shape)) is None:
                 continue
             files = {hit.path for hit in group.new}

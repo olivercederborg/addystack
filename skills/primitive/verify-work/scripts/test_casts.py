@@ -91,12 +91,12 @@ class Casts(unittest.TestCase):
                          ["eslint-disable-next-line ts/consistent-type-assertions", "raw as RunId", "raw as Value"])
 
     def test_a_type_keeps_its_generics_and_stops_where_the_expression_ends(self):
-        self.assertEqual([s for s, _ in casts.shapes("f(x as Record<string, Cell>, y)", "")],
+        self.assertEqual([s for s, _, _ in casts.shapes("f(x as Record<string, Cell>, y)", "")],
                          ["x as Record<string, Cell>"])
-        self.assertEqual([s for s, _ in casts.shapes("const g = h as (a: A) => B;", "")], ["h as (a: A) => B"])
-        self.assertEqual([s for s, _ in casts.shapes("ok = ctx.user as Member || fallback", "")],
+        self.assertEqual([s for s, _, _ in casts.shapes("const g = h as (a: A) => B;", "")], ["h as (a: A) => B"])
+        self.assertEqual([s for s, _, _ in casts.shapes("ok = ctx.user as Member || fallback", "")],
                          ["user as Member"])
-        self.assertEqual([s for s, _ in casts.shapes("const c = {} as unknown as Client", "")],
+        self.assertEqual([s for s, _, _ in casts.shapes("const c = {} as unknown as Client", "")],
                          ["… as unknown as Client"])
 
     def test_a_cast_on_a_literal_or_a_non_null_assertion_is_listed(self):
@@ -127,6 +127,14 @@ class Casts(unittest.TestCase):
             "const value = raw as\n  Value; const other = x as Other\nconst sum = left as number + (right as number)\n")})
         self.assertEqual(sorted(g.shape for g in groups),
                          ["left as number", "raw as Value", "right as number", "x as Other"])
+
+    def test_removing_one_operand_does_not_hide_a_new_cast_on_another(self):
+        self.write({"src/customer.ts": "const row = customer.record as Row\n"})
+        self.commit("customer")
+        self.git("branch", "-f", "main")
+        groups, _, moved = self.scan({"src/customer.ts": "const row = parse(customer.record)\n",
+                                      "src/invoice.ts": "const row = invoice.record as Row\n"})
+        self.assertEqual(([g.shape for g in groups], moved), (["record as Row"], 0))
 
 
 if __name__ == "__main__":
