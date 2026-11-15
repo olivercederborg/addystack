@@ -6,7 +6,8 @@ Usage: casts.py <base> <head>   (run inside the repo; reviews base...head)
 
 What it lists, in TypeScript and JavaScript files, tests included:
 - a cast `<operand> as <Type>`, other than `as const`, an import or export alias, and
-  text inside a string or comment;
+  text inside a string, template, regular expression, or comment (code inside a
+  template's `${}` counts);
 - a type suppression: `@ts-expect-error`, `@ts-ignore`, `@ts-nocheck`;
 - a lint suppression: `eslint-disable*`, `oxlint-disable*`, `biome-ignore`.
 
@@ -48,6 +49,10 @@ SUPPRESSION = re.compile(r"(@ts-(?:expect-error|ignore|nocheck))\b:?\s*(.*)|"
 # a section heading above an assertion doesn't.
 WHY = re.compile(r"\b(cast\w*|as (never|any|unknown)|assert\w*|approv\w*|types?|typed|typing|branded|"
                  r"generic|infer\w*)\b", re.I)
+# A `/` after one of these opens a regular expression; after a name, number or closer it divides.
+REGEX_AFTER = set("(,=:[!&|?{};+-*%~^") | {""}
+REGEX_KEYWORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield",
+                  "await", "instanceof"}
 
 
 @dataclass(frozen=True)
@@ -75,51 +80,86 @@ def _git(*args: str, check: bool = True) -> str:
 
 
 def split(text: str) -> list[tuple[str, str]]:
-    """Each line of a file as (code, comment): code with string and template contents and
-    comments blanked, so columns stay put, and the line's comment text. Strings and
-    comments may span lines; `${}` inside a template counts as template text."""
-    lines, code, comment = [], [], []
-    state = ""  # "", "'", '"', "`", "//", "/*"
-    i = 0
-    while i <= len(text):
-        char = text[i] if i < len(text) else "\n"
-        pair = text[i:i + 2]
-        if char == "\n":
-            lines.append(("".join(code), "".join(comment).strip()))
-            code, comment = [], []
-            if state in ("//", "'", '"'):
-                state = ""
-            i += 1
-            continue
-        if state == "":
-            if pair in ("//", "/*"):
-                state = pair
-                code.append("  ")
-                i += 2
-                continue
-            if char in "'\"`":
-                state = char
-            code.append(char)
-        elif state in ("//", "/*"):
-            if state == "/*" and pair == "*/":
-                state = ""
-                code.append("  ")
-                i += 2
-                continue
-            comment.append(char)
-            code.append(" ")
-        else:  # inside a string
-            if char == "\\":
-                code.append("  ")
-                i += 2
-                continue
-            if char == state:
-                state = ""
-                code.append(char)
-            else:
+    """Each line of a file as (code, comment): code with strings, template text, regular
+    expressions and comments blanked, so columns stay put, and the line's comment text.
+    Code inside a template's `${}` stays code. Templates and block comments may span lines."""
+    lines = text.split("\n")
+    if text.endswith("\n"):
+        lines.pop()
+    out = []
+    stack: list[str] = []  # inside a template's `${`: "{" for its own brace, "{{" for one in its code
+    state = ""  # "", "'", '"', "`", "/*", "re", "re["
+    last = ""  # the last code token, which tells a regular expression's `/` from a division
+    for line in lines:
+        code, comment, i = [], [], 0
+        while i < len(line):
+            char, pair = line[i], line[i:i + 2]
+            if state == "/*":
+                if pair == "*/":
+                    state = ""
+                    code.append("  ")
+                    i += 2
+                    continue
+                comment.append(char)
                 code.append(" ")
-        i += 1
-    return lines[:-1] if text.endswith("\n") else lines
+            elif state in ("'", '"', "`", "re", "re["):
+                if char == "\\":
+                    code.append(" " * len(line[i:i + 2]))
+                    i += 2
+                    continue
+                if state == "`" and pair == "${":
+                    stack.append("{")
+                    state, last = "", "{"
+                    code.append(pair)
+                    i += 2
+                    continue
+                if state == "re" and char == "[":
+                    state = "re["
+                elif state == "re[" and char == "]":
+                    state = "re"
+                elif char == state or (state == "re" and char == "/"):
+                    state, last = "", char
+                    code.append(char)
+                    i += 1
+                    continue
+                code.append(" ")
+            elif pair == "//":
+                comment.append(line[i + 2:])
+                code.append(" " * (len(line) - i))
+                break
+            elif pair == "/*":
+                state = "/*"
+                code.append("  ")
+                i += 2
+                continue
+            elif char in "'\"`":
+                state = char
+                code.append(char)
+            elif char == "/" and (last in REGEX_AFTER or last in REGEX_KEYWORDS):
+                state = "re"
+                code.append(char)
+            elif char == "}" and stack and stack[-1] == "{":
+                stack.pop()
+                state, last = "`", "`"
+                code.append(" ")
+            else:
+                if char == "{" and stack:
+                    stack.append("{{")
+                elif char == "}" and stack:
+                    stack.pop()
+                if word := re.match(r"[\w$]+", line[i:]):
+                    last = word.group(0)
+                    code.append(last)
+                    i += len(last)
+                    continue
+                code.append(char)
+                if not char.isspace():
+                    last = char
+            i += 1
+        if state in ("'", '"', "re", "re["):
+            state = ""  # these end with their line
+        out.append(("".join(code), "".join(comment).strip()))
+    return out
 
 
 def _type_end(text: str) -> int:

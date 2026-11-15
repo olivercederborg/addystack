@@ -110,6 +110,12 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/jobs.ts": 'const h = raw as RunHandle<"export">\n'})
         self.assertEqual([g.shape for g in groups], ['raw as RunHandle<"export">'])
 
+    def test_code_in_a_template_counts_and_a_regular_expression_does_not(self):
+        groups, _, _ = self.scan({"src/token.ts": (
+            "const origin = `http://h:${(server.address() as AddressInfo).port}`\n"
+            "const tick = /`/\nconst value = raw as Value\nconst m = /foo as Bar/g\nconst half = a / b as number\n")})
+        self.assertEqual(sorted(g.shape for g in groups), ["b as number", "raw as Value", "… as AddressInfo"])
+
 
 if __name__ == "__main__":
     unittest.main()
