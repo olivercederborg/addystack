@@ -157,6 +157,12 @@ class Casts(unittest.TestCase):
                          ["eslint-disable-line ts/consistent-type-assertions", "eslint-disable-next-line no-console",
                           "raw as Decoded"])
 
+    def test_prose_that_names_a_directive_is_not_one(self):
+        groups, reasoned, _ = self.scan({"src/note.ts": (
+            "// Do not use eslint-disable-next-line no-console\nconst a = 1\n/**\n * Prefer @ts-expect-error here\n */\n"
+            "/* @ts-expect-error */\nf(a)\n")})
+        self.assertEqual(([g.shape for g in groups], reasoned), (["@ts-expect-error"], []))
+
 
 if __name__ == "__main__":
     unittest.main()

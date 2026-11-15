@@ -9,7 +9,8 @@ What it lists, in TypeScript and JavaScript files, tests included:
   text inside a string, template, regular expression, or comment (code inside a
   template's `${}` counts);
 - a type suppression: `@ts-expect-error`, `@ts-ignore`, `@ts-nocheck`;
-- a lint suppression: `eslint-disable*`, `oxlint-disable*`, `biome-ignore`.
+- a lint suppression: `eslint-disable*`, `oxlint-disable*`, `biome-ignore`;
+  each only where it starts its comment, as the tools read it.
 
 What it leaves out:
 - a moved or kept one: the diff removes the same cast (the same operand and type) or
@@ -196,7 +197,7 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
     """Each cast and suppression on one line, from split() and the line as written, as
     (shape, key, the reason the line itself gives)."""
     found = []
-    if match := SUPPRESSION.search(comment):
+    if match := SUPPRESSION.match(comment.lstrip("*! \t")):  # a tool reads a directive only at the start
         if match.group(1):
             found.append((match.group(1), match.group(1), match.group(2).strip()))
         elif match.group(3):
