@@ -26,8 +26,8 @@ it casts (it names the cast, a type, or an approval).
 
 Twins group by shape: the operand's last name and the type for a cast (`sql as never`,
 whether `sql` or `target.sql`), the directive and its rules for a suppression. Each group
-counts its twins at the base in the same file, in the same folder, and elsewhere, from
-`git grep`, so a cast written across lines isn't counted. A twin is the cause spreading,
+counts its twins at the base in the same file, in the same folder, and elsewhere, each
+file read as the new ones are. A twin is the cause spreading,
 not a precedent: in the same audit, `sql as never` grew from 0 to 99 casts across one
 repo's check files in two weeks, excused each time because the file already used it."""
 from __future__ import annotations
@@ -315,36 +315,32 @@ def scan(base: str, head: str) -> tuple[list[Group], list[Hit], int]:
     for hit in new:
         if not hit.reason:
             groups.setdefault(hit.shape, Group(hit.shape)).new.append(hit)
-    _count_twins(base_sha, groups)
+    _count_twins(old, groups)
     order = sorted(groups.values(), key=lambda g: (-(len(g.new) + g.same_file + sum(g.same_folder.values())
                                                      + g.elsewhere), g.shape))
     return order, [hit for hit in new if hit.reason], moved
 
 
-def _count_twins(base: str, groups: dict[str, Group]) -> None:
-    """Each group's twins at the base: same file, same folder, elsewhere."""
+def _count_twins(base: _Files, groups: dict[str, Group]) -> None:
+    """Each group's twins at the base: same file, same folder, elsewhere. `git grep` picks
+    the files that could hold one, and each is read whole, as the new ones are."""
     if not groups:
         return
-    found = _git("grep", "-n", "-I", "-e", " as ", "-e", "@ts-", "-e", "eslint-disable", "-e", "oxlint-disable",
-                 "-e", "biome-ignore", base, "--", *CODE, check=False)
-    for row in found.splitlines():
-        parts = row.split(":", 3)
-        if len(parts) < 4:
-            continue
-        path, text = parts[1], parts[3]
-        (code, comment), = split(text) or [("", "")]
-        if re.match(r"\s*\*", text):
-            continue  # a JSDoc line
-        for shape, _, _ in shapes(code, comment, text):
-            if (group := groups.get(shape)) is None:
-                continue
-            files = {hit.path for hit in group.new}
-            if path in files:
-                group.same_file += 1
-            elif str(PurePosixPath(path).parent) in {str(PurePosixPath(p).parent) for p in files}:
-                group.same_folder[path] += 1
-            else:
-                group.elsewhere += 1
+    pattern = r"(^|[^[:alnum:]_$])as([[:space:]]|$)|@ts-|eslint-disable|oxlint-disable|biome-ignore"
+    listed = _git("grep", "-l", "-z", "-I", "-E", pattern, base.rev, "--", *CODE, check=False)
+    for entry in filter(None, listed.split("\0")):
+        path = entry.removeprefix(f"{base.rev}:")
+        for number in range(1, len(base.lines(path)) + 1):
+            for shape, _, _ in base.hits(path, number):
+                if (group := groups.get(shape)) is None:
+                    continue
+                files = {hit.path for hit in group.new}
+                if path in files:
+                    group.same_file += 1
+                elif str(PurePosixPath(path).parent) in {str(PurePosixPath(p).parent) for p in files}:
+                    group.same_folder[path] += 1
+                else:
+                    group.elsewhere += 1
 
 
 def _sites(hits: list[Hit]) -> str:

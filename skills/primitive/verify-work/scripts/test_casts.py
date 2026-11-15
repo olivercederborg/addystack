@@ -140,6 +140,13 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/my file.ts": "const a = raw as Row\n", 'src/say "hi".ts': "const b = raw as Hi\n"})
         self.assertEqual(sorted(hit.path for g in groups for hit in g.new), ['src/my file.ts', 'src/say "hi".ts'])
 
+    def test_a_twin_in_a_comment_does_not_count_and_one_after_a_tab_does(self):
+        self.write({"src/notes.ts": "/*\nconst example = raw as Row\n*/\n", "src/old.ts": "const old = raw as\tRow\n"})
+        self.commit("twins")
+        self.git("branch", "-f", "main")
+        groups, _, _ = self.scan({"src/new.ts": "const row = raw as Row\n"})
+        self.assertEqual([(g.shape, g.same_folder) for g in groups], [("raw as Row", {"src/old.ts": 1})])
+
 
 if __name__ == "__main__":
     unittest.main()
