@@ -214,6 +214,10 @@ class Casts(unittest.TestCase):
                                   "src/union.ts": "const f = undefined as\n  | undefined\n  | Fetch\n"})
         self.assertEqual(sorted(g.shape for g in groups), ["raw as NewType", "undefined as | undefined"])
 
+    def test_a_multi_line_import_hides_only_its_own_aliases(self):
+        groups, _, _ = self.scan({"src/value.ts": 'import { foo as bar,\n  baz as qux\n} from "./m"; const value = raw as Row\n'})
+        self.assertEqual([g.shape for g in groups], ["raw as Row"])
+
 
 if __name__ == "__main__":
     unittest.main()

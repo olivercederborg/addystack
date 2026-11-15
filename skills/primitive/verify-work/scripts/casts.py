@@ -269,16 +269,19 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
     return found
 
 
-def _import_lines(lines: list[tuple[str, str]]) -> set[int]:
-    """Line numbers inside a multi-line `import {` or `export {` list, where `a as b` is an alias."""
-    inside, found = False, set()
-    for number, (code, _) in enumerate(lines, 1):
-        if OPEN_LIST.match(code):
-            inside = True
-        elif inside:
-            found.add(number)
-            inside = "}" not in code
-    return found
+def _blank_lists(lines: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """The lines with each multi-line `import {` or `export {` list blanked, from its `{` to
+    its `}`, where `a as b` is an alias; code before and after the list stays."""
+    out, inside = [], False
+    for code, comment in lines:
+        if inside:
+            close = code.find("}") + 1 or len(code)
+            code, inside = " " * close + code[close:], "}" not in code
+        elif OPEN_LIST.match(code):
+            brace = code.index("{")
+            code, inside = code[:brace] + " " * (len(code) - brace), True
+        out.append((code, comment))
+    return out
 
 
 def _path(header: str) -> str:
@@ -325,7 +328,7 @@ class _Files:
         if path not in self.cache:
             text = _git("cat-file", "-p", f"{self.rev}:{path}")
             split_lines = split(text)
-            self.cache[path] = (split_lines, _import_lines(split_lines), text.split("\n"))
+            self.cache[path] = (_blank_lists(split_lines), text.split("\n"))
         return self.cache[path][0]
 
     def _suppressed(self, path: str, number: int, shape: str) -> str:
@@ -335,7 +338,7 @@ class _Files:
         if directive in ("@ts-nocheck", "biome-ignore-all", "biome-ignore-start") or directive.endswith("-disable"):
             return shape  # it covers the file or a range
         line = number if directive.endswith("disable-line") else number + 1
-        raws = self.cache[path][2]
+        raws = self.cache[path][1]
         return f"{shape} → {' '.join(raws[line - 1].split()) if line <= len(raws) else ''}"
 
     def hits(self, path: str, number: int) -> list[tuple[str, str, str]]:
@@ -343,15 +346,14 @@ class _Files:
         if not 0 < number <= len(lines):
             return []
         code, comment = lines[number - 1]
-        raw = self.cache[path][2][number - 1]
+        raw = self.cache[path][1][number - 1]
         if re.search(r"\bas\s*$", code) and number < len(lines):  # the type starts on the next line
             after = lines[number][0]
             lead = len(after) - len(after.lstrip())
             cut = lead + _type_end(after[lead:])
-            code, raw = f"{code} {after[:cut]}", f"{raw} {self.cache[path][2][number][:cut]}"
+            code, raw = f"{code} {after[:cut]}", f"{raw} {self.cache[path][1][number][:cut]}"
         found = [(shape, self._suppressed(path, number, shape) if SUPPRESSION.match(shape) else key, reason)
-                 for shape, key, reason in shapes(code, comment, raw)
-                 if not (" as " in shape and number in self.cache[path][1])]
+                 for shape, key, reason in shapes(code, comment, raw)]
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
             suppression = shapes("", above[1])
