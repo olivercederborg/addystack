@@ -87,6 +87,12 @@ class Casts(unittest.TestCase):
         self.assertEqual([s for s, _ in casts.shapes("const g = h as (a: A) => B;", "")], ["h as (a: A) => B"])
         self.assertEqual([s for s, _ in casts.shapes("ok = ctx.user as Member || fallback", "")],
                          ["user as Member"])
+        self.assertEqual([s for s, _ in casts.shapes("const c = {} as unknown as Client", "")],
+                         ["… as unknown as Client"])
+
+    def test_a_string_in_a_type_keeps_its_text(self):
+        groups, _, _ = self.scan({"src/jobs.ts": 'const h = raw as RunHandle<"export">\n'})
+        self.assertEqual([g.shape for g in groups], ['raw as RunHandle<"export">'])
 
 
 if __name__ == "__main__":

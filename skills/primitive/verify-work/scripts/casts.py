@@ -122,14 +122,13 @@ def split(text: str) -> list[tuple[str, str]]:
     return lines[:-1] if text.endswith("\n") else lines
 
 
-def _type(text: str) -> str:
-    """A cast's target type, cut where its expression ends: brackets balance, and a
+def _type_end(text: str) -> int:
+    """Where a cast's target type ends in text that starts with it: brackets balance, and a
     closer with no opener, or `;`, `,`, `=`, `?`, `:`, `||`, `&&` outside brackets, ends it."""
-    depth, out, i = 0, [], 0
+    depth, i = 0, 0
     while i < len(text):
         char = text[i]
         if text.startswith("=>", i):
-            out.append("=>")
             i += 2
             continue
         if char in "(<[{":
@@ -140,14 +139,13 @@ def _type(text: str) -> str:
             depth -= 1
         elif depth == 0 and (char in ";,=?:" or text.startswith(("||", "&&"), i)):
             break
-        out.append(char)
         i += 1
-    return re.sub(r"\s+", " ", "".join(out)).strip()
+    return i
 
 
-def shapes(code: str, comment: str) -> list[tuple[str, str]]:
-    """Each cast and suppression on one line, from split(), as (shape, the reason the
-    line itself gives)."""
+def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str]]:
+    """Each cast and suppression on one line, from split() and the line as written, as
+    (shape, the reason the line itself gives)."""
     found = []
     if match := SUPPRESSION.search(comment):
         if match.group(1):
@@ -161,9 +159,11 @@ def shapes(code: str, comment: str) -> list[tuple[str, str]]:
     if ALIAS.match(code):
         return found
     reason = comment if comment and WHY.search(comment) and not found else ""
-    for match in CAST.finditer(code):
-        target = _type(code[match.end():])
-        if target:
+    raw, at = raw or code, 0
+    while match := CAST.search(code, at):
+        end = match.end() + _type_end(code[match.end():])
+        at = max(end, match.end())  # `x as unknown as T` is one cast
+        if target := re.sub(r"\s+", " ", raw[match.end():end]).strip():
             operand = (match.group(1) or "…").rsplit(".", 1)[-1]
             found.append((f"{operand} as {target}", reason))
     return found
@@ -212,7 +212,7 @@ class _Files:
         if path not in self.cache:
             text = _git("cat-file", "-p", f"{self.rev}:{path}", check=False)
             split_lines = split(text)
-            self.cache[path] = (split_lines, _import_lines(split_lines))
+            self.cache[path] = (split_lines, _import_lines(split_lines), text.split("\n"))
         return self.cache[path][0]
 
     def hits(self, path: str, number: int) -> list[tuple[str, str]]:
@@ -220,7 +220,7 @@ class _Files:
         if not 0 < number <= len(lines):
             return []
         code, comment = lines[number - 1]
-        found = [(shape, reason) for shape, reason in shapes(code, comment)
+        found = [(shape, reason) for shape, reason in shapes(code, comment, self.cache[path][2][number - 1])
                  if not (" as " in shape and number in self.cache[path][1])]
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
@@ -273,7 +273,7 @@ def _count_twins(base: str, groups: dict[str, Group]) -> None:
         (code, comment), = split(text) or [("", "")]
         if re.match(r"\s*\*", text):
             continue  # a JSDoc line
-        for shape, _ in shapes(code, comment):
+        for shape, _ in shapes(code, comment, text):
             if (group := groups.get(shape)) is None:
                 continue
             files = {hit.path for hit in group.new}
