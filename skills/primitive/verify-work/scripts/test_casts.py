@@ -147,6 +147,16 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/new.ts": "const row = raw as Row\n"})
         self.assertEqual([(g.shape, g.same_folder) for g in groups], [("raw as Row", {"src/old.ts": 1})])
 
+    def test_a_reason_explains_only_what_it_is_about(self):
+        groups, reasoned, _ = self.scan({"src/unrelated.ts": (
+            "// eslint-disable-next-line no-console -- diagnostics need logging\nconsole.log(raw as Value)\n"
+            "// Mapping payload types\n// @ts-ignore\nsend(payload)\n"
+            "const v = raw as Decoded // eslint-disable-line ts/consistent-type-assertions -- the decoder erases it\n")})
+        self.assertEqual(sorted(g.shape for g in groups), ["@ts-ignore", "raw as Value"])
+        self.assertEqual(sorted(hit.shape for hit in reasoned),
+                         ["eslint-disable-line ts/consistent-type-assertions", "eslint-disable-next-line no-console",
+                          "raw as Decoded"])
+
 
 if __name__ == "__main__":
     unittest.main()

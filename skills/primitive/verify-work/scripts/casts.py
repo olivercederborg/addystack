@@ -21,8 +21,9 @@ What it leaves out:
 
 A new one with a written reason is listed apart, since the reason is the call to judge:
 a suppression's own description (`-- why`, `biome-ignore <rule>: why`, text after
-`@ts-expect-error`), or for a cast a comment on its line or the line above that says why
-it casts (it names the cast, a type, or an approval).
+`@ts-expect-error`); for a cast, a comment on its line or the line above that says why it
+casts (it names the cast, a type, or an approval), or the description of a type
+suppression, or of a lint rule about casts or types, on its line or the line above.
 
 Twins group by shape: the operand's last name and the type for a cast (`sql as never`,
 whether `sql` or `target.sql`), the directive and its rules for a suppression. Each group
@@ -53,6 +54,8 @@ SUPPRESSION = re.compile(r"(@ts-(?:expect-error|ignore|nocheck))\b:?\s*(.*)|"
 # a section heading above an assertion doesn't.
 WHY = re.compile(r"\b(cast\w*|as (never|any|unknown)|assert\w*|approv\w*|types?|typed|typing|branded|"
                  r"generic|infer\w*)\b", re.I)
+# A suppression explains the casts it allows when it's a type suppression or its rule is about them.
+COVERS_CASTS = re.compile(r"^@ts-|assert|cast|type(?!script)|\bany\b", re.I)
 # A `/` after one of these opens a regular expression; after a name, number or closer it divides.
 REGEX_AFTER = set("(,=:[!&|?{};+-*%~^") | {""}
 REGEX_KEYWORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield",
@@ -205,7 +208,10 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
             shape = f"{match.group(5)} {match.group(6)}".strip()
             found.append((shape, shape, (match.group(7) or "").strip()))
     code = ALIAS.sub(lambda clause: " " * len(clause.group(0)), code)
-    reason = comment if comment and WHY.search(comment) and not found else ""
+    if found:  # a suppression on the line
+        reason = found[0][2] if COVERS_CASTS.search(found[0][0]) else ""
+    else:
+        reason = comment if comment and WHY.search(comment) else ""
     raw, at = raw or code, 0
     while match := CAST.search(code, at):
         end = match.end() + _type_end(code[match.end():])
@@ -287,9 +293,12 @@ class _Files:
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
             suppression = shapes("", above[1])
-            # A suppression above with its own reason covers the cast it allows.
-            why = suppression[0][2] if suppression else above[1] if WHY.search(above[1]) else ""
-            found = [(shape, key, reason or why) for shape, key, reason in found]
+            if suppression:  # its reason covers a cast it allows
+                why = suppression[0][2] if COVERS_CASTS.search(suppression[0][0]) else ""
+            else:
+                why = above[1] if WHY.search(above[1]) else ""
+            # A suppression's reason is only its own description.
+            found = [(shape, key, reason or ("" if SUPPRESSION.match(shape) else why)) for shape, key, reason in found]
         return found
 
 
