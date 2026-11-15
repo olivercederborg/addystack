@@ -102,16 +102,12 @@ show yet needs more checking, not a lower label.
   for code that never shipped.
 - Names that don't say what they hold, fields that always travel together, and one
   change spread across many files.
-- New suppressions and casts. List the candidates, then read each in context:
-
-  ```bash
-  git diff -U0 <base>...<head> -- '*.[cm]ts' '*.ts' '*.tsx' '*.[cm]js' '*.js' '*.jsx' |
-    grep -E '^\+.*( as\b|eslint-disable|@ts-(expect-error|ignore))' |
-    grep -vE '^\+\s*(\*|import |export \{|export \* )'
-  ```
-
-  A new one other than `as const`, not a moved or kept line, is a Cleanup unless the PR
-  body names its approval.
+- New suppressions and casts: `scripts/casts.py <base> <head>` lists each one the diff
+  adds, moved and kept ones left out, with its twins at the base. Each listed one is a
+  Cleanup unless the PR body names its approval; one listed with a written reason is a
+  finding only when the reason doesn't hold. Twins are the cause spreading: a group gets
+  one finding whose fix is the cause they share, such as the type where the value is
+  made, and it names the copies that fix removes.
 
 **Done when:** every lens has covered the whole diff and every check has run.
 
