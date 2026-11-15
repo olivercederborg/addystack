@@ -218,6 +218,13 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/value.ts": 'import { foo as bar,\n  baz as qux\n} from "./m"; const value = raw as Row\n'})
         self.assertEqual([g.shape for g in groups], ["raw as Row"])
 
+    def test_a_twin_with_a_comment_before_its_type_counts(self):
+        self.write({"src/old.ts": "const old = raw as /* workaround */ Row\n", "src/older.ts": "const o = raw as // why\n  Row\n"})
+        self.commit("twins")
+        self.git("branch", "-f", "main")
+        groups, _, _ = self.scan({"src/new.ts": "const row = raw as Row\n"})
+        self.assertEqual([sum(g.same_folder.values()) for g in groups], [2])
+
 
 if __name__ == "__main__":
     unittest.main()

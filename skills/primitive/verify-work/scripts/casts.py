@@ -322,13 +322,32 @@ class _Files:
     """Each file at a revision, split() once."""
 
     def __init__(self, rev: str):
-        self.rev, self.cache = rev, {}
+        self.rev, self.cache, self.texts = rev, {}, {}
+
+    def read(self, paths: list[str]) -> None:
+        """Reads many files in one `git cat-file --batch`."""
+        paths = [path for path in paths if path not in self.texts]
+        request = "".join(f"{self.rev}:{path}\n" for path in paths).encode()
+        out = subprocess.run(["git", "cat-file", "--batch"], input=request, capture_output=True, check=True).stdout
+        at = 0
+        for path in paths:
+            end = out.index(b"\n", at)
+            header = out[at:end].split()
+            if len(header) != 3:
+                raise SystemExit(f"can't read {path} at {self.rev}")
+            size = int(header[2])
+            self.texts[path] = out[end + 1:end + 1 + size].decode(errors="replace")
+            at = end + 2 + size
+
+    def text(self, path: str) -> str:
+        if path not in self.texts:
+            self.texts[path] = _git("cat-file", "-p", f"{self.rev}:{path}")
+        return self.texts[path]
 
     def lines(self, path: str) -> list[tuple[str, str]]:
         if path not in self.cache:
-            text = _git("cat-file", "-p", f"{self.rev}:{path}")
-            split_lines = split(text)
-            self.cache[path] = (_blank_lists(split_lines), text.split("\n"))
+            text = self.text(path)
+            self.cache[path] = (_blank_lists(split(text)), text.split("\n"))
         return self.cache[path][0]
 
     def _suppressed(self, path: str, number: int, shape: str) -> str:
@@ -408,15 +427,24 @@ def _count_twins(base: _Files, groups: dict[str, Group]) -> None:
     the files that could hold one, and each is read whole, as the new ones are."""
     if not groups:
         return
-    patterns = {r"(^|[^[:alnum:]_$])as[[:space:]]*$"}  # a cast whose type is on the next line
-    for shape in groups:
-        if SUPPRESSION.match(shape):
-            patterns.add(_ere(shape.split()[0]))
-        else:  # the type's first word, after any space
-            patterns.add(r"as[[:space:]]+" + _ere(re.match(r"[\w$]+|.", shape.split(" as ", 1)[1]).group(0)))
-    listed = _git("grep", "-l", "-z", "-I", "-E", "|".join(sorted(patterns)), base.rev, "--", *CODE, check=False)
-    for entry in filter(None, listed.split("\0")):
-        path = entry.removeprefix(f"{base.rev}:")
+    # A file that holds a twin has the directive, or the word `as` and the type's first token
+    # anywhere, whatever comment or line break comes between them.
+    directives = {shape.split()[0] for shape in groups if SUPPRESSION.match(shape)}
+    tokens = {re.match(r"[\w$]+|.", shape.split(" as ", 1)[1]).group(0) for shape in groups
+              if not SUPPRESSION.match(shape)}
+    searches = [["-e", _ere(directive)] for directive in directives]
+    searches += [["--all-match", "-e", r"(^|[^[:alnum:]_$])as([^[:alnum:]_$]|$)", "-e", _ere(token)] for token in tokens]
+    listed = "".join(_git("grep", "-l", "-z", "-I", "-E", *search, base.rev, "--", *CODE, check=False)
+                     for search in searches)
+    # Reading a file whole is the slow part, so first check its text for a directive, or for
+    # `as` and a token with only space or comments between them.
+    gap = r"\bas(?:\s|/\*.*?\*/|//[^\n]*)+"
+    could = re.compile("|".join([*map(re.escape, directives), *(gap + re.escape(token) for token in tokens)]), re.S)
+    paths = [entry.removeprefix(f"{base.rev}:") for entry in dict.fromkeys(filter(None, listed.split("\0")))]
+    base.read(paths)
+    for path in paths:
+        if not could.search(base.text(path)):
+            continue
         for number in range(1, len(base.lines(path)) + 1):
             for shape, _, _ in base.hits(path, number):
                 if (group := groups.get(shape)) is None:
