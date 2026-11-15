@@ -247,7 +247,9 @@ def _path(header: str) -> str:
 
 def _diff_lines(base: str, head: str):
     """(path, side, line number) for each added (+) and removed (-) line."""
-    patch = _git("diff", "--no-color", "--no-ext-diff", "-M", "-U0", f"{base}...{head}", "--", *CODE)
+    # Pin what a user's diff settings could change: prefixes, context between hunks, relative paths.
+    patch = _git("diff", "--no-color", "--no-ext-diff", "--no-relative", "--src-prefix=a/", "--dst-prefix=b/", "-M",
+                 "-U0", "--inter-hunk-context=0", f"{base}...{head}", "--", *CODE)
     old_path = new_path = ""
     old_line = new_line = 0
     for raw in patch.splitlines():
@@ -264,6 +266,8 @@ def _diff_lines(base: str, head: str):
         elif raw.startswith("-") and old_path:
             yield old_path, "-", old_line
             old_line += 1
+        elif raw.startswith(" "):
+            old_line, new_line = old_line + 1, new_line + 1
 
 
 class _Files:

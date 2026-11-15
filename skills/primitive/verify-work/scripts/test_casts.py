@@ -163,6 +163,15 @@ class Casts(unittest.TestCase):
             "/* @ts-expect-error */\nf(a)\n")})
         self.assertEqual(([g.shape for g in groups], reasoned), (["@ts-expect-error"], []))
 
+    def test_a_users_diff_settings_do_not_hide_a_cast(self):
+        self.git("config", "diff.noprefix", "true")
+        self.git("config", "diff.interHunkContext", "3")
+        self.write({"src/value.ts": "const a = first as Old\nconst keep = 1\nconst b = second as Old\n"})
+        self.commit("old")
+        self.git("branch", "-f", "main")
+        groups, _, _ = self.scan({"src/value.ts": "const a = first as New\nconst keep = 1\nconst b = second as New\n"})
+        self.assertEqual(sorted(g.shape for g in groups), ["first as New", "second as New"])
+
 
 if __name__ == "__main__":
     unittest.main()
