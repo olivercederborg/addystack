@@ -172,6 +172,22 @@ class Casts(unittest.TestCase):
         groups, _, _ = self.scan({"src/value.ts": "const a = first as New\nconst keep = 1\nconst b = second as New\n"})
         self.assertEqual(sorted(g.shape for g in groups), ["first as New", "second as New"])
 
+    def test_a_cast_on_a_different_expression_or_a_suppression_over_different_code_is_new(self):
+        self.write({"src/old.ts": 'const a = customer.get() as Row\nconst b = "customer" as Key\n// @ts-ignore\noldCall("x")\n'})
+        self.commit("old")
+        self.git("branch", "-f", "main")
+        self.git("rm", "-q", "src/lint.ts")  # its disable moves to kept.ts, over the same code
+        groups, _, moved = self.scan({
+            "src/old.ts": "oldCall(1)\n",
+            "src/new.ts": 'const a = invoice.get() as Row\nconst b = "invoice" as Key\n// @ts-ignore\nnewCall("x")\n',
+            "src/kept.ts": "const pad = 1\n" * 5 + "// eslint-disable-next-line no-console\nconsole.log(1)\n"})
+        self.assertEqual((sorted(g.shape for g in groups), moved), (["@ts-ignore", "… as Key", "… as Row"], 1))
+
+    def test_an_operand_is_the_whole_expression(self):
+        self.assertEqual([k for _, k, _ in casts.shapes('f(a.b?.c(x)[0]! as T, "s" as U, (p + q) as V)', "",
+                                                         'f(a.b?.c(x)[0]! as T, "s" as U, (p + q) as V)')],
+                         ["a.b?.c(x)[0]! as T", '"s" as U', "(p + q) as V"])
+
 
 if __name__ == "__main__":
     unittest.main()

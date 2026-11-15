@@ -193,6 +193,28 @@ def _type_end(text: str) -> int:
     return i
 
 
+def _operand_start(code: str, end: int) -> int:
+    """Where the operand that ends at `end` starts: a name chain with its calls, indexes,
+    `?.` and `!`, or a bracketed or quoted expression."""
+    i = end
+    while True:
+        start = i
+        while i and code[i - 1] == "!":
+            i -= 1
+        if i and code[i - 1] in "'\"`":
+            i = max(code.rfind(code[i - 1], 0, i - 1), 0)
+        elif i and code[i - 1] in ")]}":
+            closer, opener, depth = code[i - 1], {")": "(", "]": "[", "}": "{"}[code[i - 1]], 0
+            for i in range(i - 1, -1, -1):
+                depth += (code[i] == closer) - (code[i] == opener)
+                if depth == 0:
+                    break
+        while i and (code[i - 1].isalnum() or code[i - 1] in "_$." or code[i - 2:i] == "?."):
+            i -= 2 if code[i - 2:i] == "?." else 1
+        if i == start:
+            return i
+
+
 def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]:
     """Each cast and suppression on one line, from split() and the line as written, as
     (shape, key, the reason the line itself gives)."""
@@ -219,8 +241,10 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
         end = match.end() + len(code[match.end():end].rstrip())  # a trailing comment is blanked in code, not raw
         at = max(end, match.end())  # `x as unknown as T` is one cast
         if target := re.sub(r"\s+", " ", raw[match.end():end]).strip():
-            operand = match.group(1) or "…"
-            found.append((f"{operand.rsplit('.', 1)[-1]} as {target}", f"{operand} as {target}", reason))
+            name = (match.group(1) or "…").rsplit(".", 1)[-1]
+            operand_end = match.end(1) if match.group(1) else match.start() + 1
+            operand = re.sub(r"\s+", " ", raw[_operand_start(code, operand_end):operand_end])
+            found.append((f"{name} as {target}", f"{operand} as {target}", reason))
     return found
 
 
@@ -283,6 +307,16 @@ class _Files:
             self.cache[path] = (split_lines, _import_lines(split_lines), text.split("\n"))
         return self.cache[path][0]
 
+    def _suppressed(self, path: str, number: int, shape: str) -> str:
+        """A suppression's move key: the directive and the code it covers, so moving it keeps
+        it and putting it over different code doesn't."""
+        directive = shape.split()[0]
+        if directive in ("@ts-nocheck", "biome-ignore-all", "biome-ignore-start") or directive.endswith("-disable"):
+            return shape  # it covers the file or a range
+        line = number if directive.endswith("disable-line") else number + 1
+        raws = self.cache[path][2]
+        return f"{shape} → {' '.join(raws[line - 1].split()) if line <= len(raws) else ''}"
+
     def hits(self, path: str, number: int) -> list[tuple[str, str, str]]:
         lines = self.lines(path)
         if not 0 < number <= len(lines):
@@ -294,7 +328,9 @@ class _Files:
             lead = len(after) - len(after.lstrip())
             cut = lead + _type_end(after[lead:])
             code, raw = f"{code} {after[:cut]}", f"{raw} {self.cache[path][2][number][:cut]}"
-        found = [hit for hit in shapes(code, comment, raw) if not (" as " in hit[0] and number in self.cache[path][1])]
+        found = [(shape, self._suppressed(path, number, shape) if SUPPRESSION.match(shape) else key, reason)
+                 for shape, key, reason in shapes(code, comment, raw)
+                 if not (" as " in shape and number in self.cache[path][1])]
         above = lines[number - 2] if number >= 2 else ("", "")
         if not above[0].strip() and above[1]:
             suppression = shapes("", above[1])
