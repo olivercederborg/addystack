@@ -14,15 +14,20 @@ What it lists, in TypeScript and JavaScript files, tests included:
 
 What it leaves out:
 - a moved or kept one: the diff removes the same cast (the same operand expression and
-  type) or the same suppression over the same code, in any file, so a move, a rename, a
-  rewrite that keeps the cast, or a reason added to an existing disable isn't new.
+  type) or the same suppression over the same code (a file-wide one by its directive
+  alone), in any file, so a move, a rename, a rewrite that keeps the cast, or a reason
+  added to an existing disable isn't new.
 - a shape text can't see: guards, fallbacks, swallowed errors, `!` non-null assertions.
   An audit of one team's merged history (Nov 2026) found text matching sees casts and
   suppressions, and 39% of its hits were moved or kept code, which this script leaves out.
 
-Known limits of reading text rather than TypeScript's syntax tree: JSX text such as
-`<p>save as Draft</p>` reads as a cast; a type that spans lines keeps only its first
-line, so a change inside a multi-line object type isn't seen.
+Known limits of reading text rather than TypeScript's syntax tree. It lists what isn't
+new: JSX text (`<p>save as Draft</p>`); `a as number < (b as number)` as one cast; an
+`import` whose `{` is on the next line; a block-comment line that starts with a
+directive. It misses: a change inside a multi-line type; a change to the code under an
+unchanged suppression; a second directive on one line; the rest of a line after a regex
+that follows `if (…)`. It misjudges a move when a comment sits inside a type, or string
+operands differ only in spaces, and it can read a heading with "type" in it as a reason.
 
 A new one with a written reason is listed apart, since the reason is the call to judge:
 a suppression's own description (`-- why`, `biome-ignore <rule>: why`, text after
