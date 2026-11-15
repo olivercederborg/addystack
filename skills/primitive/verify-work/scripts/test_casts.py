@@ -188,6 +188,16 @@ class Casts(unittest.TestCase):
                                                          'f(a.b?.c(x)[0]! as T, "s" as U, (p + q) as V)')],
                          ["a.b?.c(x)[0]! as T", '"s" as U', "(p + q) as V"])
 
+    def test_a_directive_counts_in_its_own_comment_and_a_reason_only_from_what_covers_the_line(self):
+        groups, reasoned, _ = self.scan({"src/value.ts": (
+            "/* note */ // eslint-disable-next-line no-console\nconsole.log(1)\n"
+            "//! eslint-disable-next-line no-alert\nalert(1)\n/** @ts-expect-error the SDK types it wrong */\nf(1)\n"
+            "// Types\nconst a = raw as Row\n"
+            "// eslint-disable-line ts/consistent-type-assertions -- old diagnostic\nconst b = raw as Col\n")})
+        self.assertEqual(sorted(g.shape for g in groups), ["eslint-disable-next-line no-console", "raw as Col", "raw as Row"])
+        self.assertEqual(sorted(hit.shape for hit in reasoned),
+                         ["@ts-expect-error", "eslint-disable-line ts/consistent-type-assertions"])
+
 
 if __name__ == "__main__":
     unittest.main()

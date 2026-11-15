@@ -57,6 +57,8 @@ WHY = re.compile(r"\b(cast\w*|as (never|any|unknown)|assert\w*|approv\w*|types?|
                  r"generic|infer\w*)\b", re.I)
 # A suppression explains the casts it allows when it's a type suppression or its rule is about them.
 COVERS_CASTS = re.compile(r"^@ts-|assert|cast|type(?!script)|\bany\b", re.I)
+# A directive that covers the line below it.
+NEXT_LINE = re.compile(r"@ts-(expect-error|ignore)|\S+-next-line|biome-ignore ")
 # A `/` after one of these opens a regular expression; after a name, number or closer it divides.
 REGEX_AFTER = set("(,=:[!&|?{};+-*%~^") | {""}
 REGEX_KEYWORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield",
@@ -90,7 +92,8 @@ def _git(*args: str, check: bool = True) -> str:
 
 def split(text: str) -> list[tuple[str, str]]:
     """Each line of a file as (code, comment): code with strings, template text, regular
-    expressions and comments blanked, so columns stay put, and the line's comment text.
+    expressions and comments blanked, so columns stay put, and the line's comments, one
+    per line.
     Code inside a template's `${}` stays code. Templates and block comments may span lines."""
     lines = text.split("\n")
     if text.endswith("\n"):
@@ -133,11 +136,12 @@ def split(text: str) -> list[tuple[str, str]]:
                     continue
                 code.append(" ")
             elif pair == "//":
-                comment.append(line[i + 2:])
+                comment.append("\n" + line[i + 2:])  # each comment on its own line of `comment`
                 code.append(" " * (len(line) - i))
                 break
             elif pair == "/*":
                 state = "/*"
+                comment.append("\n")
                 code.append("  ")
                 i += 2
                 continue
@@ -193,6 +197,12 @@ def _type_end(text: str) -> int:
     return i
 
 
+def _why(comment: str) -> str:
+    """The comment, when it says why a cast is there rather than heading a section."""
+    text = " ".join(comment.split())
+    return text if WHY.search(text) and len(text.split()) >= 3 else ""
+
+
 def _operand_start(code: str, end: int) -> int:
     """Where the operand that ends at `end` starts: a name chain with its calls, indexes,
     `?.` and `!`, or a bracketed or quoted expression."""
@@ -219,7 +229,10 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
     """Each cast and suppression on one line, from split() and the line as written, as
     (shape, key, the reason the line itself gives)."""
     found = []
-    if match := SUPPRESSION.match(comment.lstrip("*! \t")):  # a tool reads a directive only at the start
+    # A tool reads a directive only where it starts a comment; TypeScript also after `/` or `*`.
+    texts = [text.strip() for text in comment.split("\n")]
+    texts += [text.lstrip("/* \t") for text in texts if text.lstrip("/* \t").startswith("@ts-")]
+    if match := next(filter(None, map(SUPPRESSION.match, texts)), None):
         if match.group(1):
             found.append((match.group(1), match.group(1), match.group(2).strip()))
         elif match.group(3):
@@ -234,7 +247,7 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
     if found:  # a suppression on the line
         reason = found[0][2] if COVERS_CASTS.search(found[0][0]) else ""
     else:
-        reason = comment if comment and WHY.search(comment) else ""
+        reason = _why(comment)
     raw, at = raw or code, 0
     while match := CAST.search(code, at):
         end = match.end() + _type_end(code[match.end():])
@@ -335,9 +348,10 @@ class _Files:
         if not above[0].strip() and above[1]:
             suppression = shapes("", above[1])
             if suppression:  # its reason covers a cast it allows
-                why = suppression[0][2] if COVERS_CASTS.search(suppression[0][0]) else ""
+                covers = COVERS_CASTS.search(suppression[0][0]) and NEXT_LINE.match(suppression[0][0])
+                why = suppression[0][2] if covers else ""
             else:
-                why = above[1] if WHY.search(above[1]) else ""
+                why = _why(above[1])
             # A suppression's reason is only its own description.
             found = [(shape, key, reason or ("" if SUPPRESSION.match(shape) else why)) for shape, key, reason in found]
         return found
