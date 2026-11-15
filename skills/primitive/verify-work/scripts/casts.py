@@ -60,7 +60,7 @@ COVERS_CASTS = re.compile(r"^@ts-|assert|cast|type(?!script)|\bany\b", re.I)
 # A directive that covers the line below it.
 NEXT_LINE = re.compile(r"@ts-(expect-error|ignore)|\S+-next-line|biome-ignore ")
 # A `/` after one of these opens a regular expression; after a name, number or closer it divides.
-REGEX_AFTER = set("(,=:[!&|?{};+-*%~^") | {""}
+REGEX_AFTER = set("(,=:[!&|?{};+-*%~^") | {"", "=>"}
 REGEX_KEYWORDS = {"return", "typeof", "case", "do", "else", "in", "of", "new", "delete", "void", "throw", "yield",
                   "await", "instanceof"}
 
@@ -154,12 +154,17 @@ def split(text: str) -> list[tuple[str, str]]:
             elif char == "}" and stack and stack[-1] == "{":
                 stack.pop()
                 state, last = "`", "`"
-                code.append(" ")
+                code.append("}")  # it ends what's inside, such as a cast's type
             else:
                 if char == "{" and stack:
                     stack.append("{{")
                 elif char == "}" and stack:
                     stack.pop()
+                if pair == "=>":
+                    last = pair
+                    code.append(pair)
+                    i += 2
+                    continue
                 if word := re.match(r"[\w$]+", line[i:]):
                     last = word.group(0)
                     code.append(last)
@@ -169,8 +174,9 @@ def split(text: str) -> list[tuple[str, str]]:
                 if not char.isspace():
                     last = char
             i += 1
-        if state in ("'", '"', "re", "re["):
-            state = ""  # these end with their line
+        continued = state in ("'", '"') and (len(line) - len(line.rstrip("\\"))) % 2
+        if state in ("'", '"', "re", "re[") and not continued:
+            state = ""  # these end with their line, unless a trailing backslash continues a string
         out.append(("".join(code), "".join(comment).strip()))
     return out
 

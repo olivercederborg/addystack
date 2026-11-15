@@ -198,6 +198,12 @@ class Casts(unittest.TestCase):
         self.assertEqual(sorted(hit.shape for hit in reasoned),
                          ["@ts-expect-error", "eslint-disable-line ts/consistent-type-assertions"])
 
+    def test_a_regex_after_an_arrow_and_a_continued_string_are_not_code(self):
+        groups, _, _ = self.scan({"src/value.ts": (
+            "const m = (t: string) => /foo as Bar/.test(t)\nconst ok = (x: string) => /'/.test(x); const v = raw as Row\n"
+            'const message = "save \\\ntext as Draft"\nconst out = `${raw as Col}`\n')})
+        self.assertEqual(sorted(g.shape for g in groups), ["raw as Col", "raw as Row"])
+
 
 if __name__ == "__main__":
     unittest.main()
