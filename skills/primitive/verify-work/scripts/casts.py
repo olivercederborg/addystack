@@ -263,8 +263,8 @@ def shapes(code: str, comment: str, raw: str = "") -> list[tuple[str, str, str]]
             shape = f"{match.group(5)} {match.group(6)}".strip()
             found.append((shape, shape, (match.group(7) or "").strip()))
     code = ALIAS.sub(lambda clause: " " * len(clause.group(0)), code)
-    if found:  # a suppression on the line
-        reason = found[0][2] if COVERS_CASTS.search(found[0][0]) else ""
+    if found:  # a suppression on the line covers it, unless it's for the next line
+        reason = found[0][2] if COVERS_CASTS.search(found[0][0]) and not NEXT_LINE.match(found[0][0]) else ""
     else:
         reason = _why(comment)
     raw, at = raw or code, 0
@@ -385,9 +385,9 @@ class _Files:
         found = [(shape, self._suppressed(path, number, shape) if SUPPRESSION.match(shape) else key, reason)
                  for shape, key, reason in shapes(code, comment, raw)]
         above = lines[number - 2] if number >= 2 else ("", "")
-        if not above[0].strip() and above[1]:
-            suppression = shapes("", above[1])
-            if suppression:  # its reason covers a cast it allows
+        suppression = shapes("", above[1]) if above[1] else []
+        if suppression or (above[1] and not above[0].strip()):
+            if suppression:  # its reason covers a cast it allows, after code on its line too
                 covers = COVERS_CASTS.search(suppression[0][0]) and NEXT_LINE.match(suppression[0][0])
                 why = suppression[0][2] if covers else ""
             else:

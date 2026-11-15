@@ -232,9 +232,14 @@ class Casts(unittest.TestCase):
                              capture_output=True, text=True, check=True).stdout
         self.assertIn("2 new at other/b.ts:1; src/a.ts:1", out)
 
-    def test_a_generic_call_is_part_of_its_operand(self):
+    def test_a_generic_call_is_part_of_its_operand_and_a_next_line_reason_goes_to_the_next_line(self):
         self.assertEqual([k for _, k, _ in casts.shapes("f(customer<unknown>() as Row)", "")],
                          ["customer<unknown>() as Row"])
+        groups, reasoned, _ = self.scan({"src/a.ts": (
+            "const a = raw as Row // eslint-disable-next-line ts/consistent-type-assertions -- legacy next\n"
+            "const b = next as Col\n")})
+        self.assertEqual(([g.shape for g in groups], sorted(h.shape for h in reasoned)),
+                         (["raw as Row"], ["eslint-disable-next-line ts/consistent-type-assertions", "next as Col"]))
 
 
 if __name__ == "__main__":
