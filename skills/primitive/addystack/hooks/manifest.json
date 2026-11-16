@@ -28,6 +28,7 @@
     {"id": "unparsed-bash-rewrite", "tags": ["workflow"], "event": "PermissionRequest", "matcher": "Bash", "command": "{{kit}}/hooks/unparsed-bash-rewrite.py", "timeout": 10}
   ],
   "codex": [
+    {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
     {"id": "reply-rules", "tags": ["replies"], "requires": "replies.rules", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py --rules", "timeout": 10},
     {"id": "gh-stack-only", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/gh-stack-only.py", "timeout": 10},
