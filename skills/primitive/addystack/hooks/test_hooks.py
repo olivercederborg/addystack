@@ -1875,6 +1875,16 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertLess(time.monotonic() - start, 6)
         self.assertIn("`addystack build` failed", context)
 
+    def test_a_failed_build_keeps_the_notes_to_reread(self):
+        self.skill.write_text(self.skill.read_text() + "## 2. Lint\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged skill change")
+        self.state.chmod(0o555)
+        self.addCleanup(self.state.chmod, 0o755)
+        context = self.hook()
+        self.assertIn("`addystack build` failed", context)
+        self.assertIn("notes/build.md", context)
+
     def test_reports_a_config_that_does_not_resolve(self):
         self.config.write_text('{"judgment": {"principles": {"preset": "nope"}}}')
         self.assertIn("the config doesn't resolve", self.hook())

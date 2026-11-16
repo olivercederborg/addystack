@@ -128,14 +128,14 @@ def build_warning():
         failed = done.returncode and (done.stderr.strip().splitlines() or ["no output"])[-1]
     except (OSError, subprocess.TimeoutExpired) as error:
         failed = str(error)
-    if failed:
-        return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
     rebuilt = [path for path in render.instructions(value) if path in stale or path in recent]
     return " ".join(
-        ([f"⚠️ addystack rebuilt {_named(rebuilt, render)}, which no longer matched the kit and the user's config. "
+        ([f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run "
+          "`addystack doctor`."] if failed else [])
+        + ([f"⚠️ addystack rebuilt {_named(rebuilt, render)}, which no longer matched the kit and the user's config. "
           "This session loaded the old text, so read the ones your host loads now and follow them where they "
-          "differ."] if rebuilt else [])
-        + ([f"⚠️ addystack notes to check after the rebuild: {'; '.join(reread)}."] if reread else []))
+          "differ."] if rebuilt and not failed else [])
+        + ([f"⚠️ addystack notes to check against their changed skills: {'; '.join(reread)}."] if reread else []))
 
 
 # The checkout first, since a fast-forward can change the manifest drift reads and the
