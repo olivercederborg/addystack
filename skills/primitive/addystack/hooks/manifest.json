@@ -30,6 +30,7 @@
   "codex": [
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
     {"id": "reply-rules", "tags": ["replies"], "requires": "replies.rules", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py --rules", "timeout": 10},
+    {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "gh-stack-only", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/gh-stack-only.py", "timeout": 10},
     {"id": "t3-children-only", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/t3-children-only.py", "timeout": 10},
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60},

@@ -1678,6 +1678,248 @@ class SkillsCheckoutCheck(unittest.TestCase):
             self.assertIn("missing Stop ~/kit/hooks/pr_watch.py", run_hook(self.HOOK, {}, env))
 
 
+class StaleBuildCheck(unittest.TestCase):
+    """skills-checkout-check.py rebuilding stale built files, in a copy of this kit committed
+    to its own repo, built once into a scratch home: the hook runs from the copy, so
+    resolved.json's kit is the hook's own."""
+    HOOK = "skills-checkout-check.py"
+
+    def setUp(self):
+        self.folder = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
+        self.repo, home = self.folder / "repo", self.folder / "home"
+        # At its place in the repo, so skill_layer finds the core skill a note names beside it.
+        self.kit = self.repo / "skills/primitive/addystack"
+        shutil.copytree(HOOKS.parent, self.kit, ignore=shutil.ignore_patterns("__pycache__"))
+        self.config = home / ".config/addystack/addystack.jsonc"
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text("{}")
+        self.skill = self.repo / "skills/primitive/build/SKILL.md"
+        self.skill.parent.mkdir(parents=True)
+        self.skill.write_text("---\nname: build\nmetadata:\n  layer: primitive\n---\n\n## 1. Build\n")
+        (self.config.parent / "notes").mkdir()
+        (self.config.parent / "notes/build.md").write_text("After step 1, run the linter.\n")
+        self.state = home / ".local/state/addystack"
+        self.env = {**os.environ, "HOME": str(home), "ADDYSTACK_STATE": str(self.state),
+                    "ADDYSTACK_CONFIG": str(self.config), "CLAUDE_CONFIG_DIR": str(home / ".claude"),
+                    "SKILLS_LINK": str(self.kit / "hooks")}
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "kit")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.build()
+        self.age()
+        self.principles = self.state / "principles.md"
+        self.built = self.principles.read_text()
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.repo), "-c", "user.email=e@x", "-c", "user.name=e", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def build(self, *args):
+        return subprocess.run([sys.executable, str(self.kit / "bin/addystack"), "build", *args], env=self.env,
+                              capture_output=True, text=True)
+
+    def age(self):
+        """Dates the built files an hour back, as a build from an earlier session."""
+        hour_ago = time.time() - 3600
+        for path in [*self.state.rglob("*"), pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md"),
+                     pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")]:
+            if path.is_file():
+                os.utime(path, (hour_ago, hour_ago))
+
+    def hook(self):
+        out = subprocess.run([sys.executable, str(self.kit / "hooks" / self.HOOK)], input="{}", env=self.env,
+                             capture_output=True, text=True, check=True).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+
+    def change_index(self):
+        """Edits the kit's principles index, as a merged principle change does."""
+        index = self.kit / "core/principles.md"
+        index.write_text(index.read_text() + "- **[later](x.md)**: a principle merged later.\n")
+
+    def assert_rebuilt(self, context):
+        self.assertIn("addystack rebuilt", context)
+        self.assertIn("principles.md", context)
+        self.assertIn("read the ones your host loads", context)
+        self.assertIn("principles.md (Claude Code)", context)
+        self.assertIn("AGENTS.md (Codex)", context)
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_codex_keeps_the_trusted_reply_hooks_in_place(self):
+        """Codex trusts a hook by its position, so the check comes after the reply hooks."""
+        manifest = json.loads((HOOKS / "manifest.json").read_text())
+        ids = [entry["id"] for entry in manifest["codex"] if entry["event"] == "SessionStart"]
+        self.assertEqual(ids, ["reply-shape-context", "reply-rules", "skills-checkout-check"])
+
+    def assert_quiet(self, context):
+        """Nothing from the build check; the scratch home's missing settings still show as drift."""
+        for phrase in ("addystack rebuilt", "built instructions", "addystack notes"):
+            self.assertNotIn(phrase, context)
+
+    def test_current_build_is_left_alone(self):
+        before = self.principles.stat().st_mtime_ns
+        self.assert_quiet(self.hook())
+        self.assertEqual(self.principles.stat().st_mtime_ns, before)
+
+    def test_rebuilds_after_a_pull(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.assert_rebuilt(self.hook())
+        self.assertIn("a principle merged later", self.principles.read_text())
+
+    def test_rebuilds_after_its_own_fast_forward(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.assert_rebuilt(self.hook())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "origin/main"))
+
+    def test_rebuilds_after_a_config_edit(self):
+        self.config.write_text('{"judgment": {"principles": {"exclude": ["slim-scope"]}}}')
+        self.assert_rebuilt(self.hook())
+        self.assertNotIn("slim-scope", self.principles.read_text())
+
+    def test_quiet_rebuild_when_no_instruction_file_changed(self):
+        (self.state / "resolved.json").write_text((self.state / "resolved.json").read_text() + " ")
+        self.assert_quiet(self.hook())
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_warns_without_rebuilding_a_dirty_checkout(self):
+        self.change_index()
+        context = self.hook()
+        self.assertIn("has local changes, so they weren't rebuilt", context)
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_leaves_another_branch_to_the_branch_warning(self):
+        self.git("checkout", "-qb", "feature")
+        self.change_index()
+        self.git("commit", "-qam", "unmerged")
+        context = self.hook()
+        self.assertIn("is on feature", context)
+        self.assertNotIn("built instructions", context)
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_rebuilds_a_kit_inside_another_repo(self):
+        """An npx-installed kit under a home folder kept in git, on another branch with changes."""
+        self.git("rm", "-rq", "--cached", "skills")
+        self.git("commit", "-qm", "untrack the kit")
+        self.git("checkout", "-qb", "master")
+        (self.repo / "dotfile").write_text("x")
+        self.git("add", "dotfile")
+        self.change_index()
+        self.assert_rebuilt(self.hook())
+
+    def test_leaves_a_hand_written_instruction_file_to_install(self):
+        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
+        claude_md.write_text("# My own rules\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.assertIn("holds text addystack didn't build", self.hook())
+        self.assertEqual(claude_md.read_text(), "# My own rules\n")
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_restores_a_missing_resolved_json(self):
+        """Without it, hooks fall back to the kit's defaults, such as gated planning."""
+        (self.state / "resolved.json").unlink()
+        self.hook()
+        self.assertTrue((self.state / "resolved.json").is_file())
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_keeps_a_changed_skill_note_in_view(self):
+        """The build refreshes the note's skill hash, so the session hears what doctor would have said."""
+        self.skill.write_text(self.skill.read_text() + "## 2. Lint\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged skill change")
+        context = self.hook()
+        self.assert_rebuilt(context)
+        self.assertIn("reread", context)
+        self.assertIn("notes/build.md", context)
+
+    def test_tells_a_session_that_started_just_before_another_sessions_rebuild(self):
+        """Its instructions loaded before the rebuild, and its own check finds the build fresh."""
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.build()
+        context = self.hook()
+        self.assertIn("in the last 30 seconds", context)
+        self.assertIn("principles.md", context)
+
+    def test_names_files_another_build_wrote_while_others_are_still_stale(self):
+        """A session whose hook lands mid-way through another session's build."""
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
+        claude_md.write_text(claude_md.read_text())  # the other build's first write
+        context = self.hook()
+        self.assertIn("CLAUDE.md (Claude Code)", context)
+        self.assertIn("principles.md (Claude Code)", context)
+
+    def test_names_a_changed_note_and_a_removed_one(self):
+        """A session that already read a note's old text, or one since deleted."""
+        notes = self.config.parent / "notes"
+        (notes / "build.md").write_text("After step 1, run the formatter.\n")
+        self.assertIn("notes/build.md (skill note)", self.hook())
+        self.age()
+        (notes / "build.md").unlink()
+        self.assertIn("notes/build.md (skill note, removed: stop following it)", self.hook())
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_keeps_a_copy_of_a_built_file_edited_by_hand(self):
+        for path in (pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md"),
+                     pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")):
+            path.write_text(path.read_text() + "\n- A rule added by hand.\n")
+            context = self.hook()
+            self.assertIn(f"{path.name}.bak", context)
+            self.assertIn("A rule added by hand", path.with_name(f"{path.name}.bak").read_text())
+            self.assertNotIn("A rule added by hand", path.read_text())
+            self.age()
+        # The second rebuild left CLAUDE.md alone, so its copy keeps the first hand edit.
+        self.assertIn("A rule added by hand", pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md.bak").read_text())
+
+    def test_a_copy_that_cannot_be_written_is_a_warning(self):
+        agents = pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")
+        agents.write_text(agents.read_text() + "\n- A rule added by hand.\n")
+        agents.parent.chmod(0o555)
+        self.addCleanup(agents.parent.chmod, 0o755)
+        self.assertIn("`addystack build` failed", self.hook())
+        self.assertIn("A rule added by hand", agents.read_text())
+
+    def test_reports_a_failed_build(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.state.chmod(0o555)
+        self.addCleanup(self.state.chmod, 0o755)
+        self.assertIn("`addystack build` failed", self.hook())
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_a_stuck_build_costs_the_session_at_most_seconds(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        cli = self.kit / "bin/addystack"
+        cli.write_text("#!/usr/bin/env python3\nimport sys, time\nif sys.argv[1:] == ['build']: time.sleep(30)\n")
+        self.git("commit", "-qam", "a build that hangs")
+        start = time.monotonic()
+        context = self.hook()
+        self.assertLess(time.monotonic() - start, 6)
+        self.assertIn("`addystack build` failed", context)
+
+    def test_a_failed_build_keeps_the_notes_to_reread(self):
+        self.skill.write_text(self.skill.read_text() + "## 2. Lint\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged skill change")
+        self.state.chmod(0o555)
+        self.addCleanup(self.state.chmod, 0o755)
+        context = self.hook()
+        self.assertIn("`addystack build` failed", context)
+        self.assertIn("notes/build.md", context)
+
+    def test_reports_a_config_that_does_not_resolve(self):
+        self.config.write_text('{"judgment": {"principles": {"preset": "nope"}}}')
+        self.assertIn("the config doesn't resolve", self.hook())
+
+
 class HookParity(unittest.TestCase):
     CLI = HOOKS / "hook_parity.py"
 
