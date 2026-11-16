@@ -130,11 +130,11 @@ def build_warning():
     # A line added by hand under a built file's header looks like stale text, so the replaced host
     # files are kept beside them, as `addystack init --force` keeps the config it replaces.
     kept = []
-    for path in (render.claude_md(), render.CODEX.expanduser()):
-        if path in stale and path.is_file():
-            shutil.copyfile(path, path.with_name(f"{path.name}.bak"))
-            kept.append(render._home(path.with_name(f"{path.name}.bak")))
     try:
+        for path in (render.claude_md(), render.CODEX.expanduser()):
+            if path in stale and path.is_file():
+                shutil.copyfile(path, path.with_name(f"{path.name}.bak"))
+                kept.append(render._home(path.with_name(f"{path.name}.bak")))
         done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
                               text=True, timeout=3, stdin=subprocess.DEVNULL)  # a rebuild takes about 0.2 s
         failed = done.returncode and (done.stderr.strip().splitlines() or ["no output"])[-1]

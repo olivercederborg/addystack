@@ -1867,12 +1867,22 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertEqual(self.build("--check").returncode, 0)
 
     def test_keeps_a_copy_of_a_built_file_edited_by_hand(self):
-        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
-        claude_md.write_text(claude_md.read_text() + "\n- A rule added by hand.\n")
-        context = self.hook()
-        self.assertIn("CLAUDE.md.bak", context)
-        self.assertIn("A rule added by hand", claude_md.with_name("CLAUDE.md.bak").read_text())
-        self.assertNotIn("A rule added by hand", claude_md.read_text())
+        for path in (pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md"),
+                     pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")):
+            path.write_text(path.read_text() + "\n- A rule added by hand.\n")
+            context = self.hook()
+            self.assertIn(f"{path.name}.bak", context)
+            self.assertIn("A rule added by hand", path.with_name(f"{path.name}.bak").read_text())
+            self.assertNotIn("A rule added by hand", path.read_text())
+            self.age()
+
+    def test_a_copy_that_cannot_be_written_is_a_warning(self):
+        agents = pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")
+        agents.write_text(agents.read_text() + "\n- A rule added by hand.\n")
+        agents.parent.chmod(0o555)
+        self.addCleanup(agents.parent.chmod, 0o755)
+        self.assertIn("`addystack build` failed", self.hook())
+        self.assertIn("A rule added by hand", agents.read_text())
 
     def test_reports_a_failed_build(self):
         self.change_index()
