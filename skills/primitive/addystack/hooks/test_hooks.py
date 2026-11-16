@@ -1678,6 +1678,114 @@ class SkillsCheckoutCheck(unittest.TestCase):
             self.assertIn("missing Stop ~/kit/hooks/pr_watch.py", run_hook(self.HOOK, {}, env))
 
 
+class StaleBuildCheck(unittest.TestCase):
+    """skills-checkout-check.py rebuilding stale built files, in a copy of this kit committed
+    to its own repo, built once into a scratch home: the hook runs from the copy, so
+    resolved.json's kit is the hook's own."""
+    HOOK = "skills-checkout-check.py"
+
+    def setUp(self):
+        self.folder = pathlib.Path(tempfile.mkdtemp()).resolve()
+        self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
+        self.repo, home = self.folder / "repo", self.folder / "home"
+        self.kit = self.repo / "kit"
+        shutil.copytree(HOOKS.parent, self.kit, ignore=shutil.ignore_patterns("__pycache__"))
+        self.config = home / ".config/addystack/addystack.jsonc"
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text("{}")
+        self.state = home / ".local/state/addystack"
+        self.env = {**os.environ, "HOME": str(home), "ADDYSTACK_STATE": str(self.state),
+                    "ADDYSTACK_CONFIG": str(self.config), "CLAUDE_CONFIG_DIR": str(home / ".claude"),
+                    "SKILLS_LINK": str(self.kit / "hooks")}
+        self.git("init", "-q", "-b", "main")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "kit")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.build()
+        self.principles = self.state / "principles.md"
+        self.built = self.principles.read_text()
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", str(self.repo), "-c", "user.email=e@x", "-c", "user.name=e", *args],
+                              check=True, capture_output=True, text=True).stdout.strip()
+
+    def build(self, *args):
+        return subprocess.run([sys.executable, str(self.kit / "bin/addystack"), "build", *args], env=self.env,
+                              capture_output=True, text=True)
+
+    def hook(self):
+        out = subprocess.run([sys.executable, str(self.kit / "hooks" / self.HOOK)], input="{}", env=self.env,
+                             capture_output=True, text=True, check=True).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+
+    def change_index(self):
+        """Edits the kit's principles index, as a merged principle change does."""
+        index = self.kit / "core/principles.md"
+        index.write_text(index.read_text() + "- **[later](x.md)**: a principle merged later.\n")
+
+    def assert_rebuilt(self, context):
+        self.assertIn("addystack rebuilt", context)
+        self.assertIn("principles.md", context)
+        self.assertIn("read them now", context)
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_current_build_is_left_alone(self):
+        before = self.principles.stat().st_mtime_ns
+        self.assertNotIn("addystack", self.hook())
+        self.assertEqual(self.principles.stat().st_mtime_ns, before)
+
+    def test_rebuilds_after_a_pull(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.assert_rebuilt(self.hook())
+        self.assertIn("a principle merged later", self.principles.read_text())
+
+    def test_rebuilds_after_its_own_fast_forward(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.git("update-ref", "refs/remotes/origin/main", "HEAD")
+        self.git("reset", "-q", "--hard", "HEAD~1")
+        self.assert_rebuilt(self.hook())
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "origin/main"))
+
+    def test_rebuilds_after_a_config_edit(self):
+        self.config.write_text('{"judgment": {"principles": {"exclude": ["slim-scope"]}}}')
+        self.assert_rebuilt(self.hook())
+        self.assertNotIn("slim-scope", self.principles.read_text())
+
+    def test_quiet_rebuild_when_no_instruction_file_changed(self):
+        (self.state / "resolved.json").write_text((self.state / "resolved.json").read_text() + " ")
+        self.assertNotIn("addystack", self.hook())
+        self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_warns_without_rebuilding_a_dirty_checkout(self):
+        self.change_index()
+        context = self.hook()
+        self.assertIn("has local changes, so they weren't rebuilt", context)
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_leaves_another_branch_to_the_branch_warning(self):
+        self.git("checkout", "-qb", "feature")
+        self.change_index()
+        self.git("commit", "-qam", "unmerged")
+        context = self.hook()
+        self.assertIn("is on feature", context)
+        self.assertNotIn("built instructions", context)
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_reports_a_failed_build(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.state.chmod(0o555)
+        self.addCleanup(self.state.chmod, 0o755)
+        self.assertIn("`addystack build` failed", self.hook())
+        self.assertEqual(self.principles.read_text(), self.built)
+
+    def test_reports_a_config_that_does_not_resolve(self):
+        self.config.write_text('{"judgment": {"principles": {"preset": "nope"}}}')
+        self.assertIn("the config doesn't resolve", self.hook())
+
+
 class HookParity(unittest.TestCase):
     CLI = HOOKS / "hook_parity.py"
 

@@ -20,6 +20,8 @@ TOOL = "skills/primitive/addystack"
 HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies.md",
                f"{TOOL}/scripts/check-body.mjs", f"{TOOL}/scripts/check-mermaid.mjs", f"{TOOL}/scripts/stack.sh",
                f"{TOOL}/lib", f"{TOOL}/addystack.defaults.jsonc", f"{TOOL}/schema",
+               # StaleBuildCheck builds a copy of the kit.
+               f"{TOOL}/bin", f"{TOOL}/core",
                # routine_stop.py cites it when the user keeps no reply rules file.
                f"{TOOL}/references/turn-block.md",
                # ReadyGate records through review-loop's copy.

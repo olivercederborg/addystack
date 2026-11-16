@@ -8,7 +8,16 @@ On a clean `main` that's behind, it fast-forwards and says nothing. Otherwise it
 and on another branch only once a day per branch: in the month to Oct 29, 2026 it warned
 in 179 sessions, one branch for 9 days. Also warns when this machine's installed hooks
 drift from manifest.json (hook_parity.py), since a second machine once ran a week-old hook set,
-5 hooks short, unnoticed."""
+5 hooks short, unnoticed.
+
+Then it reruns `addystack build` when the built files no longer match the kit and the
+user's config, by build's own test (lib/doctor.py's `_stale`), so a pull, a branch switch,
+this fast-forward, or a config edit can't leave sessions on old instructions: Nov 11 to 13,
+2026, the Mac loaded a principles index two merges old in 71 sessions. Claude Code and Codex
+read their instruction files before SessionStart hooks run, so the rebuild reaches the next
+session, and this one is told to read the rebuilt files. It builds only its own kit, once a
+build has written resolved.json, and only on a clean `main` or a kit outside git: a dirty
+`main` gets a warning instead, and another branch the warning above."""
 import datetime, json, os, pathlib, shutil, subprocess, sys
 
 import hook_parity
@@ -58,10 +67,54 @@ def checkout_warning():
             "skills that differ from main.")
 
 
-# The checkout first, since a fast-forward can change the manifest drift reads.
+def _home(path):
+    home = pathlib.Path.home()
+    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
+
+
+def build_warning():
+    """Rebuilds stale built files, or warns, as the module docstring says."""
+    kit = hook_parity.HOOKS.parent
+    try:
+        if not hook_parity.resolved.STATE.expanduser().is_file() or hook_parity.resolved.kit().resolve() != kit:
+            return ""
+        import doctor, render
+        value = hook_parity.config.resolve()
+        stale = doctor._stale(value)
+    except Exception as error:  # an invalid config or a broken kit: report it, never block the session
+        reason = "the config doesn't resolve" if isinstance(error, hook_parity.config.Invalid) else repr(error)
+        return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
+    if not stale:
+        return ""
+    top = subprocess.run(["git", "-C", str(kit), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+    if top.returncode == 0:
+        repo = ["git", "-C", top.stdout.strip()]
+        branch = subprocess.run([*repo, "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
+        if branch != "main":
+            return ""
+        if subprocess.run([*repo, "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout:
+            return (f"⚠️ addystack's built instructions don't match the kit at {top.stdout.strip()}, which has local "
+                    "changes, so they weren't rebuilt: run `addystack build` once those changes should load.")
+    try:
+        done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
+                              text=True, timeout=8, stdin=subprocess.DEVNULL)
+        failed = done.returncode and (done.stderr.strip().splitlines() or ["no output"])[-1]
+    except (OSError, subprocess.TimeoutExpired) as error:
+        failed = str(error)
+    if failed:
+        return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
+    rebuilt = [_home(path) for path in render.instructions(value) if path in stale]
+    return (f"⚠️ addystack rebuilt {', '.join(rebuilt)}, which no longer matched the kit and the user's config. "
+            "This session loaded the old text, so read them now and follow them where they differ."
+            if rebuilt else "")
+
+
+# The checkout first, since a fast-forward can change the manifest drift reads and the
+# built files.
 checkout = checkout_warning()
+build = build_warning()
 drift = hook_parity.drift("claude") + hook_parity.drift("codex", required=bool(shutil.which("codex")))
-warnings = [checkout] + ([
+warnings = [checkout, build] + ([
     "⚠️ This machine's hooks differ from hooks/manifest.json, so some checks don't run as "
     f"declared (recheck with `python3 {hook_parity.__file__} --codex-trust`): " + "; ".join(drift) + "."]
     if drift else [])
