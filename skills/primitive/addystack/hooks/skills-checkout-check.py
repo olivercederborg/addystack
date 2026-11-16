@@ -18,7 +18,7 @@ read their instruction files before SessionStart hooks run, so the rebuild reach
 session, and this one is told to read the rebuilt files. It builds only the kit resolved.json
 names when that's its own, and only on a clean `main` or a kit no repo tracks: a dirty
 `main` gets a warning instead, and another branch the warning above."""
-import datetime, json, os, pathlib, shutil, subprocess, sys
+import datetime, json, os, pathlib, shutil, subprocess, sys, time
 
 import hook_parity
 
@@ -81,7 +81,11 @@ def build_warning():
         reason = "the config doesn't resolve" if isinstance(error, hook_parity.config.Invalid) else repr(error)
         return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
     if not stale:
-        return ""
+        # Another session's rebuild can land between this one loading its instructions and this hook.
+        recent = [render._home(path) for path in render.instructions(value)
+                  if path.is_file() and time.time() - path.stat().st_mtime < 30]
+        return (f"⚠️ addystack rebuilt {', '.join(recent)} in the last 30 seconds, maybe after this session "
+                "loaded them, so read them now and follow them where they differ." if recent else "")
     # A host file addystack didn't build, such as a CLAUDE.md under another CLAUDE_CONFIG_DIR, is
     # install's to adopt; build would overwrite it.
     import reconcile

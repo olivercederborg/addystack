@@ -1708,6 +1708,7 @@ class StaleBuildCheck(unittest.TestCase):
         self.git("commit", "-qm", "kit")
         self.git("update-ref", "refs/remotes/origin/main", "HEAD")
         self.build()
+        self.age()
         self.principles = self.state / "principles.md"
         self.built = self.principles.read_text()
 
@@ -1718,6 +1719,14 @@ class StaleBuildCheck(unittest.TestCase):
     def build(self, *args):
         return subprocess.run([sys.executable, str(self.kit / "bin/addystack"), "build", *args], env=self.env,
                               capture_output=True, text=True)
+
+    def age(self):
+        """Dates the built files an hour back, as a build from an earlier session."""
+        hour_ago = time.time() - 3600
+        for path in [*self.state.rglob("*"), pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md"),
+                     pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")]:
+            if path.is_file():
+                os.utime(path, (hour_ago, hour_ago))
 
     def hook(self):
         out = subprocess.run([sys.executable, str(self.kit / "hooks" / self.HOOK)], input="{}", env=self.env,
@@ -1825,6 +1834,15 @@ class StaleBuildCheck(unittest.TestCase):
         self.assert_rebuilt(context)
         self.assertIn("reread", context)
         self.assertIn("notes/build.md", context)
+
+    def test_tells_a_session_that_started_just_before_another_sessions_rebuild(self):
+        """Its instructions loaded before the rebuild, and its own check finds the build fresh."""
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.build()
+        context = self.hook()
+        self.assertIn("in the last 30 seconds", context)
+        self.assertIn("principles.md", context)
 
     def test_reports_a_failed_build(self):
         self.change_index()
