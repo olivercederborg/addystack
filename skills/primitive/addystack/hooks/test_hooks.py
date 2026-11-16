@@ -1741,7 +1741,7 @@ class StaleBuildCheck(unittest.TestCase):
     def assert_rebuilt(self, context):
         self.assertIn("addystack rebuilt", context)
         self.assertIn("principles.md", context)
-        self.assertIn("read the ones your host loads now", context)
+        self.assertIn("read the ones your host loads", context)
         self.assertIn("principles.md (Claude Code)", context)
         self.assertIn("AGENTS.md (Codex)", context)
         self.assertEqual(self.build("--check").returncode, 0)
@@ -1855,6 +1855,16 @@ class StaleBuildCheck(unittest.TestCase):
         context = self.hook()
         self.assertIn("CLAUDE.md (Claude Code)", context)
         self.assertIn("principles.md (Claude Code)", context)
+
+    def test_names_a_changed_note_and_a_removed_one(self):
+        """A session that already read a note's old text, or one since deleted."""
+        notes = self.config.parent / "notes"
+        (notes / "build.md").write_text("After step 1, run the formatter.\n")
+        self.assertIn("notes/build.md (skill note)", self.hook())
+        self.age()
+        (notes / "build.md").unlink()
+        self.assertIn("notes/build.md (skill note, removed: stop following it)", self.hook())
+        self.assertEqual(self.build("--check").returncode, 0)
 
     def test_reports_a_failed_build(self):
         self.change_index()

@@ -67,11 +67,16 @@ def checkout_warning():
             "skills that differ from main.")
 
 
-def _named(paths, render):
-    """paths as home-relative names, each with the host that loads it, since Codex inlines what Claude
-    Code imports."""
-    return ", ".join(f"{render._home(path)} ({'Codex' if path == render.CODEX.expanduser() else 'Claude Code'})"
-                     for path in paths)
+def _named(paths, render, hosts, removed):
+    """paths as home-relative names, each with what loads it: Codex inlines what Claude Code imports,
+    and a skill note loads with its skill in either."""
+    def kind(path):
+        if path in removed:
+            return "skill note, removed: stop following it"
+        if path in hosts:
+            return "Codex" if path == render.CODEX.expanduser() else "Claude Code"
+        return "skill note"
+    return ", ".join(f"{render._home(path)} ({kind(path)})" for path in paths)
 
 
 def build_warning():
@@ -81,18 +86,19 @@ def build_warning():
         # A missing resolved.json reads as the kit's defaults, this kit, and is rebuilt.
         if hook_parity.resolved.kit().resolve() != kit:
             return ""
-        import doctor, render
+        import doctor, notes, render
         value = hook_parity.config.resolve()
         stale = doctor._stale(value)
+        hosts = render.instructions(value)
     except Exception as error:  # an invalid config or a broken kit: report it, never block the session
         reason = "the config doesn't resolve" if isinstance(error, hook_parity.config.Invalid) else repr(error)
         return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
     # Another session's rebuild can land between this one loading its instructions and this hook,
     # whole or in part.
-    recent = [path for path in render.instructions(value)
+    recent = [path for path in [*hosts, *notes.built(value)]
               if path.is_file() and time.time() - path.stat().st_mtime < 30]
     if not stale:
-        return (f"⚠️ addystack rebuilt {_named(recent, render)} in the last 30 seconds, maybe after this session "
+        return (f"⚠️ addystack rebuilt {_named(recent, render, hosts, ())} in the last 30 seconds, maybe after this session "
                 "loaded them, so read the ones your host loads now and follow them where they differ."
                 if recent else "")
     # A host file addystack didn't build, such as a CLAUDE.md under another CLAUDE_CONFIG_DIR, is
@@ -120,7 +126,6 @@ def build_warning():
                     "changes, so they weren't rebuilt: run `addystack build` once those changes should load.")
     # The build refreshes each note's skill hash, which is how doctor flags a note to reread after its
     # skill changes, so the session hears it here instead.
-    import notes
     reread = [fix for _, fix in notes.problems(value)]
     try:
         done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
@@ -128,13 +133,16 @@ def build_warning():
         failed = done.returncode and (done.stderr.strip().splitlines() or ["no output"])[-1]
     except (OSError, subprocess.TimeoutExpired) as error:
         failed = str(error)
-    rebuilt = [path for path in render.instructions(value) if path in stale or path in recent]
+    # Everything the build wrote or removed but resolved.json, which hooks read when they run.
+    rebuilt = [path for path in stale if path != hook_parity.resolved.STATE.expanduser()]
+    rebuilt += [path for path in recent if path not in stale]
     return " ".join(
         ([f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run "
           "`addystack doctor`."] if failed else [])
-        + ([f"⚠️ addystack rebuilt {_named(rebuilt, render)}, which no longer matched the kit and the user's config. "
-          "This session loaded the old text, so read the ones your host loads now and follow them where they "
-          "differ."] if rebuilt and not failed else [])
+        + ([f"⚠️ addystack rebuilt {_named(rebuilt, render, hosts, [p for p in rebuilt if stale.get(p, '') is None])}, "
+          "which no longer matched the kit and the user's config. This session loaded the old text, so read the "
+          "ones your host loads, and any note already read, now and follow them where they differ."]
+           if rebuilt and not failed else [])
         + ([f"⚠️ addystack notes to check against their changed skills: {'; '.join(reread)}."] if reread else []))
 
 
