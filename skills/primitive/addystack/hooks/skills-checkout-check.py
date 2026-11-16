@@ -81,6 +81,17 @@ def build_warning():
         return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
     if not stale:
         return ""
+    # A host file addystack didn't build, such as a CLAUDE.md under another CLAUDE_CONFIG_DIR, is
+    # install's to adopt; build would overwrite it.
+    import reconcile
+    try:
+        foreign = [render._home(path) for path in (render.claude_md(), render.CODEX.expanduser())
+                   if path in stale and reconcile._hand_written(path)]
+    except ValueError as error:
+        foreign = [str(error)]
+    if foreign:
+        return (f"⚠️ addystack's built instructions are out of date, but {', '.join(foreign)} holds text addystack "
+                "didn't build, so nothing was rebuilt: run `addystack install` to adopt it.")
     top = subprocess.run(["git", "-C", str(kit), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     # A kit inside another repo, such as a home folder kept in git, isn't a kit checkout.
     tracked = subprocess.run(["git", "-C", str(kit), "ls-files", "--error-unmatch", "bin/addystack"],

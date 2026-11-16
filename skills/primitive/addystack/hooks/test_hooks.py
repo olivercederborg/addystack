@@ -1789,6 +1789,15 @@ class StaleBuildCheck(unittest.TestCase):
         self.change_index()
         self.assert_rebuilt(self.hook())
 
+    def test_leaves_a_hand_written_instruction_file_to_install(self):
+        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
+        claude_md.write_text("# My own rules\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        self.assertIn("holds text addystack didn't build", self.hook())
+        self.assertEqual(claude_md.read_text(), "# My own rules\n")
+        self.assertEqual(self.principles.read_text(), self.built)
+
     def test_reports_a_failed_build(self):
         self.change_index()
         self.git("commit", "-qam", "a merged principle")
