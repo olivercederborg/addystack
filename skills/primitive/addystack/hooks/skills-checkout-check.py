@@ -115,7 +115,7 @@ def build_warning():
     reread = [fix for _, fix in notes.problems(value)]
     try:
         done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
-                              text=True, timeout=8, stdin=subprocess.DEVNULL)
+                              text=True, timeout=3, stdin=subprocess.DEVNULL)  # a rebuild takes about 0.2 s
         failed = done.returncode and (done.stderr.strip().splitlines() or ["no output"])[-1]
     except (OSError, subprocess.TimeoutExpired) as error:
         failed = str(error)

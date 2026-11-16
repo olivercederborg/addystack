@@ -1852,6 +1852,17 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertIn("`addystack build` failed", self.hook())
         self.assertEqual(self.principles.read_text(), self.built)
 
+    def test_a_stuck_build_costs_the_session_at_most_seconds(self):
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        cli = self.kit / "bin/addystack"
+        cli.write_text("#!/usr/bin/env python3\nimport sys, time\nif sys.argv[1:] == ['build']: time.sleep(30)\n")
+        self.git("commit", "-qam", "a build that hangs")
+        start = time.monotonic()
+        context = self.hook()
+        self.assertLess(time.monotonic() - start, 6)
+        self.assertIn("`addystack build` failed", context)
+
     def test_reports_a_config_that_does_not_resolve(self):
         self.config.write_text('{"judgment": {"principles": {"preset": "nope"}}}')
         self.assertIn("the config doesn't resolve", self.hook())
