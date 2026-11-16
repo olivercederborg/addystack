@@ -87,7 +87,10 @@ def build_warning():
     if not stale:
         return ""
     top = subprocess.run(["git", "-C", str(kit), "rev-parse", "--show-toplevel"], capture_output=True, text=True)
-    if top.returncode == 0:
+    # A kit inside another repo, such as a home folder kept in git, isn't a kit checkout.
+    tracked = subprocess.run(["git", "-C", str(kit), "ls-files", "--error-unmatch", "bin/addystack"],
+                             capture_output=True).returncode == 0
+    if top.returncode == 0 and tracked:
         repo = ["git", "-C", top.stdout.strip()]
         branch = subprocess.run([*repo, "branch", "--show-current"], capture_output=True, text=True).stdout.strip()
         if branch != "main":

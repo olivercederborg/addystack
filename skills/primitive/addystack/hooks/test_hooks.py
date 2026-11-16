@@ -1773,6 +1773,16 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertNotIn("built instructions", context)
         self.assertEqual(self.principles.read_text(), self.built)
 
+    def test_rebuilds_a_kit_inside_another_repo(self):
+        """An npx-installed kit under a home folder kept in git, on another branch with changes."""
+        self.git("rm", "-rq", "--cached", "kit")
+        self.git("commit", "-qm", "untrack the kit")
+        self.git("checkout", "-qb", "master")
+        (self.repo / "dotfile").write_text("x")
+        self.git("add", "dotfile")
+        self.change_index()
+        self.assert_rebuilt(self.hook())
+
     def test_reports_a_failed_build(self):
         self.change_index()
         self.git("commit", "-qam", "a merged principle")
