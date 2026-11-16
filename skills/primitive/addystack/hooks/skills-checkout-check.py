@@ -16,7 +16,7 @@ this fast-forward, or a config edit can't leave sessions on old instructions: No
 2026, the Mac loaded a principles index two merges old in 71 sessions. Claude Code and Codex
 read their instruction files before SessionStart hooks run, so the rebuild reaches the next
 session, and this one is told to read the rebuilt files. It builds only its own kit, once a
-build has written resolved.json, and only on a clean `main` or a kit outside git: a dirty
+build has written resolved.json, and only on a clean `main` or a kit no repo tracks: a dirty
 `main` gets a warning instead, and another branch the warning above."""
 import datetime, json, os, pathlib, shutil, subprocess, sys
 
@@ -67,11 +67,6 @@ def checkout_warning():
             "skills that differ from main.")
 
 
-def _home(path):
-    home = pathlib.Path.home()
-    return f"~/{path.relative_to(home)}" if path.is_relative_to(home) else str(path)
-
-
 def build_warning():
     """Rebuilds stale built files, or warns, as the module docstring says."""
     kit = hook_parity.HOOKS.parent
@@ -106,7 +101,7 @@ def build_warning():
         failed = str(error)
     if failed:
         return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
-    rebuilt = [_home(path) for path in render.instructions(value) if path in stale]
+    rebuilt = [render._home(path) for path in render.instructions(value) if path in stale]
     return (f"⚠️ addystack rebuilt {', '.join(rebuilt)}, which no longer matched the kit and the user's config. "
             "This session loaded the old text, so read them now and follow them where they differ."
             if rebuilt else "")
