@@ -1798,6 +1798,13 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertEqual(claude_md.read_text(), "# My own rules\n")
         self.assertEqual(self.principles.read_text(), self.built)
 
+    def test_restores_a_missing_resolved_json(self):
+        """Without it, hooks fall back to the kit's defaults, such as gated planning."""
+        (self.state / "resolved.json").unlink()
+        self.hook()
+        self.assertTrue((self.state / "resolved.json").is_file())
+        self.assertEqual(self.build("--check").returncode, 0)
+
     def test_reports_a_failed_build(self):
         self.change_index()
         self.git("commit", "-qam", "a merged principle")

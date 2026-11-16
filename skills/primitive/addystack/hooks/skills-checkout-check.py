@@ -15,8 +15,8 @@ user's config, by build's own test (lib/doctor.py's `_stale`), so a pull, a bran
 this fast-forward, or a config edit can't leave sessions on old instructions: Nov 11 to 13,
 2026, the Mac loaded a principles index two merges old in 71 sessions. Claude Code and Codex
 read their instruction files before SessionStart hooks run, so the rebuild reaches the next
-session, and this one is told to read the rebuilt files. It builds only its own kit, once a
-build has written resolved.json, and only on a clean `main` or a kit no repo tracks: a dirty
+session, and this one is told to read the rebuilt files. It builds only the kit resolved.json
+names when that's its own, and only on a clean `main` or a kit no repo tracks: a dirty
 `main` gets a warning instead, and another branch the warning above."""
 import datetime, json, os, pathlib, shutil, subprocess, sys
 
@@ -71,7 +71,8 @@ def build_warning():
     """Rebuilds stale built files, or warns, as the module docstring says."""
     kit = hook_parity.HOOKS.parent
     try:
-        if not hook_parity.resolved.STATE.expanduser().is_file() or hook_parity.resolved.kit().resolve() != kit:
+        # A missing resolved.json reads as the kit's defaults, this kit, and is rebuilt.
+        if hook_parity.resolved.kit().resolve() != kit:
             return ""
         import doctor, render
         value = hook_parity.config.resolve()
