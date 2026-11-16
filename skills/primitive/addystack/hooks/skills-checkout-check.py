@@ -127,6 +127,13 @@ def build_warning():
     # The build refreshes each note's skill hash, which is how doctor flags a note to reread after its
     # skill changes, so the session hears it here instead.
     reread = [fix for _, fix in notes.problems(value)]
+    # A line added by hand under a built file's header looks like stale text, so the replaced host
+    # files are kept beside them, as `addystack init --force` keeps the config it replaces.
+    kept = []
+    for path in (render.claude_md(), render.CODEX.expanduser()):
+        if path in stale and path.is_file():
+            shutil.copyfile(path, path.with_name(f"{path.name}.bak"))
+            kept.append(render._home(path.with_name(f"{path.name}.bak")))
     try:
         done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
                               text=True, timeout=3, stdin=subprocess.DEVNULL)  # a rebuild takes about 0.2 s
@@ -141,7 +148,8 @@ def build_warning():
           "`addystack doctor`."] if failed else [])
         + ([f"⚠️ addystack rebuilt {_named(rebuilt, render, hosts, [p for p in rebuilt if stale.get(p, '') is None])}, "
           "which no longer matched the kit and the user's config. This session loaded the old text, so read the "
-          "ones your host loads, and any note already read, now and follow them where they differ."]
+          "ones your host loads, and any note already read, now and follow them where they differ."
+          + (f" The replaced text is in {', '.join(kept)}." if kept else "")]
            if rebuilt and not failed else [])
         + ([f"⚠️ addystack notes to check against their changed skills: {'; '.join(reread)}."] if reread else []))
 

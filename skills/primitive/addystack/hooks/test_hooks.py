@@ -1866,6 +1866,14 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertIn("notes/build.md (skill note, removed: stop following it)", self.hook())
         self.assertEqual(self.build("--check").returncode, 0)
 
+    def test_keeps_a_copy_of_a_built_file_edited_by_hand(self):
+        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
+        claude_md.write_text(claude_md.read_text() + "\n- A rule added by hand.\n")
+        context = self.hook()
+        self.assertIn("CLAUDE.md.bak", context)
+        self.assertIn("A rule added by hand", claude_md.with_name("CLAUDE.md.bak").read_text())
+        self.assertNotIn("A rule added by hand", claude_md.read_text())
+
     def test_reports_a_failed_build(self):
         self.change_index()
         self.git("commit", "-qam", "a merged principle")
