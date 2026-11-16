@@ -1688,11 +1688,17 @@ class StaleBuildCheck(unittest.TestCase):
         self.folder = pathlib.Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(shutil.rmtree, self.folder, ignore_errors=True)
         self.repo, home = self.folder / "repo", self.folder / "home"
-        self.kit = self.repo / "kit"
+        # At its place in the repo, so skill_layer finds the core skill a note names beside it.
+        self.kit = self.repo / "skills/primitive/addystack"
         shutil.copytree(HOOKS.parent, self.kit, ignore=shutil.ignore_patterns("__pycache__"))
         self.config = home / ".config/addystack/addystack.jsonc"
         self.config.parent.mkdir(parents=True)
         self.config.write_text("{}")
+        self.skill = self.repo / "skills/primitive/build/SKILL.md"
+        self.skill.parent.mkdir(parents=True)
+        self.skill.write_text("---\nname: build\nmetadata:\n  layer: primitive\n---\n\n## 1. Build\n")
+        (self.config.parent / "notes").mkdir()
+        (self.config.parent / "notes/build.md").write_text("After step 1, run the linter.\n")
         self.state = home / ".local/state/addystack"
         self.env = {**os.environ, "HOME": str(home), "ADDYSTACK_STATE": str(self.state),
                     "ADDYSTACK_CONFIG": str(self.config), "CLAUDE_CONFIG_DIR": str(home / ".claude"),
@@ -1735,9 +1741,14 @@ class StaleBuildCheck(unittest.TestCase):
         ids = [entry["id"] for entry in manifest["codex"] if entry["event"] == "SessionStart"]
         self.assertEqual(ids, ["reply-shape-context", "reply-rules", "skills-checkout-check"])
 
+    def assert_quiet(self, context):
+        """Nothing from the build check; the scratch home's missing settings still show as drift."""
+        for phrase in ("addystack rebuilt", "built instructions", "addystack notes"):
+            self.assertNotIn(phrase, context)
+
     def test_current_build_is_left_alone(self):
         before = self.principles.stat().st_mtime_ns
-        self.assertNotIn("addystack", self.hook())
+        self.assert_quiet(self.hook())
         self.assertEqual(self.principles.stat().st_mtime_ns, before)
 
     def test_rebuilds_after_a_pull(self):
@@ -1761,7 +1772,7 @@ class StaleBuildCheck(unittest.TestCase):
 
     def test_quiet_rebuild_when_no_instruction_file_changed(self):
         (self.state / "resolved.json").write_text((self.state / "resolved.json").read_text() + " ")
-        self.assertNotIn("addystack", self.hook())
+        self.assert_quiet(self.hook())
         self.assertEqual(self.build("--check").returncode, 0)
 
     def test_warns_without_rebuilding_a_dirty_checkout(self):
@@ -1781,7 +1792,7 @@ class StaleBuildCheck(unittest.TestCase):
 
     def test_rebuilds_a_kit_inside_another_repo(self):
         """An npx-installed kit under a home folder kept in git, on another branch with changes."""
-        self.git("rm", "-rq", "--cached", "kit")
+        self.git("rm", "-rq", "--cached", "skills")
         self.git("commit", "-qm", "untrack the kit")
         self.git("checkout", "-qb", "master")
         (self.repo / "dotfile").write_text("x")
@@ -1804,6 +1815,16 @@ class StaleBuildCheck(unittest.TestCase):
         self.hook()
         self.assertTrue((self.state / "resolved.json").is_file())
         self.assertEqual(self.build("--check").returncode, 0)
+
+    def test_keeps_a_changed_skill_note_in_view(self):
+        """The build refreshes the note's skill hash, so the session hears what doctor would have said."""
+        self.skill.write_text(self.skill.read_text() + "## 2. Lint\n")
+        self.change_index()
+        self.git("commit", "-qam", "a merged skill change")
+        context = self.hook()
+        self.assert_rebuilt(context)
+        self.assertIn("reread", context)
+        self.assertIn("notes/build.md", context)
 
     def test_reports_a_failed_build(self):
         self.change_index()

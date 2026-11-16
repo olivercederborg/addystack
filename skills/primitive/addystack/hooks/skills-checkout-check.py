@@ -105,6 +105,10 @@ def build_warning():
         if subprocess.run([*repo, "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True).stdout:
             return (f"⚠️ addystack's built instructions don't match the kit at {top.stdout.strip()}, which has local "
                     "changes, so they weren't rebuilt: run `addystack build` once those changes should load.")
+    # The build refreshes each note's skill hash, which is how doctor flags a note to reread after its
+    # skill changes, so the session hears it here instead.
+    import notes
+    reread = [fix for _, fix in notes.problems(value)]
     try:
         done = subprocess.run([sys.executable, str(kit / "bin" / "addystack"), "build"], capture_output=True,
                               text=True, timeout=8, stdin=subprocess.DEVNULL)
@@ -114,9 +118,10 @@ def build_warning():
     if failed:
         return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
     rebuilt = [render._home(path) for path in render.instructions(value) if path in stale]
-    return (f"⚠️ addystack rebuilt {', '.join(rebuilt)}, which no longer matched the kit and the user's config. "
-            "This session loaded the old text, so read them now and follow them where they differ."
-            if rebuilt else "")
+    return " ".join(
+        ([f"⚠️ addystack rebuilt {', '.join(rebuilt)}, which no longer matched the kit and the user's config. "
+          "This session loaded the old text, so read them now and follow them where they differ."] if rebuilt else [])
+        + ([f"⚠️ addystack notes to check after the rebuild: {'; '.join(reread)}."] if reread else []))
 
 
 # The checkout first, since a fast-forward can change the manifest drift reads and the
