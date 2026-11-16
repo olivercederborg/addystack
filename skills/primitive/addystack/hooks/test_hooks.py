@@ -1875,6 +1875,8 @@ class StaleBuildCheck(unittest.TestCase):
             self.assertIn("A rule added by hand", path.with_name(f"{path.name}.bak").read_text())
             self.assertNotIn("A rule added by hand", path.read_text())
             self.age()
+        # The second rebuild left CLAUDE.md alone, so its copy keeps the first hand edit.
+        self.assertIn("A rule added by hand", pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md.bak").read_text())
 
     def test_a_copy_that_cannot_be_written_is_a_warning(self):
         agents = pathlib.Path(self.env["HOME"], ".codex/AGENTS.md")
