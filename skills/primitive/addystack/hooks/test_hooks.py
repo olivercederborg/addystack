@@ -1846,6 +1846,16 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertIn("in the last 30 seconds", context)
         self.assertIn("principles.md", context)
 
+    def test_names_files_another_build_wrote_while_others_are_still_stale(self):
+        """A session whose hook lands mid-way through another session's build."""
+        self.change_index()
+        self.git("commit", "-qam", "a merged principle")
+        claude_md = pathlib.Path(self.env["CLAUDE_CONFIG_DIR"], "CLAUDE.md")
+        claude_md.write_text(claude_md.read_text())  # the other build's first write
+        context = self.hook()
+        self.assertIn("CLAUDE.md (Claude Code)", context)
+        self.assertIn("principles.md (Claude Code)", context)
+
     def test_reports_a_failed_build(self):
         self.change_index()
         self.git("commit", "-qam", "a merged principle")

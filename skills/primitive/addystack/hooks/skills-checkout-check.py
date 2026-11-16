@@ -87,10 +87,11 @@ def build_warning():
     except Exception as error:  # an invalid config or a broken kit: report it, never block the session
         reason = "the config doesn't resolve" if isinstance(error, hook_parity.config.Invalid) else repr(error)
         return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
+    # Another session's rebuild can land between this one loading its instructions and this hook,
+    # whole or in part.
+    recent = [path for path in render.instructions(value)
+              if path.is_file() and time.time() - path.stat().st_mtime < 30]
     if not stale:
-        # Another session's rebuild can land between this one loading its instructions and this hook.
-        recent = [path for path in render.instructions(value)
-                  if path.is_file() and time.time() - path.stat().st_mtime < 30]
         return (f"⚠️ addystack rebuilt {_named(recent, render)} in the last 30 seconds, maybe after this session "
                 "loaded them, so read the ones your host loads now and follow them where they differ."
                 if recent else "")
@@ -129,7 +130,7 @@ def build_warning():
         failed = str(error)
     if failed:
         return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
-    rebuilt = [path for path in render.instructions(value) if path in stale]
+    rebuilt = [path for path in render.instructions(value) if path in stale or path in recent]
     return " ".join(
         ([f"⚠️ addystack rebuilt {_named(rebuilt, render)}, which no longer matched the kit and the user's config. "
           "This session loaded the old text, so read the ones your host loads now and follow them where they "
