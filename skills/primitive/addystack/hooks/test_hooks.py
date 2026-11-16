@@ -1729,6 +1729,12 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertIn("read them now", context)
         self.assertEqual(self.build("--check").returncode, 0)
 
+    def test_codex_keeps_the_trusted_reply_hooks_in_place(self):
+        """Codex trusts a hook by its position, so the check comes after the reply hooks."""
+        manifest = json.loads((HOOKS / "manifest.json").read_text())
+        ids = [entry["id"] for entry in manifest["codex"] if entry["event"] == "SessionStart"]
+        self.assertEqual(ids, ["reply-shape-context", "reply-rules", "skills-checkout-check"])
+
     def test_current_build_is_left_alone(self):
         before = self.principles.stat().st_mtime_ns
         self.assertNotIn("addystack", self.hook())
