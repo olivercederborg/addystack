@@ -67,6 +67,13 @@ def checkout_warning():
             "skills that differ from main.")
 
 
+def _named(paths, render):
+    """paths as home-relative names, each with the host that loads it, since Codex inlines what Claude
+    Code imports."""
+    return ", ".join(f"{render._home(path)} ({'Codex' if path == render.CODEX.expanduser() else 'Claude Code'})"
+                     for path in paths)
+
+
 def build_warning():
     """Rebuilds stale built files, or warns, as the module docstring says."""
     kit = hook_parity.HOOKS.parent
@@ -82,10 +89,11 @@ def build_warning():
         return f"⚠️ addystack couldn't check its built instructions ({reason}): run `addystack doctor`."
     if not stale:
         # Another session's rebuild can land between this one loading its instructions and this hook.
-        recent = [render._home(path) for path in render.instructions(value)
+        recent = [path for path in render.instructions(value)
                   if path.is_file() and time.time() - path.stat().st_mtime < 30]
-        return (f"⚠️ addystack rebuilt {', '.join(recent)} in the last 30 seconds, maybe after this session "
-                "loaded them, so read them now and follow them where they differ." if recent else "")
+        return (f"⚠️ addystack rebuilt {_named(recent, render)} in the last 30 seconds, maybe after this session "
+                "loaded them, so read the ones your host loads now and follow them where they differ."
+                if recent else "")
     # A host file addystack didn't build, such as a CLAUDE.md under another CLAUDE_CONFIG_DIR, is
     # install's to adopt; build would overwrite it.
     import reconcile
@@ -121,10 +129,11 @@ def build_warning():
         failed = str(error)
     if failed:
         return f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run `addystack doctor`."
-    rebuilt = [render._home(path) for path in render.instructions(value) if path in stale]
+    rebuilt = [path for path in render.instructions(value) if path in stale]
     return " ".join(
-        ([f"⚠️ addystack rebuilt {', '.join(rebuilt)}, which no longer matched the kit and the user's config. "
-          "This session loaded the old text, so read them now and follow them where they differ."] if rebuilt else [])
+        ([f"⚠️ addystack rebuilt {_named(rebuilt, render)}, which no longer matched the kit and the user's config. "
+          "This session loaded the old text, so read the ones your host loads now and follow them where they "
+          "differ."] if rebuilt else [])
         + ([f"⚠️ addystack notes to check after the rebuild: {'; '.join(reread)}."] if reread else []))
 
 

@@ -1741,7 +1741,9 @@ class StaleBuildCheck(unittest.TestCase):
     def assert_rebuilt(self, context):
         self.assertIn("addystack rebuilt", context)
         self.assertIn("principles.md", context)
-        self.assertIn("read them now", context)
+        self.assertIn("read the ones your host loads now", context)
+        self.assertIn("principles.md (Claude Code)", context)
+        self.assertIn("AGENTS.md (Codex)", context)
         self.assertEqual(self.build("--check").returncode, 0)
 
     def test_codex_keeps_the_trusted_reply_hooks_in_place(self):
