@@ -139,7 +139,7 @@ are the notes, and the coverage table and the checks go in the fold.
   recipe.
 - **Decide**: Exports crashes on an empty month. Pick: track it as an issue, outside #61.
 
-<details><summary>Coverage and checks: ⚠️ 1 unreachable · ✅ 9/9 features driven</summary>
+<details><summary>Coverage and checks: ⚠️ 1 unreachable · ✅ 8/9 features driven</summary>
 
 | Feature | Source | As shipped | After | Result |
 |---|---|---|---|---|
@@ -147,7 +147,7 @@ are the notes, and the coverage table and the checks go in the fold.
 | Search | harness gap | ✅ | ✅ | proves `?q=` · `a1b2c3d` |
 | Billing | missing | — | ✅ new recipe | `d4e5f6a` |
 
-⚠️ Bank sync unreachable: needs a live bank connection the seed lacks · ✅ 9/9
+⚠️ Bank sync unreachable: needs a live bank connection the seed lacks · ✅ 8/9
 features driven · ✅ cleanup left evidence in /tmp/verify-app/current
 
 </details>
