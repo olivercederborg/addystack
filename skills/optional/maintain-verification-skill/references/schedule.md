@@ -5,11 +5,13 @@ task starts it. A weekly T3 scheduled task runs it unattended on one repo.
 
 ## The task
 
-Create it with `schedule_task` in the target repo's T3 project (`t3_project_list`), on
-the machine where that repo's app launches:
+On the machine where the repo's app launches, install the skill first, since `update`
+never adds an optional one: `npx skills add olivercederborg/addystack -g --skill
+maintain-verification-skill`. Then create the task with `schedule_task`:
 
 - `title`: `maintain-verification-skill weekly`
-- `projectId`: the target repo's project
+- `projectId`: the target repo's T3 project (`t3_project_list`), with that machine's
+  `environmentId`
 - `bindToCurrentThread`: false, so each run gets its own thread
 - `schedule`: `{type: "fixed_time", timeOfDay: "07:00", weekdays: [1]}`, Mondays at 07:00
 - `prompt`: the text below, verbatim, with `<repo>` replaced by the target checkout's
