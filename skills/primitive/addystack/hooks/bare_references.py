@@ -21,7 +21,14 @@ Claude Code and Codex both pass the reply as `last_assistant_message`, and both
 continue the turn with the feedback. T3 delegated children pass, since their parent
 reads them. Known limit: a coined label ("the catch-all row") isn't
 a number, so only the reply rules catch it. scripts/check_examples.py runs the same
-check on the kit's example replies."""
+check on the kit's example replies.
+
+A tracker id, such as DEV-3127, is sent back anywhere in the reply, folds and tables
+included, unless it's a link, and one link to it says what it is: "[DEV-3127, Allow
+failure-only export emails](https://…)". A bare id gives the user nothing to decide on and
+nowhere to click; on Nov 17, 2026 the user corrected three bare ids in one thread. Code
+blocks and the turn block aren't read. Standard names that share the shape, such as
+UTF-8 or SHA-256, aren't ids."""
 import itertools, json, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -49,6 +56,10 @@ IS_COUNT = re.compile(COUNT, re.I)
 NAMED_AFTER = re.compile(r"(?:'s)?\s*(?:\((?=[^)]*[A-Za-z]{3})[^)]*\)|,\s+(?:the\s+|an?\s+)?[A-Z][a-z]|,\s+the\s)")
 # A visible line that defines a number: "**1** · …", "1. …", "48: …", "| 1 | …", "### Option 1 · …".
 DEFINES = re.compile(r"^\s*(?:[-*]\s+)?(?:#+\s*)?(?:[A-Z][a-z]+\s+)?(\d+)\s*(?:·|—|[.:)]\s|\||$)|^\|\s*(\d+)\s*\|")
+# A tracker id: "DEV-3127", "ENG-42". CVE-2026-1234 and APP-NEXT-2CZ don't match whole.
+TRACKER_ID = re.compile(r"(?<![\w/#.-])([A-Z][A-Z0-9]{1,9})-(\d+)(?![\w-])")
+NOT_TRACKERS = {"UTF", "SHA", "ISO", "AES", "RFC", "ECMA", "HTTP", "TLS", "SSL", "ES", "CP", "IEC", "PEP", "WCAG", "ISBN"}
+LINK = re.compile(r"\[([^\]]*)\]\(\s*<?https?://[^)]*\)")
 
 
 def shown(text):
@@ -169,6 +180,35 @@ def problems(text, names={}):
     return found
 
 
+def unlinked_ids(text):
+    """One line per tracker id the reader can't click or doesn't know: an id outside a
+    link, or one no link names. Folds count, since the user opens them; code blocks and
+    the turn block don't."""
+    text = turn_block.lines_ended(text)
+    at = text.rfind("<!--")
+    if at >= 0 and turn_block.BLOCK.match(text, at):
+        text = text[:at]
+    lines = text.split("\n")
+    bare, linked, named = [], {}, set()
+    for line, fenced in zip(lines, turn_block.in_fence(lines)):
+        if fenced:
+            continue
+        links = [(m.start(), m.end(), m.group(1)) for m in LINK.finditer(line)]
+        for m in TRACKER_ID.finditer(line):
+            if m.group(1) in NOT_TRACKERS:
+                continue
+            ident = m.group(0)
+            inside = next((label for start, end, label in links if start <= m.start() < end), None)
+            if inside is None:
+                bare.append(f"{ident!r} in: {line.strip()}")
+                continue
+            linked.setdefault(ident, line.strip())
+            if re.search(r"[A-Za-z]{3}", inside.replace(ident, "")):
+                named.add(ident)
+    unnamed = [f"{ident!r} in: {line}" for ident, line in linked.items() if ident not in named]
+    return bare, unnamed
+
+
 def first_brief(event):
     """The session's opening brief: the T3 child's first message, or else the transcript's
     first user message, or None."""
@@ -226,18 +266,29 @@ def main():
     except turn_block.Malformed:
         names = {}  # routine_stop.py sends a reply without a valid block back
     found = problems(reply, names)
-    if not found:
+    bare, unnamed = unlinked_ids(reply)
+    if not (found or bare or unnamed):
         return
-    listing = "\n".join(f"- {line}" for line in found)
-    feedback = (
-        "These lines cite a number without saying what it is, and the user acts on them "
-        "without scrolling up:\n" + listing + "\nSend your whole reply again, unchanged except "
-        "that each of these numbers gets its short name in parentheses after it, as in \"keep "
-        "48 (optional email variables)\"; where a line shows \"3 → currency column\", that's "
-        "the name your turn block gives item 3. T3 shows only a turn's last message and folds the "
-        "rest away, so the resent reply has to stand on its own. Add no note about the "
-        "change. A number from a brief, a standing rule, or before a compaction needs its "
-        "name too: look it up rather than guess.")
+    parts = []
+    if found:
+        listing = "\n".join(f"- {line}" for line in found)
+        parts.append(
+            "These lines cite a number without saying what it is, and the user acts on them "
+            "without scrolling up:\n" + listing + "\nGive each of these numbers its short name "
+            "in parentheses after it, as in \"keep 48 (optional email variables)\"; where a line "
+            "shows \"3 → currency column\", that's the name your turn block gives item 3. A number "
+            "from a brief, a standing rule, or before a compaction needs its name too: look it "
+            "up rather than guess.")
+    if bare or unnamed:
+        listing = "\n".join(f"- {line}" for line in bare + unnamed)
+        parts.append(
+            "These tracker ids give the user nothing to decide on and nowhere to click:\n" + listing +
+            "\nMake each one a link to the issue, and let at least one link to it say what it is, as "
+            "in \"[DEV-3127, Allow failure-only export emails](https://linear.app/…/issue/DEV-3127/…)\". "
+            "Look the title and URL up rather than guess.")
+    feedback = ("\n\n".join(parts) + "\n\nSend your whole reply again, unchanged except for these fixes. "
+                "T3 shows only a turn's last message and folds the rest away, so the resent reply has "
+                "to stand on its own. Add no note about the change.")
     # Codex's Stop takes only decision and reason, and its input carries turn_id. Claude
     # Code's docs keep "block" for errors and continue through additionalContext, which
     # the transcript labels "Stop hook feedback" with no hook error notice.

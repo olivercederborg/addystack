@@ -5799,6 +5799,36 @@ class BareReferences(unittest.TestCase):
             with self.subTest(fence=fence):
                 self.assertEqual(self.bounce(f"**Next**\n\n{fence}\n- `a` → fix 22\n{fence.strip()}\n"), "")
 
+    def test_bounces_bare_and_unnamed_tracker_ids(self):
+        # Nov 17, 2026: "DEV-3127 means nothing to me", the third bare id in one thread.
+        url = "https://linear.app/acme/issue/DEV-3127/allow-failure-only-export-emails"
+        for reply, expect in [
+            ("**Next**\n\n- **a**: move DEV-1894 to Todo, and add DEV-3127 to Todo.\n", "'DEV-3127' in:"),
+            ("| Issue | Status |\n|---|---|\n| DEV-3603 | Todo |\n", "'DEV-3603' in:"),
+            ("<details><summary>Checks</summary>\n\n- DEV-993 moved.\n\n</details>\n", "'DEV-993' in:"),
+            (f"- `DEV-3127` is next.\n", "'DEV-3127' in:"),
+            (f"- [DEV-3127]({url}) is next.\n", "'DEV-3127' in:"),  # linked, but never named
+        ]:
+            with self.subTest(reply=reply):
+                reason = self.bounce(reply)
+                self.assertIn(expect, reason)
+                self.assertIn("nowhere to click", reason)
+
+    def test_passes_linked_named_ids_and_id_shaped_names(self):
+        url = "https://linear.app/acme/issue/DEV-3127/allow-failure-only-export-emails"
+        for reply in [
+            f"- [DEV-3127, Allow failure-only export emails]({url}) is next.\n",
+            f"- [DEV-3127, Allow failure-only export emails]({url}), then [DEV-3127]({url}) again.\n",
+            f"**Next**\n\n- **a**: add [DEV-3127 (failure-only export emails)](<{url}>) to Todo.\n",
+            "- Files are UTF-8, hashed with SHA-256, dated ISO-8601; CVE-2026-1234 is patched.\n",
+            "- Sentry APP-NEXT-2CZ stopped.\n",
+            "```\ngit checkout DEV-3127\n```\n",
+        ]:
+            with self.subTest(reply=reply):
+                self.assertEqual(self.bounce(reply), "")
+        turn = block({"state": "stop", "needs": [], "options": [{"key": "a", "class": "routine", "text": "add DEV-3127"}]})
+        self.assertEqual(self.bounce(f"- [DEV-3127, Allow failure-only export emails]({url})\n\n" + turn), "")
+
     def test_a_fact_tables_reader_row_is_an_item(self):
         table = "🟡 **Two items wait.**\n\n| Problem | The export is stuck. |\n|---|---|\n"
         self.assertEqual(bare_references.problems(table + "| Decide | Keep item 48 as it is? |\n"),
