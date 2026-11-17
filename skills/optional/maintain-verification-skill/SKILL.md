@@ -51,7 +51,8 @@ file with `git add -f`, and report the rule.
 Read the feature map's README and list its sibling files. Fix missing, extra, duplicate,
 or dead entries, and note each feature that has no recipe.
 
-**Done when:** the README's table and the files on disk match one to one.
+**Done when:** every file on disk is named by a README row, and every file a row names
+exists.
 
 ## 3. Source wave
 
