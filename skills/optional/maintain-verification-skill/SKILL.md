@@ -122,7 +122,8 @@ its invariants.
   open one PR with `open-pr` through the repo's tooling, unless the user's instructions
   or the run's prompt keep it local; then name the branch and its worktree. For an
   untracked skill, report the changed paths and the backup instead.
-- **clean** or **blocked**: no PR. Report the outcome and the coverage.
+- **clean** or **blocked**: no PR. Report the outcome and the coverage, and remove the
+  run's worktree and branch when they hold no commit.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift, outcome) in
 the run's scratch folder, outside the repo.

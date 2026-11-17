@@ -19,7 +19,7 @@ the machine where that repo's app launches:
 ```text
 Weekly verification-skill audit of <repo>, unattended. Read <skill>/SKILL.md in full and follow it on that repo, within these limits:
 
-1. First list earlier runs' branches: `git -C <repo> branch --list 'chore/maintain-verification-*'`. When one has no merged PR (`gh pr list --head <branch> --state merged`, run in <repo>), audit nothing: reply with its name, its last commit, and that it waits on the user, and end.
+1. First list earlier runs' branches: `git -C <repo> branch --list 'chore/maintain-verification-*'`. When one holds commits the default branch lacks and has no merged PR (`gh pr list --head <branch> --state merged`, run in <repo>), audit nothing: reply with its name, its last commit, and that it waits on the user, and end.
 2. Name your branch `chore/maintain-verification-<today, YYYY-MM-DD>`.
 3. Keep it local: push nothing, open no PR or issue, and post nothing outside this thread. A changed run ends at its local commits.
 4. Where the skill says to ask, end blocked and name the question.
