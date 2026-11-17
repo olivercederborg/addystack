@@ -7,7 +7,6 @@ CHANGELOG.md                                                   skills/primitive/
 shared/disclosure.md                                           skills/orchestrator/babysit/references/disclosure.md
 shared/disclosure.md                                           skills/primitive/address-review/references/disclosure.md
 shared/disclosure.md                                           skills/primitive/review-teammate-pr/references/disclosure.md
-shared/format.md                                               skills/optional/maintain-verification-skill/references/format.md
 shared/format.md                                               skills/optional/review-artifact/references/format.md
 shared/format.md                                               skills/orchestrator/autopilot/references/format.md
 shared/format.md                                               skills/orchestrator/babysit/references/format.md
@@ -53,7 +52,6 @@ shared/t3-delegation.md                                        skills/primitive/
 shared/t3-delegation.md                                        skills/primitive/review-loop/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/review-teammate-pr/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/scope-grill/references/t3-delegation.md
-shared/taste.md                                                skills/optional/maintain-verification-skill/references/taste.md
 shared/taste.md                                                skills/optional/review-artifact/references/taste.md
 shared/taste.md                                                skills/orchestrator/autopilot/references/taste.md
 shared/taste.md                                                skills/orchestrator/babysit/references/taste.md
@@ -68,7 +66,6 @@ shared/taste.md                                                skills/primitive/
 shared/taste.md                                                skills/primitive/scope-grill/references/taste.md
 shared/taste.md                                                skills/primitive/verify-work/references/taste.md
 shared/taste.md                                                skills/preferences/coding-standards/references/taste.md
-shared/views.md                                                skills/optional/maintain-verification-skill/references/views.md
 shared/views.md                                                skills/optional/reply-shape/references/views.md
 shared/views.md                                                skills/optional/review-artifact/references/views.md
 shared/views.md                                                skills/orchestrator/autopilot/references/views.md

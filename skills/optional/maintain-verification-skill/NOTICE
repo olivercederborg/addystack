@@ -6,5 +6,5 @@ Upstream directory: https://github.com/cursor/plugins/tree/7022c81efb48d8b5eb154
 
 The adapted skill preserves the upstream MIT license (see LICENSE). It looks for the
 target in .agents/skills and .claude/skills instead of .cursor/skills, runs in a worktree
-off the default branch, writes a recipe for each feature that has none, edits a
-git-ignored skill in place instead of opening a PR, and uses this kit's chat format.
+off the default branch, writes a recipe for each feature that has none, and edits a
+git-ignored skill in place instead of opening a PR.
