@@ -53,10 +53,10 @@ or dead entries, and note each feature that has no recipe.
 
 ## 3. Source wave
 
-Start one read-only subagent per feature file, all at once. Each reads how the
-user-facing feature works from source and returns: feature summary · source entry points
-· likely drift with `path:line` citations, or none · one live recipe. Subagents never
-drive the app and never edit files.
+Start one read-only subagent per feature file, all at once, through `orchestrate`. Each
+reads how the user-facing feature works from source and returns: feature summary · source
+entry points · likely drift with `path:line` citations, or none. Subagents never drive
+the app and never edit files.
 
 **Done when:** every feature file has a returned summary.
 
