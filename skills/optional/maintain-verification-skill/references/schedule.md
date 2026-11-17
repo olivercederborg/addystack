@@ -21,7 +21,7 @@ maintain-verification-skill`. Then create the task with `schedule_task`:
 ```text
 Weekly verification-skill audit of <repo>, unattended. Read <skill>/SKILL.md in full and follow it on that repo, within these limits:
 
-1. First list earlier runs' branches: `git -C "<repo>" branch --list 'chore/maintain-verification-*'`. When one is left and has no merged PR (`gh pr list --head <branch> --state merged`, run in <repo>), audit nothing: reply with its name, its last commit, and that it waits on the user, and end.
+1. First list earlier runs' branches: `git -C "<repo>" branch --list 'chore/maintain-verification-*' --format='%(refname:short)'`. When one holds commits the default branch lacks and has no merged PR (`gh pr list --head <branch> --state merged`, run in <repo>), audit nothing: reply with its name, its last commit, and that it waits on the user, and end.
 2. Name your branch `chore/maintain-verification-<today, YYYY-MM-DD>`.
 3. Keep it local: push nothing, open no PR or issue, and post nothing outside this thread. A changed run ends at its local commits.
 4. Where the skill says to ask, end blocked and name the question. When git tracks nothing in the skill's folder, end blocked before any edit: this run edits only its own worktree.
@@ -32,11 +32,14 @@ Weekly verification-skill audit of <repo>, unattended. Read <skill>/SKILL.md in 
 
 - **Its thread**, holding the report: the outcome, what changed, each product gap, and
   the coverage table with each recipe as shipped and after.
-- **changed**: a local branch with one commit per correction, in its worktree, and
-  nothing pushed. A reply in the run's thread asking for the PR opens it, as the repo's
-  policy and the user's instructions allow; deleting the branch drops the corrections.
-  Until one of those happens, each weekly run only names the waiting branch.
-- **clean** or **blocked**: no branch, unless a blocked run left changes; it names its
-  branch and worktree, and later runs wait on them like a changed run's.
+- **Its worktree and branch**, on every outcome. Nothing removes them, so nothing a run
+  left is lost; remove them with `git worktree remove` and `git branch -D` once read.
+- **changed**, or **blocked** with proven corrections: one commit per correction on that
+  branch, nothing pushed. A reply in the run's thread asking for the PR opens it, as the
+  repo's policy and the user's instructions allow; removing the worktree and branch drops
+  the corrections. Until one of those happens, each weekly run only names the waiting
+  branch.
+- An edit a run left uncommitted holds no later run: the report names it, and the next
+  audit finds the same drift again.
 - The run notes in its scratch folder, and the evidence where the verify skill's cleanup
   keeps it.

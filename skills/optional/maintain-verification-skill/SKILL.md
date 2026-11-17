@@ -16,7 +16,7 @@ in [schedule](references/schedule.md).
 End on exactly one, and say which:
 
 - **clean**: every feature got source and live coverage, and nothing needs fixing. No
-  branch, no PR.
+  commit, no PR.
 - **changed**: proven doc, map, or harness corrections ship in one PR, or stay as local
   commits on one branch when the run may not push.
 - **blocked**: coverage couldn't finish, or a proven fix couldn't ship safely. Name what
@@ -123,9 +123,9 @@ its invariants.
   open one PR with `open-pr` through the repo's tooling, unless the user's instructions
   or the run's prompt keep it local; then name the branch and its worktree. For an
   untracked skill, report the changed paths and the backup instead.
-- **clean** or **blocked**: no PR. Report the outcome and the coverage. Remove the run's
-  worktree and branch when the branch holds no commit and `git status` is clean;
-  otherwise keep both, and name them and what they hold.
+- **clean** or **blocked**: no PR. Report the outcome and the coverage. A blocked run
+  first commits each correction it already proved, as **changed** does, and names any
+  other edit it leaves in the worktree.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift, outcome) in
 the run's scratch folder, outside the repo.
