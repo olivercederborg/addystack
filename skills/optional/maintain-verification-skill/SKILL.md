@@ -73,9 +73,9 @@ source path.
 ## 5. Live pass
 
 Required even when the source looks clean. You own all driving, serially, following the
-skill's own launch model. When another agent's run holds the app or device, or waits in
-line for it, wait until both are done; their runs and sessions stay untouched. Steps 3
-and 4 need no device, so do them first. Exercise every feature at least once. First run
+skill's own launch model. When another agent's run holds the app (its ports, simulator,
+or device), or waits in line for it, wait until both are done; their runs and sessions
+stay untouched. Steps 3 and 4 need no running app, so do them first. Exercise every feature at least once. First run
 every shipped recipe as it stands, before changing any, and record each result: this
 baseline shows which findings ordinary use would already catch. A feature with no recipe
 gets one, written and proven the way the skill's drive section says: that is a harness
@@ -128,21 +128,22 @@ The outcome is the headline. What changed and each product gap, as a **Decide** 
 are the notes, and the coverage table and the checks go in the fold.
 
 ```markdown
-🟡 **#61 fixes 2 drifts and adds 1 recipe; 1 product gap found.**
+🟡 **#61 closes 1 false pass and adds 1 recipe; 1 product gap found.**
 
-- The skill now drives Restart recovery, and Analyze's label matches the app.
-- **Decide**: Analyze crashes on an empty week. Pick: track it as an issue, outside #61.
+- Search's recipe passed without the `?q=` handoff and now checks it, and Billing has a
+  recipe.
+- **Decide**: Exports crashes on an empty month. Pick: track it as an issue, outside #61.
 
 <details><summary>Coverage and checks: ⚠️ 1 unreachable · ✅ 9/9 features driven</summary>
 
-| Feature | Source | Live | Result |
-|---|---|---|---|
-| Quick Session | ✅ | ✅ | current |
-| Analyze | drift | ✅ | label fixed · `a1b2c3d` |
-| Restart recovery | ✅ | ✅ new recipe | `d4e5f6a` |
+| Feature | Source | As shipped | After | Result |
+|---|---|---|---|---|
+| Settings | ✅ | ✅ | ✅ | current |
+| Search | harness gap | ✅ | ✅ | proves `?q=` · `a1b2c3d` |
+| Billing | missing | — | ✅ new recipe | `d4e5f6a` |
 
-⚠️ Live Activity unreachable: needs a physical iPhone · ✅ 9/9 features driven ·
-✅ cleanup left evidence in /tmp/verify-strict/current
+⚠️ Bank sync unreachable: needs a live bank connection the seed lacks · ✅ 9/9
+features driven · ✅ cleanup left evidence in /tmp/verify-app/current
 
 </details>
 ```
