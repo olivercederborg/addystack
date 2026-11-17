@@ -28,15 +28,19 @@ does what the map describes, sort it as **drift** or a **product gap** (step 6).
 
 ## 1. Locate the target
 
-Find the project-local skill with launch, doctor, and drive sections and a feature map,
-usually `.agents/skills/verify-*/` or `.claude/skills/verify-*/`. Several candidates:
-ask which. None: stop, and offer to create one from the project's existing UI test
-setup.
+The target is the repo policy's `verifySkill` (`<kit>/bin/addystack policy --repo
+<checkout>`). With none set, find the project-local skill with launch, doctor, and drive
+sections and a feature map, usually `.agents/skills/verify-*/` or
+`.claude/skills/verify-*/`; a folder reached through a link counts once. Several
+candidates: ask which. None: stop, and offer to create one from the project's existing
+UI test setup.
 
 Work in a fresh worktree off the default branch (fetched first), so the map is checked
-against the code that shipped, and the user's checkout stays on its branch. When the
-skill's folder is git-ignored, there is no PR: work in the checkout that holds it, and
-back up the folder before the first edit.
+against the code that shipped, and the user's checkout stays on its branch. When git
+tracks nothing in the skill's folder, there is no PR: work in the checkout that holds
+it, and back up the folder before the first edit. When git tracks it but an ignore rule
+still matches a new file there (`git check-ignore -v <folder>/new.md`), add each new
+file with `git add -f`, and report the rule.
 
 **Done when:** the target, its feature map, and the worktree or backup path are named.
 
