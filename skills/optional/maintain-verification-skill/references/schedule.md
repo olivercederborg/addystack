@@ -24,7 +24,7 @@ Weekly verification-skill audit of <repo>, unattended. Read <skill>/SKILL.md in 
 1. First list earlier runs' branches: `git -C <repo> branch --list 'chore/maintain-verification-*'`. When one holds commits the default branch lacks and has no merged PR (`gh pr list --head <branch> --state merged`, run in <repo>), audit nothing: reply with its name, its last commit, and that it waits on the user, and end.
 2. Name your branch `chore/maintain-verification-<today, YYYY-MM-DD>`.
 3. Keep it local: push nothing, open no PR or issue, and post nothing outside this thread. A changed run ends at its local commits.
-4. Where the skill says to ask, end blocked and name the question.
+4. Where the skill says to ask, end blocked and name the question. When git tracks nothing in the skill's folder, end blocked before any edit: this run edits only its own worktree.
 5. Your final reply is the skill's step 7 report. When it changed, name the branch and its worktree, and say that a reply in this thread asking for the PR opens it.
 ```
 
