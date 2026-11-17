@@ -64,8 +64,8 @@ the app and never edit files.
 
 - **Drift**: spot-check each cited drift against the source. Leave clean claims alone.
 - **States**: merge overlapping recipes into as few app states as practical.
-- **Churn**: sweep recent commits for user-facing surfaces the map lacks. A surface counts
-  as missing only with a concrete source path.
+- **Churn**: sweep the last 30 days of commits, busiest folders first, for user-facing
+  surfaces the map lacks. A surface counts as missing only with a concrete source path.
 
 **Done when:** each drift claim is confirmed or dropped, and each missing surface has its
 source path.
