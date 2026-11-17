@@ -26,10 +26,9 @@ one.
 | Writer: a layer marked hard | `claudeAgent`, `claude-opus-5-5` | `xhigh` |
 | Third sketcher: architect | `claudeAgent`, `claude-fable-5-2` | `high` |
 
-Fable 5.2 sketches architect's third design, a third model's view, and writes a
-layer only when the user names it for the task. It has its own weekly allowance, which
-a thread that runs for hours, such as a project thread, a PR owner, or a reviewer,
-drains in one evening.
+Fable 5.2 sketches architect's third design and writes a layer only when the user
+names it for the task. It has its own weekly allowance, which a thread that runs for
+hours, such as a project thread, a PR owner, or a reviewer, drains in one evening.
 
 Run a worker, writer, or sketcher through `delegate_task`, even when the model matches
 yours, so the model and effort are set. An owner thread takes its row as
