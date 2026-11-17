@@ -75,9 +75,11 @@ source path.
 Required even when the source looks clean. You own all driving, serially, following the
 skill's own launch model. When another agent's run holds the app or device, or waits in
 line for it, wait until both are done; their runs and sessions stay untouched. Steps 3
-and 4 need no device, so do them first. Exercise every feature at least once. A feature
-with no recipe gets one, written and proven the way the skill's drive section says: that
-is a harness gap fixed under edit scope.
+and 4 need no device, so do them first. Exercise every feature at least once. First run
+every shipped recipe as it stands, before changing any, and record each result: this
+baseline shows which findings ordinary use would already catch. A feature with no recipe
+gets one, written and proven the way the skill's drive section says: that is a harness
+gap fixed under edit scope.
 
 Hold three invariants for the whole pass, whatever fails:
 
@@ -101,7 +103,8 @@ has run, and the evidence is in place.
 
 ## 6. Triage
 
-Sort every finding into one kind:
+Sort every finding into one kind. A fix's live proof is another drive in step 5, under
+its invariants.
 
 - **Drift**: a wrong or missing user-facing description. Fix it.
 - **Harness gap**: working behavior the recipes can't drive. Fix it, keep scripts
