@@ -24,13 +24,13 @@ one.
 | Project thread: runs a multi-PR project | `claudeAgent`, `claude-opus-5-5` | `high` |
 | PR owner: a project worker or an owner thread | `claudeAgent`, `claude-opus-5-5` | `high` |
 | Writer: a routine layer | `claudeAgent`, `claude-opus-5-5` | `medium` |
-| Writer: a layer marked hard | `claudeAgent`, `claude-fable-5-2` | `high` |
+| Writer: a layer marked hard | `claudeAgent`, `claude-opus-5-5` | `xhigh` |
 | Third sketcher: architect | `claudeAgent`, `claude-fable-5-2` | `high` |
 
-Fable 5.2 runs only the short hard roles. At `high` it matches Opus 5.5's best coding
-score for about half the cost per task, but it has its own weekly allowance, which a
-thread that runs for hours, such as a project thread, a PR owner, or a reviewer, drains
-in one evening.
+Fable 5.2 sketches architect's third design, a third model's view, and writes a
+layer only when the user names it for the task. It has its own weekly allowance, which
+a thread that runs for hours, such as a project thread, a PR owner, or a reviewer,
+drains in one evening.
 
 Run a worker, writer, or sketcher through `delegate_task`, even when the model matches
 yours, so the model and effort are set. An owner thread takes its row as
