@@ -16,4 +16,8 @@ attack-the-premise.md follows upstream commit
 e5136d82418d2db3165ea1050d17577cd618cc05, which restated it as testing the premise
 instead of taking a census.
 
+explain-the-number.md's decide-before-you-run rule follows upstream commit
+ab1f702ce8e8b6557edb56b09f52cde8bfb83f17 (2026-10-27), worded as at upstream commit
+2f87c854fe3e2fcda44ca86b46ede35aad3c46b7 (2026-11-16).
+
 The upstream MIT license notice is in LICENSE.
