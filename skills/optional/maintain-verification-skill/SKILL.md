@@ -1,6 +1,6 @@
 ---
 name: maintain-verification-skill
-description: Audit a project's verify-<app> skill and feature map against the source and the live app, then ship one PR of proven corrections.
+description: Audit a project's verify-<app> skill and feature map against the source and the live app, then commit proven corrections.
 disable-model-invocation: true
 metadata:
   layer: optional
@@ -16,7 +16,8 @@ End on exactly one, and say which:
 
 - **clean**: every feature got source and live coverage, and nothing needs fixing. No
   branch, no PR.
-- **changed**: one PR ships proven doc, map, or harness corrections.
+- **changed**: proven doc, map, or harness corrections ship in one PR, or stay as local
+  commits on one branch when the run may not push.
 - **blocked**: coverage couldn't finish, or a proven fix couldn't ship safely. Name what
   blocked it.
 
@@ -116,9 +117,10 @@ its invariants.
 
 ## 7. Ship or stop
 
-- **changed**: re-read every changed file, commit each correction on its own, and open
-  one PR with `open-pr` through the repo's tooling. For a git-ignored skill, report the
-  changed paths and the backup instead.
+- **changed**: re-read every changed file and commit each correction on its own. Then
+  open one PR with `open-pr` through the repo's tooling, unless the user's instructions
+  or the run's prompt keep it local; then name the branch and its worktree. For an
+  untracked skill, report the changed paths and the backup instead.
 - **clean** or **blocked**: no PR. Report the outcome and the coverage.
 
 Keep run notes (features covered, unreachable prerequisites, confirmed drift, outcome) in
@@ -148,7 +150,7 @@ features driven · ✅ cleanup left evidence in /tmp/verify-app/current
 </details>
 ```
 
-**Done when:** the outcome is named, and a changed run has its PR link or changed paths.
+**Done when:** the outcome is named, and a changed run has its PR link, branch, or changed paths.
 
 Adapted from Lauren Tan's `maintain-verification-skill` in pstack (MIT); see
 [NOTICE](NOTICE).
