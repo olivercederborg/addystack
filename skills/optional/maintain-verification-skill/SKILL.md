@@ -8,7 +8,8 @@ metadata:
 
 # Maintain a verification skill
 
-The unit of rigor is the feature, not every sentence.
+The unit of rigor is the feature, not every sentence. To run it weekly, set up the task
+in [schedule](references/schedule.md).
 
 ## Outcomes
 
