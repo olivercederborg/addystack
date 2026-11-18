@@ -754,7 +754,7 @@ def format_problems(reply):
     if grill_round(reply):
         if over(count):
             fenced = ", plan fenced in code" if plan_fenced(reply) else ""
-            found.append(("grill-words", f"{count} words above the fold, over {BUDGET}{fenced}"))
+            found.append(("grill-words", f"{count} words above the fold, not under {BUDGET}{fenced}"))
     elif count > LIMIT:
         found.append(("glance-words", f"{count} words, over {LIMIT}"))
     fact = fact_problems(reply)

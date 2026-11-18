@@ -4724,7 +4724,7 @@ class ReplyBudget(unittest.TestCase):
         short, long = round_with("picker " * 46), round_with("picker " * 47)
         self.assertEqual(reply_budget.words(short), 59)
         self.assertEqual(self.bounce(short), "")
-        self.assertIn("60 words above the fold, over 60", self.bounce(long))
+        self.assertEqual(self.bounce(long), "60 words above the fold, not under 60")
 
     def test_scope_grill_size_changes_need_a_matching_diff(self):
         plan = "**The plan so far**\n- **Building**: export (you)\n- **Not building**: JSON\n- **Assuming** (say if wrong): pending\n"
