@@ -14,7 +14,7 @@ If redaction changes the capsule, return to Build and preview before continuing.
 
 Run `npx lakebed@0.0.41 auth status --json`:
 
-- unauthenticated creates an expiring public anonymous preview;
+- unauthenticated creates an expiring public anonymous preview, or updates the one saved in `.lakebed/deploy.json`;
 - authenticated creates or updates a public owned app.
 
 Match this to the requested lifecycle. Ask when none was given. Owned-only capsules and `.env.lakebed.server` require an authenticated owned deployment.
