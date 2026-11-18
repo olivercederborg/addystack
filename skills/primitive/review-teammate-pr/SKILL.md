@@ -85,7 +85,7 @@ When the PR has a Decisions table, raise findings on a listed decision first, by
 number (`D2`). Keep findings with a concrete consequence, and at most three
 non-blocking ones that don't hold the approval, those with the worst consequence. Count
 every dropped one with its reason: nits, speculative failures, points others already
-raised, broad refactors, and non-blocking past three.
+raised, broad refactors, and other non-blocking past three.
 A failed required check that this PR's change causes, or makes worse than the base's
 run of it (read with `gh`), is a blocking finding.
 
