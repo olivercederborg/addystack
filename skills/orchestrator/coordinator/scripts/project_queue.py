@@ -32,8 +32,6 @@ KINDS = ("stuck", "decide", "review", "do")
 RANK = {"stuck": 0, "decide": 1, "review": 1, "do": 2}
 CELL = re.compile(r"(?<!\\)\|")
 WORD = re.compile(r"[^\W\d_]{3}")  # turn_block.py's rule for a need's name
-# The strip a reply carries while the queue holds an item: "1 of 3 need you · <its name> · <from>".
-STRIP = re.compile(r"(?<!\d)(\d+) of (\d+) needs? you\b", re.I)
 
 
 class QueueError(ValueError):

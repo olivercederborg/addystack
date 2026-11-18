@@ -115,12 +115,6 @@ class Queue(unittest.TestCase):
                 block = f'<!-- turn {{"state":"stop","needs":{printed[len("needs: "):]},"options":[]}} -->'
                 self.assertEqual(turn_block.parse(block).needs[0].name, name)
 
-    def test_the_strip_matches_what_show_prints(self):
-        for count in (1, 3, 12):
-            items = q.read(project(*[("do", f"step number {n}") for n in range(count)]))
-            self.assertEqual(q.STRIP.search(q.strip(items)).group(2), str(count))
-        self.assertIsNone(q.STRIP.search("21 of 3 needed"))
-
 
 if __name__ == "__main__":
     unittest.main()
