@@ -9,8 +9,8 @@ that waits gets no separate or stacked PR unless asked.
 **Atomic PRs**: an approval doesn't finish a PR; its merge does. A fix the PR needs, from
 a bot, a reviewer, or a check, lands in it before then. The push that dismisses the
 approval stays a router stop: the card waits for the user's go with that push as `a`,
-naming whose approval it dismisses. An approver's own ask goes in their PR or an open
-draft above it: they re-approve it quickly, and a new PR needs a review of its own.
+naming whose approval it dismisses. An approver's own ask goes in their PR too: they
+re-approve it quickly, and a new PR needs a review of its own.
 
 **Why:** "If something fits into a PR that has already been approved, it should be fixed
 in that PR instead of a follow-up" · "we need to think about the work as atomic PRs.
