@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Stop: send a reply back when its glance runs long. Two numbers: reply-shape's writing
-target keeps the headline and notes under 60 words, and this hook sends a reply back only
-above 100. The user's call on Nov 5, 2026 (D-r60): in the 7 days before, the send-back fired
-385 times across 103 of 2,163 Mac Claude transcripts; the drafts it caught held a median
-of 93 words, and 61% held under 100. It also checks that a changed
+"""Stop: log a reply whose glance or fact table runs long, and send a reply back for the
+other checks below. A send-back posts the card a second time, since T3 shows the reply before this hook
+judges it, so the format rules (the glance's word count, a scope-grill round's, and the fact
+table's limits) go to the reply log (reply_log.py) instead, and `addystack replies-report`
+counts them weekly: the user's call on Nov 18, 2026, after 239 of 457 Stop send-backs in
+the week before carried one (suite-audit R153). The rest below still send a reply back.
+
+Two numbers: reply-shape's writing target keeps the headline and notes under 60 words, and
+this hook logs a reply only above 100. The user's call on Nov 5, 2026 (D-r60): in the 7 days
+before, a send-back at 60 fired 385 times across 103 of 2,163 Mac Claude transcripts; the
+drafts it caught held a median of 93 words, and 61% held under 100. It also checks that a changed
 scope-grill plan Size shows as a trail on its line, or in a diff, against the previous round. A scope-grill
 round's **Assuming** line must name an assumed value, not only point at a report or its
 "defaults": on Oct 31 three mobile-mica rounds said "audit's Q2–Q13 defaults (pending)",
 and the user overturned one hidden value (biometrics inside `auth`) after three `a` picks. A scope-grill
 round counts its glance as grill_words does: its plan items count, its code and diff blocks and
-fixed labels don't, and it goes back at 60 words, scope-grill's own limit: prose
+fixed labels don't, and it's logged at 60 words, scope-grill's own limit: prose
 instructions alone let eval players run to 67 and 91 words on Oct 31 (decision D-R13-3).
 The user freed the diff blocks on Nov 3: "A snippet- or diff-like code block should also not
 count toward the 60-word limit". A plan fenced as a diff still counts, since its lines are
@@ -55,7 +61,8 @@ list item does, through the lines indented at least to its text's column; any ot
 numbered line, and any paragraph after the steps, counts. A word is a token with a
 letter or a digit, so `·`, `→`, and markers are free. Claude Code continues through
 additionalContext and Codex through decision: block, as in bare_references.py, and
-stop_hook_active keeps it to one send per stop. T3 delegated children pass, since their
+stop_hook_active keeps it to one send per stop; the log takes that stop's reply too, since a
+row can't loop. T3 delegated children pass, since their
 parent reads them, unless their brief opts in with "Reply rules: on"; so does a session
 where a message of the user's opens by asking for "normal replies".
 A reply whose turn block says `running` passes, since reply-shape makes it one ⏳ line.
@@ -64,7 +71,7 @@ A reply whose turn block says `running` passes, since reply-shape makes it one �
 reply-shape's fact table, the two-column table right under the headline, is a short table,
 so the word count skips it; it has its own limits instead, which fact_problems checks: at
 most FACT_ROWS rows under the header, each label one of FACT_LABELS, each value within
-FACT_SEND_BACK words (FACT_WORDS is the writing target, as 60 is to 100), and Risk and
+FACT_LIMIT words (FACT_WORDS is the writing target, as 60 is to 100), and Risk and
 Unsure rows first with ⚠️ leading the value, and no unescaped pipe in a value, since
 Markdown ends the cell there and drops the rest. The limits come from the mockups the user
 picked from, whose longest value ran 22 words, and from a trial on Nov 9, 2026: 36 replies
@@ -86,26 +93,26 @@ headline without its marker.
 reply-shape's items, a report's list of several things, are the same fact table in list
 form: a top-level list item that opens with a bold name that isn't a fact label, then a
 clause of at most ITEM_WORDS words. Up to TABLE_ROWS of them don't count when each clause
-runs at most ITEM_SEND_BACK words; a longer item or list, and the details under an item,
+runs at most ITEM_LIMIT words; a longer item or list, and the details under an item,
 count. Counting every item word sent back 13 of 45 eval replies written under the items
 rule on Nov 10, 2026, against 4 of 45 under the fact table, while their visible words
 matched (medians 108 and 113); with the clause rule, a 25-word clause exemption let the
-wall of text that started this hook pass, and a 15-word one still sends it back at 108
+wall of text that started this hook pass, and a 15-word one still counts it at 108
 words. The table's other parts go free under items too: a group's bold label over its
 items, the table's header, and a Decide, Review, or Do line under an item, a reader row,
-within FACT_SEND_BACK words, with a Do line's numbered steps. Without them, all three
+within FACT_LIMIT words, with a Do line's numbered steps. Without them, all three
 project views the user picked blind on Nov 10, 2026 went back at 107 to 127 words; with
 them they count 34, 73, and 51. A label runs at most ITEM_WORDS words, and only the
 first reader line under an item, before any line back at the margin, is its row. Over 8,990 delivered T3 replies from the 60 days to Nov
-10, items free 171 of the 4,302 the count put over 100, and send back none it passed."""
+10, items free 171 of the 4,302 the count put over 100, and count none it passed."""
 import json, pathlib, re, sys
 from typing import NamedTuple, Tuple
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-import bare_references, merge_go, t3_child, transcripts, turn_block  # noqa: E402
+import bare_references, merge_go, reply_log, t3_child, transcripts, turn_block  # noqa: E402
 
 BUDGET = 60  # reply-shape's writing target, which check_examples holds examples to
-SEND_BACK = 100  # the send-back limit: a glance above it goes back
+LIMIT = 100  # the log's limit: a glance above it is logged
 CLOSING = re.compile(r"^\*\*(?:Next|Done)\*\*")
 DRAFT = re.compile(r"^\s*(?:>|!\[)")
 STEP = re.compile(r"^\s*\d+\.\s+")
@@ -122,18 +129,18 @@ TABLE_ROWS = 6  # the most body rows a table can hold and still be a view
 # An item: a top-level list line that opens with its name in bold, "- **Currency column**: …".
 ITEM_LEAD = re.compile(r"^[-*+]\s+\*\*([^*\n]+?):?\*\*:?")
 ITEM_WORDS = 12  # reply-shape's clause after an item's name
-ITEM_SEND_BACK = 15  # an item whose clause runs past this counts, as FACT_SEND_BACK is to FACT_WORDS
+ITEM_LIMIT = 15  # an item whose clause runs past this counts, as FACT_LIMIT is to FACT_WORDS
 # A reader item under an item, "  - Decide: …", is that item's Decide, Review, or Do row.
 ITEM_ROW = re.compile(r"^\s+[-*+]\s+(?:\*\*)?(Decide|Review|Do)(?:\*\*)?\s*:", re.I)
 # A group's label over its items, "**Must fix**" or "**Running**".
 GROUP = re.compile(r"^\*\*[^*\n]+\*\*:?\s*$")
-# reply-shape's fact table: its labels, row cap, and words per value (target, send-back).
+# reply-shape's fact table: its labels, row cap, and words per value (target, logged past).
 FACT_LABELS = ("Risk", "Unsure", "Why", "Effect", "Proof", "Undo", "Skipped", "Queued",
                "Pick", "Source", "Cost", "Decide", "Review", "Do")
 WARNED = ("Risk", "Unsure")  # these rows come first, and ⚠️ leads their value
 FACT_ROWS = 5
 FACT_WORDS = 20
-FACT_SEND_BACK = 25
+FACT_LIMIT = 25
 # A round's strip, the one line that may sit between the headline and the fact table.
 STRIP = re.compile(r"[\w ]*?\d+\s*[🟡⬜✅]\ufe0f?(?:\s*·\s*[\w ]*?\d+\s*[🟡⬜✅]\ufe0f?)+")  # Group 1 🟡 · 2 ⬜ · 3 ⬜
 HEADLINE = re.compile(r"\s*[✅🟡🔴⏳]")  # reply-shape's headline opens with its marker
@@ -232,7 +239,7 @@ def listed(label, among=FACT_LABELS):
     return label.casefold() in {name.casefold() for name in among}
 
 
-def fact_problems(reply, limit=FACT_SEND_BACK):
+def fact_problems(reply, limit=FACT_LIMIT):
     """What breaks the fact table's limits in a reply that has one, one clause each."""
     table = fact_table(reply)
     if not table:
@@ -258,20 +265,6 @@ def fact_problems(reply, limit=FACT_SEND_BACK):
     if any(not row.value.lstrip("*_ ").startswith("⚠") for row in table.rows if listed(row.label, WARNED)):
         found.append("a Risk or Unsure value doesn't start with ⚠️")
     return found
-
-
-def fact_feedback(reply):
-    """The send-back text for a fact table past its limits, or None."""
-    found = fact_problems(reply)
-    if not found:
-        return None
-    return (f"Your reply's fact table breaks reply-shape's limits: {'; '.join(found)}. The table under the "
-            f"headline holds at most {FACT_ROWS} rows of `label | value` under its header, each label one of "
-            f"{', '.join(FACT_LABELS)}, each value at most {FACT_WORDS} words, with Risk and Unsure rows first "
-            "and ⚠️ leading their value. Send your whole reply again with the table inside those limits: "
-            "merge rows that share a label, give a row no label fits to a view under the table, such as "
-            "its own comparison table, and move the rest to the fold. T3 shows only a turn's last message, so "
-            "the resent reply has to stand on its own. Add no note about the change.")
 
 
 def lead_ins(lines, fenced, short):
@@ -353,16 +346,16 @@ def glance(reply):
         lead = 0
         under = under and line[:1].isspace()
         kept.append(line)
-    # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_SEND_BACK words,
+    # Up to TABLE_ROWS items, each a bold name and a clause within ITEM_LIMIT words,
     # are a fact table in list form, so like a short table they don't count, and neither
     # do their group labels, the table's header, or a reader row under one within
-    # FACT_SEND_BACK words. A longer item, row, label, or list, an item's second reader
+    # FACT_LIMIT words. A longer item, row, label, or list, an item's second reader
     # line, and other details under an item count.
     if len(items) > TABLE_ROWS:
         return kept + groups + [line for item, under in zip(items, rows) for line in item + under]
     return kept + [line for item, under in zip(items, rows)
-                   for line in (item if clause(item) > ITEM_SEND_BACK else []) + [
-                       row for row in under if count([row]) > FACT_SEND_BACK]]
+                   for line in (item if clause(item) > ITEM_LIMIT else []) + [
+                       row for row in under if count([row]) > FACT_LIMIT]]
 
 
 def is_item(line):
@@ -721,23 +714,27 @@ def main():
         event = json.loads(sys.stdin.read())
     except ValueError:
         return
-    if event.get("stop_hook_active"):
-        return
-    # A child whose brief says "Reply rules: on" plays the user's session, so it gets sent back too.
+    # A child whose brief says "Reply rules: on" plays the user's session, so it gets checked too.
     if bare_references.delegated_child(event) and not t3_child.rules_on(bare_references.first_brief(event)):
         return
     reply = event.get("last_assistant_message") or ""
+    applies = not (running(reply) or opted_out(event))
+    # The format rules go to the reply log, since a send-back posts the card twice; a log row
+    # can't loop, so a stop that continues after a send-back is logged too.
+    if applies:
+        reply_log.record(event, "reply_budget", format_problems(reply))
+    if event.get("stop_hook_active"):
+        return
     # The merge option is a contract merge-gate reads, so "normal replies" doesn't turn it off.
-    shape = () if running(reply) or opted_out(event) else (
-        problem(event, reply), fact_feedback(reply), SOURCE_FEEDBACK if unsourced(reply) else None)
-    # One send per stop, so a fact table's limits and a missing source ride along with any other problem.
-    feedback = " ".join(filter(None, (*shape, merge_feedback(reply))))
+    content = (problem(event, reply), SOURCE_FEEDBACK if unsourced(reply) else None) if applies else ()
+    # One send per stop, so a missing source rides along with any other problem.
+    feedback = " ".join(filter(None, (*content, merge_feedback(reply))))
     if feedback:
         send_back(event, feedback)
 
 
 def problem(event, reply):
-    """The send-back text for the reply's shape, or None when it passes."""
+    """The send-back text for a scope-grill round's Size or Assuming line, or None when it passes."""
     exchanges = transcripts.exchanges(event.get("transcript_path") or "")
     previous = exchanges[-1].reply if exchanges else None
     if previous and missing_size_change(reply, previous):
@@ -746,29 +743,24 @@ def problem(event, reply):
         return ("The round's **Assuming** line points at a report or its defaults instead of naming them. "
                 "Name the assumed values that change what gets built, such as `Apple Pay in cards; "
                 "biometrics in auth (pending)`, with the rest as `+N more in the fold`, then resend the whole round.")
+    return None
+
+
+def format_problems(reply):
+    """(rule, detail) for each format rule the reply breaks: its glance past LIMIT words,
+    a scope-grill round's at BUDGET, and its fact table's limits."""
+    found = []
     count = words(reply)
     if grill_round(reply):
-        return grill_feedback(reply, count) if over(count) else None
-    if count <= SEND_BACK:
-        return None
-    return (
-        f"Your reply's headline and notes come to {count} words; reply-shape keeps them under {BUDGET}. The user "
-        "reads each reply at a glance. Send your whole reply again as one, in the shape your reply rules give: "
-        "a headline of at most 12 words, then its fact table, or a bold item per thing with its details in the fold and its risks and reader items under it, or under rules without one the one view that fits "
-        "the content or none and at most three notes of at most 15 words, and the same closing and turn block. Keep every risk, decision, and step the user must take, "
-        "and move checks and evidence to the one fold. T3 shows only a turn's last message and folds the rest "
-        "away, so the resent reply has to stand on its own. Add no note about the change.")
-
-
-def grill_feedback(reply, count):
-    fenced = ("Write The plan so far as plain lists: only Proposed this round and Changed this round "
-              "are diff blocks. ") if plan_fenced(reply) else ""
-    return fenced + (
-        f"This scope-grill round has {count} words of prose above its fold; scope-grill keeps it under "
-        f"{BUDGET} and aims for about 45. The fixed labels and the code and diff blocks are free; plan "
-        "items and the fold's summary count. Send the whole round again with shorter clauses: fold older "
-        "Building clauses by name, and move detail into the fold. Keep every question, pick and Next "
-        "option. Add no note about the change.")
+        if over(count):
+            fenced = ", plan fenced in code" if plan_fenced(reply) else ""
+            found.append(("grill-words", f"{count} words above the fold, over {BUDGET}{fenced}"))
+    elif count > LIMIT:
+        found.append(("glance-words", f"{count} words, over {LIMIT}"))
+    fact = fact_problems(reply)
+    if fact:
+        found.append(("fact-table", "; ".join(fact)))
+    return found
 
 
 def send_back(event, feedback):
