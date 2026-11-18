@@ -505,7 +505,12 @@ def replies_report(args: argparse.Namespace) -> int:
     if since >= until:
         print(f"addystack: --since {since} isn't before --until {until}", file=sys.stderr)
         return 2
-    report = reply_log.summary(reply_log.rows(since, until))
+    try:
+        found = reply_log.rows(since, until)
+    except OSError as error:
+        print(f"addystack: can't read the reply log: {error}", file=sys.stderr)
+        return 1
+    report = reply_log.summary(found)
     if args.json:
         print(json.dumps({"since": str(since), "until": str(until), "log": str(reply_log.path()), **report}))
     else:

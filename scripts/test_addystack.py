@@ -400,10 +400,14 @@ class RepliesReport(Cli):
                 ("2026-11-17T23:00:00+00:00", "routine_stop", "options-cap", "s3", "3 options, over 2"),
                 ("2026-11-18T00:00:00+00:00", "reply_budget", "glance-words", "s4", "140 words, over 100")]
         lines = [json.dumps({"time": time, "hook": hook, "rule": rule, "session": session, "turn": 1, "cwd": "/w",
-                             "detail": detail, "headline": f"✅ **{session} done.**"})
+                             "detail": detail, "headline": f"✅ **{session} done.**"}, ensure_ascii=False)
                  for time, hook, rule, session, detail in rows]
         self.state.mkdir(exist_ok=True)
-        (self.state / "reply-log.jsonl").write_text("\n".join(lines[:3] + ["not json", "{}"] + lines[3:]) + "\n")
+        # A row a failed write cut short mid-character, then a whole one: each line is read alone.
+        torn = lines[2].encode()[:lines[2].encode().index("✅".encode()) + 1]
+        self.log = self.state / "reply-log.jsonl"
+        self.log.write_bytes("\n".join(lines[:3] + ["not json", "{}"]).encode() + b"\n" + torn + b"\n"
+                             + "\n".join(lines[3:]).encode() + b"\n")
 
     def report(self, *args):
         result = self.run_cli("replies-report", *args)
@@ -431,6 +435,23 @@ class RepliesReport(Cli):
         self.assertIn("None logged.", self.report("--since", "2026-01-01", "--until", "2026-01-02"))
         backwards = self.run_cli("replies-report", "--since", "2026-11-18", "--until", "2026-11-11")
         self.assertEqual(backwards.returncode, 2)
+
+    def test_an_unreadable_log_is_an_error_not_an_empty_week(self):
+        self.log.chmod(0)
+        self.addCleanup(self.log.chmod, 0o600)
+        result = self.run_cli("replies-report", "--since", "2026-11-11", "--until", "2026-11-18")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("can't read the reply log", result.stderr)
+
+    def test_a_row_starts_its_own_line_after_one_a_failed_write_cut_short(self):
+        import reply_log
+        self.log.write_bytes(self.log.read_bytes() + b'{"time": "2026-11-12T0')
+        with unittest.mock.patch.dict(os.environ, {"ADDYSTACK_REPLY_LOG": str(self.log)}):
+            reply_log.record({"session_id": "s5", "last_assistant_message": "✅ **s5.**"}, "reply_budget",
+                             [("glance-words", "101 words, over 100")])
+            now = datetime.datetime.now(datetime.timezone.utc).date()
+            found = reply_log.rows(now, now + datetime.timedelta(days=1))
+            self.assertEqual([row["detail"] for row in found if row["session"] == "s5"], ["101 words, over 100"])
 
 
 if __name__ == "__main__":

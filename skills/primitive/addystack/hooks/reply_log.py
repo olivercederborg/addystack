@@ -57,23 +57,29 @@ def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
         target = path()
         target.parent.mkdir(parents=True, exist_ok=True)
         # Only the user reads it: a row holds a reply's headline, and the state folder is world-readable.
-        with open(os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8") as log:
-            log.write(rows)
+        with open(os.open(target, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600), "r+b") as log:
+            # A row a failed write cut short ends without a newline; start on a line of our own.
+            end, torn = log.seek(0, os.SEEK_END), False
+            if end:
+                log.seek(end - 1)
+                torn = log.read(1) != b"\n"
+            log.write((("\n" if torn else "") + rows).encode("ascii"))
     except (OSError, RuntimeError):  # RuntimeError: a ~user override expanduser can't resolve
         pass
 
 
 def rows(since: date, until: date) -> List[dict]:
-    """The log's rows from since up to, not including, until (UTC days). Lines that don't
-    parse are skipped."""
+    """The log's rows from since up to, not including, until (UTC days): [] when there's no
+    log, and an OSError when it can't be read. Lines that don't parse, such as one a failed
+    write cut short, are skipped one by one."""
     found = []
     try:
-        lines = path().read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
+        lines = path().read_bytes().split(b"\n")
+    except FileNotFoundError:
         return []
     for line in lines:
         try:
-            row = json.loads(line)
+            row = json.loads(line.decode("utf-8"))
             day = datetime.fromisoformat(row["time"]).astimezone(timezone.utc).date()
         except (ValueError, KeyError, TypeError, AttributeError):
             continue
