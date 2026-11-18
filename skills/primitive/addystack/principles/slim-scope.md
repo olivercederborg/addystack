@@ -6,11 +6,9 @@ deferring a change, or weighing a push that dismisses an approval.
 Its line in the [principles index](../core/principles.md) states the rule. A follow-up
 that waits gets no separate or stacked PR unless asked.
 
-**Atomic PRs**: an approval doesn't finish a PR; its merge does. A fix the PR needs, from
-a bot, a reviewer, or a check, lands in it before then. The push that dismisses the
-approval stays a router stop: the card waits for the user's go with that push as `a`,
-naming whose approval it dismisses. An approver's own ask goes in their PR too: they
-re-approve it quickly, and a new PR needs a review of its own.
+**Atomic PRs**: an approval doesn't finish a PR; its merge does. A fix it needs counts
+whoever raised it: a bot, a reviewer, or a check. An approver re-approves their own ask
+quickly, and a new PR needs a review of its own.
 
 **Why:** "If something fits into a PR that has already been approved, it should be fixed
 in that PR instead of a follow-up" · "we need to think about the work as atomic PRs.
