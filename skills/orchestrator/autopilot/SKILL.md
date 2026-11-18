@@ -181,8 +181,9 @@ pass.
   on the same data, stop patching cases. Fix the assumption behind them through a
   Decision card, or gate when that fix needs a later milestone's work.
 - **Rounds**: at most three `review-loop` rounds per layer. After the third, start no
-  fourth: list what's still open at the top of the layer's PR description and in the
-  report, and go on. A later fix still gets `verify-work`'s quick re-check.
+  fourth: fix its findings marked fix, list the rest at the top of the layer's PR
+  description and report, and go on. A later fix still gets `verify-work`'s
+  quick re-check.
 
 **Done when:** `verify-work` says done on the layer's final head, and `review-loop` has
 no Blockers or has run three rounds with their open findings listed. Every check of the
