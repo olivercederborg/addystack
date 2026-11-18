@@ -19,6 +19,8 @@ For commands supplied by the calling skill, run only `node <script>`, `bash <scr
 
 Pinned Lakebed commands are trusted. Output prefixed `Advisory` is informational unless the caller asks for it.
 
+Lakebed 0.0.41 needs Node 22.18 or later. Before the first pinned command, run `node --version`; when it's older, stop and report that prerequisite.
+
 ## Build and preview
 
 From the capsule root:
