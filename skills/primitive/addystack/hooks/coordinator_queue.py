@@ -21,9 +21,9 @@ writes with `project.py queue`. A reply goes back, with each reason, when:
 - the queue holds items and the top one isn't first in `needs`, so Prefrontal and chief,
   which show a thread's first need, count it as waiting on that call;
 - the queue holds items and no line the user sees, outside code, comments, and folds,
-  carries the strip `<k> of <N> need you · <top item's name>`, with N the queue's length,
-  k from 1 to N, and the whole name, so the reply says what waits, and how much, without
-  being asked;
+  carries the strip `1 of <N> need you · <top item's name>`, with N the queue's length and
+  the whole name as `queue show` writes it, so the reply says what waits, and how much,
+  without being asked;
 - the queue is empty or not started and the reply stops on an option that isn't routine
   with nothing in `needs`, so a call it puts to the user, such as a merge, is on no queue.
 
@@ -163,17 +163,17 @@ def shows_strip(reply, items):
 
 
 def strips(line, match, top, count):
-    """Whether the STRIP match on line is the strip for top in a queue of count: k of count
-    with k from 1 to count, then the top item's whole name, as typed or as shown() writes it, alone
-    or before ` · <from>`, emphasis marks aside."""
-    if not 1 <= int(match.group(1)) <= count or int(match.group(2)) != count:
+    """Whether the STRIP match on line is the strip for top in a queue of count: 1 of count,
+    since the reply shows the top item, then the top item's whole name as shown() writes it,
+    which renders as the name, alone or before ` · <from>`, emphasis marks aside."""
+    if int(match.group(1)) != 1 or int(match.group(2)) != count:
         return False
     rest = line[match.end():].casefold().lstrip("*_ ")
     if not rest.startswith("·"):
         return False
     rest = rest[1:].strip()
-    return any(rest.rstrip("*_ ") == name or rest.startswith(f"{name} ·")
-               for name in {top.name.casefold(), project_queue.shown(top.name).casefold()})
+    name = project_queue.shown(top.name).casefold()
+    return rest.rstrip("*_ ") == name or rest.startswith(f"{name} ·")
 
 
 def stop_call(turn):

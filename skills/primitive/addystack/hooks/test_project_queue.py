@@ -97,6 +97,10 @@ class Queue(unittest.TestCase):
         self.assertEqual(q.show(q.read(project())), "Nothing waits on the user.")
         self.assertTrue(q.show(None).startswith("This project has no Queue yet, so what waits on the user is unknown"))
 
+    def test_the_strip_keeps_an_entity_in_a_name_as_typed(self):
+        lines = project(("decide", "review &lt;prod&gt; & stage"))
+        self.assertEqual(q.strip(q.read(lines)), "1 of 1 needs you · review &amp;lt;prod&amp;gt; & stage · coordinator")
+
     def test_the_strip_escapes_only_the_html_a_pick_refuses(self):
         lines = project()
         q.add(lines, "decide", "keep <pre> and <!-- x --> out if A < B", "R153 <t3-thread://v2/e/t> <details>", NOW)

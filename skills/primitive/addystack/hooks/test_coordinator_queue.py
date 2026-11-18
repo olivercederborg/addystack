@@ -140,12 +140,11 @@ class CoordinatorQueue(unittest.TestCase):
                       f"```text\n{named}\n```", f"<!--\n{named}\n-->", f"<!-- note --> x <!-- {named} -->",
                       f"<details><summary>Queue</summary>\n\n{named}\n\n</details>",
                       f"<details><summary>A</summary>\n\n<details><summary>B</summary>\n\nb\n\n</details>\n\n{named}"
-                      "\n\n</details>", ""]:
+                      "\n\n</details>", f"2 of 2 need you · stop format send-backs · {WORKER}", ""]:
             with self.subTest(strip=strip):
                 reply = CARD.replace(f"1 of 2 need you · stop format send-backs · {WORKER}", strip)
                 self.assertIn("no line the user sees carries the strip", self.run_on(reply + block(needs=[SEND_BACKS])))
         for strip in ["**1 of 2 needs you** · Stop Format Send-backs", f"<!-- note --> {named}", f"_{named}_",
-                      f"2 of 2 need you · stop format send-backs · {WORKER}",
                       f"<details><summary>A</summary>\n\nfolded\n\n</details>\n\n{named}"]:
             with self.subTest(strip=strip):
                 reply = CARD.replace(f"1 of 2 need you · stop format send-backs · {WORKER}", strip)
@@ -193,8 +192,9 @@ class CoordinatorQueue(unittest.TestCase):
         self.assertIn("merge #123 after the &lt;pre> fix", reply)
         self.assertIsNone(self.run_on(reply))
         self.assertEqual(turn_block.picked(reply, "a").text, "merge #123")
-        raw = reply.replace("&lt;", "<")  # typed as is, the hook still reads the name; merge-gate won't pick
-        self.assertIsNone(self.run_on(raw))
+        raw = reply.replace("&lt;", "<")  # typed as is, <pre> renders as HTML, not the name, and loses the pick
+        self.assertIn("no line the user sees carries the strip `1 of 1 needs you · merge #123 after the &lt;pre> fix",
+                      self.run_on(raw))
         self.assertIsNone(turn_block.picked(raw, "a"))
 
     def test_an_item_under_a_queued_id_must_be_that_item(self):

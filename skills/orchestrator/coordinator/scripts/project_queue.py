@@ -149,9 +149,11 @@ def done(lines: list[str], ident: int) -> Item:
 
 
 def shown(text: str) -> str:
-    """text as a reply writes it: each `<` that opens raw HTML merge-gate's pick reader
-    refuses, as turn_block reads it (UNSAFE, or a `<details` fold), as `&lt;`, so the strip
-    renders as typed and keeps the reply's picks; a link or a lone `<` stays as typed."""
+    """text as a reply writes it, so it renders as typed: an `&` that starts a character
+    reference as `&amp;`, and each `<` that opens raw HTML merge-gate's pick reader refuses,
+    as turn_block reads it (UNSAFE, or a `<details` fold), as `&lt;`, which keeps the reply's
+    picks; a link, a lone `<`, or a lone `&` stays as typed."""
+    text = re.sub(r"&(?=#?\w+;)", "&amp;", text)
     for pattern in (turn_block.UNSAFE, turn_block.OPENS_FOLD):
         text = pattern.sub(lambda match: "&lt;" + match.group()[1:], text)
     return text
