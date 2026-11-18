@@ -14,12 +14,14 @@ the top call on every reply; the text alone didn't hold.
 The queue is project.md's `## Queue` table (project_queue.py), which the coordinator
 writes with `project.py queue`. A reply goes back, with each reason, when:
 
-- its turn block names an item, in `needs` or `standing`, that the queue doesn't hold, so
-  every call the thread puts to the user lives where the next wake and a compaction find it;
+- its turn block names an item, in `needs` or `standing`, that the queue doesn't hold, or
+  names it with another kind or name, so every call the thread puts to the user lives where
+  the next wake and a compaction find it;
 - the queue holds items and the top one isn't in `needs`, so Prefrontal and chief count the
   thread as waiting on that call;
-- the queue holds items and no line outside code carries the strip `<k> of <N> need you`
-  with N the queue's length, so the reply says what still waits without being asked.
+- the queue holds items and no line the user sees, outside code, comments, and folds,
+  carries the strip `<k> of <N> need you · <top item's name>` with N the queue's length, so
+  the reply says what waits, and how much, without being asked.
 
 The send-back names the top item, its need, and `queue done` for an answer the coordinator
 hasn't recorded, since an answered call left on the queue would come back as its top.
@@ -38,6 +40,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import project_queue, t3_child, turn_block  # noqa: E402
 
 LINK = re.compile(r"t3-thread://v2/[^/>\s)]+/([^>\s)]+)")  # project.py's, for the Coordinator header
+OPEN_FOLD = re.compile(r"<details\b", re.I)
+CLOSE_FOLD = re.compile(r"</details\s*>", re.I)
 
 
 def project_file(project, thread):
@@ -53,30 +57,48 @@ def project_file(project, thread):
 
 
 def visible_lines(reply):
-    """The reply's lines the user sees without opening anything: outside code blocks, a
-    fold, and HTML comments such as the turn block."""
+    """The reply's text the user sees without opening anything, a line at a time: outside
+    code blocks, HTML comments (the turn block among them), and folds, nested ones too.
+    A fold's summary line counts as folded."""
     lines = turn_block.lines_ended(reply).split("\n")
-    shown, folded = [], False
+    shown, depth, comment = [], 0, False
     for line, fenced in zip(lines, turn_block.in_fence(lines)):
-        if not fenced:
-            folded = (folded or "<details" in line) and "</details>" not in line
-            if not folded and "</details>" not in line and not line.lstrip().startswith("<!--"):
-                shown.append(line)
+        if fenced:
+            continue
+        text = ""
+        while line:
+            mark = "-->" if comment else "<!--"
+            at = line.find(mark)
+            if not comment:
+                text += line if at < 0 else line[:at]
+            line = "" if at < 0 else line[at + len(mark):]
+            comment = (not comment) if at >= 0 else comment
+        opens, closes = len(OPEN_FOLD.findall(text)), len(CLOSE_FOLD.findall(text))
+        if not depth and not opens and not closes:
+            shown.append(text)
+        depth = max(0, depth + opens - closes)
     return shown
 
 
 def problems(turn, reply, items):
     """Why the reply hides the queue, one reason a line; [] when it shows it."""
-    held = {item.id for item in items or []}
-    found = [f"its turn block names {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold"
-             for item in turn.items if item.id not in held]
+    held = {item.id: item.need() for item in items or []}
+    found = []
+    for item in turn.items:
+        named = {"id": item.id, "kind": item.kind, "name": item.name}
+        queued = held.get(item.id)
+        if queued is None:
+            found.append(f"its turn block names {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold")
+        elif named != queued:
+            found.append(f"its turn block's item {item.id} is {item.kind} \"{item.name}\", but the queue's is "
+                         f"{queued['kind']} \"{queued['name']}\"")
     if items:
         top = items[0]
         if top.id not in {need.id for need in turn.needs}:
             found.append(f"its `needs` leaves out the queue's top item, {top.id}")
-        counts = {int(match.group(2)) for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)}
-        if len(items) not in counts:
-            found.append(f"no line says `1 of {len(items)} need{'s' if len(items) == 1 else ''} you`")
+        if not any(int(match.group(2)) == len(items) and top.name.casefold() in line.casefold()
+                   for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)):
+            found.append(f"no line the user sees carries the strip `{project_queue.strip(items)}`")
     return found
 
 

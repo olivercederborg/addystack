@@ -186,7 +186,7 @@ oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
 included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-export-v2 <thread link>`, and the item's need for the turn block's `needs`; the
+keep the v1 export · export-v2`, and the need for the turn block's `needs`; the
 `coordinator-queue` Stop hook sends back a reply without them.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their

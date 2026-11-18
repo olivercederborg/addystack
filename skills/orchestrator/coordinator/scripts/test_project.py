@@ -149,16 +149,16 @@ class Project(Fixture, unittest.TestCase):
 class Queue(Fixture, unittest.TestCase):
     def test_add_done_and_show_keep_the_queue_and_its_answers(self):
         added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout
-        self.assertTrue(added.startswith("queued 1: do · pull the Mac's dotfiles\n1 of 1 needs you · coordinator\n"))
+        self.assertTrue(added.startswith("queued 1: do · pull the Mac's dotfiles\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))
         self.project("queue", "add", "decide", "keep the v1 export", "--from", "export-v2 <t3-thread://v2/e/8f>")
         self.assertEqual(self.project("queue", "show").stdout.split("\n")[:2], [
-            "1 of 2 need you · export-v2 <t3-thread://v2/e/8f>",
+            "1 of 2 need you · keep the v1 export · export-v2 <t3-thread://v2/e/8f>",
             'needs: [{"id":2,"kind":"decide","name":"keep the v1 export"}]'])
         self.assertIn("## Queue\n\nNext id: 3\n\n| # | Kind | Name | From | Since |\n|---|---|---|---|---|\n"
                       "| 1 | do | pull the Mac's dotfiles | coordinator |", self.text())
         self.assertTrue(self.text().index("## Queue") < self.text().index("## Decisions"))
         done = self.project("queue", "done", "2", "--answer", "-", stdin='the user: "a"\n').stdout
-        self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · coordinator\n"))
+        self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))
         self.assertIn(f"merged 31ddd00.\n- {TODAY} · queue 2 (decide) keep the v1 export → the user: \"a\"\n",
                       self.text())
 

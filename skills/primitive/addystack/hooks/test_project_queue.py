@@ -83,12 +83,12 @@ class Queue(unittest.TestCase):
         lines = project(("do", "pull the dotfiles"))
         q.add(lines, "decide", "keep the v1 export", "export-v2 <t3-thread://v2/e/8f>", NOW)
         self.assertEqual(q.show(q.read(lines)).split("\n"), [
-            "1 of 2 need you · export-v2 <t3-thread://v2/e/8f>",
+            "1 of 2 need you · keep the v1 export · export-v2 <t3-thread://v2/e/8f>",
             'needs: [{"id":2,"kind":"decide","name":"keep the v1 export"}]',
             "queue:",
             "  2 decide · keep the v1 export · export-v2 <t3-thread://v2/e/8f> · since 2026-11-18 14:05",
             "  1 do · pull the dotfiles · coordinator · since 2026-11-18 14:05"])
-        self.assertTrue(q.show(q.read(project(("do", "pull it")))).startswith("1 of 1 needs you · coordinator\n"))
+        self.assertTrue(q.show(q.read(project(("do", "pull it")))).startswith("1 of 1 needs you · pull it · coordinator\n"))
         self.assertEqual(q.show(q.read(project())), "Nothing waits on the user.")
         self.assertEqual(q.show(None), "Nothing waits on the user.")
 
