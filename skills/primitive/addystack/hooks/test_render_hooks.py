@@ -119,7 +119,8 @@ class Render(unittest.TestCase):
                  for event, groups in hooks.items()}
         self.assertEqual(names["PreToolUse"], ["gh-stack-only.py", "t3-children-only.py", "merge-gate.py", "coordinator-light.py",
                                                "ready-gate.py", "thread-titles.py"])
-        self.assertEqual(names["Stop"], ["bare_references.py", "routine_stop.py", "upload_handoff.py", "reply_budget.py"])
+        self.assertEqual(names["Stop"], ["bare_references.py", "routine_stop.py", "upload_handoff.py", "reply_budget.py",
+                                         "long_term_fix.py"])
         self.assertEqual([len(groups) for groups in hooks.values()], [1, 2, 1])
 
     def cli(self, *args):
@@ -186,8 +187,8 @@ class ParityProfiles(unittest.TestCase):
         stop[1], stop[2] = stop[2], stop[1]
         home.write("codex", hooks)
         self.assertEqual(hook_parity.drift("codex", profile="darwin"), [
-            "codex: Stop runs bare_references.py, upload_handoff.py, routine_stop.py, reply_budget.py; "
-            "manifest order is bare_references.py, routine_stop.py, upload_handoff.py, reply_budget.py"])
+            "codex: Stop runs bare_references.py, upload_handoff.py, routine_stop.py, reply_budget.py, long_term_fix.py; "
+            "manifest order is bare_references.py, routine_stop.py, upload_handoff.py, reply_budget.py, long_term_fix.py"])
 
     def test_regrouping_without_reordering_isnt_drift(self):
         home = RenderedHome(self, "darwin")
