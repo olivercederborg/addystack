@@ -1337,6 +1337,9 @@ class BashRewrite(unittest.TestCase):
             ("bun run test:unit --watch", "runs until it's stopped"),
             ("watch -n 5 ls /tmp/out", "runs until it's stopped"),
             ("sleep infinity", "runs until it's stopped"),
+            # Codex r1: quotes around a flag, or around the loop a shell runs.
+            ("tail '-f' build.log", "runs until it's stopped"),
+            ("bash -c 'while true; do sleep 10; done'", "in quoted text"),
             # A wait that no-foreground-waits.py denies in the foreground too.
             ("for r in 43417828138 43417828448; do gh run watch $r --exit-status; done", "holds the turn until CI"),
             ("sleep 900", "past the 600 seconds"),

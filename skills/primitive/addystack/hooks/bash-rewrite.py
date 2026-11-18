@@ -262,8 +262,10 @@ def verifier_fix(payload, tool_input, command):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None, False
     if background:
         # The fork waits in the foreground, so the rules no-foreground-waits.py would apply there apply now.
-        held = "it runs until it's stopped" if ENDLESS.search(code) else shell_syntax.held(
-            command, LONG, lambda: True, lambda: True)
+        # Quotes don't hide a flag from the command that reads it: `tail '-f'` follows too.
+        held = ("it runs until it's stopped" if ENDLESS.search(re.sub(r"['\"]", "", command))
+                else "it runs a sleep or loop in quoted text, which may not end" if shell_syntax.hides_waits(command)
+                else shell_syntax.held(command, LONG, lambda: True, lambda: True))
         if held:
             return (f"{LOST}It can't run in the foreground either: {held}. Only a server, such as a dev server on "
                     "a port, runs with run_in_background here. Wait in counted loops whose sleeps add up to under "

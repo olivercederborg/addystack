@@ -249,6 +249,12 @@ def counted_wait(command):
     return total
 
 
+def hides_waits(command):
+    """Whether quoted text or a heredoc holds `sleep`, `while`, `until`, `select`, or `eval`,
+    which a shell such as `bash -c '…'` may run where held can't read it."""
+    return _count(QUOTABLE, command) != _count(QUOTABLE, shell_code(command))
+
+
 def waits_in_one_call(command, timeout_ms):
     """Whether a command's sleeps (counted_wait), with MARGIN to spare, end inside a call
     whose timeout is timeout_ms."""
