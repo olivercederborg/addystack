@@ -113,20 +113,21 @@ class CoordinatorQueue(unittest.TestCase):
         status = "⏳ **#5965's round-four fixes are moving to a new PR, 3 min in**, then: watch it.\n\n"
         found = self.run_on(status + block("running", standing=[SEND_BACKS, need(1, "pull the Mac's dotfiles", "do")],
                                            elapsed="3 min"))
-        self.assertIn("holds 2 items for the user, and your reply hides them: its `needs` leaves out the queue's top "
-                      f"item, 2; no line the user sees carries the strip `1 of 2 need you · stop format send-backs · "
+        self.assertIn("holds 2 items for the user, and your reply hides them: its `needs` doesn't start with the "
+                      f"queue's top item, 2; no line the user sees carries the strip `1 of 2 need you · stop format send-backs · "
                       f"{WORKER}`.", found)
-        self.assertIn('with `{"id":2,"kind":"decide","name":"stop format send-backs"}` in the turn block\'s `needs`',
+        self.assertIn('with `{"id":2,"kind":"decide","name":"stop format send-backs"}` first in the turn block\'s `needs`',
                       found)
         self.assertIn(f"the strip `1 of 2 need you · stop format send-backs · {WORKER}`", found)
         self.assertIn(f"`{self.project_md.parent} queue done 2 --answer", found)
         done = "✅ **The re-review is on #75.**\n\n---\n\n**Done**. Two audit calls are queued.\n\n"
-        self.assertIn("its `needs` leaves out", self.run_on(done + block("done", standing=[SEND_BACKS])))
-        self.assertIn("its `needs` leaves out", self.run_on(block("running", elapsed="3 min")))  # a quiet wake
+        self.assertIn("its `needs` doesn't start with", self.run_on(done + block("done", standing=[SEND_BACKS])))
+        self.assertIn("its `needs` doesn't start with", self.run_on(block("running", elapsed="3 min")))  # a quiet wake
 
     def test_the_strip_counts_the_whole_queue_and_names_its_top_where_the_user_sees_it(self):
         named = "1 of 2 need you · stop format send-backs"
-        for strip in ["1 of 3 need you · stop format send-backs", "1 of 2 need you · R153",
+        for strip in ["1 of 3 need you · stop format send-backs", "1 of 2 need you · R153", "3 of 2 need you · stop format "
+                      "send-backs", "1 of 2 need you · stop format send-backs twice", "1 of 2 need you · stop format",
                       f"```text\n{named}\n```", f"<!--\n{named}\n-->", f"<!-- note --> x <!-- {named} -->",
                       f"<details><summary>Queue</summary>\n\n{named}\n\n</details>",
                       f"<details><summary>A</summary>\n\n<details><summary>B</summary>\n\nb\n\n</details>\n\n{named}"
@@ -134,11 +135,34 @@ class CoordinatorQueue(unittest.TestCase):
             with self.subTest(strip=strip):
                 reply = CARD.replace(f"1 of 2 need you · stop format send-backs · {WORKER}", strip)
                 self.assertIn("no line the user sees carries the strip", self.run_on(reply + block(needs=[SEND_BACKS])))
-        for strip in ["**1 of 2 needs you** · Stop Format Send-backs", f"<!-- note --> {named}",
+        for strip in ["**1 of 2 needs you** · Stop Format Send-backs", f"<!-- note --> {named}", f"_{named}_",
+                      f"2 of 2 need you · stop format send-backs · {WORKER}",
                       f"<details><summary>A</summary>\n\nfolded\n\n</details>\n\n{named}"]:
             with self.subTest(strip=strip):
                 reply = CARD.replace(f"1 of 2 need you · stop format send-backs · {WORKER}", strip)
                 self.assertIsNone(self.run_on(reply + block(needs=[SEND_BACKS])))
+
+    def test_the_top_item_leads_needs_since_inboxes_show_the_first(self):
+        found = self.run_on(CARD + block(needs=[need(1, "pull the Mac's dotfiles", "do"), SEND_BACKS]))
+        self.assertIn("its `needs` doesn't start with the queue's top item, 2", found)
+        self.assertIsNone(self.run_on(CARD + block(needs=[SEND_BACKS, need(1, "pull the Mac's dotfiles", "do")])))
+
+    def test_a_name_that_only_starts_the_strip_isnt_the_top_item(self):
+        self.write(PROJECT, ("decide", "merge #12", WORKER), ("decide", "merge #123", WORKER))
+        reply = "🟡 **Merge #123?**\n\n1 of 2 need you · merge #123 · R153\n\n" + block(needs=[need(1, "merge #12")])
+        self.assertIn("no line the user sees carries the strip `1 of 2 need you · merge #12 · R153", self.run_on(reply))
+        self.assertIsNone(self.run_on(reply.replace("#123 · R153", "#12 · R153")))
+
+    def test_a_stop_on_a_call_with_nothing_queued_goes_back(self):
+        lines = PROJECT.split("\n")
+        project_queue.create(lines)
+        self.project_md.write_text("\n".join(lines))
+        merge = [{"key": "a", "class": "stop:merge", "text": "merge #123"}]
+        found = self.run_on("🟡 **Merge #123?**\n\n" + block(options=merge))
+        self.assertIn('it stops on option a, stop:merge "merge #123", with nothing in `needs`', found)
+        self.assertIn("queue add <kind>", found)
+        routine = [{"key": "a", "class": "routine", "text": "push the fix"}]
+        self.assertIsNone(self.run_on("✅ **Fixed.**\n\n" + block(options=routine)))
 
     def test_a_name_with_a_bracket_shows_as_entities_and_still_picks(self):
         self.write(PROJECT, ("decide", "merge #123 if A < B", WORKER))

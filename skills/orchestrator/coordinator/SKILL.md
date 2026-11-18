@@ -180,13 +180,13 @@ cleared. A real call is one of the stops in the user's instructions, or a produc
 no probe settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
-Queue in the turn it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
+Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
 --from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
 oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
 included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-keep the v1 export · export-v2`, and the need for the turn block's `needs`; the
+keep the v1 export · export-v2`, and the need that leads the turn block's `needs`; the
 `coordinator-queue` Stop hook sends back a reply without them.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their

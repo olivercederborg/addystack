@@ -18,11 +18,14 @@ writes with `project.py queue`. A reply goes back, with each reason, when:
 - its turn block names an item, in `needs` or `standing`, that the queue doesn't hold, or
   names it with another kind or name, so every call the thread puts to the user lives where
   the next wake and a compaction find it;
-- the queue holds items and the top one isn't in `needs`, so Prefrontal and chief count the
-  thread as waiting on that call;
+- the queue holds items and the top one isn't first in `needs`, so Prefrontal and chief,
+  which show a thread's first need, count it as waiting on that call;
 - the queue holds items and no line the user sees, outside code, comments, and folds,
-  carries the strip `<k> of <N> need you · <top item's name>` with N the queue's length, so
-  the reply says what waits, and how much, without being asked.
+  carries the strip `<k> of <N> need you · <top item's name>`, with N the queue's length,
+  k from 1 to N, and the whole name, so the reply says what waits, and how much, without
+  being asked;
+- the queue is empty or not started and the reply stops on an option that isn't routine
+  with nothing in `needs`, so a call it puts to the user, such as a merge, is on no queue.
 
 The send-back names the top item, its need, and `queue done` for an answer the coordinator
 hasn't recorded, since an answered call left on the queue would come back as its top. It
@@ -125,15 +128,31 @@ def problems(turn, reply, items, earlier=()):
         elif named != queued:
             found.append(f"its turn block's item {item.id} is {item.kind} \"{item.name}\", but the queue's is "
                          f"{queued['kind']} \"{queued['name']}\"")
+    if not items and not turn.needs and turn.state == "stop":
+        found += [f"it stops on option {option.key}, {option.cls} \"{option.text}\", with nothing in `needs`, so that "
+                  "call isn't on the queue" for option in turn.options if option.cls != "routine"][:1]
     if items:
         top = items[0]
-        if top.id not in {need.id for need in turn.needs}:
-            found.append(f"its `needs` leaves out the queue's top item, {top.id}")
-        names = {top.name.casefold(), project_queue.shown(top.name).casefold()}  # as typed, or as entities
-        if not any(int(match.group(2)) == len(items) and any(name in line.casefold() for name in names)
+        if not turn.needs or turn.needs[0].id != top.id:
+            found.append(f"its `needs` doesn't start with the queue's top item, {top.id}")
+        if not any(strips(line, match, top, len(items))
                    for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)):
             found.append(f"no line the user sees carries the strip `{project_queue.strip(items)}`")
     return found
+
+
+def strips(line, match, top, count):
+    """Whether the STRIP match on line is the strip for top in a queue of count: k of count
+    with k from 1 to count, then the top item's whole name, as typed or with entities, alone
+    or before ` · <from>`, emphasis marks aside."""
+    if not 1 <= int(match.group(1)) <= count or int(match.group(2)) != count:
+        return False
+    rest = line[match.end():].casefold().lstrip("*_ ")
+    if not rest.startswith("·"):
+        return False
+    rest = rest[1:].strip()
+    return any(rest.rstrip("*_ ") == name or rest.startswith(f"{name} ·")
+               for name in {top.name.casefold(), project_queue.shown(top.name).casefold()})
 
 
 def feedback(project, path, items, found):
@@ -159,8 +178,8 @@ def feedback(project, path, items, found):
     return (f"This ◆ {project} thread's queue ({where}) holds {len(items)} item{'s' if len(items) > 1 else ''} for "
             f"the user, and your reply hides them: {reasons}. While the queue holds an item, every reply here, a ⏳ "
             "status or a quiet wake's included, ends on its top item (coordinator step 5): its card the first time, "
-            f"then its question, the strip `{project_queue.strip(items)}`, and Next, with `{need}` in the turn "
-            f"block's `needs`. If the user already answered it, record that first with {script} `{path.parent} queue "
+            f"then its question, the strip `{project_queue.strip(items)}`, and Next, with `{need}` first in the "
+            f"turn block's `needs`. If the user already answered it, record that first with {script} `{path.parent} queue "
             f"done {top.id} --answer \"<the pick> · the user: '<their words>'\"` and show the next one; `queue show` "
             "prints the strip and the need. Send your whole reply again; T3 shows only a turn's last message, so it has to stand on its own. "
             "Add no note about the change.")
