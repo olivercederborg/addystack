@@ -9,7 +9,8 @@ as a missing, locked, or changed database, reads as "not a child".
 
 It also lists the messages agents sent into a session's thread, such as an owner's
 `t3_thread_send` report, which a transcript records like a message the user typed;
-transcripts.py drops them."""
+transcripts.py drops them, and names the project a ◆ coordinator thread runs, which
+coordinator-light.py and coordinator_queue.py read."""
 import json, os, pathlib, re, sqlite3
 
 STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
@@ -19,6 +20,8 @@ _WORKER_OF = re.compile(r"^Worker of: t3-thread://\S", re.M)
 _PROJECT = re.compile(r"^Project: *(\S.*)", re.M)
 # A brief line that asks for the user's reply rules, as an eval player that plays their session does.
 OPT_IN = "Reply rules: on"
+# A coordinator's title, `◆ <project>`, after any status emoji, as in `🟡 ◆ suite-audit`.
+_COORDINATOR = re.compile(r"(?:^|\s)◆ (\S+)")
 
 
 def rules_on(brief):
@@ -59,6 +62,29 @@ def holds_turn(payload):
     as its result. A child's session resumed outside T3 has no parent, so T3 must run it too."""
     return payload.get("agent_type") == "work-verifier" or bool(
         os.environ.get("T3CODE_CLI_PATH")) and delegated_brief(payload.get("session_id")) is not None
+
+
+def coordinator_project(session_id):
+    """(project, thread id) when the session's T3 thread is a ◆ coordinator, read from its
+    title; None for any other session or a database it can't read."""
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    try:
+        db = connect()
+        try:
+            owners = [row[0] for row in threads(db, session_id)]
+            titles = db.execute(
+                f"select thread_id, title from orchestration_v2_projection_threads where thread_id in "
+                f"({','.join('?' * len(owners))})", owners).fetchall() if owners else []
+        finally:
+            db.close()
+    except sqlite3.Error:
+        return None
+    for thread, title in titles:
+        found = _COORDINATOR.search(title) if isinstance(title, str) else None
+        if found:
+            return found.group(1), thread
+    return None
 
 
 def delegated_brief(session_id):
