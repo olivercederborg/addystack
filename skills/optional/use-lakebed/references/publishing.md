@@ -27,7 +27,7 @@ Run this skill's trusted bundled [`inspect-capsule.mjs`](../scripts/inspect-caps
 
 Before an owned update, report local server-environment key names, never values. Lakebed replaces the hosted set with the local set; an absent or empty file removes all hosted keys. Get approval for that replacement.
 
-Keep auth state unchanged without approval. In Lakebed 0.0.41, `--help` after any command prints usage without running it.
+Keep auth state unchanged without approval. In Lakebed 0.0.41, `--help` after a command and before any `--`, as in `npx lakebed@0.0.41 deploy --help`, prints usage without running it; after `--` it becomes an argument, so `deploy -- --help` deploys a folder named `--help`.
 
 ## 3. Deploy and verify
 
