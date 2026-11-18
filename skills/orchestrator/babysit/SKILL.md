@@ -12,10 +12,11 @@ metadata:
 
 A watch wake is news, not an order. Each wake runs one pass over the PR or stack:
 collect every fix, push once, then reply against the pushed head. The pass ends at
-**maintenance done**, or with each unfinished PR watched while CI runs. A wake that
-changes nothing, such as a Vercel, Graphite, or Linear comment, or a green check while
-a required one still runs, with no person's comment, fix, or watch to start, is a quiet
-watch wake: its reply has no ⏳ line, headline, or status report.
+**maintenance done**, with each unfinished PR watched while CI runs, or unwatched at a
+Stop that waits on the user. A wake that changes nothing, such as a Vercel, Graphite, or
+Linear comment, or a green check while a required one still runs, with no person's
+comment, fix, or watch to start, is a quiet watch wake: its reply has no ⏳ line,
+headline, or status report.
 
 `watch_pull_request` wakes the thread when a check fails, the required checks pass,
 someone else comments or reviews, or the branch starts to conflict. Only comments
@@ -144,18 +145,29 @@ without CI once its threads are handled and nothing conflicts: its checks line n
 `⚠️ CI not run (draft)`, it's unwatched as at **Done**, since no CI would wake the
 watch, and the report offers marking it ready, which starts CI and then needs a watch.
 
-- **Not done yet**, such as CI still running after the push: before ending the turn,
-  call `watch_pull_request` on each unfinished PR in scope that this thread isn't
+- **Waiting on GitHub**, such as CI still running after the push: before ending the
+  turn, call `watch_pull_request` on each unfinished PR in scope that this thread isn't
   watching yet, including a PR the user asked to babysit that had no watch. The next
   wake runs another pass.
+- **Waiting on the user**: the pass ends on a Stop, at this step or an earlier one, such
+  as replies to approve, a push that would dismiss an approval, or a Linear call. This
+  bullet takes precedence over the one above. When this pass pushed nothing and no check
+  is pending on any PR in scope (the checks `github.sh required N` lists, or every check
+  when it prints `no required checks on <base>`), call `unwatch_pull_request` for each
+  PR in scope, as at **Done**. A person's comment or a rerun then waits for the user's
+  answer, which runs the next pass from step 1, instead of waking the thread to repeat
+  its card, and the thread reaches their inbox instead of showing Waiting. That next
+  pass watches again if it then waits on GitHub. While such a check is pending, keep the
+  watch, so a failure gets fixed before they answer.
 - **Done**: call `unwatch_pull_request` for each PR in scope, watched or not, so the
   thread returns to the user's inbox. Then stop at the user's merge rule for the repo's
   trust value, and report. Merging or marking ready waits for whatever that rule needs.
 - **In a coordinator's worker** (its brief has a `Worker of:` line), the coordinator
-  owns the watch, in place of both bullets above: run the pass, leave watching and
+  owns the watch, in place of the bullets above: run the pass, leave watching and
   unwatching to the coordinator, and report maintenance done, or what the next wake
   waits for, to it.
 
 **Done when:** maintenance is done and the watch is removed; or each unfinished PR in
-scope is watched and the report names what the next wake waits for. In a coordinator's
-worker, the report to the coordinator names either one.
+scope is watched and the report names what the next wake waits for; or the pass ends on
+a Stop with no counted check pending and every PR in scope unwatched. In a coordinator's
+worker, the report to the coordinator names which one.
