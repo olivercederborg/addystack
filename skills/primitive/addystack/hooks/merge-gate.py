@@ -134,8 +134,9 @@ def letter_miss(reply, key):
         return f"your reply before it has no valid turn block ({error})"
     if all(option.key != key for option in turn.options):
         return f"your reply before it offers no option {key}"
-    return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML other than "
-            "fold lines and autolinks, or a fence line it can't place")
+    return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML that can hide it, "
+            "such as an open <title>, a comment, or a line starting with a tag and no blank line after it, "
+            "or a fence line it can't place")
 
 def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last

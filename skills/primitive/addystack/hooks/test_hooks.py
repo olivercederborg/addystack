@@ -2945,6 +2945,54 @@ class MergeGate(unittest.TestCase):
             self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=(self.card(merge), "a"),
                                                       session_id=ReplyShapeContext.SESSION))
 
+    # A manual /compact as Claude Code records it, and two merge cards, from suite-audit's
+    # coordinator (transcript 4a2774dc, lines 6362-6366 and the cards before 6384 and 8610),
+    # cut down, with their PRs renumbered. The gate refused both picks: the compact rows read
+    # as a prompt nothing answered, and each card held a tag in a fold or in inline code.
+    COMPACT = (
+        {"type": "system", "subtype": "compact_boundary", "isMeta": False, "content": "Conversation compacted",
+         "compactMetadata": {"trigger": "manual", "preTokens": 260652}},
+        {"type": "user", "isCompactSummary": True, "isVisibleInTranscriptOnly": True, "message": {
+            "role": "user", "content": "This session is being continued from a previous conversation that ran out "
+                                       "of context. The summary below covers the earlier portion of the conversation."}},
+        {"type": "user", "isMeta": True, "message": {"role": "user", "content": (
+            "<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, "
+            "and its output goes straight to the user. It's recorded here as context for later messages."
+            "</local-command-caveat>")}},
+        "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n"
+        "            <command-args></command-args>",
+        "<local-command-stdout>Compacted </local-command-stdout>",
+    )
+    CAST_CARD = ("🟡 **The cast script catches the real miss, but isn't fit to merge.**\n\n"
+                 "<details><summary>Checks: ⚠️ review capped at 3 rounds, rated 1/10 · ⚠️ no CI · ✅ done check · "
+                 "✅ tests 27/27</summary>\n\n**Why I wouldn't merge it**\n\n"
+                 "- Example gap: JSX text such as `<p>save as Draft</p>` is read as a cast.\n\n</details>\n\n---\n\n"
+                 "**Next**\n\n- **`a` → merge #12** · *recommended*\n"
+                 "- `b` → test a small grouped cast list on the same replay, as a draft\n\n")
+    DRAFTS_CARD = ("🟡 **Merge the three kit drafts: #12, #13 and #14?**\n\n"
+                   "<details><summary>Checks: ⚠️ <code>xhigh</code> unmeasured · ⚠️ audit not run live · "
+                   "✅ merge gate needs only your go</summary>\n\n**Reviews**\n\n- #13: Codex found nothing.\n\n"
+                   "</details>\n\n---\n\n**Next**\n\n- **`a` → merge #12, #13 and #14** · *recommended*\n"
+                   "- `b` → merge #12 and #13\n\n")
+
+    def test_merges_on_a_recorded_pick_after_a_compact_or_past_a_tag(self):
+        self.scenario(prs={12: None})
+        self.verify(12)
+        cast = self.card([{"key": "a", "class": "stop:merge", "text": "merge #12"},
+                          {"key": "b", "class": "decision", "text": "test a small grouped cast list on the same "
+                                                                    "replay, as a draft"}], text=self.CAST_CARD)
+        drafts = self.card([{"key": "a", "class": "stop:merge", "text": "merge #12, #13 and #14"},
+                            {"key": "b", "class": "stop:merge", "text": "merge #12 and #13"}], text=self.DRAFTS_CARD)
+        for said in [(cast, *self.COMPACT, "a"), (drafts, "a"), (drafts, *self.COMPACT, *self.COMPACT[3:], "a")]:
+            with self.subTest(said=said[1:]):
+                self.assertIsNone(self.reason("gh pr merge 12", said=said))
+        # A /compact still waiting on its output answered nothing, so the pick picks nothing.
+        self.assertIn("no reply of yours came before it", self.reason("gh pr merge 12", said=(cast, self.COMPACT[3], "a")))
+        # A tag that hides the block still refuses the pick.
+        hidden = self.card([{"key": "a", "class": "stop:merge", "text": "merge #12"}],
+                           text=self.CAST_CARD.replace("<p>save as Draft</p>", "<title>"))
+        self.assertIn("can't be sure your reply's turn block was hidden", self.reason("gh pr merge 12", said=(hidden, "a")))
+
     def t3_sent(self, folder, sent, native_id=ReplyShapeContext.SESSION):
         """A T3 state database whose one thread owns native_id and holds sent, (text, creator)
         pairs oldest first, as its user-role messages."""
@@ -6353,7 +6401,7 @@ class TurnBlock(unittest.TestCase):
         found = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout
         self.assertEqual(json.loads(found), turn_block.JS_SPACE)
 
-    def test_picked_counts_only_replies_whose_raw_html_is_fold_lines(self):
+    def test_picked_refuses_replies_whose_raw_html_may_hide_the_block(self):
         valid = block(self.STOP)
         # The renderer reads raw HTML by HTML's rules, not CommonMark's: an open <title> or
         # <textarea> holds the rest as text, and only </textarea> ends a textarea.
@@ -6362,29 +6410,44 @@ class TurnBlock(unittest.TestCase):
             "<title>\n\n",
             "<textarea>\n</pre>\n",
             "<pre>\ncode\n</pre>\n",
-            "Line one<br>\nline two\n\n",
             "Write \\`<title>\\` here.\n\n",
-            # An autolink is fine, but not a < beside or in it, one with a backtick, an unclosed
-            # one, or a one-letter scheme, which CommonMark doesn't read as one.
+            "Wrap it in <PRE class=x>.\n\n",
+            # A comment, CDATA, a declaration, or a processing instruction, closed or not.
+            "<!-- note\n\n",
+            "Note <!-- aside --> here.\n\n",
+            "<![CDATA[x]]>\n\n",
+            "<?php echo 1 ?>\n\n",
+            # A table moves what follows it out of the table, past the block.
+            "x <table> y\n\n",
+            "<td>\n\n",
+            # Codex r1: a template's content isn't shown, and an open fold collapses the options.
+            "a → test #12\n\n<template>\n\na → merge #12\n\n",
+            'a → test #12\n\n<details id="checks"><summary>Checks</summary>\n\na → merge #12\n\n',
+            "<details><summary>Checks</summary>\n\n- ok\n\n</details>\n\n<details>\n\n",
+            # Codex r2: a closer in a code span, in an attribute, or before the fold closes nothing.
+            'Example: `</details>`.\n\n- `a` → test #12\n\n<details id="checks"><summary>More</summary>\n\n- `a` → merge #12\n\n',
+            '<span title="</details>">x</span>\n\n<details><summary>More</summary>\n\nmore\n\n',
+            "</details>\n\n<details><summary>More</summary>\n\nmore\n\n",
+            # Codex r3: inside these, the parser ignores the </details> that looks like it closes the fold.
+            *[f"<details><summary>More</summary>\n\n<{tag}>\n\n- `a` → merge #12\n\n</details>\n\n"
+              for tag in ["select", "object", "applet", "marquee"]],
+            # An autolink is fine, but not a raw-text tag beside or in it.
             "See <https://x.y> or <title>.\n\n",
             "See <ab:`> and `<title>`.\n\n",
-            "See <ab:b.\n\n",
-            "See <<ab:b>.\n\n",
             "See <ab:<title>.\n\n",
-            "See <a:b>.\n\n",
-            "<details><summary>See <ab:b></summary>\n\n",
-            # A fold line keeps its HTML block open to the next blank line, past a fence.
+            # A line that starts with HTML keeps its HTML block open to the next blank line, past a fence.
             "<details><summary>x</summary>\n```\ncode\n```\n\n</details>\n\n",
             "<details>\n<summary>x</summary>\n\nmore\n\n</details>\n\n",
             "</details>\n",
-            # A < in inline code refuses too: a link destination can take a span's backtick.
+            "- <span>x</span>\nmore\n\n",
+            # And hands an unclosed tag to the renderer raw, whose attribute takes what follows.
+            '<div title="x\n\n',
+            '<span a="b>\n\n',
+            "</ x\n\n",
+            # Any < in inline code counts: a link destination can take a span's backtick.
             "Use `a\nb` <title> `c`\n\n",
-            "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",
-            "Run `` then `x < y`.\n\n",
             # The link takes the first backtick, so <plaintext> is raw and the block is text.
             "[x](/`) <plaintext> `\n\n",
-            "<details><summary>a <b>bold</b> fold</summary>\n\n",
-            "<DETAILS>\n\n",
         ]:
             with self.subTest(example=example):
                 self.assertEqual(turn_block.parse(example + valid).state, "stop")
@@ -6396,9 +6459,28 @@ class TurnBlock(unittest.TestCase):
             "<details><summary>Checks: ✅ 3 passed</summary>\n\n- ok\n\n</details>\n\n",
             "<details open><summary>x</summary>\n\nmore\n\n</details>\n\n",
             "<details>\n\n<summary>x</summary>\n\nmore\n\n</details>\n\n",
+            "<DETAILS>\n\nx\n\n</DETAILS>\n\n",
             "```html\n<title>\n```\n\n",
             "See <https://x.y>.\n\n",
             "1 of 1 needs you · Expo 58 <t3-thread://v2/0c5f/mcp:a0dc8ad7-3238>\n\n**Problem**: x\n\n",
+            # Tags that hide nothing: whole tags, in a fold's summary, in prose, or in inline code.
+            "<details><summary>Checks: ⚠️ <code>xhigh</code> unmeasured</summary>\n\nmore\n\n</details>\n\n",
+            "<details><summary>a <b>bold</b> fold</summary>\n\nx\n\n</details>\n\n",
+            "<details><summary>See <ab:b></summary>\n\nx\n\n</details>\n\n",
+            # Codex r3: a fold opened and closed on one line.
+            "<details><summary>Checks: OK</summary></details>\n\n",
+            '<details open><summary>a</summary>x</details>\n\n',
+            "- Example gap: JSX text such as `<p>save as Draft</p>` is read as a cast.\n\n",
+            "Line one<br>\nline two\n\n",
+            "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",
+            "Run `` then `x < y`.\n\n",
+            "It returns `Effect<A, E, R>` and `Map<string, Array<number>>`.\n\n",
+            '<span title="a > b">x</span>\n\n',
+            # Not autolinks, and not tags CommonMark reads, so they render as text.
+            "See <ab:b.\n\n",
+            "See <<ab:b>.\n\n",
+            "See <a:b>.\n\n",
+            "x < y and a <b c\n\n",
             "<details><summary>x</summary>\n\n- thread <t3-thread://v2/a/b>, PR <https://github.com/o/r/pull/1>\n\n</details>\n\n",
         ]:
             with self.subTest(example=example):
@@ -6546,7 +6628,15 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
                              "<title>", "<textarea>\n</pre>", "Use `Option<T>`", "`a\nb` <pre> `c`",
                              raw(), raw(), f"[x](/`) {raw()} `", f"[x](<`>) {raw()} `", f"Use `{raw()}`",
                              "See <t3-thread://v2/a/b>", "<https://x.y> `", f"<ab:b> {raw()}", "`<ab:b>` `",
-                             "[x](<ab:b>) <cd:d>", "\\<ab:b> `x`", "- <ab:b>", "<ab:b>", "<ab:`>", "<ab:<b>"])
+                             "[x](<ab:b>) <cd:d>", "\\<ab:b> `x`", "- <ab:b>", "<ab:b>", "<ab:`>", "<ab:<b>",
+                             # Tags that hide nothing, and the shapes around them that can.
+                             "<details><summary>a <code>b</code></summary>", "Use `Effect<A, E>`", "a<br>b",
+                             "<code>x</code> y", '<span title="x">', '<div title="x', '<span title="x', '- <div a="',
+                             "<b>", "</div>", "</ x", "x </ y", "<!-- a -->", '<x a="<title>" b=`c>', "<a / =\"x>\"",
+                             '<a b="c" d=\'e>\'>', rng.choice(["<body>", "</html>", "</template>", "<table>", "<svg>",
+                                                              "<math>", "<select>", "<frameset>", "<head>", "<html>",
+                                                              "<template>", "<listing>", "<option>", "<a href=\"x>", "<tr>", "<td>", "<th>",
+                                                              "<caption>", "<col>", "<colgroup>", "<tbody>", "</table>"])])
             return rng.choice(["", "", "", trimmed()]) + text + rng.choice(["", "", "", trimmed()])
         for case in range(60000):
             ending = rng.choice(["\n", "\r\n", "\r"])
@@ -6642,6 +6732,28 @@ class Exchanges(unittest.TestCase):
                           codex_wrote(self.FINAL))
         self.assertEqual(found[-1], transcripts.Exchange("Looking at it.", "a"))
         self.assertIsNone(turn_block.picked(*found[-1][:2]))
+
+    def test_a_command_claude_code_runs_itself_is_no_prompt(self):
+        compact = claude_said("<command-name>/compact</command-name>\n            <command-message>compact"
+                              "</command-message>\n            <command-args></command-args>")
+        compacted = claude_said("<local-command-stdout>Compacted </local-command-stdout>")
+        model = claude_said("<command-name>/model</command-name>\n<command-message>model</command-message>\n"
+                            "<command-args>opus</command-args>")
+        Exchange = transcripts.Exchange
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), model, claude_said("<local-command-stdout>Set model to "
+                                                                                "opus</local-command-stdout>"),
+                                   compact, compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "a")])
+        # A command with no output yet, one whose turn replied, such as a skill, and output with
+        # no command before it each stay a prompt.
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, claude_said("a")),
+                         [Exchange(self.FINAL, "/compact"), Exchange(None, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, claude_wrote("Done."), compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "/compact"), Exchange("Done.", ""), Exchange(None, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compacted, claude_said("a")),
+                         [Exchange(self.FINAL, ""), Exchange(None, "a")])
 
     def test_a_line_it_cannot_read_resets_the_reply(self):
         for bad in UNPARSED:
