@@ -180,10 +180,13 @@ def bound_waits(command, timeout_ms=None):
 
 # The Bash tool's longest timeout, in ms: past it, a command moves to the background anyway.
 LONGEST = 600000
-# The most a counted loop may sleep: the Bash tool's default timeout, in seconds.
+# The most a counted loop may sleep in a session that may wait in the background: the Bash
+# tool's default timeout, in seconds.
 LIMIT = 120
 WATCH = re.compile(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b")
 SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
+FOR_LOOP = re.compile(r"(?<![\w$-])for\s+\w+\s+in\s+([^;\n]*?)\s*[;\n]\s*do(?![\w-])(.*?)(?<![\w$-])done(?![\w-])", re.S)
+RANGE = re.compile(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)|\{(\d+)\.\.(\d+)\}")
 
 
 def _unquoted(text):
@@ -208,10 +211,53 @@ def _counted_loop_seconds(text):
         yield count * sum(_sleeps(body))
 
 
-def held(command, timeout_ms, rewrites):
-    """Why a command run in the foreground holds the turn too long, or None. rewrites is a
-    callable, read only when needed: whether bash-rewrite.py runs before Bash and so bounds
-    its `until` and `while` loops."""
+def _passes(items):
+    """How many times a `for` loop over items runs, or None when that isn't certain."""
+    found = RANGE.fullmatch(items.strip())
+    if found:
+        first, last = (int(n or 1) for n in found.groups()[:2]) if found.group(2) else map(int, found.groups()[2:])
+        return max(last - first + 1, 0) if found.group(2) else abs(last - first) + 1
+    words = items.split()
+    return len(words) if all(re.fullmatch(r"[^$`*?\[\]{}()<>]+", word) for word in words) else None
+
+
+def counted_wait(command):
+    """The seconds a command's sleeps add up to, when each is certain: a plain `sleep N`,
+    outside any loop or in a `for` loop over a `$(seq …)` or `{a..b}` range or literal words
+    that holds no other loop. 0 with no sleep, and None when any sleep isn't certain, such as
+    one in quoted text or a heredoc, or in an `until` or `while` loop, which bound_waits
+    bounds instead."""
+    code = shell_code(command)
+    if _count(ANY_SLEEP, command) != _count(ANY_SLEEP, code):  # a sleep in quoted text or a heredoc may run
+        return None
+    if not _count(ANY_SLEEP, code):
+        return 0
+    loops = list(FOR_LOOP.finditer(code))
+    if _count(ANY_SLEEP, code) != _count(PLAIN_SLEEP, code) or _count(LOOP_WORD, code) != len(loops):
+        return None
+    total = sum(float(s) for s in PLAIN_SLEEP.findall(code))
+    for loop in loops:
+        items, body = loop.groups()
+        each, passes = sum(float(s) for s in PLAIN_SLEEP.findall(body)), _passes(items)
+        if each and passes is None:
+            return None
+        total += (passes - 1) * each if each else 0
+    return total
+
+
+def waits_in_one_call(command, timeout_ms):
+    """Whether a command's sleeps (counted_wait), with MARGIN to spare, end inside a call
+    whose timeout is timeout_ms."""
+    seconds = counted_wait(command)
+    return seconds is not None and seconds + MARGIN <= timeout_ms / 1000
+
+
+def held(command, timeout_ms, holds_turn, rewrites):
+    """Why a command run in the foreground holds the turn too long, or None. holds_turn and
+    rewrites are callables, read only when needed: whether the session waits in the
+    foreground (t3_child.holds_turn), and whether bash-rewrite.py runs before Bash and so
+    bounds its `until` and `while` loops and raises its timeout. Such a session may sleep in
+    one call up to LONGEST, since its retry was the same wait split into 2-minute calls."""
     code = _unquoted(command)
     if WATCH.search(code):
         return "`gh … watch` holds the turn until CI finishes"
@@ -224,5 +270,9 @@ def held(command, timeout_ms, rewrites):
     elif any(seconds >= 60 for seconds in _sleeps(code)):
         reason = "a sleep of a minute or more holds the turn"
     else:
+        return None
+    timeout = timeout_ms if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) \
+        and timeout_ms > 0 else DEFAULT_TIMEOUT * 1000
+    if holds_turn() and waits_in_one_call(command, LONGEST if rewrites() else min(timeout, LONGEST)):
         return None
     return reason

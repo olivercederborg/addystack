@@ -41,7 +41,10 @@ T3 session on Oct 30, 2026).
   runs to 40 words, as verify-102-2's 56 did; a top-level session's forks get no check.
   Work past 10 minutes still moves, as verify-107-1's and verify-107-4's did, so each note
   says to split it.
-
+- **Waits in one call.** In a work-verifier fork or a T3 delegated child (t3_child.holds_turn),
+  a foreground call whose plain sleeps and counted loops (shell_syntax.counted_wait) run past
+  its timeout but end inside 600000 ms gets that timeout, since no-foreground-waits.py lets
+  such a session wait that long in one call instead of in 2-minute loops.
 
 In bypass permissions mode the fixed command is allowed; in any other mode it's asked, so
 the hook never approves a command the permission rules would have asked about. A deny from
@@ -259,11 +262,12 @@ def verifier_fix(payload, tool_input, command):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None, False
     if background:
         # The fork waits in the foreground, so the rules no-foreground-waits.py would apply there apply now.
-        held = "it runs until it's stopped" if ENDLESS.search(code) else shell_syntax.held(command, LONG, lambda: True)
+        held = "it runs until it's stopped" if ENDLESS.search(code) else shell_syntax.held(
+            command, LONG, lambda: True, lambda: True)
         if held:
             return (f"{LOST}It can't run in the foreground either: {held}. Only a server, such as a dev server on "
                     "a port, runs with run_in_background here. Wait in counted loops whose sleeps add up to under "
-                    "2 minutes each, and start a helper you stop yourself, such as a log "
+                    f"9 minutes each, with `timeout: {LONG}`, and start a helper you stop yourself, such as a log "
                     f"recorder, with `nohup … > <log> 2>&1 &`. {SPLIT}"), None, False
         return None, (f"ran it in the foreground with a {LONG} ms timeout instead of in the background, since a "
                       "work-verifier fork's background work stops when it hands back. " + SPLIT.rstrip(".")), True
@@ -275,6 +279,23 @@ def verifier_fix(payload, tool_input, command):
     return None, (f"raised the timeout to {LONG} ms, since Bash moves a build or test past its timeout to the "
                   "background, and a work-verifier fork's background work stops when it hands back. "
                   + SPLIT.rstrip(".")), False  # main() ends each note with its own period
+
+
+def wait_fix(payload, tool_input, command):
+    """A note when a foreground call in a session that waits in the foreground
+    (t3_child.holds_turn) sleeps longer than its timeout but inside LONG, whose timeout main()
+    then raises to LONG, as no-foreground-waits.py expects; else None."""
+    timeout = tool_input.get("timeout")
+    timeout = timeout if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0 \
+        else shell_syntax.DEFAULT_TIMEOUT * 1000
+    if timeout >= LONG or shell_syntax.waits_in_one_call(command, timeout) \
+            or not shell_syntax.waits_in_one_call(command, LONG):
+        return None
+    import t3_child  # here, so only a long wait reads T3's database
+    if not t3_child.holds_turn(payload):
+        return None
+    return (f"raised the timeout to {LONG} ms, since its sleeps add up to {shell_syntax.counted_wait(command):g} s, "
+            "and a session that waits in the foreground may wait that long in one call")
 
 
 def main():
@@ -291,6 +312,7 @@ def main():
     body_edits, body_notes = body_check_fixes(command)
     refused, timeout_note, moved = verifier_fix(payload, tool_input, command)
     background = tool_input.get("run_in_background") and not moved
+    timeout_note = timeout_note or (None if background or refused else wait_fix(payload, tool_input, command))
     # A call sent to the background holds no turn, so its loop may run on.
     wait_edits, wait_notes = ([], []) if background else bound_waits(command, LONG if moved else tool_input.get("timeout"))
     if heads:

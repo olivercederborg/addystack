@@ -1308,6 +1308,9 @@ class BashRewrite(unittest.TestCase):
              {"timeout": 600000}),
             ("cd /tmp/r140-verify && python3 ~/r140/repro.py 07baa6f verify-head > claude-head.log 2>&1", {"timeout": 1800000}),
             ("./run-checks.sh", {}),
+            # Waits that end inside the timeout: plain sleeps and counted loops.
+            ("sleep 300", {}),
+            ("for i in $(seq 1 115); do [ -e /tmp/released ] && break; sleep 5; done", {}),
         ]:
             with self.subTest(command=command):
                 out = self.verifier(command, run_in_background=True, **tool_input)
@@ -1355,6 +1358,32 @@ class BashRewrite(unittest.TestCase):
                 out = self.verifier(command, run_in_background=True, timeout=3600000)
                 self.assertEqual(out["permissionDecision"], "allow")
                 self.assertEqual(out["updatedInput"], {"command": command, "description": "d", "timeout": 600000})
+
+    def test_raises_the_timeout_on_a_wait_that_ends_inside_the_longest(self):
+        wait = "for i in $(seq 1 30); do [ -e /tmp/released ] && break; sleep 5; done"
+        for command, timeout in [(wait, 130000), ("sleep 300", None), ("sleep 100; for n in a b; do sleep 50; done", 120000)]:
+            with self.subTest(command=command):
+                out = self.verifier(command, **({"timeout": timeout} if timeout else {}))
+                self.assertEqual(out["updatedInput"]["timeout"], 600000)
+                self.assertIn("its sleeps add up to", out["additionalContext"])
+        # Not when its timeout covers it, it doesn't fit, a sleep isn't certain, or the session waits in the background.
+        for command, flags in [(wait, {"timeout": 600000}), ("sleep 30", {}), ("sleep 900", {}),
+                               ("for f in $(ls); do sleep 60; done", {}),
+                               (wait, {"timeout": 130000, "agent_type": "general-purpose"})]:
+            with self.subTest(command=command, flags=flags):
+                self.assertIsNone(self.verifier(command, **flags))
+        # A T3 delegated child waits in the foreground too.
+        with tempfile.TemporaryDirectory() as folder:
+            brief = "Act as the implementation sub-agent for this task.\n\nBuild it."
+            env = {**os.environ, "SHELL": "/bin/bash", "T3CODE_CLI_PATH": "/t3",
+                   "T3_STATE_DB": state_db(folder, "thread:delegated-task:x", brief, "agent")}
+            for agent_type in [None, "general-purpose"]:
+                payload = {"tool_name": "Bash", "session_id": "s", "permission_mode": "bypassPermissions",
+                           "tool_input": {"command": wait, "timeout": 130000},
+                           **({"agent_type": agent_type} if agent_type else {})}
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env=env,
+                                     capture_output=True, text=True, check=True).stdout
+                self.assertEqual(json.loads(out)["hookSpecificOutput"]["updatedInput"]["timeout"], 600000)
 
     def test_denies_a_verifier_build_sent_to_the_background_with_an_ampersand(self):
         for command in [
@@ -2656,6 +2685,32 @@ class NoForegroundWaits(unittest.TestCase):
         self.assertIn("run_in_background", reason("Act as the implementation sub-agent for this task.", t3=""))
         self.assertIn("run_in_background", reason(
             "Act as the implementation sub-agent for this task.\n\nBuild it.", thread="thread:top", creator="user"))
+
+    def as_verifier(self, command, **flags):
+        payload = {"tool_name": "Bash", "session_id": "s", "agent_id": "a1", "agent_type": "work-verifier",
+                   "tool_input": {"command": command, **flags}}
+        out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True, text=True,
+                             check=True, env={**{k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"},
+                                              "CLAUDE_CONFIG_DIR": str(self.claude)}).stdout
+        return bool(out) and json.loads(out)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+    def test_lets_a_verifier_wait_in_one_call_up_to_the_longest_timeout(self):
+        # Recorded verifier denials, Nov 13 and 17, 2026, each retried as the same wait split into 2-minute loops.
+        wait = "for i in $(seq 1 115); do [ -e /tmp/released ] && break; sleep 5; done"
+        for command, flags in [(wait, {"timeout": 600000}), (wait, {}), ("sleep 150", {"timeout": 200000}),
+                               ("sleep 100; for n in a b; do sleep 50; done", {})]:
+            with self.subTest(command=command, flags=flags):
+                self.assertFalse(self.as_verifier(command, **flags))
+        for command in [wait.replace("115", "130"), "sleep 900", "for f in $(ls); do sleep 60; done",
+                        "for i in $(seq 1 3); do for j in 1 2; do sleep 60; done; done", "gh run watch 1"]:
+            with self.subTest(command=command):
+                self.assertTrue(self.as_verifier(command, timeout=600000))
+        # A session that may wait in the background keeps the 2-minute limit.
+        self.assertTrue(self.bash(wait, timeout=600000))
+        # Without bash-rewrite.py to raise it, only the call's own timeout counts.
+        self.settings(["~/kit/hooks/no-foreground-waits.py"])
+        self.assertTrue(self.as_verifier(wait))
+        self.assertFalse(self.as_verifier(wait, timeout=600000))
 
     def test_points_a_verifier_fork_at_counted_loops(self):
         # verify-102-2's fork, Nov 7, 2026: told to use run_in_background, it handed back without a verdict.
