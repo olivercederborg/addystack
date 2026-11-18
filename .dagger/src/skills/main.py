@@ -18,7 +18,7 @@ TOOL = "skills/primitive/addystack"
 # The hook tests' inputs, the same list scripts/hook-inputs-staged.sh keeps for
 # pre-commit; hooks_tests fails when the two differ.
 HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies.md",
-               f"{TOOL}/scripts/check-body.mjs", f"{TOOL}/scripts/check-mermaid.mjs", f"{TOOL}/scripts/stack.sh",
+               f"{TOOL}/scripts/stack.sh",
                f"{TOOL}/lib", f"{TOOL}/addystack.defaults.jsonc", f"{TOOL}/schema",
                # StaleBuildCheck builds a copy of the kit.
                f"{TOOL}/bin", f"{TOOL}/core",

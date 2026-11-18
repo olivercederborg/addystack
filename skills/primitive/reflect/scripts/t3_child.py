@@ -57,14 +57,6 @@ def threads(db, session_id):
         (session_id,)).fetchall()
 
 
-def holds_turn(payload):
-    """Whether a hook's session waits in the foreground: a work-verifier fork, whose background
-    work stops when it hands back, or a T3 delegated child, whose parent takes each turn end
-    as its result. A child's session resumed outside T3 has no parent, so T3 must run it too."""
-    return payload.get("agent_type") == "work-verifier" or bool(
-        os.environ.get("T3CODE_CLI_PATH")) and delegated_brief(payload.get("session_id")) is not None
-
-
 def coordinator_project(session_id):
     """(project, thread id) when the session's T3 thread is a ◆ coordinator, read from its
     title; None for any other session or a database it can't read."""

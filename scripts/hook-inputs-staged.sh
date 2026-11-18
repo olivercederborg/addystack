@@ -3,15 +3,13 @@
 # hooks/test_*.py) depend on, and 1 when it doesn't, so the pre-commit hook skips them
 # (about 3 minutes) on other commits. Those files are everything under that hooks/, the
 # kit files a hook or hook test names as `HOOKS.parent / "…"` or `.parent.parent / "…"`,
-# and the checkout's files a hook test names as `REPO / "…"`, plus the check-mermaid.mjs
-# copy beside check-body.mjs, which it runs, and the config files resolved.py's fallback
-# and test_resolved.py read through lib/; scripts/test_hook_inputs_staged.py fails when a
-# named one is missing.
+# and the checkout's files a hook test names as `REPO / "…"`, plus the config files
+# resolved.py's fallback and test_resolved.py read through lib/;
+# scripts/test_hook_inputs_staged.py fails when a named one is missing.
 # Run it before unsetting git's repo-local variables: a `git commit <paths>` stages into a
 # temporary index that only GIT_INDEX_FILE names.
 set -euo pipefail
 inputs=(skills/primitive/addystack/hooks skills/optional/reply-shape/SKILL.md replies.md
-        skills/primitive/addystack/scripts/check-body.mjs skills/primitive/addystack/scripts/check-mermaid.mjs
         skills/primitive/addystack/scripts/stack.sh skills/primitive/addystack/lib
         skills/primitive/addystack/addystack.defaults.jsonc skills/primitive/addystack/schema
         skills/primitive/addystack/bin skills/primitive/addystack/core

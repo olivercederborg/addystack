@@ -28,7 +28,6 @@ shared/github.md                                               skills/primitive/
 shared/review-lenses.md                                        skills/primitive/review-loop/references/review-lenses.md
 shared/review-lenses.md                                        skills/primitive/review-teammate-pr/references/review-lenses.md
 shared/scripts/check-mermaid.mjs                               skills/optional/reply-shape/scripts/check-mermaid.mjs
-shared/scripts/check-mermaid.mjs                               skills/primitive/addystack/scripts/check-mermaid.mjs
 shared/scripts/check-mermaid.mjs                               skills/primitive/open-pr/scripts/check-mermaid.mjs
 shared/scripts/check-mermaid.mjs                               skills/primitive/review-teammate-pr/scripts/check-mermaid.mjs
 shared/scripts/github.sh                                       skills/orchestrator/autopilot/scripts/github.sh
@@ -115,6 +114,5 @@ skills/primitive/grounding/SKILL.md                            skills/primitive/
 skills/primitive/grounding/SKILL.md                            skills/primitive/review-teammate-pr/references/grounding.md
 skills/primitive/grounding/SKILL.md                            skills/primitive/scope-grill/references/grounding.md
 skills/primitive/grounding/SKILL.md                            skills/primitive/verify-work/references/grounding.md
-skills/primitive/open-pr/scripts/check-body.mjs                skills/primitive/addystack/scripts/check-body.mjs
 skills/primitive/show-me-your-work/scripts/decisions-table.sh  skills/primitive/open-pr/scripts/decisions-table.sh
 skills/primitive/show-me-your-work/scripts/log.sh              skills/orchestrator/autopilot/scripts/log.sh
