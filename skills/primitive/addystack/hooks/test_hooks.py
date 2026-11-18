@@ -4824,6 +4824,14 @@ class ReplyBudget(unittest.TestCase):
                         self.assertEqual(rows[0]["headline"], reply.splitlines()[0][:100])
                         self.assertTrue(rows[0]["time"].endswith("+00:00"))
 
+    def test_the_log_is_the_users_alone(self):
+        # A row holds a reply's headline, and the state folder is readable by others (Codex review, round 1).
+        with tempfile.TemporaryDirectory() as folder:
+            log = pathlib.Path(folder, "reply-log.jsonl")
+            subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": self.SNOOP}), text=True,
+                           check=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+
     def test_content_and_merge_rules_still_send_back(self):
         # The turn block and merge options are machine-read; the Pick's source, a round's Size trail and
         # Assuming line are content checks the user hasn't moved to the log yet.

@@ -13,8 +13,9 @@ and routine_stop.py append a row here for each format rule a reply breaks, and
 One JSON object per line in reply-log.jsonl in the state folder (ADDYSTACK_REPLY_LOG
 overrides the file): `time` (UTC, ISO 8601), `hook`, `rule`, `session`, `turn` (Codex's
 turn_id, else the transcript's prompt count), `cwd`, `detail` (what broke, such as "107
-words, over 100"), and `headline` (the reply's first line, cut to 100 characters). A
-write that fails is skipped, so the log never blocks a stop."""
+words, over 100"), and `headline` (the reply's first line, cut to 100 characters). The
+file is the user's alone (0600), and a write that fails is skipped, so the log never
+blocks a stop."""
 from __future__ import annotations
 
 import json, os, sys
@@ -55,7 +56,8 @@ def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
     try:
         target = path()
         target.parent.mkdir(parents=True, exist_ok=True)
-        with open(target, "a", encoding="utf-8") as log:
+        # Only the user reads it: a row holds a reply's headline, and the state folder is world-readable.
+        with open(os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8") as log:
             log.write(rows)
     except OSError:
         pass
