@@ -24,7 +24,9 @@ writes with `project.py queue`. A reply goes back, with each reason, when:
   the reply says what waits, and how much, without being asked.
 
 The send-back names the top item, its need, and `queue done` for an answer the coordinator
-hasn't recorded, since an answered call left on the queue would come back as its top.
+hasn't recorded, since an answered call left on the queue would come back as its top. A
+project with no Queue section yet also counts what the reply before this turn's prompt
+named, so its open items reach the queue instead of dropping out of the next reply.
 
 A coordinator is a thread whose T3 title holds `◆ <project>` (t3_child.coordinator_project),
 and its project.md is `~/.local/state/orchestrate/<project>/project.md` whose `Coordinator:`
@@ -37,7 +39,7 @@ import json, os, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import project_queue, t3_child, turn_block  # noqa: E402
+import project_queue, t3_child, transcripts, turn_block  # noqa: E402
 
 LINK = re.compile(r"t3-thread://v2/[^/>\s)]+/([^>\s)]+)")  # project.py's, for the Coordinator header
 OPEN_FOLD = re.compile(r"<details\b", re.I)
@@ -80,10 +82,28 @@ def visible_lines(reply):
     return shown
 
 
-def problems(turn, reply, items):
-    """Why the reply hides the queue, one reason a line; [] when it shows it."""
+def earlier_items(path):
+    """The user items, needs and standing, that the reply before this turn's prompt named;
+    () when there's none or it can't be read."""
+    for exchange in reversed(transcripts.exchanges(path)):
+        if exchange.reply:
+            try:
+                return turn_block.parse(exchange.reply).items
+            except turn_block.Malformed:
+                return ()
+    return ()
+
+
+def problems(turn, reply, items, earlier=()):
+    """Why the reply hides the queue, one reason a line; [] when it shows it. With no Queue
+    section yet (items None), what the reply before named counts as open too, so the first
+    reply after the queue arrives can't drop it unqueued."""
     held = {item.id: item.need() for item in items or []}
     found = []
+    if items is None:
+        named = {item.id for item in turn.items}
+        found += [f"the reply before named {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold"
+                  for item in earlier if item.id not in named]
     for item in turn.items:
         named = {"id": item.id, "kind": item.kind, "name": item.name}
         queued = held.get(item.id)
@@ -108,10 +128,11 @@ def feedback(project, path, items, found):
     reasons = "; ".join(found)
     if not items:
         return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
-                f"thread puts to the user goes on its queue first, in {where}: queue each still open with {script} "
-                f"`{path.parent} queue add <kind> \"<name>\" --from \"<worker> <thread link>\"`, and give its need the "
-                "id that prints, or drop it from the block once it's answered. Then send your whole reply again; "
-                "T3 shows only a turn's last message, so it has to stand on its own. Add no note about the change.")
+                f"thread puts to the user goes on its queue first, in {where}: queue each one still open, in the order "
+                f"it arose, with {script} `{path.parent} queue add <kind> \"<name>\" --from \"<worker> <thread link>\"`, "
+                "and give its need the id that prints; leave out one the user already answered. Then send your whole "
+                "reply again, ending on the queue's top item as `queue show` prints it; T3 shows only a turn's last "
+                "message, so it has to stand on its own. Add no note about the change.")
     top = items[0]
     need = json.dumps(top.need(), ensure_ascii=False, separators=(",", ":"))
     return (f"This ◆ {project} thread's queue ({where}) holds {len(items)} item{'s' if len(items) > 1 else ''} for "
@@ -142,7 +163,8 @@ def main():
         turn = turn_block.parse(reply)
     except (project_queue.QueueError, turn_block.Malformed):
         return
-    reasons = problems(turn, reply, items)
+    earlier = earlier_items(event.get("transcript_path")) if items is None else ()
+    reasons = problems(turn, reply, items, earlier)
     if reasons:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
                                                  "additionalContext": feedback(found[0], path, items, reasons)}}))
