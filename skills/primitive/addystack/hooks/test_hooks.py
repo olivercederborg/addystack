@@ -900,7 +900,7 @@ for line in sys.stdin:
 
         with unittest.mock.patch.dict(os.environ, {"PATH": str(pathlib.Path(self.home, "bin"))}), \
                 unittest.mock.patch.object(hook_parity.subprocess, "Popen", exited):
-            self.assertEqual(hook_parity.codex_trust(),
+            self.assertEqual(hook_parity._codex_trust(),
                              ["codex trust: not checked, codex app-server didn't answer: it exited"])
 
     def test_codex_trust_is_not_checked_when_codex_cant_start(self):

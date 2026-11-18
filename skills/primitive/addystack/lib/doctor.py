@@ -235,7 +235,7 @@ def _hooks(value: Optional[Resolved]) -> Check:
     trust = []
     if "codex" in _enabled(value) and shutil.which("codex"):
         import hook_parity
-        trust = [line for line in hook_parity.codex_trust()
+        trust = [line for line in hook_parity._codex_trust()
                  if "not checked" not in line and "lists no hooks" not in line]
     if lines or trust:
         fix = " and ".join(step for step, needed in (("addystack install", lines),

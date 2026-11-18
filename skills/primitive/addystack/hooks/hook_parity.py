@@ -106,7 +106,7 @@ def drift(runtime, path=None, required=True, profile="auto"):
     return hookset._drift(json.loads(MANIFEST.read_text()), resolved_config(), runtime, path, required, profile)
 
 
-def codex_trust():
+def _codex_trust():
     """Lines for each Codex hook whose trustStatus isn't trusted, from `codex app-server`."""
     codex = shutil.which("codex")
     if not codex:
@@ -175,7 +175,7 @@ def main():
     lines = drift("claude", args.claude, profile=args.profile) + drift(
         "codex", args.codex, required=bool(args.codex or shutil.which("codex")), profile=args.profile)
     if args.codex_trust:
-        lines += codex_trust()
+        lines += _codex_trust()
     print("\n".join(lines) if lines else "hooks match manifest.json")
     return 1 if lines else 0
 
