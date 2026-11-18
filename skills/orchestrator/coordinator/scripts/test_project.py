@@ -163,8 +163,12 @@ class Queue(Fixture, unittest.TestCase):
                                        "imported 3: decide · request Casper on ready\n1 of 3 need you · merge #39 · "), out)
         self.assertIn("the Queue exists", self.project("queue", "import", stdin=reply, code=1).stderr)
         (self.dir / "project.md").write_text(PROJECT)
-        self.assertIn("takes a turn block", self.project("queue", "import", stdin="no block", code=1).stderr)
+        duplicate = '{"state":"done","standing":[{"id":5,"kind":"do","name":"pull it"},{"id":5,"kind":"do","name":"push it"}]}'
+        for refused in ["no block", duplicate]:
+            self.assertIn("takes a turn block", self.project("queue", "import", stdin=refused, code=1).stderr)
         self.assertEqual(self.text(), PROJECT)
+        quoted = 'A block looks like `<!-- turn {"state":"done"} -->`.\n\n' + reply
+        self.assertIn("imported 3: decide · request Casper on ready", self.project("queue", "import", stdin=quoted).stdout)
 
     def test_add_done_and_show_keep_the_queue_and_its_answers(self):
         added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout

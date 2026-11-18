@@ -47,6 +47,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 import project_queue
+import turn_block
 
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
           "replaced by <worker>", "absorbed into <worker>")
@@ -92,9 +93,6 @@ class ProjectError(Exception):
     pass
 
 
-TURN = re.compile(r"<!--\s*turn\s*(\{.*\})\s*-->", re.S)
-
-
 def imported(lines: list[str], text: str) -> list[project_queue.Item]:
     """Starts the Queue of a project from before it, holding each user item the turn block
     in text names: needs, then standing, in id order, which is the order they arose. Text is
@@ -102,15 +100,13 @@ def imported(lines: list[str], text: str) -> list[project_queue.Item]:
     Queue, so a second import can't queue a call twice."""
     if project_queue.read(lines) is not None:
         raise ProjectError("the Queue exists: add a call to it with `queue add`")
-    found = TURN.findall(text)
+    block = f"<!-- turn {text.strip()} -->" if text.lstrip().startswith("{") else text
     try:
-        turn = json.loads(found[-1] if found else text)
-        listed = [*turn.get("needs", []), *turn.get("standing", [])]
-        items = sorted(((need["id"], need["kind"], need["name"]) for need in listed), key=lambda item: item[0])
-    except (ValueError, TypeError, KeyError, AttributeError):
-        raise ProjectError("queue import takes a turn block on standard input: a reply ending in one, or its JSON")
+        items = sorted(turn_block.parse(block).items, key=lambda need: need.id)
+    except turn_block.Malformed as error:
+        raise ProjectError(f"queue import takes a turn block on standard input, a reply ending in one or its JSON: {error}")
     project_queue.create(lines)
-    return [project_queue.add(lines, kind, name, "coordinator") for _, kind, name in items]
+    return [project_queue.add(lines, need.kind, need.name, "coordinator") for need in items]
 
 
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
