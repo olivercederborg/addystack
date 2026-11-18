@@ -436,6 +436,14 @@ class RepliesReport(Cli):
         backwards = self.run_cli("replies-report", "--since", "2026-11-18", "--until", "2026-11-11")
         self.assertEqual(backwards.returncode, 2)
 
+    def test_prints_a_lone_surrogate_from_a_reply_as_a_question_mark(self):
+        # Codex review, rounds 2 and 3: a reply's headline or fact-table label can hold one.
+        row = {"time": "2026-11-12T11:00:00+00:00", "hook": "reply_budget", "rule": "fact-table", "session": "s9",
+               "turn": 1, "cwd": "/w", "detail": "\"\ud800\" isn't one of its labels", "headline": "✅ **\ud800**"}
+        self.log.write_bytes(self.log.read_bytes() + json.dumps(row).encode() + b"\n")
+        self.assertIn('`s9` × 1, latest 2026-11-12T11:00: "?" isn\'t one of its labels · "✅ **?**"',
+                      self.report("--since", "2026-11-11", "--until", "2026-11-18"))
+
     def test_an_unreadable_log_is_an_error_not_an_empty_week(self):
         self.log.chmod(0)
         self.addCleanup(self.log.chmod, 0o600)

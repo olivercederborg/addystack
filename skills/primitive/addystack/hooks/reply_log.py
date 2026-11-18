@@ -36,10 +36,8 @@ def path() -> Path:
 
 
 def headline(reply: str) -> str:
-    """The reply's first line, cut to HEADLINE characters, with a lone surrogate as "?", so the
-    report can print it."""
     first = next((line.strip() for line in reply.splitlines() if line.strip()), "")
-    return first[:HEADLINE].encode("utf-8", "replace").decode("utf-8")
+    return first[:HEADLINE]
 
 
 def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
@@ -119,4 +117,5 @@ def markdown(report: dict, since: date, until: date) -> str:
         lines += ["", f"**{item['rule']}**, top sessions:"]
         lines += [f"- `{str(top['session'])[:8]}` × {top['violations']}, latest {top['time'][:16]}: "
                   f"{top['detail']} · \"{top['headline']}\"" for top in item["top"]]
-    return "\n".join(lines)
+    # A row's text comes from a reply, so a lone surrogate prints as "?" rather than failing the report.
+    return "\n".join(lines).encode("utf-8", "replace").decode("utf-8")

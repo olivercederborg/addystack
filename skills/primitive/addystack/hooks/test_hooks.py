@@ -4835,7 +4835,7 @@ class ReplyBudget(unittest.TestCase):
                 self.assertIn("merge-gate", json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"])
         sent, rows = self.sent_and_logged(reply)
         self.assertIn("merge-gate", sent)
-        self.assertEqual(rows[0]["headline"], "✅ **?**")  # Codex review, round 2: so the report can print it
+        self.assertEqual(rows[0]["headline"], "✅ **\ud800**")
 
     def test_the_log_is_the_users_alone(self):
         # A row holds a reply's headline, and the state folder is readable by others (Codex review, round 1).
