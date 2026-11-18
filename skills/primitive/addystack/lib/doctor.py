@@ -230,8 +230,17 @@ def _hooks(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("hooks", True, _SKIPPED, None)
     lines = [line for host in _enabled(value) for line in hookset.drift(value, host)]
-    if lines:
-        return Check("hooks", False, "; ".join(lines), "addystack install")
+    # Codex skips a hook it doesn't trust, and trust follows a hook's position, so removing
+    # an entry above a gate untrusts the gate until the user trusts it again.
+    trust = []
+    if "codex" in _enabled(value) and shutil.which("codex"):
+        import hook_parity
+        trust = [line for line in hook_parity.codex_trust()
+                 if "not checked" not in line and "lists no hooks" not in line]
+    if lines or trust:
+        fix = " and ".join(step for step, needed in (("addystack install", lines),
+                                                     ("trust each in codex's /hooks", trust)) if needed)
+        return Check("hooks", False, "; ".join(lines + trust), fix)
     return Check("hooks", True, "match the selection" if _enabled(value) else "no host enabled", None)
 
 

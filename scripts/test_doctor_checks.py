@@ -2,7 +2,7 @@
 each passes on a working install and fails with a fix line naming what to run."""
 from __future__ import annotations
 
-import json, os, shutil, unittest
+import json, os, shutil, sys, unittest
 
 from addystack_home import KIT, SKILLS, Home
 
@@ -218,6 +218,28 @@ class Hooks(Doctor):
         line, _ = self.check("hooks")
         self.assertIn(f"claude: missing PreToolUse {KIT}/hooks/", line)
 
+
+    def test_an_untrusted_codex_hook_fails_with_the_trust_fix(self):
+        # Codex review of r165: removing the entries above merge-gate and ready-gate moved
+        # both, and Codex skips a moved hook until the user trusts it again.
+        self.cli("install")
+        server = self.stubs / "codex"
+        server.write_text(f"""#!{sys.executable}
+import json, sys
+if sys.argv[1:] != ["app-server"]:
+    sys.exit(print("1.2.3"))
+for line in sys.stdin:
+    id_ = json.loads(line).get("id")
+    hooks = [{{"key": "pre_tool_use:0:0", "trustStatus": "modified", "command": "~/kit/hooks/merge-gate.py"}},
+             {{"key": "pre_tool_use:0:1", "trustStatus": "trusted", "command": "~/kit/hooks/ready-gate.py"}}]
+    if id_:
+        print(json.dumps({{"id": id_, "result": {{"data": [{{"hooks": hooks, "errors": []}}]}}}}), flush=True)
+""")
+        self.assertEqual(self.check("hooks"), ("FAIL  hooks: codex trust: pre_tool_use:0:0 is modified: "
+                                               "~/kit/hooks/merge-gate.py", "fix: trust each in codex's /hooks"))
+        # A codex that can't answer, like the version stub, leaves the check to drift alone.
+        self.stub("codex", "echo 1.2.3")
+        self.assertEqual(self.check("hooks"), ("ok    hooks: match the selection", None))
 
 class PolicyTools(Doctor):
     def test_nothing_is_needed_without_a_gh_stack_rule(self):
