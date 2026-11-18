@@ -23,10 +23,10 @@ before you report if its text has left your context.
 A finding line here shows its call in place of a severity: **blocking**,
 **non-blocking**, **question**, or **drop**. A kept finding holds the approval when its
 call is blocking, it's a **defect** (a verified error this PR introduces), or it's a
-Cleanup on lines this PR wrote whose better shape fits its scope, since a merged PR is
-finished. Optional niceties, follow-up ideas, and questions about intent don't. A real
-problem the PR didn't cause or worsen, such as a security gap beside it, is a note for
-the user outside the findings: filing it is their call.
+Cleanup on lines this PR wrote whose better shape fits its scope. Optional niceties,
+follow-up ideas, and questions about intent don't. A real problem the PR didn't cause
+or worsen, such as a security gap beside it, is a note for the user outside the
+findings: filing it is their call.
 
 When a verified finding can't be hit yet and depends on what the author meant, such as
 a contract for a later milestone, its call is **question**. Cite the PR's own test or
@@ -71,11 +71,12 @@ callers, probe them with `scripts/probe-worktree.sh`, comparing the compiler's e
 lists from a tree that typechecks cleanly.
 
 **Pick each shape** before judging the PR's approach or choosing a fix. For each
-pattern the PR adds and each fix you'd suggest, read the library's or tool's own API,
-config, and docs for the job, the repo's rules for the area (`AGENTS.md`, ADRs,
-`CONTEXT.md`, design docs), and the code that already does the job. Pick the cleanest
-long-term shape at the cause that fits the PR's scope; fewest lines only breaks a tie.
-Past the PR's scope, pick the in-scope fix and name the cause as a follow-up.
+pattern the PR adds and each fix you'd suggest, compare the alternatives that the
+library's or tool's own API, config, and docs, the repo's rules (`AGENTS.md`, ADRs,
+`CONTEXT.md`, design docs), and its shared helpers offer. A matching sibling shows
+consistency, not the best shape. Pick the cleanest long-term shape at the cause that
+fits the PR's scope; fewest lines only breaks a tie. Past the PR's scope, pick the
+in-scope fix and make the cause a follow-up.
 
 For a large PR, split the lenses across parallel sub-agents. On every PR, also run a
 read-only pass by the other provider in parallel, as a T3 child task on the
@@ -95,8 +96,8 @@ failures, points others already raised, broad refactors, and non-blocking past t
 A failed required check that this PR's change causes, or makes worse than the base's
 run of it (read with `gh`), is a blocking finding.
 
-**Done when:** every changed path is traced, each pattern and suggested fix has a pick
-and the source it was read from, and every kept finding has its evidence lines.
+**Done when:** every changed path is traced, each pattern and suggested fix has a pick,
+the alternative it beat, and its source, and every kept finding has its evidence lines.
 
 ## 3. Discuss findings
 
