@@ -13,8 +13,9 @@ of the file byte for byte and replaces the file atomically.
                                     queue an item that waits on the user (KIND: stuck,
                                     decide, review, or do), then print the queue
   project.py DIR queue done ID --answer A
-                                    take the item off the queue, adding its answer under
-                                    Decisions, then print the queue
+                                    take the item off the queue, adding it, who asked, and
+                                    the answer A (the pick in words and the user's own)
+                                    under Decisions, then print the queue
   project.py DIR queue show         print the strip and need a reply shows, and every item
   project.py DIR phase SLUG --result R (--goal G --proof P | --park REASON)
                                     end the running phase: save project.md to
@@ -91,16 +92,17 @@ class ProjectError(Exception):
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
           source: str | None = None, ident: int | None = None, answer: str | None = None) -> str:
     """Runs a `queue` action on lines and returns what it prints: the queue as `show` gives
-    it, after a line naming the item an add or done touched. `done` records the answer
-    under Decisions, so a resolved call keeps its trail."""
+    it, after a line naming the item an add or done touched. `done` records the item, who
+    asked it, and the answer under Decisions, so a resolved call keeps its trail."""
     try:
         if action == "add":
             item = project_queue.add(lines, kind, name, source or "coordinator")
             head = [f"queued {item.id}: {item.kind} · {item.name}"]
         elif action == "done":
-            text = _line("answer", answer or "")
+            if not (answer or "").strip():
+                raise ProjectError("--answer takes the answer: the pick in words and the user's own")
             item = project_queue.done(lines, ident)
-            decide(lines, f"queue {item.id} ({item.kind}) {item.name} → {text}")
+            decide(lines, f"{item.source} asked: {item.name} (queue {item.id}, {item.kind}) → {answer.strip()}")
             head = [f"done {item.id}: {item.kind} · {item.name}"]
         else:
             head = []

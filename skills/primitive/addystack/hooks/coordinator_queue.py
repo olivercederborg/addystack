@@ -140,8 +140,8 @@ def feedback(project, path, items, found):
             "status or a quiet wake's included, ends on its top item (coordinator step 5): its card the first time, "
             f"then its question, the strip `{project_queue.strip(items)}`, and Next, with `{need}` in the turn "
             f"block's `needs`. If the user already answered it, record that first with {script} `{path.parent} queue "
-            f"done {top.id} --answer \"<their words>\"` and show the next one; `queue show` prints the strip and the "
-            "need. Send your whole reply again; T3 shows only a turn's last message, so it has to stand on its own. "
+            f"done {top.id} --answer \"<the pick> · the user: '<their words>'\"` and show the next one; `queue show` "
+            "prints the strip and the need. Send your whole reply again; T3 shows only a turn's last message, so it has to stand on its own. "
             "Add no note about the change.")
 
 

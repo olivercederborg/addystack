@@ -15,8 +15,8 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   added by `phase`.
 - **Queue**: what waits on the user, as step 5 orders it: a row per real call, stuck
   run, or Do, with the id its turn-block need carries, never reused, and `Next id:` above
-  the table. `queue add` and `queue done` are its only writers, and `done` adds the answer
-  under Decisions. A phase end carries it over.
+  the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
+  who asked it, and the answer under Decisions. A phase end carries it over.
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.

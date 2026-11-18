@@ -157,17 +157,20 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn("## Queue\n\nNext id: 3\n\n| # | Kind | Name | From | Since |\n|---|---|---|---|---|\n"
                       "| 1 | do | pull the Mac's dotfiles | coordinator |", self.text())
         self.assertTrue(self.text().index("## Queue") < self.text().index("## Decisions"))
-        done = self.project("queue", "done", "2", "--answer", "-", stdin='the user: "a"\n').stdout
+        done = self.project("queue", "done", "2", "--answer", "-", stdin='keep it one release · the user: "a"\n').stdout
         self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))
-        self.assertIn(f"merged 31ddd00.\n- {TODAY} · queue 2 (decide) keep the v1 export → the user: \"a\"\n",
-                      self.text())
+        self.assertIn(f"merged 31ddd00.\n- {TODAY} · export-v2 <t3-thread://v2/e/8f> asked: keep the v1 export (queue 2, "
+                      "decide) → keep it one release · the user: \"a\"\n", self.text())
+        self.project("queue", "done", "1", "--answer", "pulled · the user: \"done.\nBoth machines.\"")
+        self.assertIn(f"- {TODAY} · coordinator asked: pull the Mac's dotfiles (queue 1, do) → pulled · the user: "
+                      "\"done.\n  Both machines.\"\n", self.text())
 
     def test_a_refused_queue_edit_leaves_the_file_untouched(self):
         self.project("queue", "add", "decide", "keep the v1 export")
         before = self.text()
         for args, error in [(["add", "decide", "ok"], "a word of 3+ letters"),
                             (["done", "7", "--answer", "a"], "no open Queue item 7"),
-                            (["done", "1", "--answer", "  "], "--answer takes one non-empty line")]:
+                            (["done", "1", "--answer", "  "], "--answer takes the answer")]:
             with self.subTest(args=args):
                 self.assertIn(error, self.project("queue", *args, code=1).stderr)
                 self.assertEqual(self.text(), before)

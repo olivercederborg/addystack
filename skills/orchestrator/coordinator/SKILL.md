@@ -132,12 +132,12 @@ inputs or one of Parallel by default's three reasons.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
-  `project.md`, keep only the fixes the goal needs, and log the rest under Follow-ups. A
-  decision card in the result goes to step 5.
+  `project.md`, keep only the fixes the goal needs, and log the rest under Follow-ups. Its
+  decision card goes to step 5.
 - **A worker's pending question**: when a worker asks mid-run instead of returning a
   card, T3 wakes you once your current turn ends. Read it with `t3_pending_request`
   (`list`, then `read`) on the worker's thread, set its State to `waiting`, so the stuck
-  rule passes it over, and queue it as a call for step 5. A worker on another machine
+  rule passes it over, and queue it (step 5). A worker on another machine
   wakes no one ([across machines](references/across-machines.md)).
 - **A PR watch**: once a worker opens a PR, `watch_pull_request` it and list it under
   Listening. On a wake, send the event to the PR's owner once step 3 lets its task
@@ -190,9 +190,9 @@ keep the v1 export · export-v2`, and the need for the turn block's `needs`; the
 `coordinator-queue` Stop hook sends back a reply without them.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
-words, and run `queue done <id> --answer "<their words>"`. In the same reply, show the
-next item with no recap. With the queue empty, the reply is one line: a ⏳ line while any
-worker runs, else a **Done** line.
+words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"`. In
+the same reply, show the next item with no recap. With the queue empty, the reply is one
+line: a ⏳ line while any worker runs, else a **Done** line.
 
 **Done when:** every answer is sent and off the queue, and the reply ends on the queue's
 top item or the one-line status.
