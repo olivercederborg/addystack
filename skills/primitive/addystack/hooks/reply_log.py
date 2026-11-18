@@ -36,8 +36,10 @@ def path() -> Path:
 
 
 def headline(reply: str) -> str:
+    """The reply's first line, cut to HEADLINE characters, with a lone surrogate as "?", so the
+    report can print it."""
     first = next((line.strip() for line in reply.splitlines() if line.strip()), "")
-    return first[:HEADLINE]
+    return first[:HEADLINE].encode("utf-8", "replace").decode("utf-8")
 
 
 def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
@@ -51,7 +53,6 @@ def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     common = {"time": now, "hook": hook, "session": event.get("session_id"), "turn": turn,
               "cwd": event.get("cwd"), "headline": headline(event.get("last_assistant_message") or "")}
-    # ASCII escapes, so a lone surrogate in a reply can't fail the write.
     rows = "".join(json.dumps({**common, "rule": rule, "detail": detail}) + "\n" for rule, detail in broken)
     try:
         target = path()
