@@ -93,7 +93,7 @@ symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), 
 - [Ben Holmes's skills](https://github.com/bholmesdev/skills) (MIT, see its `NOTICE`): `tidy` adapts `simplify`.
 - [Ayoub Ghriss's i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT, see its `NOTICE`): `reply-shape` adapts it.
 - [HumanLayer's skills](https://github.com/humanlayer/skills): `open-pr`'s default body follows `visual-pr`.
-- `use-lakebed` started in a team's skill registry and pins Lakebed 0.0.41.
+- `use-lakebed` began outside the kit, but the kit's copy is the maintained one now. It pins Lakebed 0.0.41.
 
 ## License
 
