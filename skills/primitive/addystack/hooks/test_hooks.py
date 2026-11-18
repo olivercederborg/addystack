@@ -6428,6 +6428,9 @@ class TurnBlock(unittest.TestCase):
             'Example: `</details>`.\n\n- `a` → test #12\n\n<details id="checks"><summary>More</summary>\n\n- `a` → merge #12\n\n',
             '<span title="</details>">x</span>\n\n<details><summary>More</summary>\n\nmore\n\n',
             "</details>\n\n<details><summary>More</summary>\n\nmore\n\n",
+            # Codex r3: inside these, the parser ignores the </details> that looks like it closes the fold.
+            *[f"<details><summary>More</summary>\n\n<{tag}>\n\n- `a` → merge #12\n\n</details>\n\n"
+              for tag in ["select", "object", "applet", "marquee"]],
             # An autolink is fine, but not a raw-text tag beside or in it.
             "See <https://x.y> or <title>.\n\n",
             "See <ab:`> and `<title>`.\n\n",
