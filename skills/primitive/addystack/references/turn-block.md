@@ -1,9 +1,10 @@
 # Turn block
 
-With `replies.turnBlock` on, every final reply ends with one turn block: a line of JSON in
-an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
+A reply rules file (`replies.rules`) can end every final reply with one turn block: a line
+of JSON in an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
 `hooks/merge-gate.py` reads which option a key picked, and tools such as Prefrontal read
-the rest. A user's own reply rules file (`replies.rules`) may restate this section.
+the rest. `replies.turnBlock` no longer changes anything: it chose the Stop hooks that
+checked the block, which the kit removed.
 `turn_block.py`'s docstring holds the parser's exact limits: which code blocks and spans
 hide an example block, and which replies' picks count as a merge go.
 
