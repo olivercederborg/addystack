@@ -36,15 +36,15 @@ class Hooks(Home):
         self.assertEqual(self.settings.read_text(), before)
 
     def test_removes_a_hook_it_installed_once_its_no_longer_selected(self):
-        self.write(self.config, '{ "hooks": { "preset": "all" }, "replies": { "turnBlock": true } }')
-        self.write(self.settings, json.dumps({"hooks": {"Stop": [{"hooks": [UNRELATED["hooks"][0]]}]}}))
+        self.write(self.config, '{ "hooks": { "preset": "all" } }')
+        self.write(self.settings, json.dumps({"hooks": {"SessionStart": [{"hooks": [UNRELATED["hooks"][0]]}]}}))
         self.ok("install")
-        self.assertIn(f"{KIT}/hooks/routine_stop.py", self.commands(self.settings)["Stop"])
-        self.write(self.config, '{ "hooks": { "preset": "all" }, "replies": { "turnBlock": false } }')
+        self.assertIn(f"{KIT}/hooks/skills-checkout-check.py", self.commands(self.settings)["SessionStart"])
+        self.write(self.config, '{ "hooks": { "preset": "all", "disable": ["skills-checkout-check"] } }')
         out = self.ok("install").stdout
-        self.assertIn(f"- Stop {KIT}/hooks/routine_stop.py", out)
-        self.assertNotIn(f"{KIT}/hooks/routine_stop.py", self.commands(self.settings)["Stop"])
-        self.assertEqual(self.commands(self.settings)["Stop"][0], "~/bin/my-guard.sh")
+        self.assertIn(f"- SessionStart {KIT}/hooks/skills-checkout-check.py", out)
+        self.assertNotIn(f"{KIT}/hooks/skills-checkout-check.py", self.commands(self.settings)["SessionStart"])
+        self.assertEqual(self.commands(self.settings)["SessionStart"][0], "~/bin/my-guard.sh")
 
     def test_keeps_a_users_hook_on_a_kit_script_no_manifest_entry_runs(self):
         mine = {"matcher": "Bash", "hooks": [{"type": "command", "command": f"{KIT}/hooks/my-personal-hook.sh"}]}

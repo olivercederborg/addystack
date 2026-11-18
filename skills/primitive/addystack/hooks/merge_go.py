@@ -111,8 +111,7 @@ def names(text, pr, owner, repo, merging=()):
     before it may be a refusal or a step NOT_REPO misses, as in "merge #10-#14, exclude #12",
     and so does a text that names a repo and names one PR twice. A word that starts like a
     PR, with a digit or holding a #, but doesn't read as one, names something it can't place,
-    so it isn't pr. merge-gate.py holds a go to it, and unplaced asks it about the text
-    alone."""
+    so it isn't pr. merge-gate.py holds a go to it."""
     read, unread = spans(text)
     if unread:
         return False
@@ -136,57 +135,3 @@ def names(text, pr, owner, repo, merging=()):
         return False
     return not found or any(ours and low <= pr <= high for ours, low, high in placed)
 
-
-# A form merge-gate places every PR of, for an option it can't place as a whole.
-REWRITE = ("write each PR as #12, or as repo #12 for every PR once one names its repo, each range as "
-           "#10-#14, and each number once")
-
-
-def unplaced(text):
-    """The PRs of text that names() places in no repo, whatever merge holds them, as (ref,
-    why) pairs, or [] when it places each one somewhere. names() decides, for a merge of
-    each PR alone, in every repo the text names and in one it doesn't; why names every
-    cause the text settles, each with its fix: a bare PR after one named with its repo, as #59 in
-    "merge addystack #56 and #59", or a range across two repos or written high to low. A
-    text names() refuses whole, one that names a number twice beside a repo name (even two
-    repos' own #145, or app #1 beside me/app #1) or holds a word spans() can't read, gets
-    one note with a form that places, since which PR each ref means is the agent's to say.
-    Known limit: past a word spans() can't read, the other PRs go unchecked until it reads."""
-    read, unread = spans(text)
-    if unread:
-        word, cause = unread
-        return [(word, f"{cause}, so merge-gate places none of this option's PRs: {REWRITE}")]
-    spread = [(min(low[1], high[1]), max(low[1], high[1])) for low, high in read]
-    shared = [at for at, a in enumerate(spread)
-              if any(b != at and max(a[0], spread[b][0]) <= min(a[1], spread[b][1]) for b in range(len(spread)))]
-    shown = lambda end: f"{'/'.join(filter(None, end[0]))} #{end[1]}" if end[0] else f"#{end[1]}"
-    ref = lambda low, high: shown(low) if low == high else f"{shown(low)}-{shown(high)}"
-    named = [bool(low[0] or high[0]) for low, high in read]
-    # Two ends name one repo when their names match and their owners don't differ.
-    other = lambda a, b: a[1].lower() != b[1].lower() or (a[0] and b[0] and a[0].lower() != b[0].lower())
-
-    def causes(at, low, high):  # each cause the text settles, with its fix
-        if low[0] and high[0] and other(low[0], high[0]):  # its own fix makes the range two PRs
-            if low[1] == high[1]:
-                return f"spans two repos: give each repo's #{low[1]} a merge option of its own"
-            return "spans two repos: list each repo's PRs"
-        found = []
-        if low[1] > high[1]:
-            found.append(f"runs high to low: write {ref((low[0], high[1]), (high[0], low[1]))}")
-        if not named[at] and any(named[:at]):
-            found.append("follows a PR named with its repo, so it's in none: name its repo")
-        return "; ".join(found)
-    settled = [(ref(low, high), causes(at, low, high)) for at, (low, high) in enumerate(read)]
-    if shared and any(named):  # names() refuses every PR of such a text
-        return [(", ".join(ref(*read[at]) for at in shared),
-                 "share a number beside a repo name, so merge-gate places none of this option's PRs: "
-                 "name each PR once, and give two repos' same number a merge option each")] + [
-                    (where, why) for where, why in settled if why]
-    repos = {(end[0][0] or "", end[0][1]) for span in read for end in span if end[0]} | {("", "\0")}
-    placed = lambda n: any(names(text, n, owner, repo, (n,)) for owner, repo in repos)
-    # names() changes its answer only at a range's bounds, so a range's PRs are its bounds,
-    # each next to them, and every other range's that fall inside it: "#1-#5000" asks a few.
-    bounds = {n + step for low, high in read for n in (low[1], high[1]) for step in (-1, 0, 1)}
-    probes = lambda low, high: [n for n in bounds if min(low[1], high[1]) <= n <= max(low[1], high[1])]
-    return [(where, why or f"is in no repo: {REWRITE}") for (low, high), (where, why) in zip(read, settled)
-            if not all(placed(n) for n in probes(low, high))]

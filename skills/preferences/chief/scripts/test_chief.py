@@ -9,7 +9,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(1, str(HERE.parents[3] / "skills" / "primitive" / "addystack" / "hooks"))
 import inbox as chief, projects, snooze  # noqa: E402
 from zoneinfo import ZoneInfo  # noqa: E402
-import bare_references, reply_budget, turn_block  # noqa: E402
+import turn_block  # noqa: E402
 
 DEVBOX = "8ef1f244-6d9b-47af-addf-af15ee5f56ee"
 MAC = "0c5f5b0f-2c19-43e6-8a82-8fe66c1580b9"
@@ -258,13 +258,11 @@ class Card(unittest.TestCase):
         self.assertIn("Search speed", order[2])
         self.assertIn("franklin-next #7", order[3])
 
-    def test_card_passes_the_reply_hooks(self):
+    def test_card_carries_a_turn_block_for_each_need(self):
         text = self.full_card()
         turn = turn_block.parse(text)
         self.assertEqual(turn.state, "stop")
         self.assertEqual(len(turn.needs), 4)
-        self.assertLess(reply_budget.words(text), 60)
-        self.assertEqual(bare_references.problems(text), [])
         self.assertIn("<t3-thread://v2/", text)
 
     def test_an_empty_inbox_is_done(self):

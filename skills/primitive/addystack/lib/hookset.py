@@ -3,7 +3,7 @@
 Takes over hooks/render_hooks.py and hooks/hook_parity.py, which stay as thin wrappers
 until M3. Each hooks/manifest.json entry has an `id`, `tags` (`safety`, `workflow`,
 `replies`, `machine`), an optional `requires` (a dotted Resolved path that must be truthy,
-such as `replies.turnBlock`, or `path=value` for one that must equal a string, such as
+such as `replies.rules`, or `path=value` for one that must equal a string, such as
 `replies.style=reply-shape`), and a `{{kit}}` prefix on its command. Selection runs in
 this order and keeps manifest order, since Codex trusts a hook by its position:
 
@@ -42,8 +42,13 @@ _FIELDS = ("matcher", "timeout", "onFailure")
 # command on one is addystack's wherever a manifest script's would be: in this kit's hooks
 # folder, an earlier kit's, or an older install's link folder. Drift reports it as extra,
 # and an install removes it, with or without a ledger entry. reply-card.py went with
-# reply-shape's UI cards (Nov 2026).
-RETIRED = ("reply-card.py",)
+# reply-shape's UI cards (Nov 2026), and the rest with r165's cut to the hooks that guard
+# hard-to-undo steps (Nov 18, 2026).
+RETIRED = ("reply-card.py", "bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py",
+           "unparsed-bash-rewrite.py", "bug-route.py", "coordinator-light.py", "existing_work.py",
+           "gh-stack-only.py", "require-writing-for-agents.py", "t3-children-only.py",
+           "thread-titles.py", "bare_references.py", "coordinator_queue.py", "pr_watch.py",
+           "reply_budget.py", "routine_stop.py", "upload_handoff.py")
 
 
 @dataclass(frozen=True)

@@ -2,7 +2,7 @@
 each passes on a working install and fails with a fix line naming what to run."""
 from __future__ import annotations
 
-import json, os, shutil, unittest
+import json, os, shutil, sys, unittest
 
 from addystack_home import KIT, SKILLS, Home
 
@@ -213,10 +213,56 @@ class Hooks(Doctor):
     def test_a_hook_removed_by_hand_fails(self):
         self.cli("install")
         settings = self.json(self.settings)
-        settings["hooks"].pop("UserPromptSubmit")
+        settings["hooks"].pop("PreToolUse")
         self.settings.write_text(json.dumps(settings))
         line, _ = self.check("hooks")
-        self.assertIn(f"claude: missing UserPromptSubmit {KIT}/hooks/", line)
+        self.assertIn(f"claude: missing PreToolUse {KIT}/hooks/", line)
+
+    def codex_lists(self, hooks):
+        """A codex stub whose app-server lists these hooks."""
+        (self.stubs / "codex").write_text(f"""#!{sys.executable}
+import json, sys
+if sys.argv[1:] != ["app-server"]:
+    sys.exit(print("1.2.3"))
+hooks = json.loads({json.dumps(json.dumps(hooks))})
+for line in sys.stdin:
+    id_ = json.loads(line).get("id")
+    if id_:
+        print(json.dumps({{"id": id_, "result": {{"data": [{{"hooks": hooks, "errors": []}}]}}}}), flush=True)
+""")
+
+    def test_a_kit_hook_codex_wont_run_fails_with_the_trust_fix(self):
+        # Codex review of r165: Codex keys a hook's trust and enabled state by its position,
+        # so removing the entries above merge-gate and ready-gate passes both theirs.
+        self.cli("install")
+        source = str(self.codex_hooks.resolve())
+        [(merge, ready)] = [[hook["command"] for group in groups for hook in group["hooks"]]
+                            for event, groups in self.json(self.codex_hooks)["hooks"].items()]
+        kit = {"eventName": "preToolUse", "sourcePath": source}
+        self.codex_lists([{**kit, "key": "0", "command": merge, "trustStatus": "modified", "enabled": True},
+                          {**kit, "key": "1", "command": ready, "trustStatus": "trusted", "enabled": False},
+                          # The user's own hook on a kit script, disabled, and an admin's: not the kit's entries.
+                          {**kit, "key": "u", "command": merge, "trustStatus": "trusted", "enabled": False,
+                           "sourcePath": str(self.home / ".codex/config.toml")},
+                          {**kit, "key": "m", "command": "/opt/audit", "trustStatus": "managed", "enabled": True,
+                           "sourcePath": "/etc/codex/requirements.toml"}])
+        self.assertEqual(self.check("hooks"), (f"FAIL  hooks: codex: PreToolUse {merge} is modified; "
+                                               f"codex: PreToolUse {ready} is disabled", self.CODEX_FIX))
+        # A codex that can't answer, like the version stub, leaves the check to drift alone.
+        self.stub("codex", "echo 1.2.3")
+        self.assertEqual(self.check("hooks"), ("ok    hooks: match the selection", None))
+
+    def test_a_kit_hook_codex_doesnt_load_fails(self):
+        # Codex review of r165: with `[features] hooks = false`, Codex lists no hooks at all.
+        self.cli("install")
+        self.codex_lists([])
+        line, fix = self.check("hooks")
+        self.assertEqual([part.rsplit("/", 1)[-1] for part in line.removeprefix("FAIL  hooks: ").split("; ")],
+                         ["merge-gate.py isn't loaded", "ready-gate.py isn't loaded"])
+        self.assertEqual(fix, self.CODEX_FIX)
+
+    CODEX_FIX = ("fix: trust and enable each in codex's /hooks; for one that isn't loaded, check "
+                 "`[features] hooks` in its config.toml and that hooks.json parses")
 
 
 class PolicyTools(Doctor):

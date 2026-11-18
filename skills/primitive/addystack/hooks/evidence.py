@@ -73,11 +73,11 @@ PARITY_CLAIM = re.compile(r"\b(no behaviou?r(al)? changes?|behaviou?r[- ]preserv
                           re.I)
 PARITY_SUBJECT = re.compile(r"\b(refactor\w*|migrat(e|es|ed|ing)|port(s|ed|ing)? to|rewr(ite|ites|ote|itten)"
                             r"|upgrad(e|es|ed|ing))\b", re.I)
+# A deploy claim names where it went. "Ship the fix" as a subject's verb claims nothing.
 DEPLOY_CLAIM = re.compile(r"\b(deploy|release|ship)\w* to (prod|production|staging|live)\b", re.I)
 # A quoted phrase is a mention, not a claim: 'Stop reading "parity" as one' claims nothing.
 # A single quote opens and closes only outside a word, so "don't" and "it's" don't pair up.
 QUOTED = re.compile(r"\"[^\"\n]*\"|`[^`\n]*`|(?<!\w)'[^'\n]*'(?!\w)")
-DEPLOY_SUBJECT = re.compile(r"^(deploy|release|ship)\b", re.I)  # "test: release the lock" isn't one
 # Each capture type and the first bytes it starts with, so a renamed text file isn't one.
 MEDIA = {suffix: re.compile(magic, re.S) for suffixes, magic in [
     ((".png",), rb"\x89PNG\r\n\x1a\n"), ((".jpg", ".jpeg"), rb"\xff\xd8\xff"), ((".gif",), rb"GIF8"),
@@ -202,7 +202,7 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
         message = QUOTED.sub("", message)
         if claim := PARITY_CLAIM.search(message) or (every_subject_refactors and PARITY_SUBJECT.search(subject)):
             reasons["parity"].append(said(claim))
-        if claim := DEPLOY_CLAIM.search(message) or DEPLOY_SUBJECT.search(subject):
+        if claim := DEPLOY_CLAIM.search(message):
             reasons["deploy"].append(said(claim))
     return {kind: found for kind, found in reasons.items() if found}
 

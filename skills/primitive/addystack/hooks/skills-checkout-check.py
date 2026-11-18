@@ -154,11 +154,24 @@ def build_warning():
         + ([f"⚠️ addystack notes to check against their changed skills: {'; '.join(reread)}."] if reread else []))
 
 
+def hook_drift():
+    """hook_parity's drift lines, from a fresh process: this one loaded hookset before the
+    fast-forward, which can change what drift checks, such as RETIRED."""
+    try:
+        parity = subprocess.run([sys.executable, hook_parity.__file__], capture_output=True, text=True,
+                                stdin=subprocess.DEVNULL, timeout=3)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return [f"not checked: {error}"]
+    if parity.returncode == 0:
+        return []
+    return parity.stdout.splitlines() or [f"not checked: hook_parity.py exited {parity.returncode}"]
+
+
 # The checkout first, since a fast-forward can change the manifest drift reads and the
 # built files.
 checkout = checkout_warning()
 build = build_warning()
-drift = hook_parity.drift("claude") + hook_parity.drift("codex", required=bool(shutil.which("codex")))
+drift = hook_drift()
 warnings = [checkout, build] + ([
     "⚠️ This machine's hooks differ from hooks/manifest.json, so some checks don't run as "
     f"declared (recheck with `python3 {hook_parity.__file__} --codex-trust`): " + "; ".join(drift) + "."]

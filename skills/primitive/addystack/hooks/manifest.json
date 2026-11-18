@@ -1,47 +1,20 @@
 {
   "claude": [
-    {"id": "require-writing-for-agents", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Write|Edit|MultiEdit|Bash", "command": "{{kit}}/hooks/require-writing-for-agents.py", "timeout": 10},
-    {"id": "coordinator-light", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Write|Edit|MultiEdit|Bash", "command": "{{kit}}/hooks/coordinator-light.py", "timeout": 10},
-    {"id": "gh-stack-only", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/gh-stack-only.py", "timeout": 10},
-    {"id": "t3-children-only", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/t3-children-only.py", "timeout": 10},
-    {"id": "bash-rewrite", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/bash-rewrite.py", "timeout": 10},
     {"id": "keychain-home-guard", "tags": ["machine"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/keychain-home-guard.py", "timeout": 10, "hosts": ["darwin"]},
-    {"id": "no-foreground-waits", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/no-foreground-waits.py", "timeout": 10},
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60, "onFailure": "block"},
     {"id": "verdict-stamp", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/verdict-stamp.py", "timeout": 10, "onFailure": "block"},
     {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60, "onFailure": "block"},
     {"id": "child-fast-mode-off", "tags": ["workflow"], "event": "PreToolUse", "matcher": "mcp__t3-code__delegate_task|mcp__t3-code__create_threads|mcp__t3-code__t3_thread_launch", "command": "{{kit}}/hooks/child-fast-mode-off.py", "timeout": 10},
-    {"id": "thread-titles", "tags": ["workflow"], "event": "PreToolUse", "matcher": "mcp__t3-code__delegate_task|mcp__t3-code__t3_thread_launch", "command": "{{kit}}/hooks/thread-titles.py", "timeout": 10},
     {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
     {"id": "reply-rules", "tags": ["replies"], "requires": "replies.rules", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py --rules", "timeout": 10},
-    {"id": "ssh-signing-blocked", "tags": ["machine"], "event": "PostToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ssh-signing-blocked.py", "timeout": 10},
-    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUseFailure", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]},
-    {"id": "ssh-signing-blocked", "tags": ["machine"], "event": "PostToolUseFailure", "matcher": "Bash", "command": "{{kit}}/hooks/ssh-signing-blocked.py", "timeout": 10},
-    {"id": "bare-references", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/bare_references.py", "timeout": 10},
-    {"id": "upload-handoff", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/upload_handoff.py", "timeout": 10},
-    {"id": "routine-stop", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/routine_stop.py", "timeout": 10},
-    {"id": "pr-watch", "tags": ["workflow"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/pr_watch.py", "timeout": 10},
-    {"id": "reply-budget", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/reply_budget.py", "timeout": 10},
-    {"id": "coordinator-queue", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/coordinator_queue.py", "timeout": 10},
-    {"id": "existing-work", "tags": ["workflow"], "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/existing_work.py", "timeout": 10},
-    {"id": "bug-route", "tags": ["workflow"], "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/bug-route.py", "timeout": 10},
-    {"id": "unparsed-bash-rewrite", "tags": ["workflow"], "event": "PermissionRequest", "matcher": "Bash", "command": "{{kit}}/hooks/unparsed-bash-rewrite.py", "timeout": 10}
+    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUseFailure", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]}
   ],
   "codex": [
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
     {"id": "reply-rules", "tags": ["replies"], "requires": "replies.rules", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py --rules", "timeout": 10},
     {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
-    {"id": "gh-stack-only", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/gh-stack-only.py", "timeout": 10},
-    {"id": "t3-children-only", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/t3-children-only.py", "timeout": 10},
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60},
-    {"id": "coordinator-light", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/coordinator-light.py", "timeout": 10},
-    {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60},
-    {"id": "thread-titles", "tags": ["workflow"], "event": "PreToolUse", "matcher": "mcp__.*__(delegate_task|t3_thread_launch)", "command": "{{kit}}/hooks/thread-titles.py", "timeout": 10},
-    {"id": "bare-references", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/bare_references.py", "timeout": 10},
-    {"id": "routine-stop", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/routine_stop.py", "timeout": 10},
-    {"id": "upload-handoff", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/upload_handoff.py", "timeout": 10},
-    {"id": "reply-budget", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/reply_budget.py", "timeout": 10},
-    {"id": "coordinator-queue", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/coordinator_queue.py", "timeout": 10}
+    {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60}
   ]
 }

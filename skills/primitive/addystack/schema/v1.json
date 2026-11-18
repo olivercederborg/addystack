@@ -116,7 +116,7 @@
         "turnBlock": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "End each reply with a machine-readable turn block, for tools such as Prefrontal."
+          "markdownDescription": "No effect: it chose the Stop hooks that checked the turn block, removed in Nov 2026. Kept so a config that sets it stays valid. A reply rules file asks for the turn block."
         }
       }
     },

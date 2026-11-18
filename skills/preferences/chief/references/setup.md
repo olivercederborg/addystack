@@ -21,7 +21,7 @@ says the run wasn't recorded, and answers wait in Executor.
 ## Router thread
 
 The router is its own thread on the devbox, titled `chief`, with no `◆`: that prefix
-marks a coordinator, and a resume hook would read it as one. Start it with
+marks a coordinator. Start it with
 `t3_thread_launch` in the devbox's `skills` project (`t3_project_list`), `workspaceStrategy`
 `root`, and a first message asking it to create its own schedule, since `schedule_task`
 binds to the thread that calls it:

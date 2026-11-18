@@ -134,8 +134,8 @@ drafted in a **Review** note.
   unfinished. Otherwise CI can take a moment to register on the pushed head, and
   `gh pr checks N --watch` exits at once with `no checks reported` until it does. So
   first wait until `gh pr checks N` lists at least one check, then wait for them with
-  `--watch`. Run both waits in the background where the harness offers it (Claude
-  Code's hook blocks waits in the foreground), then judge done.
+  `--watch`. Run both waits in the background where the harness offers it, then judge
+  done.
 - **Threads handled**: every open item has its reply posted, or drafted for the user.
 - **No conflicts** with the base.
 

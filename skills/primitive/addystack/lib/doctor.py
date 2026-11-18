@@ -10,7 +10,8 @@ installed is a note, since a user may install some with `--skill` and update lea
 removed one removed; with the claude host enabled and verify-work in its skill folder,
 agents/work-verifier.md in Claude Code's folder is the work-verifier agent, as install links
 it (reconcile.agent()), or a file holding verify-work's copy's text; the installed hooks match the selection
-(hookset.drift); and the tools the policy needs, `gh` and `gh stack` when the defaults or
+(hookset.drift), and with the codex host enabled, `codex app-server` loads, trusts, and
+enables each kit hook in its hooks.json (_codex_skips); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
 A check skipped because the config didn't resolve reports `skipped: …`, with ok True,
@@ -230,9 +231,46 @@ def _hooks(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("hooks", True, _SKIPPED, None)
     lines = [line for host in _enabled(value) for line in hookset.drift(value, host)]
-    if lines:
-        return Check("hooks", False, "; ".join(lines), "addystack install")
+    trust = _codex_skips(value) if "codex" in _enabled(value) else []
+    if lines or trust:
+        fix = " and ".join(step for step, needed in (("addystack install", lines),
+                                                     (_CODEX_FIX, trust)) if needed)
+        return Check("hooks", False, "; ".join(lines + trust), fix)
     return Check("hooks", True, "match the selection" if _enabled(value) else "no host enabled", None)
+
+
+_CODEX_FIX = ("trust and enable each in codex's /hooks; for one that isn't loaded, check "
+              "`[features] hooks` in its config.toml and that hooks.json parses")
+
+
+def _codex_skips(value: Resolved) -> List[str]:
+    """A line for each kit hook in Codex's hooks.json that Codex won't run: not loaded,
+    untrusted, or disabled. Codex keys trust and the enabled flag by a hook's position, so
+    removing an entry above a gate hands the gate its state. Nothing when codex can't
+    answer, or hooks.json can't be read, which leaves the check to drift."""
+    import hook_parity
+    path = hookset.settings_path("codex")
+    try:
+        data = hook_parity.codex_hooks()
+        installed = json.loads(path.read_text()).get("hooks", {})
+    except (hook_parity.NotChecked, OSError, ValueError):
+        return []
+    source = os.path.realpath(path)
+    listed = {(hook.get("eventName"), hook.get("command")): hook for entry in data
+              for hook in entry.get("hooks", []) if os.path.realpath(hook.get("sourcePath", "")) == source}
+    owned = hookset.owner(value)
+    lines = []
+    for event, groups in installed.items():
+        for command in (hook.get("command", "") for group in groups for hook in group.get("hooks", [])):
+            if not owned(event, command):
+                continue
+            hook = listed.get((event[0].lower() + event[1:], command))
+            status = hook.get("trustStatus") if hook else None
+            state = ("isn't loaded" if hook is None else f"is {status}" if status not in hook_parity.RUNS
+                     else "is disabled" if hook.get("enabled") is False else None)
+            if state:
+                lines.append(f"codex: {event} {command} {state}")
+    return lines
 
 
 def _policy_tools(value: Optional[Resolved]) -> Check:
