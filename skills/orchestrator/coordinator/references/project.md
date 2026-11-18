@@ -3,9 +3,9 @@
 The coordinator's memory for one project, at
 `~/.local/state/orchestrate/<project>/project.md`. The coordinator is its only writer.
 Start it with `scripts/project.py <folder> init`, and write decisions, learnings,
-Workers rows, and Listening lines with `project.py` (`decide`, `learn`, `worker`,
-`listen`; `--help` shows each). End a phase with `phase`, and start the next on a parked
-project with `start` ([phases](phases.md) says when). Its sections:
+Workers rows, Queue items, and Listening lines with `project.py` (`decide`, `learn`,
+`worker`, `queue`, `listen`; `--help` shows each). End a phase with `phase`, and start
+the next on a parked project with `start` ([phases](phases.md) says when). Its sections:
 
 - **Goal**: the current phase's goal, one sentence a stranger could act on, its
   `Proof:`, and `Follow-ups:`, scope drift a worker found, kept out of the goal. A
@@ -13,6 +13,13 @@ project with `start` ([phases](phases.md) says when). Its sections:
   `Proof:`.
 - **Phases**: one line per finished phase, `- <date> · <NN-slug>: <result> · <archive>`,
   added by `phase`.
+- **Queue**: what waits on the user, as step 5 orders it: a row per real call, stuck
+  run, or Do, with the id its turn-block need carries, never reused, and `Next id:` above
+  the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
+  who asked it, and the answer under Decisions. A phase end carries it over. A project
+  from before the queue starts it with `queue import`, given a turn block naming every
+  item still open, with `--from <id>=<worker>` and `--stuck <id>` for what a block can't
+  say, and `queue add` refuses it until then.
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.

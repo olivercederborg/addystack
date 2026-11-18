@@ -293,7 +293,7 @@ class Drift(unittest.TestCase):
     def test_a_hook_the_config_no_longer_selects_is_extra(self):
         self.resolved["replies"]["turnBlock"] = False
         self.assertEqual(self.drift(), [f"claude: extra Stop {hookset._kit(self.resolved)}/hooks/{name}"
-                                        for name in ("routine_stop.py", "reply_budget.py")])
+                                        for name in ("routine_stop.py", "reply_budget.py", "coordinator_queue.py")])
 
 
 class ClaudeConfigDir(unittest.TestCase):

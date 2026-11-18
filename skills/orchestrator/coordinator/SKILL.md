@@ -132,12 +132,12 @@ inputs or one of Parallel by default's three reasons.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
-  `project.md`, keep only the fixes the goal needs, and log the rest under Follow-ups. A
-  decision card in the result goes to step 5.
+  `project.md`, keep only the fixes the goal needs, and log the rest under Follow-ups. Its
+  decision card goes to step 5.
 - **A worker's pending question**: when a worker asks mid-run instead of returning a
   card, T3 wakes you once your current turn ends. Read it with `t3_pending_request`
   (`list`, then `read`) on the worker's thread, set its State to `waiting`, so the stuck
-  rule passes it over, and queue it as a call for step 5. A worker on another machine
+  rule passes it over, and queue it (step 5). A worker on another machine
   wakes no one ([across machines](references/across-machines.md)).
 - **A PR watch**: once a worker opens a PR, `watch_pull_request` it and list it under
   Listening. On a wake, send the event to the PR's owner once step 3 lets its task
@@ -179,29 +179,23 @@ the slot or resource. Once it's sent, set the worker back to `running` with Wait
 cleared. A real call is one of the stops in the user's instructions, or a product call
 no probe settles; only those reach the user.
 
-**Queue order**: stuck runs, then calls, then Do items, oldest first within each. Each
-reply shows only the top one, as the [decision card](references/views.md#decision-card-example) with a strip naming the
-queue and the worker's thread:
-
-````markdown
-🟡 **Keep the v1 export endpoint for one release?**
-
-1 of 3 need you · export-v2 <t3-thread://v2/0c5f5b0f/thread-8f2c41>
-
-**Problem**: two partner scripts still call v1, so removing it breaks their nightly sync.
-
-**Pick**: yes, keep it one release with a deprecation header.
-
-**Source**: v1's access log, 60 calls a night from the two scripts.
-````
+**The queue**: each real call, stuck run, and Do the user owes goes into project.md's
+Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
+--from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
+oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
+included, ends on the top item: the
+[decision card](references/views.md#decision-card-example) the first time, then its
+question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
+keep the v1 export · export-v2`, and the need that leads the turn block's `needs`; the
+`coordinator-queue` Stop hook sends back a reply without them.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
-words. In the same reply, show the next card with no recap. When the queue is empty,
-reply with a one-line status: a ⏳ line while any worker runs, else
-a **Done** line.
+words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"`. In
+the same reply, show the next item with no recap. With the queue empty, the reply is one
+line: a ⏳ line while any worker runs, else a **Done** line.
 
-**Done when:** every answer is sent and recorded, and the reply shows the next card or
-the one-line status.
+**Done when:** every answer is sent and off the queue, and the reply ends on the queue's
+top item or the one-line status.
 
 ## 6. Merge
 

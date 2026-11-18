@@ -12,8 +12,8 @@ has its own goal and proof, and ends here. The project closes only on the user's
    worker whose PR is still open to `waiting`, with Waits on `#N open`, so its row and
    thread stay for the PR's watch. `phase` empties Decisions and Learnings into the
    archive, which a wake doesn't read; only close reads it.
-3. **One card**: bring the user one decision card, as in step 5, with three options:
-   start the next phase, park, or close. Recommend the next phase when
+3. **One card**: queue one call, as in step 5, with three options: start the next
+   phase, park, or close. Recommend the next phase when
    `project.md` or the user already named it, with its goal and proof.
 
 Then follow the pick:

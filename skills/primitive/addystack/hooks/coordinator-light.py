@@ -16,14 +16,11 @@ command inside quotes or `bash -c`, or behind more than 4 wrappers, isn't seen; 
 write such as a redirect isn't checked, since project.md is written that way too; Codex
 runs only the Bash check, since it runs PreToolUse hooks only for Bash; and a thread
 before it takes its ◆ title isn't a coordinator yet."""
-import json, os, re, sqlite3, sys
+import json, os, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import t3_child  # noqa: E402
-
-# A status emoji may lead the title, as in `🟡 ◆ suite-audit`.
-COORDINATOR = re.compile(r"(?:^|\s)◆ \S")
 
 # Only a command position counts: the start of a line or pipeline segment, a
 # substitution, a condition, or a loop or branch body, after up to 4 wrappers and an
@@ -70,23 +67,6 @@ def in_work_tree(path):
     return any((folder / ".git").exists() for folder in [path, *path.parents])
 
 
-def coordinator(session_id):
-    if not isinstance(session_id, str) or not session_id:
-        return False
-    try:
-        db = t3_child.connect()
-        try:
-            owners = [row[0] for row in t3_child.threads(db, session_id)]
-            titles = db.execute(
-                f"select title from orchestration_v2_projection_threads where thread_id in "
-                f"({','.join('?' * len(owners))})", owners).fetchall() if owners else []
-        finally:
-            db.close()
-    except sqlite3.Error:
-        return False
-    return any(isinstance(title, str) and COORDINATOR.search(title) for title, in titles)
-
-
 if not os.environ.get("T3CODE_CLI_PATH"):
     sys.exit(0)
 try:
@@ -102,7 +82,7 @@ try:
         what = f"`{found}` is in a repo, so editing it changes the repo"
     else:
         found = None
-    if not found or not coordinator(payload.get("session_id")):
+    if not found or not t3_child.coordinator_project(payload.get("session_id")):
         sys.exit(0)
 except (ValueError, AttributeError, OSError):
     sys.exit(0)

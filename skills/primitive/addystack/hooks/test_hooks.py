@@ -2078,7 +2078,8 @@ for line in sys.stdin:
         no_turn_block["replies"]["turnBlock"] = False
         resolved_state(self.env["ADDYSTACK_STATE"], json.dumps(no_turn_block), kit=pathlib.Path(self.env["HOME"], "kit"))
         self.assertEqual(self.drift(), ["claude: extra Stop ~/kit/hooks/routine_stop.py",
-                                        "claude: extra Stop ~/kit/hooks/reply_budget.py"])
+                                        "claude: extra Stop ~/kit/hooks/reply_budget.py",
+                                        "claude: extra Stop ~/kit/hooks/coordinator_queue.py"])
 
     def test_without_a_build_the_kit_defaults_select_the_recommended_hooks(self):
         os.remove(pathlib.Path(self.env["ADDYSTACK_STATE"], "resolved.json"))

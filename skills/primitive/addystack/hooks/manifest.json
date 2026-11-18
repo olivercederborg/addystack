@@ -23,6 +23,7 @@
     {"id": "routine-stop", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/routine_stop.py", "timeout": 10},
     {"id": "pr-watch", "tags": ["workflow"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/pr_watch.py", "timeout": 10},
     {"id": "reply-budget", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/reply_budget.py", "timeout": 10},
+    {"id": "coordinator-queue", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/coordinator_queue.py", "timeout": 10},
     {"id": "existing-work", "tags": ["workflow"], "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/existing_work.py", "timeout": 10},
     {"id": "bug-route", "tags": ["workflow"], "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/bug-route.py", "timeout": 10},
     {"id": "unparsed-bash-rewrite", "tags": ["workflow"], "event": "PermissionRequest", "matcher": "Bash", "command": "{{kit}}/hooks/unparsed-bash-rewrite.py", "timeout": 10}
@@ -40,6 +41,7 @@
     {"id": "bare-references", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/bare_references.py", "timeout": 10},
     {"id": "routine-stop", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/routine_stop.py", "timeout": 10},
     {"id": "upload-handoff", "tags": ["replies"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/upload_handoff.py", "timeout": 10},
-    {"id": "reply-budget", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/reply_budget.py", "timeout": 10}
+    {"id": "reply-budget", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/reply_budget.py", "timeout": 10},
+    {"id": "coordinator-queue", "tags": ["replies"], "requires": "replies.turnBlock", "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/coordinator_queue.py", "timeout": 10}
   ]
 }
