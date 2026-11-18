@@ -147,6 +147,25 @@ class Project(Fixture, unittest.TestCase):
 
 
 class Queue(Fixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.project("queue", "import", stdin='<!-- turn {"state":"done"} -->')  # PROJECT predates the queue
+
+    def test_a_project_from_before_the_queue_starts_it_by_import(self):
+        (self.dir / "project.md").write_text(PROJECT)
+        self.assertIn("no Queue yet: start it with `queue import`",
+                      self.project("queue", "add", "decide", "keep the v1 export", code=1).stderr)
+        reply = ('⏳ **R153 runs.**\n\n<!-- turn {"state":"running","elapsed":"1 min","needs":[{"id":63,"kind":"do",'
+                 '"name":"pull the dotfiles"}],"standing":[{"id":64,"kind":"decide","name":"request Casper on ready"},'
+                 '{"id":5,"kind":"decide","name":"merge #39"}]} -->')
+        out = self.project("queue", "import", stdin=reply).stdout
+        self.assertTrue(out.startswith("imported 1: decide · merge #39\nimported 2: do · pull the dotfiles\n"
+                                       "imported 3: decide · request Casper on ready\n1 of 3 need you · merge #39 · "), out)
+        self.assertIn("the Queue exists", self.project("queue", "import", stdin=reply, code=1).stderr)
+        (self.dir / "project.md").write_text(PROJECT)
+        self.assertIn("takes a turn block", self.project("queue", "import", stdin="no block", code=1).stderr)
+        self.assertEqual(self.text(), PROJECT)
+
     def test_add_done_and_show_keep_the_queue_and_its_answers(self):
         added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout
         self.assertTrue(added.startswith("queued 1: do · pull the Mac's dotfiles\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))

@@ -68,7 +68,10 @@ class CoordinatorQueue(unittest.TestCase):
         self.write(PROJECT, ("do", "pull the Mac's dotfiles", "coordinator"), ("decide", "stop format send-backs", WORKER))
 
     def write(self, text, *items):
+        """project.md as text, with a Queue holding items when there are any."""
         lines = text.split("\n")
+        if items:
+            project_queue.create(lines)
         for kind, name, source in items:
             project_queue.add(lines, kind, name, source, datetime(2026, 11, 18, 12, 0))
         self.project_md.write_text("\n".join(lines))
@@ -153,13 +156,18 @@ class CoordinatorQueue(unittest.TestCase):
                                                                              "review")]))
         self.assertIn('its turn block names review 9 "reply to Ander about Fable writers", which the queue doesn\'t '
                       "hold", found)
-        self.write(PROJECT)  # no Queue section yet: the first call creates it
+        self.write(PROJECT)  # no Queue section yet: an import starts it
         found = self.run_on(CARD + block(needs=[SEND_BACKS]))
-        self.assertIn("Every call or Do this thread puts to the user goes on its queue first", found)
-        self.assertIn(f"`{self.project_md.parent} queue add <kind> \"<name>\"", found)
+        self.assertIn("this project's predates it: start it with", found)
+        self.assertIn(f"`{self.project_md.parent} queue import`", found)
         self.assertIsNone(self.run_on("✅ **Nothing waits on you.**\n\n" + block("done")))
+        lines = PROJECT.split("\n")
+        project_queue.create(lines)  # an empty Queue: a new call goes in with queue add
+        self.project_md.write_text("\n".join(lines))
+        found = self.run_on(CARD + block(needs=[SEND_BACKS]))
+        self.assertIn(f"`{self.project_md.parent} queue add <kind> \"<name>\"", found)
 
-    def test_an_item_the_reply_before_named_reaches_the_queue_or_a_queue_done(self):
+    def test_before_its_queue_a_project_keeps_what_the_reply_before_named(self):
         """The first replies after the hook ships, in a project whose open calls lived in `standing`."""
         transcript = self.folder / f"{SESSION}.jsonl"
         before = "⏳ **R153 runs.**\n\n" + block("running", standing=[SEND_BACKS], elapsed="1 min")
@@ -167,30 +175,21 @@ class CoordinatorQueue(unittest.TestCase):
             {"type": "user", "message": {"content": "start R153"}},
             {"type": "assistant", "message": {"content": [{"type": "text", "text": before}]}},
             {"type": "user", "message": {"content": "how is it going?"}}]) + "\n")
-        dropped = 'the reply before named decide 2 "stop format send-backs", which the queue doesn\'t hold'
         quiet = "⏳ **R153 is 4 min in.**\n\n" + block("running", elapsed="4 min")
         self.write(PROJECT)  # no Queue section yet
         found = self.run_on(quiet, transcript_path=str(transcript))
-        self.assertIn(dropped, found)
-        self.assertIn("queue each one still open, in the order it arose", found)
+        self.assertIn('the reply before named decide 2 "stop format send-backs", which the queue doesn\'t hold', found)
+        self.assertIn(f"start it with the coordinator skill's `scripts/project.py` `{self.project_md.parent} queue import`",
+                      found)
         self.assertIsNone(self.run_on(quiet))  # no transcript to read: nothing carried
-        # A new call queued first doesn't end the carry-over, and an id the queue reuses for
-        # another item isn't the old call.
-        self.write(PROJECT, ("do", "pull the Mac's dotfiles", "coordinator"), ("decide", "keep the v1 export", WORKER))
-        shown = "🟡 **Pull the dotfiles?**\n\n1 of 2 need you · keep the v1 export\n\n"
-        found = self.run_on(shown + block(needs=[need(2, "keep the v1 export")]), transcript_path=str(transcript))
-        self.assertIn(dropped, found)
-        self.assertIn("Queue each other item a reason names that's still open with `queue add`.", found)
-        # Queued as that item, or closed with `queue done`, it's accounted for.
-        self.write(PROJECT, ("do", "pull the Mac's dotfiles", "coordinator"), ("decide", "stop format send-backs", WORKER))
-        self.assertIsNone(self.run_on(CARD.replace("1 of 2", "1 of 2") + block(needs=[SEND_BACKS]),
-                                      transcript_path=str(transcript)))
-        self.write(PROJECT.replace("## Decisions\n", "## Decisions\n\n- 2026-11-18 · R153 asked: stop format send-backs "
-                                   "(queue 2, decide) → yes · the user: 'a'\n"))
-        self.assertIsNone(self.run_on(quiet, transcript_path=str(transcript)))
+        # Once the Queue exists, it's the record: what it holds is what waits.
+        self.write(PROJECT, ("decide", "stop format send-backs", WORKER))
+        self.assertIsNone(self.run_on(CARD.replace("1 of 2", "1 of 1").replace("need you", "needs you")
+                                      + block(needs=[need(1, "stop format send-backs")]), transcript_path=str(transcript)))
 
     def test_an_empty_queue_lets_a_status_or_done_line_end_the_reply(self):
         lines = PROJECT.split("\n")
+        project_queue.create(lines)
         project_queue.add(lines, "do", "pull the dotfiles", "coordinator")
         project_queue.done(lines, 1)
         self.project_md.write_text("\n".join(lines))

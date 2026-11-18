@@ -17,6 +17,9 @@ of the file byte for byte and replaces the file atomically.
                                     the answer A (the pick in words and the user's own)
                                     under Decisions, then print the queue
   project.py DIR queue show         print the strip and need a reply shows, and every item
+  project.py DIR queue import       start the Queue of a project from before it: queue each
+                                    item, needs then standing, that the turn block on
+                                    standard input names (a reply, or its block alone)
   project.py DIR phase SLUG --result R (--goal G --proof P | --park REASON)
                                     end the running phase: save project.md to
                                     phases/<NN>-SLUG.md, add its line under Phases, reset
@@ -89,8 +92,30 @@ class ProjectError(Exception):
     pass
 
 
+TURN = re.compile(r"<!--\s*turn\s*(\{.*\})\s*-->", re.S)
+
+
+def imported(lines: list[str], text: str) -> list[project_queue.Item]:
+    """Starts the Queue of a project from before it, holding each user item the turn block
+    in text names: needs, then standing, in id order, which is the order they arose. Text is
+    a reply ending in its block, or the block's JSON alone. Refuses a project that has a
+    Queue, so a second import can't queue a call twice."""
+    if project_queue.read(lines) is not None:
+        raise ProjectError("the Queue exists: add a call to it with `queue add`")
+    found = TURN.findall(text)
+    try:
+        turn = json.loads(found[-1] if found else text)
+        listed = [*turn.get("needs", []), *turn.get("standing", [])]
+        items = sorted(((need["id"], need["kind"], need["name"]) for need in listed), key=lambda item: item[0])
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ProjectError("queue import takes a turn block on standard input: a reply ending in one, or its JSON")
+    project_queue.create(lines)
+    return [project_queue.add(lines, kind, name, "coordinator") for _, kind, name in items]
+
+
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
-          source: str | None = None, ident: int | None = None, answer: str | None = None) -> str:
+          source: str | None = None, ident: int | None = None, answer: str | None = None,
+          block: str | None = None) -> str:
     """Runs a `queue` action on lines and returns what it prints: the queue as `show` gives
     it, after a line naming the item an add or done touched. `done` records the item, who
     asked it, and the answer under Decisions, so a resolved call keeps its trail."""
@@ -104,6 +129,8 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
             item = project_queue.done(lines, ident)
             decide(lines, f"{item.source} asked: {item.name} (queue {item.id}, {item.kind}) → {answer.strip()}")
             head = [f"done {item.id}: {item.kind} · {item.name}"]
+        elif action == "import":
+            head = [f"imported {item.id}: {item.kind} · {item.name}" for item in imported(lines, block or "")]
         else:
             head = []
         return "\n".join([*head, project_queue.show(project_queue.read(lines))])
@@ -609,6 +636,7 @@ def main(argv: list[str]) -> int:
     resolving.add_argument("ident", type=int, metavar="id")
     resolving.add_argument("--answer", required=True)
     queued.add_parser("show", allow_abbrev=False)
+    queued.add_parser("import", allow_abbrev=False)
     args = parser.parse_args(argv)
     if args.command == "phase" and (args.goal is None) != (args.proof is None):
         ending.error("--goal needs --proof, and --park takes neither")
@@ -646,7 +674,8 @@ def main(argv: list[str]) -> int:
             answer = getattr(args, "answer", None)
             printed = queue(lines, args.action, kind=getattr(args, "kind", None), name=getattr(args, "name", None),
                             source=getattr(args, "source", None), ident=getattr(args, "ident", None),
-                            answer=sys.stdin.read() if answer == "-" else answer)
+                            answer=sys.stdin.read() if answer == "-" else answer,
+                            block=sys.stdin.read() if args.action == "import" else None)
             if args.action != "show":
                 _write(path, "\n".join(lines))
             print(printed)

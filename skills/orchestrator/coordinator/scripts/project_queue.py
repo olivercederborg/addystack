@@ -99,17 +99,25 @@ def _one_line(name: str, value: str) -> str:
     return value.strip()
 
 
+def create(lines: list[str]) -> None:
+    """Writes an empty Queue section before Decisions, or at the end, unless there is one."""
+    if _bounds(lines) is None:
+        at = lines.index("## Decisions") if "## Decisions" in lines else len(lines)
+        lines[at:at] = [HEADING, "", f"{COUNTER}1", "", _row(HEADER), "|" + "---|" * len(HEADER), ""]
+
+
 def add(lines: list[str], kind: str, name: str, source: str, now: datetime | None = None) -> Item:
-    """Adds an item under the table and returns it, creating the section before Decisions
-    when the project has none yet."""
+    """Adds an item under the table and returns it. A project from before the queue has no
+    section: `create` writes it, and only `project.py queue import` calls that, so the calls
+    its last reply named arrive with the queue."""
     if kind not in KINDS:
         raise QueueError(f"kind {kind!r} isn't one of: {', '.join(KINDS)}")
     name, source = _one_line("the name", name), _one_line("--from", source)
     if len(name) > 80 or not WORD.search(name):
         raise QueueError("the name is 1-80 characters with a word of 3+ letters, as a turn-block need's is")
     if _bounds(lines) is None:
-        at = lines.index("## Decisions") if "## Decisions" in lines else len(lines)
-        lines[at:at] = [HEADING, "", f"{COUNTER}1", "", _row(HEADER), "|" + "---|" * len(HEADER), ""]
+        raise QueueError("this project has no Queue yet: start it with `queue import`, which queues every item your "
+                         "last reply named")
     start, end = _bounds(lines)
     rows = _table(lines, start, end)
     counter = next((i for i in range(start + 1, end) if lines[i].startswith(COUNTER)), None)

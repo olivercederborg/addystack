@@ -13,6 +13,7 @@ BARE = ["# ◆ p", "", "## Goal", "", "Ship it.", "", "## Decisions", "", "- a d
 def project(*items):
     """BARE's lines with a queue holding each (kind, name), added in order."""
     lines = list(BARE)
+    q.create(lines)
     for kind, name in items:
         q.add(lines, kind, name, "coordinator", NOW)
     return lines
@@ -22,7 +23,11 @@ class Queue(unittest.TestCase):
     def test_a_project_without_the_section_has_no_queue(self):
         self.assertIsNone(q.read(list(BARE)))
 
-    def test_the_first_add_writes_the_section_before_decisions(self):
+    def test_only_create_starts_the_section_before_decisions(self):
+        lines = list(BARE)
+        with self.assertRaisesRegex(q.QueueError, "no Queue yet: start it with `queue import`"):
+            q.add(lines, "do", "pull the Mac's dotfiles", "coordinator", NOW)
+        self.assertEqual(lines, BARE)
         lines = project(("do", "pull the Mac's dotfiles"))
         self.assertEqual(lines[:15], [
             "# ◆ p", "", "## Goal", "", "Ship it.", "", "## Queue", "", "Next id: 2", "",
