@@ -6643,6 +6643,28 @@ class Exchanges(unittest.TestCase):
         self.assertEqual(found[-1], transcripts.Exchange("Looking at it.", "a"))
         self.assertIsNone(turn_block.picked(*found[-1][:2]))
 
+    def test_a_command_claude_code_runs_itself_is_no_prompt(self):
+        compact = claude_said("<command-name>/compact</command-name>\n            <command-message>compact"
+                              "</command-message>\n            <command-args></command-args>")
+        compacted = claude_said("<local-command-stdout>Compacted </local-command-stdout>")
+        model = claude_said("<command-name>/model</command-name>\n<command-message>model</command-message>\n"
+                            "<command-args>opus</command-args>")
+        Exchange = transcripts.Exchange
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), model, claude_said("<local-command-stdout>Set model to "
+                                                                                "opus</local-command-stdout>"),
+                                   compact, compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "a")])
+        # A command with no output yet, one whose turn replied, such as a skill, and output with
+        # no command before it each stay a prompt.
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, claude_said("a")),
+                         [Exchange(self.FINAL, "/compact"), Exchange(None, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compact, claude_wrote("Done."), compacted, claude_said("a")),
+                         [Exchange(self.FINAL, "/compact"), Exchange("Done.", ""), Exchange(None, "a")])
+        self.assertEqual(self.read(claude_wrote(self.FINAL), compacted, claude_said("a")),
+                         [Exchange(self.FINAL, ""), Exchange(None, "a")])
+
     def test_a_line_it_cannot_read_resets_the_reply(self):
         for bad in UNPARSED:
             with self.subTest(bad=bad[:30]):

@@ -8,7 +8,10 @@ compaction summaries, AGENTS.md and environment context, attachment tags, interr
 markers, T3's child-task notices, and messages another thread sent, which T3's state
 database marks as sent by an agent (t3_child.py). Those are dropped
 part by part, so the last message is the one the user sent, with every word they typed.
-A slash command reads as the command and its arguments. A T3 quote, review comment, or
+A slash command reads as the command and its arguments, except one Claude Code runs
+itself, such as /compact or /model, which it marks by writing the command's output as a
+`<local-command-stdout>` message right after it: no turn answers it, so both are dropped.
+A T3 quote, review comment, or
 preview annotation reads as the comment the user wrote on it: a quote link carries it in
 its `comment` parameter, and the context T3 appends after the message in a `comment:`
 field, a `Comment:` line, or a citation's `comment`. The rest of that context, such as
@@ -202,11 +205,12 @@ def exchanges(path, strict=False):
     sent it" from "can't tell". The nth entry with a text T3 knows an agent sent pairs with
     the nth message with that text in T3's state database, so a copy the user sent after
     the agent's stays theirs. T3 keeps fewer copies of a repeated scheduled prompt than
-    the transcript does. An exchange's agent is True only for a prompt whose text T3 says
+    the transcript does. A command Claude Code runs itself, such as /compact, and its output
+    are no prompt, so the prompt after them answers the reply before them. An exchange's agent is True only for a prompt whose text T3 says
     only other agents sent, so neither a copy whose sender pairing is in doubt, a typed
     message whose text reads as "", such as one starting "Caveat:", nor one that only
     looks like a wake is one."""
-    out, seen, reply = [], {}, None
+    out, seen, reply, command = [], {}, None, False
     try:
         found = SESSION_ID.search(pathlib.Path(path).stem)
         if strict and not found:
@@ -220,9 +224,15 @@ def exchanges(path, strict=False):
                     entry = None  # a line it can't parse counts as a prompt the user didn't type
                 text = prompt_text(entry)
                 if text is None:
-                    reply = reply_text(entry) or reply
+                    said = reply_text(entry)
+                    reply, command = (said, False) if said else (reply, command)
                     continue
                 sent = "\n".join(texts(text_parts(entry))).strip()
+                # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
+                if command and sent.startswith("<local-command-stdout>"):
+                    reply, command = out.pop().reply, False
+                    continue
+                command = sent.startswith("<command-name>")
                 sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
                 # Only a text the user never sent is surely another agent's, however T3's copies pair.
                 out.append(Exchange(reply, "" if sent_by_agent else text,
