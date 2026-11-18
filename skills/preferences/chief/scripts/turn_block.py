@@ -76,7 +76,9 @@ MARKER = re.compile(r"([ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*)(?:`{3}|~{3})")
 UNSAFE = re.compile(r"<(?:[!?]|(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|pre|"
                     r"table|caption|colgroup|col|tbody|thead|tfoot|tr|td|th|template|select|object|applet|marquee|"
                     r"svg|math)(?=[\t\f />]|$))", re.I)
-DETAILS = re.compile(r"<(/?)details(?=[\t\f />]|$)", re.I)
+OPENS_FOLD = re.compile(r"<details(?=[\t\f />]|$)", re.I)
+# A line that starts a `<details>` HTML block: raw HTML to its end, with no code spans in it.
+FOLD_LINE = re.compile(r" {0,3}</?details(?=[\t\f />]|$)", re.I)
 # A line that may start an HTML block: a <, past list and quote markers, that doesn't open a
 # URI autolink (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
 HTML_START = re.compile(r"[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*<"
@@ -164,13 +166,15 @@ def scan(lines):
             indent, fence = len(opener.group(1)), opener.group(2)
     top = max((at for at, line in enumerate(lines) if not marks[at] and CARRIER.match(line)), default=len(lines))
     # A fold still open at the block holds it, and the options above it, collapsed. Any
-    # `<details` may open one, but only a `</details>` that starts its line, an HTML block of
-    # its own, surely closes one: in a code span or an attribute it's text.
+    # `<details` may open one, but only a `</details>` the tokenizer reads on a line that
+    # starts a fold's HTML block surely closes one: elsewhere it may sit in a code span.
     depth = 0
     for at in range(top):
-        for match in DETAILS.finditer(lines[at]) if not marks[at] else ():
-            closes = match.group(1) and match.start() <= 3 and not lines[at][:match.start()].strip(" ")
-            depth = max(depth - 1, 0) if closes else depth + (not match.group(1))
+        line = lines[at]
+        folds = [] if marks[at] else [closing for closing, name in tags(line) if name == "details"] \
+            if FOLD_LINE.match(line) else [False] * len(OPENS_FOLD.findall(line))
+        for closing in folds:
+            depth = max(depth - 1, 0) if closing else depth + 1
     sure = sure and not depth
     for at in range(top):
         line = lines[at]
@@ -178,6 +182,22 @@ def scan(lines):
         if not marks[at] and (UNSAFE.search(line) or HTML_START.match(line) and (after.strip(" \t") or not closed(line))):
             sure = False
     return marks, sure
+
+
+def tags(line):
+    """(closing, name) for each tag in line, in order, as the WHATWG tokenizer reads it from
+    its data state, up to one it can't end on the line."""
+    at = 0
+    while (at := line.find("<", at)) >= 0:
+        if TAG.match(line, at):
+            closing = line[at + 1] == "/"
+            name = re.match(r"[^\t\n\f />]*", line[at + 1 + closing:]).group().lower()
+            at = tag_end(line, at + 1 + closing)
+            if at is None:
+                return
+            yield closing, name
+        else:
+            at = (line.find(">", at + 2) + 1 or len(line)) if line.startswith("</", at) else at + 1
 
 
 def closed(line):

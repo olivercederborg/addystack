@@ -6467,6 +6467,9 @@ class TurnBlock(unittest.TestCase):
             "<details><summary>Checks: ⚠️ <code>xhigh</code> unmeasured</summary>\n\nmore\n\n</details>\n\n",
             "<details><summary>a <b>bold</b> fold</summary>\n\nx\n\n</details>\n\n",
             "<details><summary>See <ab:b></summary>\n\nx\n\n</details>\n\n",
+            # Codex r3: a fold opened and closed on one line.
+            "<details><summary>Checks: OK</summary></details>\n\n",
+            '<details open><summary>a</summary>x</details>\n\n',
             "- Example gap: JSX text such as `<p>save as Draft</p>` is read as a cast.\n\n",
             "Line one<br>\nline two\n\n",
             "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",
