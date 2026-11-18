@@ -165,6 +165,14 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn(f"- {TODAY} · coordinator asked: pull the Mac's dotfiles (queue 1, do) → pulled · the user: "
                       "\"done.\n  Both machines.\"\n", self.text())
 
+    def test_an_answer_with_any_line_ending_stays_inside_its_decision(self):
+        self.project("queue", "add", "decide", "keep the v1 export")
+        self.project("queue", "done", "1", "--answer", "yes\r## Workers\r\nno table")
+        self.assertIn(f"- {TODAY} · coordinator asked: keep the v1 export (queue 1, decide) → yes\n  ## Workers\n  no table",
+                      self.text())
+        self.assertEqual(self.text().count("\n## Workers"), 1)
+        self.project("worker", "review", "--last", "pushed abc")
+
     def test_a_refused_queue_edit_leaves_the_file_untouched(self):
         self.project("queue", "add", "decide", "keep the v1 export")
         before = self.text()

@@ -132,7 +132,9 @@ def _insert(lines: list[str], name: str, line: str) -> None:
 
 
 def _bullet(text: str) -> str:
-    return "- " + text.strip().replace("\n", "\n  ")
+    """text as one list item: every line ending, CRLF and a lone CR too, as an indented
+    line, so no line of it reads as a heading or a row of its own."""
+    return "- " + text.replace("\r\n", "\n").replace("\r", "\n").strip().replace("\n", "\n  ")
 
 
 def _cells(row: str) -> list[str]:
