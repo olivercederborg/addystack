@@ -4,12 +4,13 @@ queue holds for the user.
 
 The user had to ask. In the 14 days to Nov 18, 2026 they typed "anything else waiting for
 me?", "what's next?", or the like 17 times in ◆ threads on their two machines, 6 of them in
-one afternoon. On one machine, 10 of the 16 replies just before held the open calls only in
-the turn block's `standing`, which the reply doesn't show and Prefrontal counts as not
-waiting, with `needs` empty; none of them said how many waited. Across all ◆ replies in
-those days, 11.5% and 10.1% on the two machines parked a decide or review that way,
-against 2.3% and 0.9% in other threads. The coordinator skill already said to show
-the top call on every reply; the text alone didn't hold.
+one afternoon. On one machine, 10 of the 16 replies just before kept open calls in the turn
+block's `standing`, which the reply doesn't show and Prefrontal counts as not waiting: 9
+with `needs` empty, and one card that showed a single call with 14 more behind it. None
+said how many waited. Across all ◆ replies in those days, 11.5% and 10.1% on the two
+machines parked a decide or review that way, against 2.3% and 0.9% in other threads. The
+coordinator skill already said to show the top call on every reply; the text alone didn't
+hold.
 
 The queue is project.md's `## Queue` table (project_queue.py), which the coordinator
 writes with `project.py queue`. A reply goes back, with each reason, when:

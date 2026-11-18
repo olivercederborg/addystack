@@ -5,8 +5,8 @@ coordinator_queue.py, a Stop hook, reads it to hold each reply in that thread to
 Its replies used to carry the queue in the turn block alone, rewritten from memory each
 turn, with the waiting calls in `standing`, a list the reply doesn't show. In the 14 days
 to Nov 18, 2026, 10 of the 16 times the user typed "anything else waiting for me?" or
-"what's next?" in a ◆ thread on the Mac, the reply just before held the open calls there,
-with `needs` empty; one, "merge #39", sat there 8 days after #39 merged. A table that each
+"what's next?" in a ◆ thread on one machine, the reply just before kept open calls there,
+9 of them with `needs` empty; one call, "merge #39", sat there 8 days after #39 merged. A table that each
 answer resolves gives the queue an owner, so a wake or a compaction finds it.
 
   | # | Kind | Name | From | Since |
