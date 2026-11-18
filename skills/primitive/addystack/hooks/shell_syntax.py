@@ -218,17 +218,19 @@ def _passes(items):
         first, last = (int(n or 1) for n in found.groups()[:2]) if found.group(2) else map(int, found.groups()[2:])
         return max(last - first + 1, 0) if found.group(2) else abs(last - first) + 1
     words = items.split()
-    return len(words) if all(re.fullmatch(r"[^$`*?\[\]{}()<>]+", word) for word in words) else None
+    return len(words) if all(re.fullmatch(r"[\w./:@%+=,-]+", word) for word in words) else None
 
 
 def counted_wait(command):
     """The seconds a command's sleeps add up to, when each is certain: a plain `sleep N`,
-    outside any loop or in a `for` loop over a `$(seq …)` or `{a..b}` range or literal words
-    that holds no other loop. 0 with no sleep, and None when any sleep isn't certain, such as
-    one in quoted text or a heredoc, or in an `until` or `while` loop, which bound_waits
-    bounds instead."""
+    outside any loop or in a `for` loop over a `$(seq …)` or `{a..b}` range or unquoted
+    literal words that holds no other loop. 0 with no sleep, and None when any sleep isn't
+    certain, such as one in quoted text or a heredoc, in an `until` or `while` loop, which
+    bound_waits bounds instead, or in a command with a function, `eval`, or backticks."""
     code = shell_code(command)
-    if _count(ANY_SLEEP, command) != _count(ANY_SLEEP, code):  # a sleep in quoted text or a heredoc may run
+    # A sleep in quoted text or a heredoc may run, and a function, eval, or backticks may repeat one.
+    if _count(ANY_SLEEP, command) != _count(ANY_SLEEP, code) or FUNCTION.search(code) or EVAL.search(code) \
+            or "`" in code:
         return None
     if not _count(ANY_SLEEP, code):
         return 0
@@ -237,7 +239,8 @@ def counted_wait(command):
         return None
     total = sum(float(s) for s in PLAIN_SLEEP.findall(code))
     for loop in loops:
-        items, body = loop.groups()
+        # The items as written, since masking reads `"$@"` as one word.
+        items, body = command[loop.start(1):loop.end(1)], loop.group(2)
         each, passes = sum(float(s) for s in PLAIN_SLEEP.findall(body)), _passes(items)
         if each and passes is None:
             return None
