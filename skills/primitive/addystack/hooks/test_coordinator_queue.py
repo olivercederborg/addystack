@@ -87,14 +87,23 @@ class CoordinatorQueue(unittest.TestCase):
         db.close()
         return str(path)
 
-    def run_on(self, reply, title="◆ audit", t3=True, **event):
+    def test_codex_gets_the_send_back_as_a_block_decision(self):
+        hidden = block("running", standing=[SEND_BACKS], elapsed="3 min")
+        out = json.loads(self.run_raw(hidden, turn_id="turn-7"))
+        self.assertEqual(out["decision"], "block")
+        self.assertIn("its `needs` doesn't start with the queue's top item, 2", out["reason"])
+
+    def run_raw(self, reply, title="◆ audit", t3=True, **event):
         env = {k: v for k, v in os.environ.items() if k not in ("T3CODE_CLI_PATH", "T3_STATE_DB")}
         env.update(HOME=str(self.folder), T3_STATE_DB=self.state_db(title))
         if t3:
             env["T3CODE_CLI_PATH"] = "/t3/bin/t3"
         payload = {"session_id": SESSION, "hook_event_name": "Stop", "last_assistant_message": reply, **event}
-        out = subprocess.run([str(HOOK)], input=json.dumps(payload), env=env, capture_output=True, text=True,
-                             check=True).stdout
+        return subprocess.run([str(HOOK)], input=json.dumps(payload), env=env, capture_output=True, text=True,
+                              check=True).stdout
+
+    def run_on(self, reply, title="◆ audit", t3=True, **event):
+        out = self.run_raw(reply, title, t3, **event)
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
 
     def test_a_reply_that_ends_on_the_top_item_passes(self):

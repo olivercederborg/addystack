@@ -52,7 +52,7 @@ is queued, which routine_stop.py sends back. `stop_hook_active` keeps it to one 
 stop, as the other Stop hooks do, so a resend another hook asked for isn't checked again;
 while the queue holds items, a reply with no valid block gets the queue's reasons in the
 same send-back as routine_stop.py's, since its resend won't be checked.
-Coordinators run on Claude (t3-delegation's Roles table), so it ships for Claude Code alone."""
+A coordinator runs on the model the user names, so it ships for Claude Code and Codex."""
 import json, os, re, sys
 from pathlib import Path
 
@@ -227,9 +227,15 @@ def main():
         reasons = unparsed(reply, items) if items else []
     else:
         reasons = problems(turn, reply, items, earlier_items(event.get("transcript_path")) if items is None else ())
-    if reasons:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
-                                                 "additionalContext": feedback(found[0], path, items, reasons)}}))
+    if not reasons:
+        return
+    text = feedback(found[0], path, items, reasons)
+    # Codex's Stop takes only decision and reason, and its input carries turn_id, as in
+    # bare_references.py; Claude Code continues through additionalContext.
+    if "turn_id" in event:
+        print(json.dumps({"decision": "block", "reason": text}))
+    else:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": text}}))
 
 
 if __name__ == "__main__":
