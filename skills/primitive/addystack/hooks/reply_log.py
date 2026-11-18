@@ -7,7 +7,7 @@ on two machines, and 239 of them carried a format check: the glance's word count
 fact table's limits, or a scope-grill round's word count (suite-audit R148 F4, R153). The
 user's call on Nov 18, 2026: count the format rules weekly instead, and keep sending back
 the turn block and merge options, which routine_stop.py and merge-gate.py read. So reply_budget.py
-appends a row here for each format rule a reply breaks.
+and routine_stop.py append a row here for each format rule a reply breaks.
 
 One JSON object per line in reply-log.jsonl in the state folder (ADDYSTACK_REPLY_LOG
 overrides the file): `time` (UTC, ISO 8601), `hook`, `rule`, `session`, `turn` (Codex's

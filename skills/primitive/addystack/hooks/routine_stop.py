@@ -15,12 +15,13 @@ those with options, and after "no autonomy". A reply
 whose block is missing or malformed goes back once with the reason, since this hook and
 merge-gate.py read nothing without it.
 
-A reply with more than two options goes back too. Of 1,922 replies in three weeks that
-offered a `b`, the user picked it 59 times, and 6 of 538 `c`s; they steered in their
-own words instead (docs/research/2026-10-28-reply-audit.md). So the turn block allows `a`,
-and `b` only when the reply stops for their call. The routine check runs first, since a
-reply sent on to do `a` doesn't stop on its options. turn_block.py still reads three, so
-a reply from before the cap keeps its picks for merge-gate.py.
+A reply with more than two options goes to the reply log (reply_log.py). Of 1,922 replies
+in three weeks that offered a `b`, the user picked it 59 times, and 6 of 538 `c`s; they
+steered in their own words instead (docs/research/2026-10-28-reply-audit.md). So the turn
+block allows `a`, and `b` only when the reply stops for their call. It's a format rule, so
+it's logged rather than sent back, which would post the card twice (suite-audit R153).
+A reply sent on to do `a` isn't logged, since it doesn't stop on its options.
+turn_block.py still reads three, so a reply with a third keeps its picks for merge-gate.py.
 
 Claude Code continues through additionalContext and Codex through decision: block, as
 in bare_references.py. stop_hook_active keeps each to one send per stop. T3 delegated
@@ -44,9 +45,9 @@ import json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bare_references, resolved, t3_child, transcripts, turn_block  # noqa: E402
+import bare_references, reply_log, resolved, t3_child, transcripts, turn_block  # noqa: E402
 
-NEXT_MAX = 2
+NEXT_MAX = 2  # the turn block's options; a reply with more is logged
 # A step that writes an issue: "draft a Linear issue", "file 1 as a Linear follow-up",
 # "create this issue in Linear", "draft a Trigger.dev GitHub issue". issue_step() rejects
 # "the open issue", "a test for the (Linear) issue", a verb negated in its own clause, and
@@ -252,13 +253,7 @@ def main():
              "message and folds the rest away, so your final reply has to stand on its own: "
              "carry forward what the reply above told the user, with the step's result added.")
     elif len(turn.options) > NEXT_MAX:
-        send(event, f"Your Next offers {len(turn.options)} options; the turn block allows two "
-             f"({rules_file()}, Turn block section): `a`, your pick, and `b` only when the reply stops for "
-             "the user's call, as on a decision card's no, the smallest option. The user steers in "
-             "their own words instead of picking a third. Send "
-             "your whole reply again with at most two options, in Next and in the turn block. T3 "
-             "shows only a turn's last message, so the resent reply has to stand on its own. Add "
-             "no note about the change.")
+        reply_log.record(event, "routine_stop", [("options-cap", f"{len(turn.options)} options, over {NEXT_MAX}")])
 
 
 if __name__ == "__main__":

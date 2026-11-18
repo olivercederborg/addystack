@@ -6774,18 +6774,20 @@ class RoutineStop(unittest.TestCase):
         self.assertIsNone(self.run_on("Done.", stop_hook_active=True, turn_id="t1"))
         self.assertIsNone(self.run_on(self.REPLY, stop_hook_active=True))
 
-    def test_sends_a_third_option_back_once(self):
+    def test_logs_a_third_option(self):
+        # A format rule: a send-back would post the card twice (suite-audit R153).
         need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
         three = [{"key": "a", "class": "decision", "text": "yes: drop it"},
                  {"key": "b", "class": "decision", "text": "no: keep it"},
                  {"key": "c", "class": "decision", "text": "deprecate it first"}]
         reply = self.with_turn(options=three, needs=need)
-        for event in [{}, {"turn_id": "t1"}]:
-            with self.subTest(event=event):
-                found = self.feedback(reply, **event)
-                self.assertIn("Your Next offers 3 options; the turn block allows two", found)
-                self.assertIn("Send your whole reply again", found)
-        self.assertIsNone(self.run_on(reply, stop_hook_active=True))
+        for event in [{"session_id": "s1"}, {"session_id": "s1", "turn_id": "t1"}]:
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as folder:
+                log = pathlib.Path(folder, "reply-log.jsonl")
+                self.assertIsNone(self.run_on(reply, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)}, **event))
+                rows = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual([(row["hook"], row["rule"], row["session"], row["turn"], row["detail"]) for row in rows],
+                                 [("routine_stop", "options-cap", "s1", event.get("turn_id", 1), "3 options, over 2")])
         # Two options is an ordinary stop, and a reply from before the cap still parses.
         self.assertIsNone(self.run_on(self.with_turn(options=three[:2], needs=need)))
         self.assertEqual(len(turn_block.parse(reply).options), 3)
@@ -6796,9 +6798,6 @@ class RoutineStop(unittest.TestCase):
     def test_send_backs_cite_a_turn_block_spec_that_exists(self):
         """With a reply rules file that has a Turn block section, that file; with none, or
         one without the section, the kit's own spec."""
-        need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
-        three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
-                                                    for key in "abc"])
         for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n",
                      "# Replies\n\n## Turn block ##\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
             with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
@@ -6817,7 +6816,6 @@ class RoutineStop(unittest.TestCase):
                     self.assertEqual(spec.resolve(), (HOOKS.parent / "references" / "turn-block.md").resolve())
                     self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
                 self.assertIn(f"({cited}, Turn block section)", self.feedback("Done.", env=env))
-                self.assertIn(f"({cited}, Turn block section)", self.feedback(three, env=env))
 
     def test_sends_an_issue_option_in_a_teammate_review_back_once(self):
         def load(name):
