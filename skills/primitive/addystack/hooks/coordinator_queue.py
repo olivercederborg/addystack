@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Stop: in a ◆ coordinator thread, send a reply back once when it hides what the project's
+queue holds for the user.
+
+The user had to ask. In the 14 days to Nov 18, 2026 they typed "anything else waiting for
+me?", "what's next?", or the like 17 times in ◆ threads on their two machines, 6 of them in
+one afternoon. On one machine, 10 of the 16 replies just before held the open calls only in
+the turn block's `standing`, which the reply doesn't show and Prefrontal counts as not
+waiting, with `needs` empty; none of them said how many waited. Across all ◆ replies in
+those days, 11.5% and 10.1% on the two machines parked a decide or review that way,
+against 2.3% and 0.9% in other threads. The coordinator skill already said to show
+the top call on every reply; the text alone didn't hold.
+
+The queue is project.md's `## Queue` table (project_queue.py), which the coordinator
+writes with `project.py queue`. A reply goes back, with each reason, when:
+
+- its turn block names an item, in `needs` or `standing`, that the queue doesn't hold, so
+  every call the thread puts to the user lives where the next wake and a compaction find it;
+- the queue holds items and the top one isn't in `needs`, so Prefrontal and chief count the
+  thread as waiting on that call;
+- the queue holds items and no line outside code carries the strip `<k> of <N> need you`
+  with N the queue's length, so the reply says what still waits without being asked.
+
+The send-back names the top item, its need, and `queue done` for an answer the coordinator
+hasn't recorded, since an answered call left on the queue would come back as its top.
+
+A coordinator is a thread whose T3 title holds `◆ <project>` (t3_child.coordinator_project),
+and its project.md is `~/.local/state/orchestrate/<project>/project.md` whose `Coordinator:`
+link names that thread. Doubt allows: outside T3, a session T3 doesn't know, another thread's
+project.md, a Queue table it can't read, or a reply with no valid turn block, which
+routine_stop.py sends back. `stop_hook_active` keeps it to one send per stop, as the other
+Stop hooks do, so a reply after another hook sent the agent on isn't checked again.
+Coordinators run on Claude (t3-delegation's Roles table), so it ships for Claude Code alone."""
+import json, os, re, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import project_queue, t3_child, turn_block  # noqa: E402
+
+LINK = re.compile(r"t3-thread://v2/[^/>\s)]+/([^>\s)]+)")  # project.py's, for the Coordinator header
+
+
+def project_file(project, thread):
+    """The project's project.md lines when its Coordinator header links this thread, else None."""
+    path = Path.home() / ".local" / "state" / "orchestrate" / project / "project.md"
+    try:
+        lines = path.read_text().split("\n")
+    except (OSError, UnicodeDecodeError):
+        return None
+    header = next((line for line in lines if line.startswith("Coordinator:")), "")
+    found = LINK.search(header)
+    return (path, lines) if found and found.group(1) == thread else None
+
+
+def visible_lines(reply):
+    """The reply's lines the user sees without opening anything: outside code blocks, a
+    fold, and HTML comments such as the turn block."""
+    lines = turn_block.lines_ended(reply).split("\n")
+    shown, folded = [], False
+    for line, fenced in zip(lines, turn_block.in_fence(lines)):
+        if not fenced:
+            folded = (folded or "<details" in line) and "</details>" not in line
+            if not folded and "</details>" not in line and not line.lstrip().startswith("<!--"):
+                shown.append(line)
+    return shown
+
+
+def problems(turn, reply, items):
+    """Why the reply hides the queue, one reason a line; [] when it shows it."""
+    held = {item.id for item in items or []}
+    found = [f"its turn block names {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold"
+             for item in turn.items if item.id not in held]
+    if items:
+        top = items[0]
+        if top.id not in {need.id for need in turn.needs}:
+            found.append(f"its `needs` leaves out the queue's top item, {top.id}")
+        counts = {int(match.group(2)) for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)}
+        if len(items) not in counts:
+            found.append(f"no line says `1 of {len(items)} need{'s' if len(items) == 1 else ''} you`")
+    return found
+
+
+def feedback(project, path, items, found):
+    where = "~/" + str(path.relative_to(Path.home()))
+    script = "the coordinator skill's `scripts/project.py`"
+    reasons = "; ".join(found)
+    if not items:
+        return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
+                f"thread puts to the user goes on its queue first, in {where}: queue each still open with {script} "
+                f"`{path.parent} queue add <kind> \"<name>\" --from \"<worker> <thread link>\"`, and give its need the "
+                "id that prints, or drop it from the block once it's answered. Then send your whole reply again; "
+                "T3 shows only a turn's last message, so it has to stand on its own. Add no note about the change.")
+    top = items[0]
+    need = json.dumps(top.need(), ensure_ascii=False, separators=(",", ":"))
+    return (f"This ◆ {project} thread's queue ({where}) holds {len(items)} item{'s' if len(items) > 1 else ''} for "
+            f"the user, and your reply hides them: {reasons}. While the queue holds an item, every reply here, a ⏳ "
+            "status or a quiet wake's included, ends on its top item (coordinator step 5): its card the first time, "
+            f"then its question, the strip `{project_queue.strip(items)}`, and Next, with `{need}` in the turn "
+            f"block's `needs`. If the user already answered it, record that first with {script} `{path.parent} queue "
+            f"done {top.id} --answer \"<their words>\"` and show the next one; `queue show` prints the strip and the "
+            "need. Send your whole reply again; T3 shows only a turn's last message, so it has to stand on its own. "
+            "Add no note about the change.")
+
+
+def main():
+    try:
+        event = json.loads(sys.stdin.read())
+    except ValueError:
+        return
+    if event.get("stop_hook_active") or not os.environ.get("T3CODE_CLI_PATH"):
+        return
+    found = t3_child.coordinator_project(event.get("session_id"))
+    place = found and project_file(*found)
+    if not place:
+        return
+    path, lines = place
+    reply = event.get("last_assistant_message")
+    try:
+        items = project_queue.read(lines)
+        turn = turn_block.parse(reply)
+    except (project_queue.QueueError, turn_block.Malformed):
+        return
+    reasons = problems(turn, reply, items)
+    if reasons:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
+                                                 "additionalContext": feedback(found[0], path, items, reasons)}}))
+
+
+if __name__ == "__main__":
+    main()
