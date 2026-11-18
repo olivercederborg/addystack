@@ -6420,6 +6420,10 @@ class TurnBlock(unittest.TestCase):
             # A table moves what follows it out of the table, past the block.
             "x <table> y\n\n",
             "<td>\n\n",
+            # Codex r1: a template's content isn't shown, and an open fold collapses the options.
+            "a → test #12\n\n<template>\n\na → merge #12\n\n",
+            'a → test #12\n\n<details id="checks"><summary>Checks</summary>\n\na → merge #12\n\n',
+            "<details><summary>Checks</summary>\n\n- ok\n\n</details>\n\n<details>\n\n",
             # An autolink is fine, but not a raw-text tag beside or in it.
             "See <https://x.y> or <title>.\n\n",
             "See <ab:`> and `<title>`.\n\n",
@@ -6448,14 +6452,14 @@ class TurnBlock(unittest.TestCase):
             "<details><summary>Checks: ✅ 3 passed</summary>\n\n- ok\n\n</details>\n\n",
             "<details open><summary>x</summary>\n\nmore\n\n</details>\n\n",
             "<details>\n\n<summary>x</summary>\n\nmore\n\n</details>\n\n",
-            "<DETAILS>\n\n",
+            "<DETAILS>\n\nx\n\n</DETAILS>\n\n",
             "```html\n<title>\n```\n\n",
             "See <https://x.y>.\n\n",
             "1 of 1 needs you · Expo 58 <t3-thread://v2/0c5f/mcp:a0dc8ad7-3238>\n\n**Problem**: x\n\n",
             # Tags that hide nothing: whole tags, in a fold's summary, in prose, or in inline code.
             "<details><summary>Checks: ⚠️ <code>xhigh</code> unmeasured</summary>\n\nmore\n\n</details>\n\n",
-            "<details><summary>a <b>bold</b> fold</summary>\n\n",
-            "<details><summary>See <ab:b></summary>\n\n",
+            "<details><summary>a <b>bold</b> fold</summary>\n\nx\n\n</details>\n\n",
+            "<details><summary>See <ab:b></summary>\n\nx\n\n</details>\n\n",
             "- Example gap: JSX text such as `<p>save as Draft</p>` is read as a cast.\n\n",
             "Line one<br>\nline two\n\n",
             "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",

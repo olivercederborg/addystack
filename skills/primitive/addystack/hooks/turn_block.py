@@ -33,7 +33,9 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   `noframes`, `noscript`, or `plaintext`, or of `pre`, whose CommonMark HTML block runs to
   `</pre>` past any fence. So does any `<!` or `<?`: a comment, CDATA, or declaration. A
   `<table>` or one of its parts moves what follows it out of the table and leaves the block
-  inside it, so the block is no longer the reply's last node.
+  inside it, so the block is no longer the reply's last node, and the renderer drops a
+  `<template>`'s content. A `<details>` fold still open at the block shows the options
+  above it collapsed.
 - A line that starts with HTML, past list and quote markers, and isn't followed by a blank
   line: its HTML block runs to the next blank line, so the lines after it are raw HTML, not
   fences or a block of their own. An autolink (`<t3-thread://…>`) starts no HTML block.
@@ -68,7 +70,8 @@ OPENER = re.compile(r"( {0,3})(`{3,}(?=[^`]*$)|~{3,})")
 MARKER = re.compile(r"([ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*)(?:`{3}|~{3})")
 # Raw HTML that reads what follows as text or as markup to its own end, anywhere on a line.
 UNSAFE = re.compile(r"<(?:[!?]|(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|pre|"
-                    r"table|caption|colgroup|col|tbody|thead|tfoot|tr|td|th)(?=[\t\f />]|$))", re.I)
+                    r"table|caption|colgroup|col|tbody|thead|tfoot|tr|td|th|template)(?=[\t\f />]|$))", re.I)
+DETAILS = re.compile(r"<(/?)details(?=[\t\f />]|$)", re.I)
 # A line that may start an HTML block: a <, past list and quote markers, that doesn't open a
 # URI autolink (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
 HTML_START = re.compile(r"[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*<"
@@ -155,6 +158,9 @@ def scan(lines):
         if opener:
             indent, fence = len(opener.group(1)), opener.group(2)
     top = max((at for at, line in enumerate(lines) if not marks[at] and CARRIER.match(line)), default=len(lines))
+    # A fold still open at the block holds it, and the options above it, collapsed.
+    folds = [match.group(1) for at in range(top) if not marks[at] for match in DETAILS.finditer(lines[at])]
+    sure = sure and folds.count("") <= folds.count("/")
     for at in range(top):
         line = lines[at]
         after = lines[at + 1] if at + 1 < len(lines) else ""
