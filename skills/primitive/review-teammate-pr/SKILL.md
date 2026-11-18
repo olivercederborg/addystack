@@ -32,26 +32,6 @@ When a verified finding can't be hit yet and depends on what the author meant, s
 a contract for a later milestone, its call is **question**. Cite the PR's own test or
 spec as the sign of the narrower intent.
 
-## Example card (illustrative: match the shape, not the content)
-
-A card is rare here: the one-line finding and its draft carry most findings. Step 3
-says when to use one; this one answers the user asking about finding 1.
-
-````markdown
-🔴 **1 · An export reads other companies' transactions → blocking**
-
-```diff
-  // exportHandler filters by date only; spec EX-12 asks for the current company's rows
-     const company = yield* CurrentCompany
-     const rows = yield* transactions.findMany({
--      where: { bookedAt: { gte: from, lte: to } },
-+      where: { companyId: company.id, bookedAt: { gte: from, lte: to } },
-     })
-```
-
-- Company A's January export holds every company's rows.
-````
-
 ## 1. Load the PR
 
 - Fetch the title, description, linked issue (the spec), base and head SHAs and the
