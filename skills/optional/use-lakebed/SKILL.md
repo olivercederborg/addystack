@@ -17,14 +17,16 @@ Capture the capsule root, `preview` or `publish` intent, requested lifecycle, ca
 
 For commands supplied by the calling skill, run only `node <script>`, `bash <script>`, or an executable script whose path and resolved symlink target stay inside the capsule root. Place no interpreter argument before the script. Reject shell operators, command substitution, redirection, absolute script paths, and escaping `..` paths; ask for a safe replacement instead. URL and ordinary flag arguments after the script are allowed.
 
-Pinned Lakebed commands are trusted. Output prefixed `Advisory` is informational unless the caller asks for it.
+Pinned Lakebed commands are trusted.
+
+Lakebed 0.0.41 needs Node 22.18 or later. Before the first pinned command, run `node --version`; when it's older, stop and report that prerequisite.
 
 ## Build and preview
 
 From the capsule root:
 
 1. Run caller tests unless they already passed against this exact source; rerun them after any capsule change. Always rerun validators and retain their URLs and disclosure warnings. Stop unless every check that ran exits zero.
-2. Run `npx lakebed@0.0.41 build . --target anonymous --json`. Stop unless failure is solely because outbound fetch or async handlers require a claimed app; then mark the capsule owned-only and treat authenticated deployment as its final build gate.
+2. Run `npx lakebed@0.0.41 build . --target anonymous --json`. A legacy-database diagnostic (`all()`, `where()`, or `orderBy()`) on a method the capsule itself defines that isn't a database call is a scanner false positive: rename that method at its definition and every call, then repeat from step 1. On any other failure, stop unless it is solely because outbound fetch requires a claimed app; then mark the capsule owned-only and treat authenticated deployment as its final build gate.
 3. Start `npx lakebed@0.0.41 dev . --port 4173` in a managed session. Confirm its printed URL serves the expected capsule root; choose a free port when needed and use only the process you started.
 4. When supplied, run the caller's endpoint verifier with the origin-root preview URL and require a zero exit.
 5. Inspect at 1280×800 and 390×844 for content, title, links, controls, reading order, narrow layout, and caller checks. Keep overflow local to code or tables.

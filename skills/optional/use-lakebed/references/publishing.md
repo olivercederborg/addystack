@@ -14,20 +14,20 @@ If redaction changes the capsule, return to Build and preview before continuing.
 
 Run `npx lakebed@0.0.41 auth status --json`:
 
-- unauthenticated creates an expiring public anonymous preview;
+- unauthenticated creates an expiring public anonymous preview, or updates the one saved in `.lakebed/deploy.json`;
 - authenticated creates or updates a public owned app.
 
-Match this to the requested lifecycle. Ask when none was given. Owned-only capsules and `.env.lakebed.server` require an authenticated owned deployment.
+Match this to the requested lifecycle. Ask when none was given. Owned-only capsules and a `.env.lakebed.server` that sets any key require an authenticated owned deployment.
 
 Run this skill's trusted bundled [`inspect-capsule.mjs`](../scripts/inspect-capsule.mjs), resolving its path from the skill directory and passing the capsule root as its argument. Use its safe output instead of printing files that may contain claim tokens or secrets.
 
-- `lakebed.json` names an exact update target. State its deploy ID and URL when resolvable, then get target-specific approval unless the request already approved it.
-- `.lakebed/deploy.json` is only a legacy candidate. Check its saved API and URL or deploy ID; when authenticated, compare it with `npx lakebed@0.0.41 deploy list --json`. If create versus update stays unclear, explain both and get approval for either.
+- `lakebed.json` names an exact update target, and updating it needs authentication; signed out, the deploy fails without deploying. State its deploy ID and URL when resolvable, then get target-specific approval unless the request already approved it.
+- `.lakebed/deploy.json` is only a legacy candidate. Check its saved API and URL or deploy ID; when authenticated, compare it with `npx lakebed@0.0.41 deploy list --json`. Lakebed creates a new deploy when the saved one is gone or expired, so explain both outcomes and get approval for either, and treat a returned deploy ID that differs from the saved one as a new deploy.
 - No binding or candidate means create.
 
 Before an owned update, report local server-environment key names, never values. Lakebed replaces the hosted set with the local set; an absent or empty file removes all hosted keys. Get approval for that replacement.
 
-Keep auth state unchanged without approval. In Lakebed 0.0.41, `--help` after any command prints usage without running it.
+Keep auth state unchanged without approval. In Lakebed 0.0.41, `--help` after a command and before any `--`, as in `npx lakebed@0.0.41 deploy --help`, prints usage without running it; after `--` it becomes an argument, so `deploy -- --help` deploys a folder named `--help`.
 
 ## 3. Deploy and verify
 
@@ -41,7 +41,7 @@ For a returned URL:
 
 A command or URL error means verification did not run; correct it without treating the page as broken or proposing termination. For a non-root URL, do not guess or discard its path: report incompatibility and stop for direction. Mark the page failed only when a route or content check still fails after retry.
 
-On failure, report the public URL, failed checks, and how long it remains public. For a new deploy, state the exact URL and ID returned by that deploy and ask before taking it down: `npx lakebed@0.0.41 deploy archive <deploy-id> --json` stops an owned deploy until `deploy restore`, and `npx lakebed@0.0.41 deploy terminate <deploy-id> --yes --json` stops it for good; never take an ID from `deploy list` or another run. For an update, offer an approved last-known-good redeploy when available and never terminate the target as rollback. Before another deployment, rebuild, repeat disclosure review, resolve the lifecycle and target again, and get approval for any rollback, target, or lifecycle change. Never create another anonymous deploy without approval.
+On failure, report the public URL, failed checks, and how long it remains public. For a new owned deploy, state the exact URL and ID returned by that deploy and ask before taking it down: `npx lakebed@0.0.41 deploy archive <deploy-id> --json` stops it until `deploy restore`, and `npx lakebed@0.0.41 deploy terminate <deploy-id> --yes --json` stops it for good; never take an ID from `deploy list` or another run. Both need a signed-in owner, so an unclaimed anonymous preview stays public until the `expiresAt` time its deploy returned; report that time. To take it down sooner, offer `npx lakebed@0.0.41 claim` then archive, with approval for both: claiming signs this CLI in as the owner, replacing any saved login for that API, and removes the expiry, so confirm the archive succeeded. A claim that finds the deploy already claimed doesn't sign in, so run `npx lakebed@0.0.41 auth status --json` before archiving, and get approval for `npx lakebed@0.0.41 auth login` when it shows signed out. `claim` acts on the deploy saved in `.lakebed/deploy.json`, so run it only when [`inspect-capsule.mjs`](../scripts/inspect-capsule.mjs) shows that file's deploy ID is the one this deploy returned, and archive that same ID. For an update, offer an approved last-known-good redeploy when available and never terminate the target as rollback. Before another deployment, rebuild, repeat disclosure review, resolve the lifecycle and target again, and get approval for any rollback, target, or lifecycle change. Never create another anonymous deploy without approval.
 
 Report the working URL, successful caller-required routes and verifier output, access, lifecycle or expiry, and `inspectPolicy` as separate facts. `inspectPolicy` controls Lakebed data and log inspection, not page privacy.
 
