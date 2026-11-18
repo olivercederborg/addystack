@@ -47,7 +47,8 @@ _FIELDS = ("matcher", "timeout", "onFailure")
 RETIRED = ("reply-card.py", "bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py",
            "unparsed-bash-rewrite.py", "bug-route.py", "coordinator-light.py", "existing_work.py",
            "gh-stack-only.py", "require-writing-for-agents.py", "t3-children-only.py",
-           "thread-titles.py")
+           "thread-titles.py", "bare_references.py", "coordinator_queue.py", "pr_watch.py",
+           "reply_budget.py", "routine_stop.py", "upload_handoff.py")
 
 
 @dataclass(frozen=True)
