@@ -242,6 +242,14 @@ def unwaited(code):
 # A command that runs until it's stopped: following a file or log, or watching for changes.
 # Known limit: one the same command stops and waits for, as in `tail -f x & p=$!; …; kill $p`,
 # stays denied, as it was before the move.
+#
+# A moved call faces the checks the same command gets in the foreground, which is how the
+# fork retried every one of these denials, plus the two the move itself adds: a helper meant
+# to run on (ENDLESS, or a sleep or loop in quoted text) and an `&` job left unwaited, which
+# keep the deny when in doubt. So the foreground checks' own limits carry over: a sleep whose
+# length is quoted or a variable, a loop over "$@", a sleep `xargs` repeats, a CI watch behind
+# `gh -R` or `env`, and a `while true` with no sleep run as they would in the foreground, and
+# a reused `pid=$!` reads as waited for. None was among the 118 denials replayed.
 ENDLESS = re.compile(r"(?<![\w./-])(?:tail\b[^;&|\n]*\s(?:-\w*[fF]\w*|--follow)|log\s+stream|sleep\s+infinity)(?![\w-])"
                      r"|(?:^|[;&|(\n])\s*watch\s|\s--watch\b")
 
@@ -262,7 +270,8 @@ def verifier_fix(payload, tool_input, command):
     builds = BUILD_OR_TEST.search(code)
     if builds and any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None, False
-    if background and any(not re.match(r"\s*(?:nohup|setsid)\b", job) for job in unwaited(code)):
+    # Only a job that is one detached command is a helper: `nohup a && b &` leaves b undetached.
+    if background and any(not re.fullmatch(r"\s*(?:nohup|setsid)\b[^;&|]*", job) for job in unwaited(code)):
         # In the foreground, the call would return while the job still runs, and lose it the same way.
         return (f"`&` sends part of this command to the background with no `wait` for it. {LOST}Drop the `&` or "
                 "`wait` for it in the same command, and run it in the foreground; start a helper you stop yourself "

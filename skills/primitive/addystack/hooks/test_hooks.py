@@ -1354,7 +1354,9 @@ class BashRewrite(unittest.TestCase):
                 self.assertIn(why, out["permissionDecisionReason"])
                 self.assertIn("nohup", out["permissionDecisionReason"])
         # Codex r1: an `&` job the command doesn't wait for would still be lost, runner or not.
-        for command in ["swift test & echo started", "./run-checks.sh > /dev/null 2>&1 & echo started"]:
+        for command in ["swift test & echo started", "./run-checks.sh > /dev/null 2>&1 & echo started",
+                        # Codex r2: nohup detaches only its own command, not the rest of the list.
+                        "nohup true && ./run-checks.sh > /dev/null 2>&1 & echo started"]:
             with self.subTest(command=command):
                 out = self.verifier(command, run_in_background=True)
                 self.assertEqual(out["permissionDecision"], "deny")
