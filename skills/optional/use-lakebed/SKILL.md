@@ -17,7 +17,7 @@ Capture the capsule root, `preview` or `publish` intent, requested lifecycle, ca
 
 For commands supplied by the calling skill, run only `node <script>`, `bash <script>`, or an executable script whose path and resolved symlink target stay inside the capsule root. Place no interpreter argument before the script. Reject shell operators, command substitution, redirection, absolute script paths, and escaping `..` paths; ask for a safe replacement instead. URL and ordinary flag arguments after the script are allowed.
 
-Pinned Lakebed commands are trusted. Output prefixed `Advisory` is informational unless the caller asks for it.
+Pinned Lakebed commands are trusted.
 
 Lakebed 0.0.41 needs Node 22.18 or later. Before the first pinned command, run `node --version`; when it's older, stop and report that prerequisite.
 
