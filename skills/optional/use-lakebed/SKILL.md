@@ -26,7 +26,7 @@ Lakebed 0.0.41 needs Node 22.18 or later. Before the first pinned command, run `
 From the capsule root:
 
 1. Run caller tests unless they already passed against this exact source; rerun them after any capsule change. Always rerun validators and retain their URLs and disclosure warnings. Stop unless every check that ran exits zero.
-2. Run `npx lakebed@0.0.41 build . --target anonymous --json`. Stop unless failure is solely because outbound fetch requires a claimed app; then mark the capsule owned-only and treat authenticated deployment as its final build gate. A legacy-database diagnostic (`all()`, `where()`, or `orderBy()`) on a method that isn't a database call is a scanner false positive: rename that method and rebuild.
+2. Run `npx lakebed@0.0.41 build . --target anonymous --json`. Stop unless failure is solely because outbound fetch requires a claimed app; then mark the capsule owned-only and treat authenticated deployment as its final build gate. A legacy-database diagnostic (`all()`, `where()`, or `orderBy()`) on a method the capsule itself defines that isn't a database call is a scanner false positive: rename that method at its definition and every call, then rebuild.
 3. Start `npx lakebed@0.0.41 dev . --port 4173` in a managed session. Confirm its printed URL serves the expected capsule root; choose a free port when needed and use only the process you started.
 4. When supplied, run the caller's endpoint verifier with the origin-root preview URL and require a zero exit.
 5. Inspect at 1280×800 and 390×844 for content, title, links, controls, reading order, narrow layout, and caller checks. Keep overflow local to code or tables.
