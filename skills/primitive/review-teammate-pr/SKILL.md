@@ -77,10 +77,9 @@ read-only pass by the other provider in parallel, as a T3 child task on the
 diff changes no behavior, such as copy, formatting, or a version bump, and say so; a
 small diff that changes logic still gets it. Verify every sub-agent's and the pass's
 findings yourself before keeping them, and wait for the pass before step 3: it's part
-of the review, not a watch to leave running. The pass's task carries the lenses'
-**Rating** section and asks, of each pattern the PR adds and each fix it suggests: "is
-this the cleanest long-term fix at the cause?" You and the pass each give a rating;
-re-band one that rests on a dropped finding, then show the lower one.
+of the review, not a watch to leave running. You and the pass, whose task carries the
+lenses' **Rating** section, each give a rating; re-band one that rests on a dropped
+finding, then show the lower one.
 
 When the PR has a Decisions table, raise findings on a listed decision first, by its
 number (`D2`). Keep findings with a concrete consequence, and at most three
