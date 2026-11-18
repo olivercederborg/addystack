@@ -185,7 +185,9 @@ LONGEST = 600000
 LIMIT = 120
 WATCH = re.compile(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b")
 SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
-FOR_LOOP = re.compile(r"(?<![\w$-])for\s+\w+\s+in\s+([^;\n]*?)\s*[;\n]\s*do(?![\w-])(.*?)(?<![\w$-])done(?![\w-])", re.S)
+# A `for` loop whose `do` and `done` stand where commands start, so `[ -e done ]` ends nothing.
+FOR_LOOP = re.compile(r"(?<![\w$-])for\s+\w+\s+in\s+([^;\n]*?)\s*[;\n]\s*do(?![\w-])(.*?)[;\n&]\s*done(?![\w-])", re.S)
+DONE = re.compile(r"(?<![\w$./-])done(?![\w./-])")
 RANGE = re.compile(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)|\{(\d+)\.\.(\d+)\}")
 
 
@@ -236,7 +238,9 @@ def counted_wait(command):
     if not _count(ANY_SLEEP, code):
         return 0
     loops = list(FOR_LOOP.finditer(code))
-    if _count(ANY_SLEEP, code) != _count(PLAIN_SLEEP, code) or _count(LOOP_WORD, code) != len(loops):
+    # Each loop word and each `done` belongs to one of those loops, or a boundary is in doubt.
+    if _count(ANY_SLEEP, code) != _count(PLAIN_SLEEP, code) or not _count(LOOP_WORD, code) == _count(DONE, code) \
+            == len(loops):
         return None
     total = sum(float(s) for s in PLAIN_SLEEP.findall(code))
     for loop in loops:

@@ -1346,6 +1346,8 @@ class BashRewrite(unittest.TestCase):
             ("for i in $(seq 1 130); do [ -e /tmp/released ] && break; sleep 5; done", "past the 600 seconds"),
             # Codex r1: a descending range counted as a negative number of passes.
             ("for i in {50..1}; do sleep 15; done", "past the 600 seconds"),
+            # Codex r3: a file named done ended the loop early, so 660 seconds counted as 60.
+            ("for i in $(seq 1 11); do [ -e done ] && break; sleep 60; done", "sleep"),
             ("while true; do sleep 70; done", "no upper bound"),
         ]:
             with self.subTest(command=command):
