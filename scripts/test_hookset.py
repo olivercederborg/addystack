@@ -76,7 +76,7 @@ class Select(unittest.TestCase):
     def test_a_config_like_the_maintainers_selects_the_whole_manifest(self):
         """Check 1's hook half: preset all with the turn block on selects every manifest
         entry, in order, with only `{{kit}}` filled in."""
-        resolved = resolve(json.dumps({"hooks": {"preset": "all", "enable": ["gh-stack-only"]},
+        resolved = resolve(json.dumps({"hooks": {"preset": "all"},
                                        "replies": {"style": "reply-shape", "rules": str(RULES),
                                                    "turnBlock": True}}))
         kit = hookset._kit(resolved)

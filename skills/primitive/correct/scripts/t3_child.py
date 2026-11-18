@@ -11,7 +11,7 @@ as a missing, locked, or changed database, reads as "not a child".
 It also lists the messages agents sent into a session's thread, such as an owner's
 `t3_thread_send` report, which a transcript records like a message the user typed;
 transcripts.py drops them, and names the project a ◆ coordinator thread runs, which
-coordinator-light.py and coordinator_queue.py read."""
+coordinator_queue.py reads."""
 import json, os, pathlib, re, sqlite3
 
 STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")

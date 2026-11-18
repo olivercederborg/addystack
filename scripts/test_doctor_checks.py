@@ -213,10 +213,10 @@ class Hooks(Doctor):
     def test_a_hook_removed_by_hand_fails(self):
         self.cli("install")
         settings = self.json(self.settings)
-        settings["hooks"].pop("UserPromptSubmit")
+        settings["hooks"].pop("PreToolUse")
         self.settings.write_text(json.dumps(settings))
         line, _ = self.check("hooks")
-        self.assertIn(f"claude: missing UserPromptSubmit {KIT}/hooks/", line)
+        self.assertIn(f"claude: missing PreToolUse {KIT}/hooks/", line)
 
 
 class PolicyTools(Doctor):
