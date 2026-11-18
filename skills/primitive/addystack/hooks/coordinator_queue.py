@@ -191,7 +191,7 @@ def feedback(project, path, items, found):
                 "prints it; T3 shows only a turn's last message, so it has to stand on its own. Add no note about the "
                 "change.")
     top = items[0]
-    need = json.dumps(top.need(), ensure_ascii=False, separators=(",", ":"))
+    need = project_queue.as_json(top.need())
     return (f"This ◆ {project} thread's queue ({where}) holds {len(items)} item{'s' if len(items) > 1 else ''} for "
             f"the user, and your reply hides them: {reasons}. While the queue holds an item, every reply here, a ⏳ "
             "status or a quiet wake's included, ends on its top item (coordinator step 5): its card the first time, "

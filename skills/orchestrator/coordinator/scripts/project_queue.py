@@ -165,10 +165,15 @@ def strip(items: list[Item]) -> str:
     return f"1 of {len(items)} need{'s' if len(items) == 1 else ''} you · {shown(items[0].name)} · {shown(items[0].source)}"
 
 
+def as_json(value) -> str:
+    """value as compact JSON a turn block can carry: < and > escaped, so a name holding
+    `-->` can't end the block's comment early, and the parsed name stays the same."""
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c").replace(">", "\\u003e")
+
+
 def show(items: list[Item] | None) -> str:
     """What `project.py queue show` prints: the strip and the top item's need, then each item."""
     if not items:
         return "Nothing waits on the user."
     listed = [f"  {item.id} {item.kind} · {item.name} · {item.source} · since {item.since}" for item in items]
-    need = json.dumps(items[0].need(), ensure_ascii=False, separators=(",", ":"))
-    return "\n".join([strip(items), f"needs: [{need}]", "queue:", *listed])
+    return "\n".join([strip(items), f"needs: [{as_json(items[0].need())}]", "queue:", *listed])

@@ -103,6 +103,14 @@ class Queue(unittest.TestCase):
         self.assertEqual(q.strip(q.read(lines)),
                          "1 of 1 needs you · merge #123 if A &lt; B &amp; C · R153 <t3-thread://v2/e/t> &lt;slot 1&gt;")
 
+    def test_a_need_it_prints_parses_whatever_the_name_holds(self):
+        for name in ["discuss A --> B", "keep <!-- this --> out", "merge #12 if a > b"]:
+            with self.subTest(name=name):
+                printed = q.show(q.read(project(("decide", name)))).split("\n")[1]
+                self.assertTrue(printed.startswith("needs: ["))
+                block = f'<!-- turn {{"state":"stop","needs":{printed[len("needs: "):]},"options":[]}} -->'
+                self.assertEqual(turn_block.parse(block).needs[0].name, name)
+
     def test_the_strip_matches_what_show_prints(self):
         for count in (1, 3, 12):
             items = q.read(project(*[("do", f"step number {n}") for n in range(count)]))

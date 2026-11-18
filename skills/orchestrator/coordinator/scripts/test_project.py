@@ -167,6 +167,10 @@ class Queue(Fixture, unittest.TestCase):
         for refused in ["no block", duplicate]:
             self.assertIn("takes a turn block", self.project("queue", "import", stdin=refused, code=1).stderr)
         self.assertEqual(self.text(), PROJECT)
+        (self.dir / "project.md").write_text(PROJECT)
+        wrapped = '{"state":"done","standing":[{"id":4,"kind":"decide","name":"approve\\nthe release"}]}'
+        self.assertIn("imported 1: decide · approve the release", self.project("queue", "import", stdin=wrapped).stdout)
+        (self.dir / "project.md").write_text(PROJECT)
         quoted = 'A block looks like `<!-- turn {"state":"done"} -->`.\n\n' + reply
         self.assertIn("imported 3: decide · request Casper on ready", self.project("queue", "import", stdin=quoted).stdout)
 

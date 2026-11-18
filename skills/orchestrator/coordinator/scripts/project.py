@@ -106,7 +106,8 @@ def imported(lines: list[str], text: str) -> list[project_queue.Item]:
     except turn_block.Malformed as error:
         raise ProjectError(f"queue import takes a turn block on standard input, a reply ending in one or its JSON: {error}")
     project_queue.create(lines)
-    return [project_queue.add(lines, need.kind, need.name, "coordinator") for need in items]
+    # A turn block's name may run over lines; a queue row holds one, as the reply shows it.
+    return [project_queue.add(lines, need.kind, " ".join(need.name.split()), "coordinator") for need in items]
 
 
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
