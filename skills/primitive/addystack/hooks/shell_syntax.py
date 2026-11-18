@@ -203,23 +203,23 @@ def _sleeps(text):
 def _counted_loop_seconds(text):
     for match in re.finditer(r"\bfor\s+\w+\s+in\s+(.*?);?\s*do\b(.*?)\bdone\b", text, flags=re.S):
         items, body = match.groups()
-        bounds = (re.search(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)", items)
-                  or re.search(r"\{(\d+)\.\.(\d+)\}", items))
-        if bounds:
-            start, end = bounds.groups()
-            count = abs(int(end) - int(start or 1)) + 1 if items.lstrip().startswith("{") \
-                else int(end) - int(start or 1) + 1
-        else:
-            count = len(items.split())
+        bounds = RANGE.search(items)
+        count = _range_passes(bounds) if bounds else len(items.split())
         yield count * sum(_sleeps(body))
+
+
+def _range_passes(found):
+    """The passes of a RANGE match: `$(seq [a] b)` counts up only, `{a..b}` either way."""
+    if found.group(2):
+        return max(int(found.group(2)) - int(found.group(1) or 1) + 1, 0)
+    return abs(int(found.group(4)) - int(found.group(3))) + 1
 
 
 def _passes(items):
     """How many times a `for` loop over items runs, or None when that isn't certain."""
     found = RANGE.fullmatch(items.strip())
     if found:
-        first, last = (int(n or 1) for n in found.groups()[:2]) if found.group(2) else map(int, found.groups()[2:])
-        return max(last - first + 1, 0) if found.group(2) else abs(last - first) + 1
+        return _range_passes(found)
     words = items.split()
     return len(words) if all(re.fullmatch(r"[\w./:@%+=,-]+", word) for word in words) else None
 
