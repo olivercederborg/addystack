@@ -13,11 +13,11 @@ consequence.
   fail, such as one that reads back what its fake returned. For each new helper, wait,
   type, or flow, and each fix you suggest, search outside the diff for code that
   already does it, and name the duplicate. A shape that fights the library's or tool's
-  own API, or a sibling doing the same job, is a Cleanup citing it. Leave what tooling
-  enforces to the tooling, but run it: for a manifest or config change, run every suite
-  uncached at base and head and compare, skipping and naming any that writes shared
-  data or loads secrets. Rerun each new test that awaits a mocked async call with that
-  mock delayed.
+  own API, or a sibling's shape that grounding finds more idiomatic, is a Cleanup
+  citing it. Leave what tooling enforces to the tooling, but run it: for a manifest or
+  config change, run every suite uncached at base and head and compare, skipping and
+  naming any that writes shared data or loads secrets. Rerun each new test that awaits
+  a mocked async call with that mock delayed.
 - **Behavior**: trace each changed path end to end with the real inputs it will meet:
   the entrypoint, validation, authorization and tenancy, data writes, external calls
   and what they cost, retries and idempotency, and the response or rendered UI. Take
