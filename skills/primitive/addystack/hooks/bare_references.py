@@ -58,7 +58,7 @@ NAMED_AFTER = re.compile(r"(?:'s)?\s*(?:\((?=[^)]*[A-Za-z]{3})[^)]*\)|,\s+(?:the
 DEFINES = re.compile(r"^\s*(?:[-*]\s+)?(?:#+\s*)?(?:[A-Z][a-z]+\s+)?(\d+)\s*(?:·|—|[.:)]\s|\||$)|^\|\s*(\d+)\s*\|")
 # A tracker id: "DEV-3127", "ENG-42". CVE-2026-1234 and APP-NEXT-2CZ don't match whole.
 TRACKER_ID = re.compile(r"(?<![\w/#.-])([A-Z][A-Z0-9]{1,9})-(\d+)(?![\w-])")
-NOT_TRACKERS = {"UTF", "SHA", "ISO", "AES", "RFC", "ECMA", "HTTP", "TLS", "SSL", "ES", "CP", "IEC", "PEP", "WCAG", "ISBN"}
+NOT_TRACKERS = {"UTF", "SHA", "ISO", "AES", "RFC", "ECMA", "HTTP", "TLS", "SSL", "ES", "CP", "IEC", "PEP", "WCAG", "ISBN", "ADR", "GPT"}
 LINK = re.compile(r"\[([^\]]*)\]\(\s*<?https?://[^)]*\)")
 
 
