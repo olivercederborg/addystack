@@ -42,8 +42,10 @@ _FIELDS = ("matcher", "timeout", "onFailure")
 # command on one is addystack's wherever a manifest script's would be: in this kit's hooks
 # folder, an earlier kit's, or an older install's link folder. Drift reports it as extra,
 # and an install removes it, with or without a ledger entry. reply-card.py went with
-# reply-shape's UI cards (Nov 2026).
-RETIRED = ("reply-card.py",)
+# reply-shape's UI cards (Nov 2026), and the rest with r165's cut to the hooks that guard
+# hard-to-undo steps (Nov 18, 2026).
+RETIRED = ("reply-card.py", "bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py",
+           "unparsed-bash-rewrite.py")
 
 
 @dataclass(frozen=True)

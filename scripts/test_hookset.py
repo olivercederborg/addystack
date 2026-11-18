@@ -227,6 +227,20 @@ class Merge(unittest.TestCase):
         self.assertTrue(moved("PreToolUse", "/old/kit/hooks/reply-card.py"))
         self.assertFalse(moved("PreToolUse", "/old/kit/hooks/my-personal-hook.sh"))
 
+    def test_every_retired_kit_hook_is_drift_and_an_install_removes_it(self):
+        # Codex review of r165: settings kept running the deleted hooks, and drift said nothing.
+        removed = {"bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py", "unparsed-bash-rewrite.py"}
+        self.assertLessEqual(removed, set(hookset.RETIRED))
+        resolved = resolve("{}")
+        owned = hookset.owner(resolved)
+        for name in hookset.RETIRED:
+            with self.subTest(name=name):
+                command = f"{hookset._kit(resolved)}/hooks/{name}"
+                self.assertFalse((KIT / "hooks" / name).exists())
+                self.assertTrue(owned("Stop", command))
+                stale = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": command, "timeout": 10}]}]}}
+                self.assertNotIn(name, json.dumps(hookset.merge(stale, hookset.select(resolved, "claude"), owned)))
+
     def test_owner_doesnt_name_a_users_hook_on_a_kit_script_no_manifest_entry_runs(self):
         resolved = resolve("{}")
         owned = hookset.owner(resolved)
