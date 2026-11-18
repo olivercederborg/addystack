@@ -240,6 +240,8 @@ def unwaited(code):
 
 
 # A command that runs until it's stopped: following a file or log, or watching for changes.
+# Known limit: one the same command stops and waits for, as in `tail -f x & p=$!; …; kill $p`,
+# stays denied, as it was before the move.
 ENDLESS = re.compile(r"(?<![\w./-])(?:tail\b[^;&|\n]*\s(?:-\w*[fF]\w*|--follow)|log\s+stream|sleep\s+infinity)(?![\w-])"
                      r"|(?:^|[;&|(\n])\s*watch\s|\s--watch\b")
 
