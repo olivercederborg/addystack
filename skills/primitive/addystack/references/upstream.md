@@ -51,5 +51,9 @@ Without push rights, go through a fork:
 3. `gh pr create --draft --repo <repo> --head <fork owner>:<branch>`, where the fork
    owner is `gh api user --jq .login`.
 
+When the policy says gh stack, step 2 is `gh stack init <branch>`, which adopts the
+branch, then `gh stack push --remote fork`. Step 3 stays `gh pr create`, since
+`gh stack submit` has no flag for a PR from a fork.
+
 **Done when:** the draft PR's URL is in the reply, or the reply says what's waiting on
 the user.
