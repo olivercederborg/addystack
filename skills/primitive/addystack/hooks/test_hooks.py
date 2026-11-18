@@ -1353,9 +1353,16 @@ class BashRewrite(unittest.TestCase):
                 self.assertEqual(out["permissionDecision"], "deny")
                 self.assertIn(why, out["permissionDecisionReason"])
                 self.assertIn("nohup", out["permissionDecisionReason"])
-        out = self.verifier("swift test & echo started", run_in_background=True)
-        self.assertEqual(out["permissionDecision"], "deny")
-        self.assertIn("`&`", out["permissionDecisionReason"])
+        # Codex r1: an `&` job the command doesn't wait for would still be lost, runner or not.
+        for command in ["swift test & echo started", "./run-checks.sh > /dev/null 2>&1 & echo started"]:
+            with self.subTest(command=command):
+                out = self.verifier(command, run_in_background=True)
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn("`&`", out["permissionDecisionReason"])
+        # A helper it detaches with nohup, or a job it waits for, moves.
+        for command in ["nohup ./record-logs.sh > /tmp/r.log 2>&1 & ./run-checks.sh", "./run-checks.sh & wait"]:
+            with self.subTest(command=command):
+                self.assertEqual(self.verifier(command, run_in_background=True)["permissionDecision"], "allow")
 
     def test_moves_a_verifier_build_run_in_the_background_to_the_foreground(self):
         for command in self.BUILDS:

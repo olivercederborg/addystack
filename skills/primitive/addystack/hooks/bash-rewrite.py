@@ -260,6 +260,11 @@ def verifier_fix(payload, tool_input, command):
     builds = BUILD_OR_TEST.search(code)
     if builds and any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
         return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None, False
+    if background and any(not re.match(r"\s*(?:nohup|setsid)\b", job) for job in unwaited(code)):
+        # In the foreground, the call would return while the job still runs, and lose it the same way.
+        return (f"`&` sends part of this command to the background with no `wait` for it. {LOST}Drop the `&` or "
+                "`wait` for it in the same command, and run it in the foreground; start a helper you stop yourself "
+                f"with `nohup … > <log> 2>&1 &`. {SPLIT}"), None, False
     if background:
         # The fork waits in the foreground, so the rules no-foreground-waits.py would apply there apply now.
         # Quotes don't hide a flag from the command that reads it: `tail '-f'` follows too.
