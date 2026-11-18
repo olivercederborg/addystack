@@ -5825,6 +5825,7 @@ class BareReferences(unittest.TestCase):
             "<details><summary>Checks</summary>\n\nDEV-3127's tests pass.\n\n</details>\n",
             "- Sentry APP-NEXT-2CZ stopped.\n",
             "- ADR-0029's field-module pattern fits, reviewed on Codex GPT-6.1.\n",  # PR #75 review
+            "- ENG-42 and NOYER-7 belong to other teams.\n",  # only DEV counts
             "```\ngit checkout DEV-3127\n```\n",
             "- Commit `Closes DEV-3724` and title `[DEV-3724] Export emails`.\n",  # a literal can't become a link
         ]:

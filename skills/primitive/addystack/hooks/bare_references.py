@@ -27,8 +27,8 @@ A tracker id, such as DEV-3127, is sent back anywhere in the reply, folds and ta
 included, until one link to it says what it is: "[DEV-3127, Allow failure-only export
 emails](https://…)". Its other mentions may then stay short or plain. A bare id gives the user nothing to decide on and
 nowhere to click; on Nov 17, 2026 the user corrected three bare ids in one thread. Code
-blocks and the turn block aren't read. Standard names that share the shape, such as
-UTF-8 or SHA-256, aren't ids."""
+blocks and the turn block aren't read. Only the DEV team's ids count, as in
+existing_work.py: UTF-8, ADR-0029, or GPT-6 share the shape but aren't issues."""
 import itertools, json, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -56,9 +56,8 @@ IS_COUNT = re.compile(COUNT, re.I)
 NAMED_AFTER = re.compile(r"(?:'s)?\s*(?:\((?=[^)]*[A-Za-z]{3})[^)]*\)|,\s+(?:the\s+|an?\s+)?[A-Z][a-z]|,\s+the\s)")
 # A visible line that defines a number: "**1** · …", "1. …", "48: …", "| 1 | …", "### Option 1 · …".
 DEFINES = re.compile(r"^\s*(?:[-*]\s+)?(?:#+\s*)?(?:[A-Z][a-z]+\s+)?(\d+)\s*(?:·|—|[.:)]\s|\||$)|^\|\s*(\d+)\s*\|")
-# A tracker id: "DEV-3127", "ENG-42". CVE-2026-1234 and APP-NEXT-2CZ don't match whole.
-TRACKER_ID = re.compile(r"(?<![\w/#.-])([A-Z][A-Z0-9]{1,9})-(\d+)(?![\w-])")
-NOT_TRACKERS = {"UTF", "SHA", "ISO", "AES", "RFC", "ECMA", "HTTP", "TLS", "SSL", "ES", "CP", "IEC", "PEP", "WCAG", "ISBN", "ADR", "GPT"}
+# A Linear issue id: "DEV-3127". Only the DEV team key counts.
+TRACKER_ID = re.compile(r"(?<![\w/#.-])DEV-\d+(?![\w-])")
 LINK = re.compile(r"\[([^\]]*)\]\(\s*<?https?://[^)]*\)")
 
 
@@ -198,8 +197,6 @@ def unlinked_ids(text):
         code_free = re.sub(r"`[^`]*`", lambda span: " " * len(span.group()), line)
         links = [(m.start(), m.end(), m.group(1)) for m in LINK.finditer(code_free)]
         for m in TRACKER_ID.finditer(code_free):
-            if m.group(1) in NOT_TRACKERS:
-                continue
             ident = m.group(0)
             inside = next((label for start, end, label in links if start <= m.start() < end), None)
             found.append((ident, line.strip(), inside))
