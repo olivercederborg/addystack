@@ -97,6 +97,12 @@ class Queue(unittest.TestCase):
         self.assertEqual(q.show(q.read(project())), "Nothing waits on the user.")
         self.assertEqual(q.show(None), "Nothing waits on the user.")
 
+    def test_the_strip_writes_brackets_as_entities_and_keeps_links(self):
+        lines = project()
+        q.add(lines, "decide", "merge #123 if A < B & C", "R153 <t3-thread://v2/e/t> <slot 1>", NOW)
+        self.assertEqual(q.strip(q.read(lines)),
+                         "1 of 1 needs you · merge #123 if A &lt; B &amp; C · R153 <t3-thread://v2/e/t> &lt;slot 1&gt;")
+
     def test_the_strip_matches_what_show_prints(self):
         for count in (1, 3, 12):
             items = q.read(project(*[("do", f"step number {n}") for n in range(count)]))

@@ -3,7 +3,7 @@ thread whose project.md has a queue, and check whether it sends the reply back."
 import json, os, pathlib, shutil, sqlite3, subprocess, tempfile, unittest
 from datetime import datetime
 
-import project_queue
+import project_queue, turn_block
 
 HOOK = pathlib.Path(__file__).resolve().parent / "coordinator_queue.py"
 SESSION = "0b6e3c1a-5d2f-4c8e-9a71-2f4d6b8e0c13"
@@ -139,6 +139,16 @@ class CoordinatorQueue(unittest.TestCase):
             with self.subTest(strip=strip):
                 reply = CARD.replace(f"1 of 2 need you · stop format send-backs · {WORKER}", strip)
                 self.assertIsNone(self.run_on(reply + block(needs=[SEND_BACKS])))
+
+    def test_a_name_with_a_bracket_shows_as_entities_and_still_picks(self):
+        self.write(PROJECT, ("decide", "merge #123 if A < B", WORKER))
+        merge = [{"key": "a", "class": "stop:merge", "text": "merge #123"}]
+        reply = "🟡 **Merge #123?**\n\n{}\n\n".format(project_queue.strip(project_queue.read(
+            self.project_md.read_text().split("\n")))) + block(needs=[need(1, "merge #123 if A < B")], options=merge)
+        self.assertIn("merge #123 if A &lt; B", reply)
+        self.assertIsNone(self.run_on(reply))
+        self.assertEqual(turn_block.picked(reply, "a").text, "merge #123")
+        self.assertIsNone(self.run_on(reply.replace("&lt;", "<")))  # typed as is, it still shows the name
 
     def test_an_item_under_a_queued_id_must_be_that_item(self):
         for wrong in [need(2, "delete all backups"), need(2, "stop format send-backs", "do")]:

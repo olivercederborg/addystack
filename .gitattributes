@@ -36,6 +36,7 @@
 /skills/orchestrator/coordinator/scripts/github.sh linguist-generated
 /skills/orchestrator/coordinator/scripts/project_queue.py linguist-generated
 /skills/orchestrator/coordinator/scripts/stack.sh linguist-generated
+/skills/orchestrator/coordinator/scripts/turn_block.py linguist-generated
 /skills/orchestrator/coordinator/scripts/verdicts.py linguist-generated
 /skills/preferences/chief/scripts/turn_block.py linguist-generated
 /skills/preferences/coding-standards/references/taste.md linguist-generated

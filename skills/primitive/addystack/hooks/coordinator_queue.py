@@ -126,7 +126,8 @@ def problems(turn, reply, items, earlier=()):
         top = items[0]
         if top.id not in {need.id for need in turn.needs}:
             found.append(f"its `needs` leaves out the queue's top item, {top.id}")
-        if not any(int(match.group(2)) == len(items) and top.name.casefold() in line.casefold()
+        names = {top.name.casefold(), project_queue.shown(top.name).casefold()}  # as typed, or as entities
+        if not any(int(match.group(2)) == len(items) and any(name in line.casefold() for name in names)
                    for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)):
             found.append(f"no line the user sees carries the strip `{project_queue.strip(items)}`")
     return found

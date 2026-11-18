@@ -20,10 +20,13 @@ link, or `coordinator`. The user gets stuck runs first, then calls (decide and r
 then Do items, oldest first within each, as the coordinator skill's step 5 orders them."""
 from __future__ import annotations
 
+import html
 import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
+
+import turn_block
 
 HEADING = "## Queue"
 COUNTER = "Next id: "
@@ -146,10 +149,20 @@ def done(lines: list[str], ident: int) -> Item:
     raise QueueError(f"no open Queue item {ident}")
 
 
+def shown(text: str) -> str:
+    """text as a reply writes it: &, <, and > as entities outside each `<scheme:…>` link, so
+    it renders as typed and leaves no raw < for merge-gate's pick reader to doubt."""
+    parts, at = [], 0
+    for link in turn_block.AUTOLINK.finditer(text):
+        parts += [html.escape(text[at:link.start()], quote=False), link.group()]
+        at = link.end()
+    return "".join(parts + [html.escape(text[at:], quote=False)])
+
+
 def strip(items: list[Item]) -> str:
     """The line a reply carries while the queue holds items: which one it shows of how many,
     that one's name, and where it came from."""
-    return f"1 of {len(items)} need{'s' if len(items) == 1 else ''} you · {items[0].name} · {items[0].source}"
+    return f"1 of {len(items)} need{'s' if len(items) == 1 else ''} you · {shown(items[0].name)} · {shown(items[0].source)}"
 
 
 def show(items: list[Item] | None) -> str:
