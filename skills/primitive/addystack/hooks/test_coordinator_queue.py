@@ -173,15 +173,18 @@ class CoordinatorQueue(unittest.TestCase):
         routine = [{"key": "a", "class": "routine", "text": "push the fix"}]
         self.assertIsNone(self.run_on("✅ **Fixed.**\n\n" + block(options=routine)))
 
-    def test_a_name_with_a_bracket_shows_as_entities_and_still_picks(self):
-        self.write(PROJECT, ("decide", "merge #123 if A < B", WORKER))
+    def test_a_name_with_raw_html_shows_escaped_and_still_picks(self):
+        self.write(PROJECT, ("decide", "merge #123 after the <pre> fix", WORKER))
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #123"}]
         reply = "🟡 **Merge #123?**\n\n{}\n\n".format(project_queue.strip(project_queue.read(
-            self.project_md.read_text().split("\n")))) + block(needs=[need(1, "merge #123 if A < B")], options=merge)
-        self.assertIn("merge #123 if A &lt; B", reply)
+            self.project_md.read_text().split("\n")))) + block(needs=[need(1, "merge #123 after the <pre> fix")],
+                                                                options=merge)
+        self.assertIn("merge #123 after the &lt;pre> fix", reply)
         self.assertIsNone(self.run_on(reply))
         self.assertEqual(turn_block.picked(reply, "a").text, "merge #123")
-        self.assertIsNone(self.run_on(reply.replace("&lt;", "<")))  # typed as is, it still shows the name
+        raw = reply.replace("&lt;", "<")  # typed as is, the hook still reads the name; merge-gate won't pick
+        self.assertIsNone(self.run_on(raw))
+        self.assertIsNone(turn_block.picked(raw, "a"))
 
     def test_an_item_under_a_queued_id_must_be_that_item(self):
         for wrong in [need(2, "delete all backups"), need(2, "stop format send-backs", "do")]:

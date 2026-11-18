@@ -163,7 +163,7 @@ def shows_strip(reply, items):
 
 def strips(line, match, top, count):
     """Whether the STRIP match on line is the strip for top in a queue of count: k of count
-    with k from 1 to count, then the top item's whole name, as typed or with entities, alone
+    with k from 1 to count, then the top item's whole name, as typed or as shown() writes it, alone
     or before ` · <from>`, emphasis marks aside."""
     if not 1 <= int(match.group(1)) <= count or int(match.group(2)) != count:
         return False

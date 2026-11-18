@@ -20,7 +20,6 @@ link, or `coordinator`. The user gets stuck runs first, then calls (decide and r
 then Do items, oldest first within each, as the coordinator skill's step 5 orders them."""
 from __future__ import annotations
 
-import html
 import json
 import re
 from dataclasses import dataclass
@@ -150,13 +149,12 @@ def done(lines: list[str], ident: int) -> Item:
 
 
 def shown(text: str) -> str:
-    """text as a reply writes it: &, <, and > as entities outside each `<scheme:…>` link, so
-    it renders as typed and leaves no raw < for merge-gate's pick reader to doubt."""
-    parts, at = [], 0
-    for link in turn_block.AUTOLINK.finditer(text):
-        parts += [html.escape(text[at:link.start()], quote=False), link.group()]
-        at = link.end()
-    return "".join(parts + [html.escape(text[at:], quote=False)])
+    """text as a reply writes it: each `<` that opens raw HTML merge-gate's pick reader
+    refuses, as turn_block reads it (UNSAFE, or a `<details` fold), as `&lt;`, so the strip
+    renders as typed and keeps the reply's picks; a link or a lone `<` stays as typed."""
+    for pattern in (turn_block.UNSAFE, turn_block.OPENS_FOLD):
+        text = pattern.sub(lambda match: "&lt;" + match.group()[1:], text)
+    return text
 
 
 def strip(items: list[Item]) -> str:
