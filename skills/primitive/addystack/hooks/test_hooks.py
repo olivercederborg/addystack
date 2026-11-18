@@ -1110,30 +1110,48 @@ class SkillsCheckoutCheck(unittest.TestCase):
             self.assertEqual(run_hook(self.HOOK, {}, env), "")
             self.assertEqual(self.git(folder, "rev-parse", "HEAD"), self.git(folder, "rev-parse", "origin/main"))
 
+    def run_after_fast_forward(self, folder, change):
+        """Runs a kit copy's skills-checkout-check.py one commit behind origin/main, where
+        change(kit) made that commit, and returns its output."""
+        env = self.checkout(folder, "main")
+        git = functools.partial(self.git, folder)
+        kit = pathlib.Path(folder)
+        (kit / "hooks").mkdir()
+        # hook_parity.py and the modules it selects through.
+        (kit / "lib").mkdir()
+        for name in ("hooks/skills-checkout-check.py", "hooks/hook_parity.py", "hooks/manifest.json",
+                     "hooks/resolved.py", "lib/config.py", "lib/hookset.py"):
+            shutil.copy(HOOKS.parent / name, kit / name)
+        git("add", "-A")
+        git("commit", "-qm", "hooks")
+        change(kit)
+        git("commit", "-qam", "a change")
+        git("update-ref", "refs/remotes/origin/main", "HEAD")
+        git("reset", "-q", "--hard", "HEAD~1")
+        return subprocess.run([sys.executable, str(kit / "hooks/skills-checkout-check.py")], input="{}",
+                              capture_output=True, text=True, check=True, env={**os.environ, **env}).stdout
+
     def test_reads_hook_drift_after_the_fast_forward(self):
         """A fast-forward that adds a hook to the manifest is drift this session reports."""
-        with tempfile.TemporaryDirectory() as folder:
-            env = self.checkout(folder, "main")
-            git = functools.partial(self.git, folder)
-            kit_hooks = pathlib.Path(folder, "hooks")
-            kit_hooks.mkdir()
-            # hook_parity.py and the modules it selects through.
-            pathlib.Path(folder, "lib").mkdir()
-            for name in ("hooks/skills-checkout-check.py", "hooks/hook_parity.py", "hooks/manifest.json",
-                         "hooks/resolved.py", "lib/config.py", "lib/hookset.py"):
-                shutil.copy(HOOKS.parent / name, pathlib.Path(folder, name))
-            git("add", "-A")
-            git("commit", "-qm", "hooks")
-            manifest = json.loads((kit_hooks / "manifest.json").read_text())
+        def add(kit):
+            manifest = json.loads((kit / "hooks/manifest.json").read_text())
             manifest["claude"].append({"id": "new", "tags": ["workflow"], "event": "Stop", "matcher": None,
                                        "command": "{{kit}}/hooks/new.py", "timeout": 10})
-            (kit_hooks / "manifest.json").write_text(json.dumps(manifest))
-            git("commit", "-qam", "a new hook")
-            git("update-ref", "refs/remotes/origin/main", "HEAD")
-            git("reset", "-q", "--hard", "HEAD~1")
-            out = subprocess.run([sys.executable, str(kit_hooks / "skills-checkout-check.py")], input="{}",
-                                 capture_output=True, text=True, check=True, env={**os.environ, **env}).stdout
-            self.assertIn("missing Stop ~/kit/hooks/new.py", out)
+            (kit / "hooks/manifest.json").write_text(json.dumps(manifest))
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIn("missing Stop ~/kit/hooks/new.py", self.run_after_fast_forward(folder, add))
+
+    def test_a_hook_the_fast_forward_retires_is_drift_this_session(self):
+        """The pulled hookset's RETIRED, not the one this process loaded before the pull,
+        decides what drift reports (Codex review of r165)."""
+        def retire(kit):
+            manifest = json.loads((kit / "hooks/manifest.json").read_text())
+            manifest["claude"] = [entry for entry in manifest["claude"] if entry["id"] != "verdict-stamp"]
+            (kit / "hooks/manifest.json").write_text(json.dumps(manifest))
+            hookset = kit / "lib/hookset.py"
+            hookset.write_text(hookset.read_text().replace("RETIRED = (", 'RETIRED = ("verdict-stamp.py", ', 1))
+        with tempfile.TemporaryDirectory() as folder:
+            self.assertIn("extra PreToolUse ~/kit/hooks/verdict-stamp.py", self.run_after_fast_forward(folder, retire))
 
     def test_warns_when_main_is_behind_with_local_changes(self):
         with tempfile.TemporaryDirectory() as folder:
