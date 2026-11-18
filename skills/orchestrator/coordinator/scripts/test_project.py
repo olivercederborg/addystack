@@ -173,6 +173,16 @@ class Queue(Fixture, unittest.TestCase):
         (self.dir / "project.md").write_text(PROJECT)
         quoted = 'A block looks like `<!-- turn {"state":"done"} -->`.\n\n' + reply
         self.assertIn("imported 3: decide · request Casper on ready", self.project("queue", "import", stdin=quoted).stdout)
+        # Who asked and a stuck run, which the turn block can't say, come from the coordinator.
+        (self.dir / "project.md").write_text(PROJECT)
+        out = self.project("queue", "import", "--from", "64=R153 <t3-thread://v2/e/t>", "--stuck", "5", stdin=reply).stdout
+        self.assertIn("imported 1: stuck · merge #39", out)
+        self.assertIn("1 of 3 need you · merge #39 · coordinator", out)
+        self.assertIn("  3 decide · request Casper on ready · R153 <t3-thread://v2/e/t> · since", out)
+        for wrong, error in [(["--stuck", "9"], "the turn block has no item 9"), (["--from", "64"], "--from takes ID=WHO")]:
+            (self.dir / "project.md").write_text(PROJECT)
+            self.assertIn(error, self.project("queue", "import", *wrong, stdin=reply, code=1).stderr)
+            self.assertEqual(self.text(), PROJECT)
 
     def test_add_done_and_show_keep_the_queue_and_its_answers(self):
         added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout

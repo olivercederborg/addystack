@@ -195,7 +195,9 @@ def feedback(project, path, items, found, open_items=()):
                 "with every call still open, oldest first: the turn block below holds what the reply before and this "
                 "one named; add to its `standing` any other call an earlier reply put to the user that's still open, "
                 f"then run {script} with it on standard input:\n\n`{path.parent} queue import` <<'EOF'\n{block}\nEOF"
-                "\n\nThen `queue done` each the user already answered. Send your whole reply again, ending on the "
+                "\n\nAdd `--from <id>=\"<worker> <thread link>\"` for a call a worker asked and `--stuck <id>` for a "
+                "stuck run, as your Workers table shows. Then `queue done` each the user already answered. Send your "
+                "whole reply again, ending on the "
                 "queue's top item as `queue show` prints it; T3 shows only a turn's last message, so it has to stand "
                 "on its own. Add no note about the change.")
     if not items:
