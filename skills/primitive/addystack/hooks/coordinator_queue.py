@@ -25,9 +25,16 @@ writes with `project.py queue`. A reply goes back, with each reason, when:
   the reply says what waits, and how much, without being asked.
 
 The send-back names the top item, its need, and `queue done` for an answer the coordinator
-hasn't recorded, since an answered call left on the queue would come back as its top. A
-project with no Queue section yet also counts what the reply before this turn's prompt
-named, so its open items reach the queue instead of dropping out of the next reply.
+hasn't recorded, since an answered call left on the queue would come back as its top. An
+item the reply before this turn's prompt named, and this reply doesn't, must still be on
+the queue or closed with `queue done` (its Decisions line), so the calls a project kept
+only in turn blocks reach the queue as it arrives, however its first item got there.
+
+Known limits: it reads Markdown a line at a time, not as rendered. A strip in an indented
+code block, or a name only in an HTML attribute, counts as shown, and a shown name with
+`<!--` in inline code doesn't; the coordinator writes the strip on its own line, as `queue
+show` prints it. An item `queue done` closed before a phase end, which empties Decisions,
+counts as dropped if the reply before named it.
 
 A coordinator is a thread whose T3 title holds `◆ <project>` (t3_child.coordinator_project),
 and its project.md is `~/.local/state/orchestrate/<project>/project.md` whose `Coordinator:`
@@ -43,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import project_queue, t3_child, transcripts, turn_block  # noqa: E402
 
 LINK = re.compile(r"t3-thread://v2/[^/>\s)]+/([^>\s)]+)")  # project.py's, for the Coordinator header
+CLOSED = re.compile(r"\(queue (\d+), (?:stuck|decide|review|do)\) → ")  # project.py's `queue done` Decision
 OPEN_FOLD = re.compile(r"<details\b", re.I)
 CLOSE_FOLD = re.compile(r"</details\s*>", re.I)
 
@@ -95,16 +103,26 @@ def earlier_items(path):
     return ()
 
 
-def problems(turn, reply, items, earlier=()):
-    """Why the reply hides the queue, one reason a line; [] when it shows it. With no Queue
-    section yet (items None), what the reply before named counts as open too, so the first
-    reply after the queue arrives can't drop it unqueued."""
+def closed_ids(lines):
+    """The queue ids `project.py queue done` closed, from the Decisions lines it writes."""
+    return {int(ident) for ident in CLOSED.findall("\n".join(lines))}
+
+
+def problems(turn, reply, items, earlier=(), closed=frozenset()):
+    """Why the reply hides the queue, one reason a line; [] when it shows it. An item the
+    reply before named, and this one doesn't, must still be on the queue as that item, or
+    closed with `queue done`, so a call never drops out unanswered, as one that lived only
+    in turn blocks could while the queue arrives."""
     held = {item.id: item.need() for item in items or []}
     found = []
-    if items is None:
-        named = {item.id for item in turn.items}
-        found += [f"the reply before named {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold"
-                  for item in earlier if item.id not in named]
+    named = set(turn.items)
+    for item in earlier:
+        queued = held.get(item.id)
+        if item in named or queued == {"id": item.id, "kind": item.kind, "name": item.name} \
+                or (queued is None and item.id in closed):
+            continue
+        found.append(f"the reply before named {item.kind} {item.id} \"{item.name}\", which the queue doesn't hold "
+                     "and `queue done` didn't close")
     for item in turn.items:
         named = {"id": item.id, "kind": item.kind, "name": item.name}
         queued = held.get(item.id)
@@ -131,7 +149,7 @@ def feedback(project, path, items, found):
         return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
                 f"thread puts to the user goes on its queue first, in {where}: queue each one still open, in the order "
                 f"it arose, with {script} `{path.parent} queue add <kind> \"<name>\" --from \"<worker> <thread link>\"`, "
-                "and give its need the id that prints; leave out one the user already answered. Then send your whole "
+                "and give its need the id that prints; one the user already answered needs nothing. Then send your whole "
                 "reply again, ending on the queue's top item as `queue show` prints it; T3 shows only a turn's last "
                 "message, so it has to stand on its own. Add no note about the change.")
     top = items[0]
@@ -140,7 +158,8 @@ def feedback(project, path, items, found):
             f"the user, and your reply hides them: {reasons}. While the queue holds an item, every reply here, a ⏳ "
             "status or a quiet wake's included, ends on its top item (coordinator step 5): its card the first time, "
             f"then its question, the strip `{project_queue.strip(items)}`, and Next, with `{need}` in the turn "
-            f"block's `needs`. If the user already answered it, record that first with {script} `{path.parent} queue "
+            f"block's `needs`. Queue each other item a reason names that's still open with `queue add`. If the user "
+            f"already answered the top one, record that first with {script} `{path.parent} queue "
             f"done {top.id} --answer \"<the pick> · the user: '<their words>'\"` and show the next one; `queue show` "
             "prints the strip and the need. Send your whole reply again; T3 shows only a turn's last message, so it has to stand on its own. "
             "Add no note about the change.")
@@ -164,8 +183,7 @@ def main():
         turn = turn_block.parse(reply)
     except (project_queue.QueueError, turn_block.Malformed):
         return
-    earlier = earlier_items(event.get("transcript_path")) if items is None else ()
-    reasons = problems(turn, reply, items, earlier)
+    reasons = problems(turn, reply, items, earlier_items(event.get("transcript_path")), closed_ids(lines))
     if reasons:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
                                                  "additionalContext": feedback(found[0], path, items, reasons)}}))
