@@ -106,16 +106,25 @@ def drift(runtime, path=None, required=True, profile="auto"):
     return hookset._drift(json.loads(MANIFEST.read_text()), resolved_config(), runtime, path, required, profile)
 
 
-def _codex_trust():
-    """Lines for each Codex hook whose trustStatus isn't trusted, from `codex app-server`."""
+# The trustStatus values Codex runs a hook with: an admin's managed hook needs no user trust.
+RUNS = ("trusted", "managed")
+
+
+class NotChecked(Exception):
+    """codex app-server didn't list its hooks; the message says why."""
+
+
+def codex_hooks():
+    """hooks/list's data from `codex app-server`: one entry per config layer, with its hooks
+    (key, trustStatus, enabled, command, ...) and errors. Raises NotChecked when it can't."""
     codex = shutil.which("codex")
     if not codex:
-        return ["codex trust: not checked, codex isn't on PATH"]
+        raise NotChecked("codex isn't on PATH")
     try:
         server = subprocess.Popen([codex, "app-server"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=subprocess.DEVNULL, text=True)
     except OSError as error:
-        return [f"codex trust: not checked, codex app-server didn't start: {error}"]
+        raise NotChecked(f"codex app-server didn't start: {error}") from None
     replies = queue.Queue()
 
     def read():
@@ -149,18 +158,26 @@ def _codex_trust():
         send({"id": 2, "method": "hooks/list", "params": {"cwds": ["/tmp"]}})
         result = reply(2)
     except (queue.Empty, OSError, ValueError) as error:
-        return [f"codex trust: not checked, codex app-server didn't answer: {error or 'timed out'}"]
+        raise NotChecked(f"codex app-server didn't answer: {error or 'timed out'}") from None
     finally:
         server.kill()
     if "error" in result:
-        return [f"codex trust: not checked, hooks/list failed: {result['error']}"]
-    data = result.get("result", {}).get("data", [])
+        raise NotChecked(f"hooks/list failed: {result['error']}")
+    return result.get("result", {}).get("data", [])
+
+
+def _codex_trust():
+    """Lines for each Codex hook whose trustStatus Codex doesn't run, from `codex app-server`."""
+    try:
+        data = codex_hooks()
+    except NotChecked as error:
+        return [f"codex trust: not checked, {error}"]
     hooks = [hook for entry in data for hook in entry.get("hooks", [])]
     if not hooks:
         return ["codex trust: codex app-server lists no hooks"]
     return [f"codex trust: {error}" for entry in data for error in entry.get("errors", [])] + [
         f"codex trust: {hook.get('key')} is {hook.get('trustStatus')}: {hook.get('command')}"
-        for hook in hooks if hook.get("trustStatus") != "trusted"]
+        for hook in hooks if hook.get("trustStatus") not in RUNS]
 
 
 def main():

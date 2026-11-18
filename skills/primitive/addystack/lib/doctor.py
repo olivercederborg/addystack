@@ -230,18 +230,33 @@ def _hooks(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("hooks", True, _SKIPPED, None)
     lines = [line for host in _enabled(value) for line in hookset.drift(value, host)]
-    # Codex skips a hook it doesn't trust, and trust follows a hook's position, so removing
-    # an entry above a gate untrusts the gate until the user trusts it again.
-    trust = []
-    if "codex" in _enabled(value) and shutil.which("codex"):
-        import hook_parity
-        trust = [line for line in hook_parity._codex_trust()
-                 if "not checked" not in line and "lists no hooks" not in line]
+    trust = _codex_skips(value) if "codex" in _enabled(value) else []
     if lines or trust:
         fix = " and ".join(step for step, needed in (("addystack install", lines),
-                                                     ("trust each in codex's /hooks", trust)) if needed)
+                                                     ("trust and enable each in codex's /hooks", trust)) if needed)
         return Check("hooks", False, "; ".join(lines + trust), fix)
     return Check("hooks", True, "match the selection" if _enabled(value) else "no host enabled", None)
+
+
+def _codex_skips(value: Resolved) -> List[str]:
+    """A line for each kit hook Codex lists but won't run: untrusted, or disabled. Codex keys
+    both by a hook's position, so removing an entry above a gate hands the gate its state.
+    Nothing when codex can't answer, which leaves the check to drift."""
+    import hook_parity
+    try:
+        data = hook_parity.codex_hooks()
+    except hook_parity.NotChecked:
+        return []
+    owned = hookset.owner(value)
+    lines = []
+    for hook in (hook for entry in data for hook in entry.get("hooks", [])):
+        if not owned(hook.get("eventName", ""), hook.get("command", "")):
+            continue
+        status = hook.get("trustStatus")
+        state = status if status not in hook_parity.RUNS else "disabled" if hook.get("enabled") is False else None
+        if state:
+            lines.append(f"codex: {hook.get('key')} is {state}: {hook.get('command')}")
+    return lines
 
 
 def _policy_tools(value: Optional[Resolved]) -> Check:

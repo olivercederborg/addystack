@@ -777,7 +777,8 @@ import json, sys
 for line in sys.stdin:
     id_ = json.loads(line).get("id")
     hooks = [{{"key": "h:stop:0:0", "trustStatus": "untrusted", "command": "~/x.py"}},
-             {{"key": "h:stop:0:1", "trustStatus": "trusted", "command": "~/y.py"}}]
+             {{"key": "h:stop:0:1", "trustStatus": "trusted", "command": "~/y.py"}},
+             {{"key": "managed:stop:0:0", "trustStatus": "managed", "command": "/opt/audit"}}]
     if id_:
         print(json.dumps({{"id": id_, "result": {{"data": [{{"hooks": hooks, "errors": []}}]}}}}), flush=True)
 """

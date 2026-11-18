@@ -218,28 +218,33 @@ class Hooks(Doctor):
         line, _ = self.check("hooks")
         self.assertIn(f"claude: missing PreToolUse {KIT}/hooks/", line)
 
-
-    def test_an_untrusted_codex_hook_fails_with_the_trust_fix(self):
-        # Codex review of r165: removing the entries above merge-gate and ready-gate moved
-        # both, and Codex skips a moved hook until the user trusts it again.
+    def test_a_kit_hook_codex_wont_run_fails_with_the_trust_fix(self):
+        # Codex review of r165: Codex keys a hook's trust and enabled state by its position,
+        # so removing the entries above merge-gate and ready-gate passes both theirs.
         self.cli("install")
-        server = self.stubs / "codex"
-        server.write_text(f"""#!{sys.executable}
+        merge, ready = (hook["command"] for group in self.json(self.codex_hooks)["hooks"]["PreToolUse"]
+                        for hook in group["hooks"] if hook["command"].endswith(("merge-gate.py", "ready-gate.py")))
+        hooks = [{"key": "pre_tool_use:0:0", "trustStatus": "modified", "enabled": True, "command": merge},
+                 {"key": "pre_tool_use:0:1", "trustStatus": "trusted", "enabled": False, "command": ready},
+                 # An admin's hook, which Codex runs untrusted, and the user's own: not the kit's.
+                 {"key": "managed:pre_tool_use:0:0", "trustStatus": "managed", "enabled": True, "command": "/opt/audit"},
+                 {"key": "pre_tool_use:1:0", "trustStatus": "untrusted", "enabled": False, "command": "~/mine.sh"}]
+        self.stubs.joinpath("codex").write_text(f"""#!{sys.executable}
 import json, sys
 if sys.argv[1:] != ["app-server"]:
     sys.exit(print("1.2.3"))
 for line in sys.stdin:
     id_ = json.loads(line).get("id")
-    hooks = [{{"key": "pre_tool_use:0:0", "trustStatus": "modified", "command": "~/kit/hooks/merge-gate.py"}},
-             {{"key": "pre_tool_use:0:1", "trustStatus": "trusted", "command": "~/kit/hooks/ready-gate.py"}}]
     if id_:
-        print(json.dumps({{"id": id_, "result": {{"data": [{{"hooks": hooks, "errors": []}}]}}}}), flush=True)
+        print(json.dumps({{"id": id_, "result": {{"data": [{{"hooks": {hooks!r}, "errors": []}}]}}}}), flush=True)
 """)
-        self.assertEqual(self.check("hooks"), ("FAIL  hooks: codex trust: pre_tool_use:0:0 is modified: "
-                                               "~/kit/hooks/merge-gate.py", "fix: trust each in codex's /hooks"))
+        self.assertEqual(self.check("hooks"), (f"FAIL  hooks: codex: pre_tool_use:0:0 is modified: {merge}; "
+                                               f"codex: pre_tool_use:0:1 is disabled: {ready}",
+                                               "fix: trust and enable each in codex's /hooks"))
         # A codex that can't answer, like the version stub, leaves the check to drift alone.
         self.stub("codex", "echo 1.2.3")
         self.assertEqual(self.check("hooks"), ("ok    hooks: match the selection", None))
+
 
 class PolicyTools(Doctor):
     def test_nothing_is_needed_without_a_gh_stack_rule(self):
