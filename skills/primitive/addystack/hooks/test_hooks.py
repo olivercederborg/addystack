@@ -5806,7 +5806,6 @@ class BareReferences(unittest.TestCase):
             ("**Next**\n\n- **a**: move DEV-1894 to Todo, and add DEV-3127 to Todo.\n", "'DEV-3127' in:"),
             ("| Issue | Status |\n|---|---|\n| DEV-3603 | Todo |\n", "'DEV-3603' in:"),
             ("<details><summary>Checks</summary>\n\n- DEV-993 moved.\n\n</details>\n", "'DEV-993' in:"),
-            (f"- `DEV-3127` is next.\n", "'DEV-3127' in:"),
             (f"- [DEV-3127]({url}) is next.\n", "'DEV-3127' in:"),  # linked, but never named
         ]:
             with self.subTest(reply=reply):
@@ -5824,6 +5823,7 @@ class BareReferences(unittest.TestCase):
             "- Sentry APP-NEXT-2CZ stopped.\n",
             "- ADR-0029's field-module pattern fits, reviewed on Codex GPT-6.1.\n",  # PR #75 review
             "```\ngit checkout DEV-3127\n```\n",
+            "- Commit `Closes DEV-3724` and title `[DEV-3724] Export emails`.\n",  # a literal can't become a link
         ]:
             with self.subTest(reply=reply):
                 self.assertEqual(self.bounce(reply), "")

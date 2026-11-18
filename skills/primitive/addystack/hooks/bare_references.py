@@ -182,8 +182,9 @@ def problems(text, names={}):
 
 def unlinked_ids(text):
     """One line per tracker id the reader can't click or doesn't know: an id outside a
-    link, or one no link names. Folds count, since the user opens them; code blocks and
-    the turn block don't."""
+    link, or one no link names. Folds count, since the user opens them; code blocks, code
+    spans, and the turn block don't, since a literal such as `Closes DEV-3724` can't
+    become a link."""
     text = turn_block.lines_ended(text)
     at = text.rfind("<!--")
     if at >= 0 and turn_block.BLOCK.match(text, at):
@@ -193,8 +194,10 @@ def unlinked_ids(text):
     for line, fenced in zip(lines, turn_block.in_fence(lines)):
         if fenced:
             continue
-        links = [(m.start(), m.end(), m.group(1)) for m in LINK.finditer(line)]
-        for m in TRACKER_ID.finditer(line):
+        # Spaces keep each match's offsets, so the feedback still quotes the line as written.
+        code_free = re.sub(r"`[^`]*`", lambda span: " " * len(span.group()), line)
+        links = [(m.start(), m.end(), m.group(1)) for m in LINK.finditer(code_free)]
+        for m in TRACKER_ID.finditer(code_free):
             if m.group(1) in NOT_TRACKERS:
                 continue
             ident = m.group(0)
