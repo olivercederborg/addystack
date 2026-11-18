@@ -62,8 +62,8 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
 addystack adds the two-option cap and each option's class.
 
 - **Keys**: `a`, the recommended pick, and `b` only when the reply stops for the user's
-  call, as on a decision card's no or the smallest option. `routine_stop.py` sends back a
-  reply with a third.
+  call, as on a decision card's no or the smallest option. `routine_stop.py` logs a reply
+  with a third to the reply log (`hooks/reply_log.py`).
 - **`class`**: the router stop the option crosses, one of:
   - `stop:merge`: merging or marking ready. A merge option's text is the plain merge
     request with no other step, as in "merge #12 and #13", since only that counts as the

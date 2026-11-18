@@ -15,15 +15,17 @@ those with options, and after "no autonomy". A reply
 whose block is missing or malformed goes back once with the reason, since this hook and
 merge-gate.py read nothing without it.
 
-A reply with more than two options goes back too. Of 1,922 replies in three weeks that
-offered a `b`, the user picked it 59 times, and 6 of 538 `c`s; they steered in their
-own words instead (docs/research/2026-10-28-reply-audit.md). So the turn block allows `a`,
-and `b` only when the reply stops for their call. The routine check runs first, since a
-reply sent on to do `a` doesn't stop on its options. turn_block.py still reads three, so
-a reply from before the cap keeps its picks for merge-gate.py.
+A reply with more than two options goes to the reply log (reply_log.py). Of 1,922 replies
+in three weeks that offered a `b`, the user picked it 59 times, and 6 of 538 `c`s; they
+steered in their own words instead (docs/research/2026-10-28-reply-audit.md). So the turn
+block allows `a`, and `b` only when the reply stops for their call. It's a format rule, so
+it's logged rather than sent back, which would post the card twice (suite-audit R153).
+A reply sent on to do `a` isn't logged, since it doesn't stop on its options.
+turn_block.py still reads three, so a reply with a third keeps its picks for merge-gate.py.
 
 Claude Code continues through additionalContext and Codex through decision: block, as
-in bare_references.py. stop_hook_active keeps each to one send per stop. T3 delegated
+in bare_references.py. stop_hook_active keeps each to one send per stop; the log still takes
+that stop's reply, since a row can't loop. T3 delegated
 children pass, since their parent reads them, except a coordinator's worker: its reply goes
 back once unless its block's `project` is its brief's `Project:` name, which Prefrontal
 groups its threads by.
@@ -44,9 +46,9 @@ import json, re, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bare_references, resolved, t3_child, transcripts, turn_block  # noqa: E402
+import bare_references, reply_log, resolved, t3_child, transcripts, turn_block  # noqa: E402
 
-NEXT_MAX = 2
+NEXT_MAX = 2  # the turn block's options; a reply with more is logged
 # A step that writes an issue: "draft a Linear issue", "file 1 as a Linear follow-up",
 # "create this issue in Linear", "draft a Trigger.dev GitHub issue". issue_step() rejects
 # "the open issue", "a test for the (Linear) issue", a verb negated in its own clause, and
@@ -219,46 +221,39 @@ def main():
         event = json.loads(sys.stdin.read())
     except ValueError:
         return
-    if event.get("stop_hook_active"):
-        return
+    active = event.get("stop_hook_active")
     if bare_references.delegated_child(event):
         project = t3_child.worker_project(bare_references.first_brief(event))
-        feedback = project and project_feedback(event.get("last_assistant_message"), project)
+        feedback = not active and project and project_feedback(event.get("last_assistant_message"), project)
         if feedback:
             send(event, feedback)
         return
     try:
         turn = turn_block.parse(event.get("last_assistant_message"))
     except turn_block.Malformed as error:
-        send(event, f"Your reply has no valid turn block: {error}. Send your whole reply again, "
-             f"unchanged except that its last line is a valid turn block ({rules_file()}, Turn block section). "
-             "T3 shows only a turn's last message, so the resent reply has to stand on its own. "
-             "Add no note about the change.")
+        if not active:
+            send(event, f"Your reply has no valid turn block: {error}. Send your whole reply again, "
+                 f"unchanged except that its last line is a valid turn block ({rules_file()}, Turn block section). "
+                 "T3 shows only a turn's last message, so the resent reply has to stand on its own. "
+                 "Add no note about the change.")
         return
-    messages = transcripts.user_messages(event.get("transcript_path"))
-    offer = issue_offer(turn, event.get("transcript_path"))
+    offer = None if active else issue_offer(turn, event.get("transcript_path"))
+    option = None if active or offer else should_continue(turn, transcripts.user_messages(event.get("transcript_path")))
+    # A reply sent on to do `a` doesn't stop on its options; any other shows them.
+    if not option and len(turn.options) > NEXT_MAX:
+        reply_log.record(event, "routine_stop", [("options-cap", f"{len(turn.options)} options, over {NEXT_MAX}")])
     if offer:
         send(event, f"\"{offer.text}\" offers an issue in a teammate review, and the user files those themselves "
              "unless they ask for one. Put the problem in a note for them instead, with no option to draft, "
              "file, or create an issue, and no PR comment unless they pick one. Send your whole reply again "
              "with that option gone, in Next and in the turn block. T3 shows only a turn's last message, so "
              "the resent reply has to stand on its own. Add no note about the change.")
-        return
-    option = should_continue(turn, messages)
-    if option:
+    elif option:
         send(event, f"\"{option.text}\" isn't a stop: nothing needs the user, and the router gives every "
              "step outside its Stops and the plan's gates autonomy (router.md, Plan and "
              "Continuation). Do it now. T3 shows only a turn's last "
              "message and folds the rest away, so your final reply has to stand on its own: "
              "carry forward what the reply above told the user, with the step's result added.")
-    elif len(turn.options) > NEXT_MAX:
-        send(event, f"Your Next offers {len(turn.options)} options; the turn block allows two "
-             f"({rules_file()}, Turn block section): `a`, your pick, and `b` only when the reply stops for "
-             "the user's call, as on a decision card's no, the smallest option. The user steers in "
-             "their own words instead of picking a third. Send "
-             "your whole reply again with at most two options, in Next and in the turn block. T3 "
-             "shows only a turn's last message, so the resent reply has to stand on its own. Add "
-             "no note about the change.")
 
 
 if __name__ == "__main__":

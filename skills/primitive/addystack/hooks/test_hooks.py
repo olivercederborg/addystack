@@ -21,6 +21,9 @@ RULES = REPO / "replies.md"
 if not RULES.is_file():
     RULES = pathlib.Path(tempfile.mkdtemp(prefix="replies-"), "replies.md")
     RULES.write_text("# Replies\n\nEnd each reply on a Next block.\n")
+# A throwaway reply log, so no hook a test runs writes the user's (reply_log.py).
+REPLY_LOG = tempfile.TemporaryDirectory(prefix="reply-log-")
+os.environ["ADDYSTACK_REPLY_LOG"] = os.path.join(REPLY_LOG.name, "reply-log.jsonl")
 # Where merge-gate's deny reasons point, as they print it.
 STACK_SH = str(HOOKS.parent / "scripts" / "stack.sh").replace(os.path.expanduser("~"), "~", 1)
 
@@ -4618,13 +4621,23 @@ class ReplyBudget(unittest.TestCase):
               "<details><summary>Checks: ⚠️ verify-work not re-run · ✅ build</summary>\n\n✅ build\n\n</details>\n\n"
               "---\n\n**Next**\n\n- **`a` → re-run verify-work on #99** · *recommended*\n")
 
-    def bounce(self, reply, **event):
-        out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
-                             input=json.dumps({"last_assistant_message": reply, **event})).stdout
+    def sent_and_logged(self, reply, **event):
+        """The hook's send-back on reply ("" for none), and the rows it logged."""
+        with tempfile.TemporaryDirectory() as folder:
+            log = pathlib.Path(folder, "reply-log.jsonl")
+            out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
+                                 input=json.dumps({"last_assistant_message": reply, **event}),
+                                 env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)}).stdout
+            rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
         if not out:
-            return ""
+            return "", rows
         result = json.loads(out)
-        return result["reason"] if "turn_id" in event else result["hookSpecificOutput"]["additionalContext"]
+        return result["reason"] if "turn_id" in event else result["hookSpecificOutput"]["additionalContext"], rows
+
+    def bounce(self, reply, **event):
+        """What the hook says about reply: its send-back, then the detail of each rule it logged."""
+        sent, rows = self.sent_and_logged(reply, **event)
+        return " ".join(filter(None, (sent, *(row["detail"] for row in rows))))
 
     def test_scope_grill_plan_fenced_text_counts_toward_the_glance(self):
         # The Oct 30 wallet replay fenced its plan as diff context and showed 57 words.
@@ -4635,8 +4648,8 @@ class ReplyBudget(unittest.TestCase):
                 + "```\n\n</details>\n\n---\n\n**Next**\n\n- **`a` → continue** · *recommended*\n")
         fenced = ("🟡 **Continue to architect?**\n\n" + proposed + "**The plan so far**\n\n**Building**\n\n```diff\n"
                   + clause * 3 + "```\n\n**Not building**\n\n```diff\n" + clause * 3 + "```\n\n" + tail)
-        self.assertGreaterEqual(reply_budget.words(fenced), reply_budget.SEND_BACK)
-        self.assertIn("plain lists", self.bounce(fenced))
+        self.assertGreaterEqual(reply_budget.words(fenced), reply_budget.LIMIT)
+        self.assertIn("plan fenced in code", self.bounce(fenced))
         plain = ("🟡 **Continue to architect?**\n\n" + proposed + "**The plan so far**\n\n- **Building**: selectors (you)\n"
                  "- **Not building**: Dinero, +4 more in the fold\n" + tail)
         self.assertEqual(reply_budget.plan_fenced(plain), [])
@@ -4702,7 +4715,7 @@ class ReplyBudget(unittest.TestCase):
             self.assertFalse(reply_budget.pointer_assuming(round_with(named)), named)
             self.assertEqual(self.bounce(round_with(named)), "")
 
-    def test_scope_grill_round_goes_back_at_sixty(self):
+    def test_scope_grill_round_is_logged_at_sixty(self):
         def round_with(clause):
             return ("🟡 **Keep serviceData?**\n\n**The plan so far**\n\n- **Building**: " + clause + " (you)\n"
                     "- **Not building**: account creation\n- **Assuming** (say if wrong): none\n"
@@ -4711,7 +4724,7 @@ class ReplyBudget(unittest.TestCase):
         short, long = round_with("picker " * 46), round_with("picker " * 47)
         self.assertEqual(reply_budget.words(short), 59)
         self.assertEqual(self.bounce(short), "")
-        self.assertIn("aims for about 45", self.bounce(long))
+        self.assertEqual(self.bounce(long), "60 words above the fold, not under 60")
 
     def test_scope_grill_size_changes_need_a_matching_diff(self):
         plan = "**The plan so far**\n- **Building**: export (you)\n- **Not building**: JSON\n- **Assuming** (say if wrong): pending\n"
@@ -4790,26 +4803,78 @@ class ReplyBudget(unittest.TestCase):
             self.assertEqual(self.bounce(old, transcript_path=transcript.name), "")
             self.assertEqual(self.bounce("**Size**: 2 PRs · ~8 files", transcript_path=transcript.name), "")
 
-    def test_bounces_a_past_wall_of_text(self):
+    def test_format_rules_are_logged_instead_of_sent_back(self):
+        # A send-back posts the card twice (suite-audit R153), so each format rule writes a row instead.
+        grill = ("🟡 **Keep serviceData?**\n\n**The plan so far**\n\n- **Building**: " + "picker " * 60 + "(you)\n"
+                 "- **Not building**: none\n- **Assuming** (say if wrong): none\n- **Size**: 1 PR · 4 files\n\n"
+                 "**Pick**: keep.\n\n---\n\n**Next**\n\n- **`a` → keep**\n")
+        wide = self.fact(rows=(*self.ROWS, "| Skipped | x |", "| Queued | y |"))
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            transcript.write(json.dumps({"type": "user", "message": {"content": "go"}}) + "\n")
+            transcript.flush()
+            for reply, rule in ((self.SNOOP, "glance-words"), (grill, "grill-words"), (wide, "fact-table")):
+                for codex in (False, True):
+                    with self.subTest(rule, codex=codex):
+                        event = {"session_id": "s1", "cwd": "/w", "transcript_path": transcript.name,
+                                 **({"turn_id": "t9"} if codex else {})}
+                        sent, rows = self.sent_and_logged(reply, **event)
+                        self.assertEqual(sent, "")
+                        self.assertEqual([(row["hook"], row["rule"], row["session"], row["turn"], row["cwd"])
+                                          for row in rows], [("reply_budget", rule, "s1", "t9" if codex else 1, "/w")])
+                        self.assertEqual(rows[0]["headline"], reply.splitlines()[0][:100])
+                        self.assertTrue(rows[0]["time"].endswith("+00:00"))
+
+    def test_a_log_that_cant_be_written_keeps_the_send_back(self):
+        # Codex review, round 1: a lone surrogate or an unresolvable ~user path crashed the hook before its merge note.
+        reply = "✅ **\ud800**\n\n" + "word " * 101 + "\n\n" + self.merge_gate_reply("merge #90, then deploy")
+        for log in ("~no_such_user_r153/reply-log.jsonl", "/dev/null/reply-log.jsonl"):
+            with self.subTest(log):
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": reply}),
+                                     capture_output=True, text=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": log})
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertIn("merge-gate", json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"])
+        sent, rows = self.sent_and_logged(reply)
+        self.assertIn("merge-gate", sent)
+        self.assertEqual(rows[0]["headline"], "✅ **\ud800**")
+
+    def test_the_log_is_the_users_alone(self):
+        # A row holds a reply's headline, and the state folder is readable by others (Codex review, round 1).
+        with tempfile.TemporaryDirectory() as folder:
+            log = pathlib.Path(folder, "reply-log.jsonl")
+            subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": self.SNOOP}), text=True,
+                           check=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+            log.chmod(0o644)  # Codex review, round 2: an existing log is narrowed too
+            subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": self.SNOOP}), text=True,
+                           check=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertEqual((log.stat().st_mode & 0o777, len(log.read_text().splitlines())), (0o600, 2))
+
+    def test_content_and_merge_rules_still_send_back(self):
+        # The turn block and merge options are machine-read; the Pick's source, a round's Size trail and
+        # Assuming line are content checks the user hasn't moved to the log yet.
+        unplain = self.merge_gate_reply("merge #90, then deploy")
+        pointer = ("🟡 **Keep serviceData?**\n\n**The plan so far**\n\n- **Building**: picker (you)\n"
+                   "- **Not building**: none\n- **Assuming** (say if wrong): defaults\n- **Size**: 1 PR · 4 files\n\n"
+                   "**Pick**: keep.\n\n---\n\n**Next**\n\n- **`a` → keep**\n")
+        for reply, sent in ((unplain, "merge-gate"), (self.card(), "cites no source"), (pointer, "naming them")):
+            with self.subTest(sent):
+                feedback, rows = self.sent_and_logged(reply)
+                self.assertIn(sent, feedback)
+                self.assertEqual(rows, [])
+
+    def test_logs_a_past_wall_of_text(self):
         # 141 words before short items went free; its "Settings row" and "Rename" items are
         # short, and "**Changed**" is their group's label.
-        self.assertIn("come to 107 words; reply-shape keeps them under 60", self.bounce(self.SNOOP))
-        self.assertIn("under 60", self.bounce(self.SNOOP, turn_id="t1"))
+        self.assertEqual(self.bounce(self.SNOOP), "107 words, over 100")
+        self.assertEqual(self.bounce(self.SNOOP, turn_id="t1"), "107 words, over 100")
 
-    def test_sends_back_only_above_one_hundred_words(self):
+    def test_logs_only_above_one_hundred_words(self):
         # D-r60: the writing target stays under 60, and the hook steps in only above 100.
         self.assertTrue(reply_budget.over(60))
         for count in (99, 100):
             with self.subTest(count=count):
                 self.assertEqual(self.bounce("✅ **" + " ".join(["word"] * count) + "**"), "")
-        self.assertIn("come to 101 words; reply-shape keeps them under 60",
-                      self.bounce("✅ **" + " ".join(["word"] * 101) + "**"))
-
-    def test_feedback_keeps_risks_decisions_and_steps(self):
-        reason = self.bounce(self.SNOOP)
-        self.assertIn("Keep every risk, decision, and step the user must take", reason)
-        self.assertIn("move checks and evidence to the one fold", reason)
-        self.assertNotIn("cut process", reason)
+        self.assertEqual(self.bounce("✅ **" + " ".join(["word"] * 101) + "**"), "101 words, over 100")
 
     def test_passes_a_running_reply(self):
         notes = "\n".join(f"- {' '.join(['word'] * 14)}" for _ in range(7))
@@ -4817,11 +4882,11 @@ class ReplyBudget(unittest.TestCase):
         running = '<!-- turn {"state":"running","needs":[],"options":[],"elapsed":"6 min"} -->'
         stop = ('<!-- turn {"state":"stop","needs":[],"options":[{"key":"a","class":"routine","text":"fix it"}]} -->')
         broken = '<!-- turn {"state":"running","needs":[],"options":[]} -->'  # no elapsed, so it doesn't parse
-        self.assertGreater(reply_budget.words(reply.format(block=running)), reply_budget.SEND_BACK)
+        self.assertGreater(reply_budget.words(reply.format(block=running)), reply_budget.LIMIT)
         self.assertEqual(self.bounce(reply.format(block=running)), "")
         self.assertEqual(self.bounce(reply.format(block=running), turn_id="t1"), "")
-        self.assertIn("under 60", self.bounce(reply.format(block=stop)))
-        self.assertIn("under 60", self.bounce(reply.format(block=broken)))
+        self.assertIn("over 100", self.bounce(reply.format(block=stop)))
+        self.assertIn("over 100", self.bounce(reply.format(block=broken)))
 
     def test_a_table_of_up_to_six_rows_is_a_view(self):
         prose = "✅ **" + " ".join(["word"] * 10) + "**\n\n" + "\n".join(f"- {' '.join(['word'] * 10)}" for _ in range(4))
@@ -4833,7 +4898,7 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(self.bounce(six), "")
         ten = six.replace(table(6), table(10))
         self.assertEqual(reply_budget.words(ten), 50 + 3 + 10 * 9)
-        self.assertIn("come to 143 words", self.bounce(ten))
+        self.assertIn("143 words", self.bounce(ten))
         # A pipe line without a rule row under it is prose, not a table.
         self.assertEqual(reply_budget.words(prose + "\n\n| a b | c d |\n"), 54)
 
@@ -4923,7 +4988,7 @@ class ReplyBudget(unittest.TestCase):
                  + " (you)\n- **Not building**: none\n- **Assuming** (say if wrong): none\n- **Size**: 1 PR · 4 files · 0 migrations\n\n"
                  "**Pick**: keep both.\n\n---\n\n**Next**\n\n- **`a` → keep both**\n")
         self.assertGreaterEqual(reply_budget.words(grill), 70)
-        self.assertIn("scope-grill", self.bounce(grill))
+        self.assertIn("above the fold", self.bounce(grill))
 
     def test_a_table_ends_a_do_item(self):
         # Codex review, round 1: a later numbered list isn't the Do item's steps.
@@ -4931,16 +4996,11 @@ class ReplyBudget(unittest.TestCase):
                  "| Alpha | Team |\n\n" + "\n".join(f"{n}. Issue " + " ".join(["details"] * 30) for n in range(1, 4))
                  + "\n\n---\n\n**Done**\n\nDone.\n")
         self.assertEqual(reply_budget.words(reply), 103)
-        self.assertIn("come to 103 words", self.bounce(reply))
+        self.assertIn("103 words", self.bounce(reply))
         indented = reply.replace("| Item | Owner |\n| --- | --- |\n| Alpha | Team |", " | Item | Owner |\n | --- | --- |\n | Alpha | Team |")
         self.assertEqual(reply_budget.words(indented), 103)  # one space is still left of the Do item's text
         nested = "🟡 **One step.**\n\n- **Do**: on your phone:\n\n  | Field | Value |\n  | --- | --- |\n  | a | b |\n\n  1. " + " ".join(["word"] * 70) + "\n"
         self.assertEqual(reply_budget.words(nested), 6)  # the nested steps stay free
-
-    def test_feedback_asks_for_the_view_that_fits(self):
-        reason = self.bounce(self.SNOOP)
-        self.assertNotIn("code's shape", reason)
-        self.assertIn("the one view that fits the content or none", reason)
 
     def test_passes_its_glance(self):
         self.assertEqual(reply_budget.words(self.GLANCE), 26)
@@ -4976,8 +5036,10 @@ class ReplyBudget(unittest.TestCase):
     def test_markers_and_separators_are_not_words(self):
         self.assertEqual(reply_budget.words("✅ **Shipped** · `a` → b — c\n"), 4)
 
-    def test_passes_stop_hook_active_and_normal_replies(self):
-        self.assertEqual(self.bounce(self.SNOOP, stop_hook_active=True), "")
+    def test_logs_a_stop_after_a_send_back_and_passes_normal_replies(self):
+        # A log row can't loop, so the reply a stop continues after a send-back is logged too.
+        sent, rows = self.sent_and_logged(self.SNOOP, stop_hook_active=True)
+        self.assertEqual((sent, [row["rule"] for row in rows]), ("", ["glance-words"]))
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
             transcript.write(json.dumps({"type": "user", "message": {"content": "normal replies please"}}) + "\n")
             transcript.flush()
@@ -4996,7 +5058,7 @@ class ReplyBudget(unittest.TestCase):
             self.assertEqual(self.bounce(self.SNOOP, transcript_path=transcript.name), "")
 
 
-    def test_sends_back_a_child_that_opts_into_reply_rules(self):
+    def test_checks_a_child_that_opts_into_reply_rules(self):
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
             transcript.write(json.dumps({"type": "user", "message": {"content": [
                 {"type": "text", "text": "Act as the test sub-agent for this task.\n\nReply rules: on\nProbe."}]}}) + "\n")
@@ -5108,14 +5170,11 @@ class ReplyBudget(unittest.TestCase):
         folded = self.card().replace("**Pick**: yes", "Pick yes").replace("Slots: more", "**Pick**: slots, more")
         self.assertEqual(self.bounce(folded), "")  # a Pick only inside the fold
 
-    def test_a_missing_source_sends_back_once_per_stop(self):
+    def test_a_missing_source_sends_back_and_the_glance_is_logged(self):
         long = self.card().replace("**Problem**: features", "**Problem**: " + "word " * 101 + "features")
-        out = subprocess.run([str(HOOKS / self.HOOK)], capture_output=True, text=True, check=True,
-                             input=json.dumps({"last_assistant_message": long})).stdout
-        self.assertEqual(len(out.strip().splitlines()), 1)
-        reason = json.loads(out)["hookSpecificOutput"]["additionalContext"]
-        self.assertIn("come to", reason)
-        self.assertIn("cites no source", reason)
+        sent, rows = self.sent_and_logged(long)
+        self.assertEqual(sent, reply_budget.SOURCE_FEEDBACK)
+        self.assertEqual([row["rule"] for row in rows], ["glance-words"])
         self.assertEqual(self.bounce(self.card(), stop_hook_active=True), "")
 
     # reply-shape's fact table, the shape the user picked on Nov 9, 2026: here a merge go.
@@ -5140,7 +5199,7 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(turn_block.picked(self.fact(), "a").cls, "stop:merge")  # merge-gate still reads the go
         bold = [row.replace("| Risk |", "| **Risk** |").replace("| Undo |", "| undo |") for row in self.ROWS]
         self.assertEqual(self.bounce(self.fact(rows=bold)), "")
-        at_the_limit = (*self.ROWS[:3], "| Undo | " + "word " * reply_budget.FACT_SEND_BACK + "|")
+        at_the_limit = (*self.ROWS[:3], "| Undo | " + "word " * reply_budget.FACT_LIMIT + "|")
         self.assertEqual(self.bounce(self.fact(rows=at_the_limit)), "")
         self.assertEqual(reply_budget.fact_problems(self.fact(rows=at_the_limit), reply_budget.FACT_WORDS),
                          ["its Undo value runs 25 words, over 20"])  # check_examples holds examples to the target
@@ -5148,7 +5207,7 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(self.bounce(self.fact(rows=escaped)), "")
 
     def test_short_items_are_a_fact_table_in_list_form(self):
-        # A bold name and a clause within ITEM_SEND_BACK words don't count, up to a short
+        # A bold name and a clause within ITEM_LIMIT words don't count, up to a short
         # table's rows; a longer item or list, the details under an item, and a fact label count.
         item = "- **Currency column**: rows stop at amount, so the export misses the ticket's last column.\n"
         def reply(*items):
@@ -5158,7 +5217,7 @@ class ReplyBudget(unittest.TestCase):
         self.assertEqual(reply_budget.words(reply(*[item] * (reply_budget.TABLE_ROWS + 1))), 4 + 2 + 7 * 14)
         wrapped = "- **Currency column**: rows stop at amount, so the export\n  misses the ticket's last column.\n"
         self.assertEqual(reply_budget.words(reply(wrapped)), 4)
-        long = "- **Currency column**: " + "word " * (reply_budget.ITEM_SEND_BACK + 1) + "\n"
+        long = "- **Currency column**: " + "word " * (reply_budget.ITEM_LIMIT + 1) + "\n"
         self.assertEqual(reply_budget.words(reply(long)), 4 + 2 + 16)
         detail = item + "  - the test expects the wrong header too\n"
         self.assertEqual(reply_budget.words(reply(detail)), 4 + 7)
@@ -5176,7 +5235,7 @@ class ReplyBudget(unittest.TestCase):
                  "    1. Log in to the mail provider.\n    2. Copy the SMTP password.\n"
                  "\n---\n\n**Done**. Still open: none.\n")
         self.assertEqual(reply_budget.words(reply), 7)
-        long_row = reply.replace("verify-work is done and review scored 10/10.", "word " * (reply_budget.FACT_SEND_BACK + 1))
+        long_row = reply.replace("verify-work is done and review scored 10/10.", "word " * (reply_budget.FACT_LIMIT + 1))
         self.assertEqual(reply_budget.words(long_row), 7 + 1 + 26)  # a row past a fact value's limit counts
         prose = reply.replace("  - Review: verify-work is done and review scored 10/10.\n", "  - verify-work is done and review scored 10/10.\n")
         self.assertEqual(reply_budget.words(prose), 7 + 7)  # other details under an item count
@@ -5204,7 +5263,7 @@ class ReplyBudget(unittest.TestCase):
                          reply_budget.FACT_LABELS + reply_budget.WARNED)
         self.assertIn("Risk and Unsure rows come first, their value starting with ⚠️", rows)
 
-    def test_a_fact_table_past_its_limits_goes_back(self):
+    def test_a_fact_table_past_its_limits_is_logged(self):
         broken = {
             "a sixth row": ((*self.ROWS, "| Skipped | The reinstall. |", "| Queued | Two smaller gaps. |"),
                             "it has 6 rows under its header, over 5"),
@@ -5220,10 +5279,7 @@ class ReplyBudget(unittest.TestCase):
         }
         for name, (rows, clause) in broken.items():
             with self.subTest(name):
-                reason = self.bounce(self.fact(rows=rows))
-                self.assertIn(f"fact table breaks reply-shape's limits: {clause}. ", reason)
-                self.assertIn("each label one of Risk, Unsure, Why, Effect, Proof, Undo, Skipped, Queued, Pick, Source, "
-                              "Cost, Decide, Review, Do, each value at most 20 words", reason)
+                self.assertEqual(self.bounce(self.fact(rows=rows)), clause)
         header = self.fact(header="| Problem | " + "word " * 26 + "|")
         self.assertIn("its header value runs 26 words", self.bounce(header))
         # A pipe in the header's value gives it a third cell, so Markdown draws no table at all.
@@ -5245,7 +5301,7 @@ class ReplyBudget(unittest.TestCase):
         self.assertIn("isn't one of its labels", self.bounce(self.fact(rows=broken["a label off the list"][0]), turn_id="t1"))
         both = self.fact(rows=(self.ROWS[1], self.ROWS[0], "| Cause | x |"))
         self.assertIn("\"Cause\" isn't one of its labels; a Risk or Unsure row sits below another row", self.bounce(both))
-        self.assertEqual(self.bounce(both, stop_hook_active=True), "")
+        self.assertEqual(self.sent_and_logged(both, stop_hook_active=True)[0], "")
         running = both[:both.rindex("<!--")] + block({"state": "running", "elapsed": "4 min"})
         self.assertEqual(self.bounce(running), "")
 
@@ -5349,7 +5405,7 @@ class ReplyBudget(unittest.TestCase):
             transcript.flush()
             self.assertIn("merge #12 and #13", self.bounce(self.merge_gate_reply(text), transcript_path=transcript.name))
         long = "✅ **Eight PRs moved.**\n\n" + "".join(f"- **#{n}**: {' '.join(['word'] * 12)}\n" for n in range(8))
-        self.assertIn("a bold item per thing", self.bounce(long))  # an item reply isn't told to become a fact table
+        self.assertIn("words, over 100", self.bounce(long))  # eight items are more than a fact table holds
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("merge #124 and #125")), [])
         self.assertEqual(reply_budget.unplain(self.merge_gate_reply("mark #5394–#5397 ready for review")), [])
         # Delivered on Oct 31, 2026: marking ready, with the merge left to the user, isn't a merge option.
@@ -6743,31 +6799,49 @@ class RoutineStop(unittest.TestCase):
         self.assertIsNone(self.run_on("Done.", stop_hook_active=True, turn_id="t1"))
         self.assertIsNone(self.run_on(self.REPLY, stop_hook_active=True))
 
-    def test_sends_a_third_option_back_once(self):
+    def test_logs_a_third_option(self):
+        # A format rule: a send-back would post the card twice (suite-audit R153).
         need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
         three = [{"key": "a", "class": "decision", "text": "yes: drop it"},
                  {"key": "b", "class": "decision", "text": "no: keep it"},
                  {"key": "c", "class": "decision", "text": "deprecate it first"}]
         reply = self.with_turn(options=three, needs=need)
-        for event in [{}, {"turn_id": "t1"}]:
-            with self.subTest(event=event):
-                found = self.feedback(reply, **event)
-                self.assertIn("Your Next offers 3 options; the turn block allows two", found)
-                self.assertIn("Send your whole reply again", found)
-        self.assertIsNone(self.run_on(reply, stop_hook_active=True))
+        for event in [{"session_id": "s1"}, {"session_id": "s1", "turn_id": "t1"}]:
+            with self.subTest(event=event), tempfile.TemporaryDirectory() as folder:
+                log = pathlib.Path(folder, "reply-log.jsonl")
+                self.assertIsNone(self.run_on(reply, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)}, **event))
+                rows = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertEqual([(row["hook"], row["rule"], row["session"], row["turn"], row["detail"]) for row in rows],
+                                 [("routine_stop", "options-cap", "s1", event.get("turn_id", 1), "3 options, over 2")])
+        # Codex review, round 1: a reply sent back for another reason, and the reply resent after it, show
+        # their options too; only a reply sent on to do `a` doesn't.
+        issue = self.with_turn(options=[*three[:2], {"key": "c", "class": "decision", "text": "draft a Linear issue"}],
+                               needs=need)
+        review = [{"type": "user", "message": {"content": "/review-teammate-pr 12"}}, "review it"]
+        for reply, event, sent in ((issue, {"said": review}, "offers an issue"), (reply, {"stop_hook_active": True}, None)):
+            with self.subTest(sent=sent), tempfile.TemporaryDirectory() as folder:
+                log = pathlib.Path(folder, "reply-log.jsonl")
+                out = self.run_on(reply, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)}, **event)
+                if sent:
+                    self.assertIn(sent, out["hookSpecificOutput"]["additionalContext"])
+                else:
+                    self.assertIsNone(out)
+                self.assertEqual([json.loads(line)["rule"] for line in log.read_text().splitlines()], ["options-cap"])
         # Two options is an ordinary stop, and a reply from before the cap still parses.
         self.assertIsNone(self.run_on(self.with_turn(options=three[:2], needs=need)))
         self.assertEqual(len(turn_block.parse(reply).options), 3)
-        # A routine `a` with nothing waiting is sent on, not back: the agent does it instead.
+        # A routine `a` with nothing waiting is sent on, not back: the agent does it instead, so the reply
+        # doesn't stop on its options and its third isn't logged.
         routine = self.with_turn(options=[self.ROUTINE, *three[1:]], needs=[])
-        self.assertIn("isn't a stop", self.feedback(routine))
+        with tempfile.TemporaryDirectory() as folder:
+            log = pathlib.Path(folder, "reply-log.jsonl")
+            out = self.run_on(routine, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertIn("isn't a stop", out["hookSpecificOutput"]["additionalContext"])
+            self.assertFalse(log.exists())
 
     def test_send_backs_cite_a_turn_block_spec_that_exists(self):
         """With a reply rules file that has a Turn block section, that file; with none, or
         one without the section, the kit's own spec."""
-        need = [{"id": 1, "kind": "decide", "name": "keep or drop the json format"}]
-        three = self.with_turn(needs=need, options=[{"key": key, "class": "decision", "text": f"option {key}"}
-                                                    for key in "abc"])
         for text in [None, "# Replies\n\n## Turn block\n\nEnd with a block.\n",
                      "# Replies\n\n## Turn block ##\n\nEnd with a block.\n", "# Replies\n\nBe brief.\n"]:
             with self.subTest(text=text), tempfile.TemporaryDirectory() as folder:
@@ -6786,7 +6860,6 @@ class RoutineStop(unittest.TestCase):
                     self.assertEqual(spec.resolve(), (HOOKS.parent / "references" / "turn-block.md").resolve())
                     self.assertRegex(spec.read_text(), r"(?m)^#{1,2} Turn block$")
                 self.assertIn(f"({cited}, Turn block section)", self.feedback("Done.", env=env))
-                self.assertIn(f"({cited}, Turn block section)", self.feedback(three, env=env))
 
     def test_sends_an_issue_option_in_a_teammate_review_back_once(self):
         def load(name):

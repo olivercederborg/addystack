@@ -4,7 +4,7 @@ doctor with its key path, print-config and policy print JSON, and policy gives e
 of checkout its trust."""
 from __future__ import annotations
 
-import json, os, pathlib, re, subprocess, sys, tempfile, unittest, unittest.mock
+import datetime, json, os, pathlib, re, subprocess, sys, tempfile, unittest, unittest.mock
 
 KIT = pathlib.Path(__file__).resolve().parent.parent / "skills" / "primitive" / "addystack"
 BIN = KIT / "bin" / "addystack"
@@ -384,6 +384,82 @@ class Policy(Cli):
         result = self.run_cli("policy", "--repo", str(self.dir))
         self.assertIn("is missing", result.stderr)
         self.assertEqual(json.loads(result.stdout)["planning"], "gated")
+
+
+class RepliesReport(Cli):
+    """replies-report sums the reply log in the state folder per rule, for a range of UTC days."""
+
+    def setUp(self):
+        super().setUp()
+        self.env.pop("ADDYSTACK_REPLY_LOG", None)
+        rows = [("2026-11-10T23:59:00+00:00", "reply_budget", "glance-words", "s1", "130 words, over 100"),
+                ("2026-11-11T09:00:00+00:00", "reply_budget", "glance-words", "s1", "120 words, over 100"),
+                ("2026-11-12T09:00:00+00:00", "reply_budget", "glance-words", "s1", "107 words, over 100"),
+                ("2026-11-12T10:00:00+00:00", "reply_budget", "glance-words", "s2", "101 words, over 100"),
+                ("2026-11-13T01:00:00+01:00", "reply_budget", "fact-table", "s2", "it has 6 rows under its header, over 5"),
+                ("2026-11-17T23:00:00+00:00", "routine_stop", "options-cap", "s3", "3 options, over 2"),
+                ("2026-11-18T00:00:00+00:00", "reply_budget", "glance-words", "s4", "140 words, over 100")]
+        lines = [json.dumps({"time": time, "hook": hook, "rule": rule, "session": session, "turn": 1, "cwd": "/w",
+                             "detail": detail, "headline": f"✅ **{session} done.**"}, ensure_ascii=False)
+                 for time, hook, rule, session, detail in rows]
+        self.state.mkdir(exist_ok=True)
+        # A row a failed write cut short mid-character, then a whole one: each line is read alone.
+        torn = lines[2].encode()[:lines[2].encode().index("✅".encode()) + 1]
+        self.log = self.state / "reply-log.jsonl"
+        self.log.write_bytes("\n".join(lines[:3] + ["not json", "{}"]).encode() + b"\n" + torn + b"\n"
+                             + "\n".join(lines[3:]).encode() + b"\n")
+
+    def report(self, *args):
+        result = self.run_cli("replies-report", *args)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def test_counts_violations_and_sessions_per_rule_in_the_range(self):
+        report = json.loads(self.report("--since", "2026-11-11", "--until", "2026-11-18", "--json"))
+        self.assertEqual((report["since"], report["until"], report["violations"]), ("2026-11-11", "2026-11-18", 5))
+        self.assertEqual(report["log"], str(self.state / "reply-log.jsonl"))
+        self.assertEqual([(item["rule"], item["violations"], item["sessions"]) for item in report["rules"]],
+                         [("glance-words", 3, 2), ("fact-table", 1, 1), ("options-cap", 1, 1)])
+        # A rule's top sessions come by count, each with its latest row; a +01:00 time is read as UTC.
+        top = report["rules"][0]["top"]
+        self.assertEqual([(row["session"], row["violations"], row["detail"]) for row in top],
+                         [("s1", 2, "107 words, over 100"), ("s2", 1, "101 words, over 100")])
+        self.assertEqual(report["rules"][1]["top"][0]["time"], "2026-11-13T01:00:00+01:00")
+
+    def test_prints_markdown_for_the_last_seven_days_by_default(self):
+        self.assertIn("| reply_budget | glance-words | 3 | 2 |", self.report("--since", "2026-11-11", "--until", "2026-11-18"))
+        self.assertIn('`s1` × 2, latest 2026-11-12T09:00: 107 words, over 100 · "✅ **s1 done.**"',
+                      self.report("--since", "2026-11-11", "--until", "2026-11-18"))
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        self.assertTrue(self.report().startswith(f"Reply log, {today - datetime.timedelta(days=6)} to {today}: "))
+        self.assertIn("None logged.", self.report("--since", "2026-01-01", "--until", "2026-01-02"))
+        backwards = self.run_cli("replies-report", "--since", "2026-11-18", "--until", "2026-11-11")
+        self.assertEqual(backwards.returncode, 2)
+
+    def test_prints_a_lone_surrogate_from_a_reply_as_a_question_mark(self):
+        # Codex review, rounds 2 and 3: a reply's headline or fact-table label can hold one.
+        row = {"time": "2026-11-12T11:00:00+00:00", "hook": "reply_budget", "rule": "fact-table", "session": "s9",
+               "turn": 1, "cwd": "/w", "detail": "\"\ud800\" isn't one of its labels", "headline": "✅ **\ud800**"}
+        self.log.write_bytes(self.log.read_bytes() + json.dumps(row).encode() + b"\n")
+        self.assertIn('`s9` × 1, latest 2026-11-12T11:00: "?" isn\'t one of its labels · "✅ **?**"',
+                      self.report("--since", "2026-11-11", "--until", "2026-11-18"))
+
+    def test_an_unreadable_log_is_an_error_not_an_empty_week(self):
+        self.log.chmod(0)
+        self.addCleanup(self.log.chmod, 0o600)
+        result = self.run_cli("replies-report", "--since", "2026-11-11", "--until", "2026-11-18")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("can't read the reply log", result.stderr)
+
+    def test_a_row_starts_its_own_line_after_one_a_failed_write_cut_short(self):
+        import reply_log
+        self.log.write_bytes(self.log.read_bytes() + b'{"time": "2026-11-12T0')
+        with unittest.mock.patch.dict(os.environ, {"ADDYSTACK_REPLY_LOG": str(self.log)}):
+            reply_log.record({"session_id": "s5", "last_assistant_message": "✅ **s5.**"}, "reply_budget",
+                             [("glance-words", "101 words, over 100")])
+            now = datetime.datetime.now(datetime.timezone.utc).date()
+            found = reply_log.rows(now, now + datetime.timedelta(days=1))
+            self.assertEqual([row["detail"] for row in found if row["session"] == "s5"], ["101 words, over 100"])
 
 
 if __name__ == "__main__":
