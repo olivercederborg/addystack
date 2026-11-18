@@ -15,8 +15,8 @@ after one read.
 - **Lead with what happens:** the first sentence states, as fact, what a user or caller
   would see, in plain words, before any symbol names. The review verified it, so say it
   the way the user would.
-- **Suggest the fix** step 2 picked, as something the author can take, as in "Z would
-  fix it" or "a test like … could cover it", the way a colleague suggests.
+- **Suggest the fix:** offer it as something the author can take, as in "Z would fix
+  it" or "a test like … could cover it", the way a colleague suggests.
 - **Speak the glossary:** before drafting, read the repo's glossary (the root and the
   touched package's `CONTEXT.md`, laid out as `domain-modeling` says). Name each domain
   concept by its term, swap any word from an _Avoid_ line for the term it points to, and

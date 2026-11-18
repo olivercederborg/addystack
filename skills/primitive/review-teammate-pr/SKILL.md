@@ -70,14 +70,6 @@ is a **question**. When a finding in a shared helper makes a type-level claim ab
 callers, probe them with `scripts/probe-worktree.sh`, comparing the compiler's error
 lists from a tree that typechecks cleanly.
 
-**Pick each shape** before judging the PR's approach or choosing a fix. For each
-pattern the PR adds and each fix you'd suggest, compare the alternatives that the
-library's or tool's own API, config, and docs, the repo's rules (`AGENTS.md`, ADRs,
-`CONTEXT.md`, design docs), and its shared helpers offer. A matching sibling shows
-consistency, not the best shape. Pick the cleanest long-term shape at the cause that
-fits the PR's scope; fewest lines only breaks a tie. Past the PR's scope, pick the
-in-scope fix and make the cause a follow-up.
-
 For a large PR, split the lenses across parallel sub-agents. On every PR, also run a
 read-only pass by the other provider in parallel, as a T3 child task on the
 **Reviewers** target in [t3-delegation](references/t3-delegation.md)
@@ -96,8 +88,7 @@ failures, points others already raised, broad refactors, and non-blocking past t
 A failed required check that this PR's change causes, or makes worse than the base's
 run of it (read with `gh`), is a blocking finding.
 
-**Done when:** every changed path is traced, each pattern and suggested fix has a pick,
-the alternative it beat, and its source, and every kept finding has its evidence lines.
+**Done when:** every changed path is traced, and every kept finding has its evidence lines.
 
 ## 3. Discuss findings
 
