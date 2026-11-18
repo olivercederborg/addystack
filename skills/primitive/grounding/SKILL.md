@@ -12,9 +12,9 @@ metadata:
 Grounding checks one claim and establishes what's true. Project instructions and
 convention skills still decide what to do with it.
 
-From the request and the context, name the claim, the target (a package, a tool, or a
-design question), and the environment. Ask only when a missing decision would change
-the investigation, and keep gathering evidence in the meantime.
+Name the claim, the target (a package, a tool, or a design question), and the
+environment. Ask only when a missing decision would change the investigation, and keep
+gathering evidence in the meantime.
 
 **Answering the user directly**, including a challenge such as "are you sure?": read
 grounding's `references/answer.md` now, before checking
@@ -46,9 +46,10 @@ in this order:
 4. Repo precedent. This shows consistency, not idiom.
 
 When repo precedent and the library's idiom disagree, show both and say which one the
-project's rules favor. To claim one option is best, name the project's constraints and
-compare the viable alternatives against them. A comparison, or a claim that no
-alternative exists, states the search scope and the date.
+project's rules favor. To claim one option is best, a recommended fix included, compare
+the viable alternatives, the library's own API first, against the project's
+constraints. A comparison, or a claim that none exists, states the search scope and
+the date.
 
 ## Depth
 

@@ -101,12 +101,11 @@ and each PR's merge state is read.
 Verify each claim against the PR head and, in a stack, whether another PR already
 handles it. Give each item one call:
 
-- **Fix**: the smallest fix that fully solves it.
+- **Fix**: fully solve it at the cause, in slim-scope's shape.
 - **Decline**: the claim is wrong, or the change isn't worth the risk. The evidence
   covers every path the claim names, so a path you haven't run rules out Decline. A
   "no rule asks for X" reason names the conventions doc you read in full.
-- **Defer**: valid, but the slim-scope principle says it waits. Name the follow-up in a
-  few words.
+- **Defer**: valid, but slim-scope says it waits. Name the follow-up in a few words.
 - **No change**: already handled.
 
 Show the triage as one-line items, worst first, three visible and the rest in the fold:

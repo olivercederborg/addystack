@@ -10,11 +10,13 @@ consequence.
 - **Standards**: the repo's documented conventions for the areas the change touches,
   unclear names, speculative abstraction, middle-man wrappers, and tests that can't
   fail, such as one that reads back what its fake returned. For each new helper, wait,
-  type, or flow, search outside the diff for code that already does it, and name the
-  duplicate. Leave what tooling enforces to the tooling, but run it: for a manifest or
-  config change, run every suite uncached at base and head and compare, skipping and
-  naming any that writes shared data or loads secrets. Rerun each new test that awaits
-  a mocked async call with that mock delayed.
+  type, or flow, and each fix you suggest, search outside the diff for code that
+  already does it, and name the duplicate. A shape that fights the library's or tool's
+  own API, or a sibling's shape its docs or source favor, is a Cleanup quoting them.
+  Leave what tooling enforces to the tooling, but run it: for a manifest or config
+  change, run every suite uncached at base and head and compare, skipping and naming
+  any that writes shared data or loads secrets. Rerun each new test that awaits a
+  mocked async call with that mock delayed.
 - **Behavior**: trace each changed path end to end with the real inputs it will meet:
   the entrypoint, validation, authorization and tenancy, data writes, external calls
   and what they cost, retries and idempotency, and the response or rendered UI. Take
@@ -37,6 +39,5 @@ a Cleanup:
 - **1-3**: a Blocker in the approach itself: wrong approach, unsafe, or broken on its
   main path.
 
-Scope creep, a shape that fights the repo or the user's taste, thin test proof, or
-hard-to-follow code takes the band's lower half. A rating never changes a verdict or
-severity.
+Scope creep, thin test proof, or hard-to-follow code takes the band's lower half. A
+rating never changes a verdict or severity.

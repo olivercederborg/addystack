@@ -21,5 +21,5 @@ keep it simple" · "but isnt it the best long term solution ?".
   PR needs still lands before it merges.
 - **Option `a`**: inside the PR's scope, or it names the scope change it makes.
 
-**Tell:** a plan that grew without the user asking, or a follow-up PR for a finding on
-the PR's own change.
+**Tell:** a plan that grew without the user asking, a follow-up PR for a finding on
+the PR's own change, or a fix picked for its line count.

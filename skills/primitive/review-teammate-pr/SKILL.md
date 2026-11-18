@@ -22,34 +22,15 @@ before you report if its text has left your context.
 
 A finding line here shows its call in place of a severity: **blocking**,
 **non-blocking**, **question**, or **drop**. A kept finding holds the approval when its
-call is blocking or it's a **defect**, a verified error this PR introduces;
-non-blocking style, follow-up ideas, and questions about intent don't. A real problem
-the PR didn't cause or worsen, such as a security gap beside it, is a note for the user
-outside the findings: filing it is their call.
+call is blocking, it's a **defect** (a verified error this PR introduces), or it's a
+Cleanup on lines this PR wrote whose better shape fits its scope. Optional niceties,
+follow-up ideas, and questions about intent don't. A real problem the PR didn't cause
+or worsen, such as a security gap beside it, is a note for the user outside the
+findings: filing it is their call.
 
 When a verified finding can't be hit yet and depends on what the author meant, such as
 a contract for a later milestone, its call is **question**. Cite the PR's own test or
 spec as the sign of the narrower intent.
-
-## Example card (illustrative: match the shape, not the content)
-
-A card is rare here: the one-line finding and its draft carry most findings. Step 3
-says when to use one; this one answers the user asking about finding 1.
-
-````markdown
-🔴 **1 · An export reads other companies' transactions → blocking**
-
-```diff
-  // exportHandler filters by date only; spec EX-12 asks for the current company's rows
-     const company = yield* CurrentCompany
-     const rows = yield* transactions.findMany({
--      where: { bookedAt: { gte: from, lte: to } },
-+      where: { companyId: company.id, bookedAt: { gte: from, lte: to } },
-     })
-```
-
-- Company A's January export holds every company's rows.
-````
 
 ## 1. Load the PR
 
@@ -102,8 +83,9 @@ finding, then show the lower one.
 
 When the PR has a Decisions table, raise findings on a listed decision first, by its
 number (`D2`). Keep findings with a concrete consequence, and at most three
-non-blocking ones, those with the worst consequence. Count every dropped one with its reason: nits, speculative
-failures, points others already raised, broad refactors, and non-blocking past three.
+non-blocking ones that don't hold the approval, those with the worst consequence. Count
+every dropped one with its reason: nits, speculative failures, points others already
+raised, broad refactors, and other non-blocking past three.
 A failed required check that this PR's change causes, or makes worse than the base's
 run of it (read with `gh`), is a blocking finding.
 
@@ -231,7 +213,7 @@ When the author has addressed the comments, or a push dismissed the user's appro
 End by recommending the step the verdict calls for:
 
 - **Approve**: approve.
-- **Approve, with non-blocking style or follow-up ideas left**: approve with them as a follow-up PR; approve.
+- **Approve, with Optional niceties or follow-up ideas left**: approve with them as a follow-up PR; approve.
 - **Held** by an open finding: post any new findings without approving.
 
 **Done when:** every earlier comment has a status, and there is a verdict: approve

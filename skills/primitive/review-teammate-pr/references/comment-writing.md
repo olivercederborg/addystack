@@ -7,9 +7,9 @@ after one read.
 - **Match the wording to the user's decision:**
   - **blocking**: what happens, then the fix: "X does Y. Z would fix it."
   - **non-blocking**: prefix `Non-blocking:`, and end on the fix or the test.
-    For a defect, start with the exact prefix `Non-blocking:`, then add a separate
-    sentence saying the approval waits on its fix. Other non-blocking findings can
-    wait for a later PR.
+    For a defect or an in-scope Cleanup, which hold the approval, start with the exact
+    prefix `Non-blocking:`, then add a separate sentence saying the approval waits on
+    its fix. Other non-blocking findings can wait for a later PR.
   - **question**: prefix `Question:` and ask it. Only when the code can't show the
     intent, such as a contract a later milestone may need. A question never blocks.
 - **Lead with what happens:** the first sentence states, as fact, what a user or caller
@@ -31,12 +31,6 @@ after one read.
 - **Add a snippet when the fix would otherwise be ambiguous, or when the comment argues
   for a different pattern** (test style, call shape, structure): show it before and
   after. Keep any example the card already showed.
-  - **Fix the cause:** before a fix goes in, name the root cause. Compare a fix at the
-    cause, a fix at the symptom, and the library's own analogous API against the repo's
-    rules, and show that comparison in the card. When the fix at the cause fits the
-    PR's scope, suggest it. When it would grow the PR well past that scope, suggest the
-    in-scope fix, or none, and name the root cause as a possible follow-up. Until the
-    comparison is done, state the problem with no fix.
   - **Exact replacement of the anchored lines** in one file: a `suggestion` block with
     only the after code, at its real indentation. It replaces every line in the range,
     and GitHub shows it as before and after with an apply button. Name any import or
