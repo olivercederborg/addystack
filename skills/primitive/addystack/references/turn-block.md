@@ -2,13 +2,10 @@
 
 With `replies.turnBlock` on, every final reply ends with one turn block: a line of JSON in
 an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
-`hooks/routine_stop.py` reads it to tell a routine step from a stop, and
-`hooks/merge-gate.py` reads which option a key picked. With the routine-stop hook
-installed (the `replies` hooks, as in the `all` preset), a reply whose block is missing or
-malformed goes back once with the reason. A user's own reply rules file (`replies.rules`)
-may restate this section; the hooks then cite that file instead. `turn_block.py`'s
-docstring holds the parser's exact limits: which code blocks and spans hide an example
-block, and which replies' picks count as a merge go.
+`hooks/merge-gate.py` reads which option a key picked, and tools such as Prefrontal read
+the rest. A user's own reply rules file (`replies.rules`) may restate this section.
+`turn_block.py`'s docstring holds the parser's exact limits: which code blocks and spans
+hide an example block, and which replies' picks count as a merge go.
 
 ````markdown
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"which export fixes"}],"options":[{"key":"a","class":"routine","text":"yes: fix the currency column and null dates, one commit each"},{"key":"b","class":"routine","text":"no: fix only the currency column"}]} -->
@@ -65,8 +62,7 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
 addystack adds the two-option cap and each option's class.
 
 - **Keys**: `a`, the recommended pick, and `b` only when the reply stops for the user's
-  call, as on a decision card's no or the smallest option. `routine_stop.py` logs a reply
-  with a third to the reply log (`hooks/reply_log.py`).
+  call, as on a decision card's no or the smallest option.
 - **`class`**: the router stop the option crosses, one of:
   - `stop:merge`: merging or marking ready. A merge option's text is the plain merge
     request with no other step, as in "merge #12 and #13", since only that counts as the
@@ -81,7 +77,4 @@ addystack adds the two-option cap and each option's class.
   - `decision`: a product call, a real fork, a plan gate, or an option after answering a
     read-only question.
   - `routine`: anything else outside the stops, such as fix, verify, review, push the
-    user's own branch, open a draft PR, or watch. When the state is `stop`, nothing is in
-    `needs`, and `a` is `routine`, `routine_stop.py` sends the agent on to do it, whatever
-    `standing` holds, unless the turn answers the user's question or a read-only request
-    such as "show me …", or they said "no autonomy".
+    user's own branch, open a draft PR, or watch.
