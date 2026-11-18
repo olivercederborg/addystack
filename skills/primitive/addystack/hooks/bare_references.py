@@ -58,7 +58,7 @@ NAMED_AFTER = re.compile(r"(?:'s)?\s*(?:\((?=[^)]*[A-Za-z]{3})[^)]*\)|,\s+(?:the
 DEFINES = re.compile(r"^\s*(?:[-*]\s+)?(?:#+\s*)?(?:[A-Z][a-z]+\s+)?(\d+)\s*(?:·|—|[.:)]\s|\||$)|^\|\s*(\d+)\s*\|")
 # A Linear issue id: "DEV-3127". Only the DEV team key counts.
 TRACKER_ID = re.compile(r"(?<![\w/#.-])DEV-\d+(?![\w-])")
-LINK = re.compile(r"\[([^\]]*)\]\(\s*<?https?://[^)]*\)")
+LINK = re.compile(r"\[([^\]]*)\]\(\s*<?[a-z][\w+.-]*://[^)]*\)")  # http(s), t3-thread, …
 
 
 def shown(text):
