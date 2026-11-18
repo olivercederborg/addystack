@@ -11,8 +11,8 @@ cause".
 **Pattern:**
 - **Reproduce where it failed**: the hosted build, deploy, or device that broke, not a
   local stand-in.
-- **Ship what the evidence shows**: the confirmed cause's fix, in the shape slim-scope
-  picks. Revert what a disproven hypothesis added.
+- **Ship what the evidence shows**: the confirmed cause's fix, in slim-scope's shape.
+  Revert what a disproven hypothesis added.
 - **Ask why** until the answer is a design choice, not another symptom.
 - **Sweep the class**: search for the same cause elsewhere, and list each hit as fixed or
   follow-up: "Make sure it doesn't happen anywhere else on the app".

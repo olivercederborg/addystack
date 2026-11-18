@@ -13,8 +13,7 @@ quickly, and a new PR needs a review of its own.
 **Why:** "If something fits into a PR that has already been approved, it should be fixed
 in that PR instead of a follow-up" · "we need to think about the work as atomic PRs.
 Once they're merged it needs to be finished" · "its getting way too out of hand. lets
-keep it simple" · "but isnt it the best long term solution ?" · "the smallest most
-correct long-term fix that is idiomatic and fixes the cause".
+keep it simple" · "but isnt it the best long term solution ?".
 
 **Pattern:**
 - **PRs**: vertical slices of up to about 1000 changed lines.
@@ -23,5 +22,4 @@ correct long-term fix that is idiomatic and fixes the cause".
 - **Option `a`**: inside the PR's scope, or it names the scope change it makes.
 
 **Tell:** a plan that grew without the user asking, a follow-up PR for a finding on
-the PR's own change, or a fix picked for its line count over the shape the library or
-the repo's rules give.
+the PR's own change, or a fix picked for its line count.
