@@ -24,7 +24,8 @@ A reply sent on to do `a` isn't logged, since it doesn't stop on its options.
 turn_block.py still reads three, so a reply with a third keeps its picks for merge-gate.py.
 
 Claude Code continues through additionalContext and Codex through decision: block, as
-in bare_references.py. stop_hook_active keeps each to one send per stop. T3 delegated
+in bare_references.py. stop_hook_active keeps each to one send per stop; the log still takes
+that stop's reply, since a row can't loop. T3 delegated
 children pass, since their parent reads them, except a coordinator's worker: its reply goes
 back once unless its block's `project` is its brief's `Project:` name, which Prefrontal
 groups its threads by.
@@ -220,40 +221,39 @@ def main():
         event = json.loads(sys.stdin.read())
     except ValueError:
         return
-    if event.get("stop_hook_active"):
-        return
+    active = event.get("stop_hook_active")
     if bare_references.delegated_child(event):
         project = t3_child.worker_project(bare_references.first_brief(event))
-        feedback = project and project_feedback(event.get("last_assistant_message"), project)
+        feedback = not active and project and project_feedback(event.get("last_assistant_message"), project)
         if feedback:
             send(event, feedback)
         return
     try:
         turn = turn_block.parse(event.get("last_assistant_message"))
     except turn_block.Malformed as error:
-        send(event, f"Your reply has no valid turn block: {error}. Send your whole reply again, "
-             f"unchanged except that its last line is a valid turn block ({rules_file()}, Turn block section). "
-             "T3 shows only a turn's last message, so the resent reply has to stand on its own. "
-             "Add no note about the change.")
+        if not active:
+            send(event, f"Your reply has no valid turn block: {error}. Send your whole reply again, "
+                 f"unchanged except that its last line is a valid turn block ({rules_file()}, Turn block section). "
+                 "T3 shows only a turn's last message, so the resent reply has to stand on its own. "
+                 "Add no note about the change.")
         return
-    messages = transcripts.user_messages(event.get("transcript_path"))
-    offer = issue_offer(turn, event.get("transcript_path"))
+    offer = None if active else issue_offer(turn, event.get("transcript_path"))
+    option = None if active or offer else should_continue(turn, transcripts.user_messages(event.get("transcript_path")))
+    # A reply sent on to do `a` doesn't stop on its options; any other shows them.
+    if not option and len(turn.options) > NEXT_MAX:
+        reply_log.record(event, "routine_stop", [("options-cap", f"{len(turn.options)} options, over {NEXT_MAX}")])
     if offer:
         send(event, f"\"{offer.text}\" offers an issue in a teammate review, and the user files those themselves "
              "unless they ask for one. Put the problem in a note for them instead, with no option to draft, "
              "file, or create an issue, and no PR comment unless they pick one. Send your whole reply again "
              "with that option gone, in Next and in the turn block. T3 shows only a turn's last message, so "
              "the resent reply has to stand on its own. Add no note about the change.")
-        return
-    option = should_continue(turn, messages)
-    if option:
+    elif option:
         send(event, f"\"{option.text}\" isn't a stop: nothing needs the user, and the router gives every "
              "step outside its Stops and the plan's gates autonomy (router.md, Plan and "
              "Continuation). Do it now. T3 shows only a turn's last "
              "message and folds the rest away, so your final reply has to stand on its own: "
              "carry forward what the reply above told the user, with the step's result added.")
-    elif len(turn.options) > NEXT_MAX:
-        reply_log.record(event, "routine_stop", [("options-cap", f"{len(turn.options)} options, over {NEXT_MAX}")])
 
 
 if __name__ == "__main__":

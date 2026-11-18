@@ -6809,6 +6809,20 @@ class RoutineStop(unittest.TestCase):
                 rows = [json.loads(line) for line in log.read_text().splitlines()]
                 self.assertEqual([(row["hook"], row["rule"], row["session"], row["turn"], row["detail"]) for row in rows],
                                  [("routine_stop", "options-cap", "s1", event.get("turn_id", 1), "3 options, over 2")])
+        # Codex review, round 1: a reply sent back for another reason, and the reply resent after it, show
+        # their options too; only a reply sent on to do `a` doesn't.
+        issue = self.with_turn(options=[*three[:2], {"key": "c", "class": "decision", "text": "draft a Linear issue"}],
+                               needs=need)
+        review = [{"type": "user", "message": {"content": "/review-teammate-pr 12"}}, "review it"]
+        for reply, event, sent in ((issue, {"said": review}, "offers an issue"), (reply, {"stop_hook_active": True}, None)):
+            with self.subTest(sent=sent), tempfile.TemporaryDirectory() as folder:
+                log = pathlib.Path(folder, "reply-log.jsonl")
+                out = self.run_on(reply, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)}, **event)
+                if sent:
+                    self.assertIn(sent, out["hookSpecificOutput"]["additionalContext"])
+                else:
+                    self.assertIsNone(out)
+                self.assertEqual([json.loads(line)["rule"] for line in log.read_text().splitlines()], ["options-cap"])
         # Two options is an ordinary stop, and a reply from before the cap still parses.
         self.assertIsNone(self.run_on(self.with_turn(options=three[:2], needs=need)))
         self.assertEqual(len(turn_block.parse(reply).options), 3)
