@@ -5820,6 +5820,9 @@ class BareReferences(unittest.TestCase):
             f"- [DEV-3127, Allow failure-only export emails]({url}), then [DEV-3127]({url}) again.\n",
             f"**Next**\n\n- **a**: add [DEV-3127 (failure-only export emails)](<{url}>) to Todo.\n",
             "- Files are UTF-8, hashed with SHA-256, dated ISO-8601; CVE-2026-1234 is patched.\n",
+            # One named link is enough: a later plain mention, here in a fold, passes (PR #75 review).
+            f"✅ **[DEV-3127, Allow failure-only export emails]({url}) is done.**\n\n"
+            "<details><summary>Checks</summary>\n\nDEV-3127's tests pass.\n\n</details>\n",
             "- Sentry APP-NEXT-2CZ stopped.\n",
             "- ADR-0029's field-module pattern fits, reviewed on Codex GPT-6.1.\n",  # PR #75 review
             "```\ngit checkout DEV-3127\n```\n",

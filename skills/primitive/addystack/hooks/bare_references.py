@@ -24,8 +24,8 @@ a number, so only the reply rules catch it. scripts/check_examples.py runs the s
 check on the kit's example replies.
 
 A tracker id, such as DEV-3127, is sent back anywhere in the reply, folds and tables
-included, unless it's a link, and one link to it says what it is: "[DEV-3127, Allow
-failure-only export emails](https://…)". A bare id gives the user nothing to decide on and
+included, until one link to it says what it is: "[DEV-3127, Allow failure-only export
+emails](https://…)". Its other mentions may then stay short or plain. A bare id gives the user nothing to decide on and
 nowhere to click; on Nov 17, 2026 the user corrected three bare ids in one thread. Code
 blocks and the turn block aren't read. Standard names that share the shape, such as
 UTF-8 or SHA-256, aren't ids."""
@@ -190,7 +190,7 @@ def unlinked_ids(text):
     if at >= 0 and turn_block.BLOCK.match(text, at):
         text = text[:at]
     lines = text.split("\n")
-    bare, linked, named = [], {}, set()
+    found = []  # (id, line, the label of the link it sits in, or None)
     for line, fenced in zip(lines, turn_block.in_fence(lines)):
         if fenced:
             continue
@@ -202,13 +202,16 @@ def unlinked_ids(text):
                 continue
             ident = m.group(0)
             inside = next((label for start, end, label in links if start <= m.start() < end), None)
-            if inside is None:
-                bare.append(f"{ident!r} in: {line.strip()}")
-                continue
-            linked.setdefault(ident, line.strip())
-            if re.search(r"[A-Za-z]{3}", inside.replace(ident, "")):
-                named.add(ident)
-    unnamed = [f"{ident!r} in: {line}" for ident, line in linked.items() if ident not in named]
+            found.append((ident, line.strip(), inside))
+    # One link that names an id is enough: later mentions, linked or not, can stay short.
+    named = {ident for ident, _, label in found
+             if label is not None and re.search(r"[A-Za-z]{3}", label.replace(ident, ""))}
+    bare = [f"{ident!r} in: {line}" for ident, line, label in found if label is None and ident not in named]
+    linked = {}
+    for ident, line, label in found:
+        if label is not None and ident not in named:
+            linked.setdefault(ident, line)
+    unnamed = [f"{ident!r} in: {line}" for ident, line in linked.items()]
     return bare, unnamed
 
 
