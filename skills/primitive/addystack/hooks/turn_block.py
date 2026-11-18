@@ -44,6 +44,8 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   the tag's attribute.
 Other tags, such as `<code>` in a fold's summary or `Option<T>` in inline code, are safe:
 CommonMark reads inline HTML only as a whole tag, which ends where HTML's tokenizer ends it.
+Known limit: an unsafe tag in a code span that does hold it, such as `<table>`, refuses
+too, since a line reader can't prove the span; 0 of 308 merge picks since Nov 1, 2026 had one.
 T3's session importer
 shows the reply after JS `trim()`, so a pick needs the block certain both as written and
 trimmed, with the same Turn. Known limits: code spans are read line by line, so one that
