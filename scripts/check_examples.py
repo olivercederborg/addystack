@@ -18,11 +18,11 @@ with four or more backticks. Inside one, this fails on:
   counts them in live replies; only a block that opens with a status marker is a reply;
 - a turn block that doesn't parse (`hooks/turn_block.py`), when the example carries one.
   An example without one passes, and so does one shown in code;
-- a third Next option, `c`, where replies.md allows two, as `hooks/routine_stop.py` sends
-  back in live replies;
+- a third Next option, `c`, where replies.md allows two, as `hooks/routine_stop.py` logs
+  in live replies;
 - a decision card whose Pick cites no source, as `hooks/reply_budget.py` sends back in live
   replies.
-- a fact table past reply-shape's limits, as `hooks/reply_budget.py` sends back in live
+- a fact table past reply-shape's limits, as `hooks/reply_budget.py` logs in live
   replies, with each value held to the 20-word target;
 - a merge option whose text isn't the plain request merge-gate takes as a go, or names a
   PR merge-gate places in no repo, as `hooks/reply_budget.py` sends back in live replies.

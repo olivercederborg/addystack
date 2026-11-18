@@ -64,7 +64,7 @@ Not in scope, so a later run picks it up.
 ## 3. Show each option's impact
 
 Every reply in the grill, including a clarification, uses this order. Aim for about 45
-words of prose above its fold; the Stop check sends a round back at 60. Plan items and
+words of prose above its fold, and keep it under 60. Plan items and
 the fold's summary count, while code and diff blocks and the fixed labels (these
 headings, their tags, `Size`, `Pick`, `(say if wrong)` and the who-agreed tags) don't.
 Only **Proposed this round** and **Changed this round** are `diff` blocks; the plan is plain bullet lists,
