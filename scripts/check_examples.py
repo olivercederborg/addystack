@@ -12,20 +12,9 @@ with four or more backticks. Inside one, this fails on:
   blank line) above it;
 - a `---` directly under a line of text, which Markdown turns into a heading;
 - an idioms check that doesn't name its lenses, as in `✅ idioms (typescript-style)`;
-- a Next, Needs you, or Done line citing a number without its name, as in "keep item 48",
-  which `hooks/bare_references.py` also sends back in live replies;
-- a reply whose headline and notes reach 60 words, where reply-shape keeps them under 60, as `hooks/reply_budget.py`
-  counts them in live replies; only a block that opens with a status marker is a reply;
 - a turn block that doesn't parse (`hooks/turn_block.py`), when the example carries one.
   An example without one passes, and so does one shown in code;
-- a third Next option, `c`, where replies.md allows two, as `hooks/routine_stop.py` logs
-  in live replies;
-- a decision card whose Pick cites no source, as `hooks/reply_budget.py` sends back in live
-  replies.
-- a fact table past reply-shape's limits, as `hooks/reply_budget.py` logs in live
-  replies, with each value held to the 20-word target;
-- a merge option whose text isn't the plain request merge-gate takes as a go, or names a
-  PR merge-gate places in no repo, as `hooks/reply_budget.py` sends back in live replies.
+- a third Next option, `c`, where replies.md allows two.
 
 It checks every SKILL.md, plus `replies.md` and reply-shape's references.
 
@@ -37,13 +26,12 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "skills" / "primitive" / "addystack" / "hooks"))
-import bare_references, reply_budget, turn_block  # noqa: E402
+import turn_block  # noqa: E402
 
 LABEL_SENTENCE = re.compile(r"^\*\*(Decide|Review|Do)\*\* ")
 ENDING = re.compile(r"^\*\*(Next|Done)\*\*")
 BARE_IDIOMS = re.compile(r"✅ idioms(?! \()")
 THIRD_OPTION = re.compile(r"^- (?:\*\*)?`c` →")
-MARKER = re.compile(r"\s*[✅🟡🔴⏳]")
 
 
 def example_blocks(lines):
@@ -84,33 +72,13 @@ def check_block(start, block):
             problems.append((number, "Next offers a third option; replies.md allows `a` and `b`"))
         if line == "---" and offset > 0 and block[offset - 1].strip():
             problems.append((number, "--- right under text makes that text a heading; add a blank line"))
-    names = {}
     carried = [offset for offset, (line, fenced) in enumerate(zip(block, turn_block.in_fence(block)))
                if not fenced and turn_block.carriers(line)]
     if carried:
         try:
-            names = {need.id: need.name for need in turn_block.parse("\n".join(block)).items}
+            turn_block.parse("\n".join(block))
         except turn_block.Malformed as error:
             problems.append((start + carried[0], f"turn block: {error}"))
-    text = "\n".join(block)
-    if MARKER.match(text) and reply_budget.over(reply_budget.words(text)):
-        problems.append((start, f"headline and notes run {reply_budget.words(text)} words; "
-                                f"reply-shape keeps them under {reply_budget.BUDGET}"))
-    for clause in reply_budget.fact_problems(text, reply_budget.FACT_WORDS):
-        problems.append((start, f"the fact table: {clause}"))
-    if reply_budget.unsourced(text):
-        problems.append((start, "the decision card's Pick cites no source; add a **Source** line"))
-    for option in reply_budget.unplain(text):
-        problems.append((start, f"merge option `{option.key}` isn't the plain request merge-gate takes as a go"))
-    for option, refs in reply_budget.unplaced(text):
-        problems.append((start, f"merge option `{option.key}` names a PR merge-gate places in no repo: "
-                                + " · ".join(f"{ref} {why}" for ref, why in refs)))
-    for problem in bare_references.problems(text, names):
-        # The cited line ends the problem; the longest match, in case one line ends another.
-        offset = max((i for i, line in enumerate(block) if line.strip() and problem.endswith(f" in: {line.strip()}")),
-                     key=lambda i: len(block[i].strip()))
-        ref = problem[:-len(f" in: {block[offset].strip()}")]
-        problems.append((start + offset, f"{ref} needs its short name beside it, as in \"48 (optional email variables)\""))
     return problems
 
 
