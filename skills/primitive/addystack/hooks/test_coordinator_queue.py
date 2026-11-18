@@ -7,8 +7,8 @@ import project_queue, turn_block
 
 HOOK = pathlib.Path(__file__).resolve().parent / "coordinator_queue.py"
 SESSION = "0b6e3c1a-5d2f-4c8e-9a71-2f4d6b8e0c13"
-LINK = "<t3-thread://v2/env-mac/thread-c1>"
-WORKER = "R153 <t3-thread://v2/env-mac/thread-w3>"
+LINK = "<t3-thread://v2/env-a/thread-c1>"
+WORKER = "R153 <t3-thread://v2/env-a/thread-w3>"
 PROJECT = f"""# ◆ audit
 
 Coordinator: {LINK} · Checkout: ~/kit · Mode: personal, planning autonomous
@@ -65,7 +65,7 @@ class CoordinatorQueue(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.folder)
         self.project_md = self.folder / ".local/state/orchestrate/audit/project.md"
         self.project_md.parent.mkdir(parents=True)
-        self.write(PROJECT, ("do", "pull the Mac's dotfiles", "coordinator"), ("decide", "stop format send-backs", WORKER))
+        self.write(PROJECT, ("do", "pull the laptop's dotfiles", "coordinator"), ("decide", "stop format send-backs", WORKER))
 
     def write(self, text, *items):
         """project.md as text, with a Queue holding items when there are any."""
@@ -112,15 +112,15 @@ class CoordinatorQueue(unittest.TestCase):
         self.assertIsNone(self.run_on("🟡 **Stop format send-backs?**\n\n1 of 2 need you · stop format send-backs · R153\n\n---\n\n**Next**\n\n"
                                       "- **`a` → yes: stop them** · *recommended*\n\n" + block(needs=[SEND_BACKS])))
         # Running work beside a Do at the top: a ⏳ line can carry it.
-        self.write(PROJECT, ("do", "pull the Mac's dotfiles", "coordinator"))
+        self.write(PROJECT, ("do", "pull the laptop's dotfiles", "coordinator"))
         self.assertIsNone(self.run_on("⏳ **R151 is 20 min in**, then: report its PR.\n\n1 of 1 needs you · pull the "
-                                      "Mac's dotfiles\n\n" + block("running", needs=[need(1, "pull the Mac's dotfiles",
+                                      "laptop's dotfiles\n\n" + block("running", needs=[need(1, "pull the laptop's dotfiles",
                                                                                          "do")], elapsed="20 min")))
 
     def test_a_status_that_parks_the_calls_in_standing_goes_back(self):
         """The shape of the ◆ suite-audit replies before 'Anything else waiting for me?' on Nov 18."""
         status = "⏳ **#5965's round-four fixes are moving to a new PR, 3 min in**, then: watch it.\n\n"
-        found = self.run_on(status + block("running", standing=[SEND_BACKS, need(1, "pull the Mac's dotfiles", "do")],
+        found = self.run_on(status + block("running", standing=[SEND_BACKS, need(1, "pull the laptop's dotfiles", "do")],
                                            elapsed="3 min"))
         self.assertIn("holds 2 items for the user, and your reply hides them: its `needs` doesn't start with the "
                       f"queue's top item, 2; no line the user sees carries the strip `1 of 2 need you · stop format send-backs · "
@@ -152,9 +152,9 @@ class CoordinatorQueue(unittest.TestCase):
                 self.assertIsNone(self.run_on(reply + block(needs=[SEND_BACKS])))
 
     def test_the_top_item_leads_needs_since_inboxes_show_the_first(self):
-        found = self.run_on(CARD + block(needs=[need(1, "pull the Mac's dotfiles", "do"), SEND_BACKS]))
+        found = self.run_on(CARD + block(needs=[need(1, "pull the laptop's dotfiles", "do"), SEND_BACKS]))
         self.assertIn("its `needs` doesn't start with the queue's top item, 2", found)
-        self.assertIsNone(self.run_on(CARD + block(needs=[SEND_BACKS, need(1, "pull the Mac's dotfiles", "do")])))
+        self.assertIsNone(self.run_on(CARD + block(needs=[SEND_BACKS, need(1, "pull the laptop's dotfiles", "do")])))
 
     def test_a_name_that_only_starts_the_strip_isnt_the_top_item(self):
         self.write(PROJECT, ("decide", "merge #12", WORKER), ("decide", "merge #123", WORKER))
@@ -198,9 +198,9 @@ class CoordinatorQueue(unittest.TestCase):
                                       + block(needs=[stuck])))
 
     def test_an_item_the_queue_doesnt_hold_goes_back(self):
-        found = self.run_on(CARD + block(needs=[SEND_BACKS], standing=[need(9, "reply to Ander about Fable writers",
+        found = self.run_on(CARD + block(needs=[SEND_BACKS], standing=[need(9, "reply to the reviewer about the writers",
                                                                              "review")]))
-        self.assertIn('its turn block names review 9 "reply to Ander about Fable writers", which the queue doesn\'t '
+        self.assertIn('its turn block names review 9 "reply to the reviewer about the writers", which the queue doesn\'t '
                       "hold", found)
         self.write(PROJECT)  # no Queue section yet: an import starts it
         found = self.run_on(CARD + block(needs=[SEND_BACKS]))
@@ -263,7 +263,7 @@ class CoordinatorQueue(unittest.TestCase):
                       found)
         self.assertIsNotNone(self.run_on(hidden, title="🟡 ◆ audit"))
         text = self.project_md.read_text()
-        self.project_md.write_text(text.replace(LINK, "<t3-thread://v2/env-mac/thread-other>"))
+        self.project_md.write_text(text.replace(LINK, "<t3-thread://v2/env-a/thread-other>"))
         self.assertIsNone(self.run_on(hidden))
         self.project_md.write_text(text.replace("| 1 | do |", "| 1 | blocked |"))
         self.assertIsNone(self.run_on(hidden))

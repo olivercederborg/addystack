@@ -156,11 +156,11 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn("no Queue yet: start it with `queue import`",
                       self.project("queue", "add", "decide", "keep the v1 export", code=1).stderr)
         reply = ('⏳ **R153 runs.**\n\n<!-- turn {"state":"running","elapsed":"1 min","needs":[{"id":63,"kind":"do",'
-                 '"name":"pull the dotfiles"}],"standing":[{"id":64,"kind":"decide","name":"request Casper on ready"},'
+                 '"name":"pull the dotfiles"}],"standing":[{"id":64,"kind":"decide","name":"request a reviewer on ready"},'
                  '{"id":5,"kind":"decide","name":"merge #39"}]} -->')
         out = self.project("queue", "import", stdin=reply).stdout
         self.assertTrue(out.startswith("imported 1: decide · merge #39\nimported 2: do · pull the dotfiles\n"
-                                       "imported 3: decide · request Casper on ready\n1 of 3 need you · merge #39 · "), out)
+                                       "imported 3: decide · request a reviewer on ready\n1 of 3 need you · merge #39 · "), out)
         self.assertIn("the Queue exists", self.project("queue", "import", stdin=reply, code=1).stderr)
         (self.dir / "project.md").write_text(PROJECT)
         duplicate = '{"state":"done","standing":[{"id":5,"kind":"do","name":"pull it"},{"id":5,"kind":"do","name":"push it"}]}'
@@ -172,34 +172,34 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn("imported 1: decide · approve the release", self.project("queue", "import", stdin=wrapped).stdout)
         (self.dir / "project.md").write_text(PROJECT)
         quoted = 'A block looks like `<!-- turn {"state":"done"} -->`.\n\n' + reply
-        self.assertIn("imported 3: decide · request Casper on ready", self.project("queue", "import", stdin=quoted).stdout)
+        self.assertIn("imported 3: decide · request a reviewer on ready", self.project("queue", "import", stdin=quoted).stdout)
         # Who asked and a stuck run, which the turn block can't say, come from the coordinator.
         (self.dir / "project.md").write_text(PROJECT)
         out = self.project("queue", "import", "--from", "64=R153 <t3-thread://v2/e/t>", "--stuck", "5", stdin=reply).stdout
         self.assertIn("imported 1: stuck · merge #39", out)
         self.assertIn("1 of 3 need you · merge #39 · coordinator", out)
-        self.assertIn("  3 decide · request Casper on ready · R153 <t3-thread://v2/e/t> · since", out)
+        self.assertIn("  3 decide · request a reviewer on ready · R153 <t3-thread://v2/e/t> · since", out)
         for wrong, error in [(["--stuck", "9"], "the turn block has no item 9"), (["--from", "64"], "--from takes ID=WHO")]:
             (self.dir / "project.md").write_text(PROJECT)
             self.assertIn(error, self.project("queue", "import", *wrong, stdin=reply, code=1).stderr)
             self.assertEqual(self.text(), PROJECT)
 
     def test_add_done_and_show_keep_the_queue_and_its_answers(self):
-        added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout
-        self.assertTrue(added.startswith("queued 1: do · pull the Mac's dotfiles\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))
+        added = self.project("queue", "add", "do", "pull the laptop's dotfiles").stdout
+        self.assertTrue(added.startswith("queued 1: do · pull the laptop's dotfiles\n1 of 1 needs you · pull the laptop's dotfiles · coordinator\n"))
         self.project("queue", "add", "decide", "keep the v1 export", "--from", "export-v2 <t3-thread://v2/e/8f>")
         self.assertEqual(self.project("queue", "show").stdout.split("\n")[:2], [
             "1 of 2 need you · keep the v1 export · export-v2 <t3-thread://v2/e/8f>",
             'needs: [{"id":2,"kind":"decide","name":"keep the v1 export"}]'])
         self.assertIn("## Queue\n\nNext id: 3\n\n| # | Kind | Name | From | Since |\n|---|---|---|---|---|\n"
-                      "| 1 | do | pull the Mac's dotfiles | coordinator |", self.text())
+                      "| 1 | do | pull the laptop's dotfiles | coordinator |", self.text())
         self.assertTrue(self.text().index("## Queue") < self.text().index("## Decisions"))
         done = self.project("queue", "done", "2", "--answer", "-", stdin='keep it one release · the user: "a"\n').stdout
-        self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · pull the Mac's dotfiles · coordinator\n"))
+        self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · pull the laptop's dotfiles · coordinator\n"))
         self.assertIn(f"merged 31ddd00.\n- {TODAY} · export-v2 <t3-thread://v2/e/8f> asked: keep the v1 export (queue 2, "
                       "decide) → keep it one release · the user: \"a\"\n", self.text())
         self.project("queue", "done", "1", "--answer", "pulled · the user: \"done.\nBoth machines.\"")
-        self.assertIn(f"- {TODAY} · coordinator asked: pull the Mac's dotfiles (queue 1, do) → pulled · the user: "
+        self.assertIn(f"- {TODAY} · coordinator asked: pull the laptop's dotfiles (queue 1, do) → pulled · the user: "
                       "\"done.\n  Both machines.\"\n", self.text())
 
     def test_an_answer_with_any_line_ending_stays_inside_its_decision(self):

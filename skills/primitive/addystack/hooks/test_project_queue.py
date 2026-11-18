@@ -26,13 +26,13 @@ class Queue(unittest.TestCase):
     def test_only_create_starts_the_section_before_decisions(self):
         lines = list(BARE)
         with self.assertRaisesRegex(q.QueueError, "no Queue yet: start it with `queue import`"):
-            q.add(lines, "do", "pull the Mac's dotfiles", "coordinator", NOW)
+            q.add(lines, "do", "pull the laptop's dotfiles", "coordinator", NOW)
         self.assertEqual(lines, BARE)
-        lines = project(("do", "pull the Mac's dotfiles"))
+        lines = project(("do", "pull the laptop's dotfiles"))
         self.assertEqual(lines[:15], [
             "# ◆ p", "", "## Goal", "", "Ship it.", "", "## Queue", "", "Next id: 2", "",
             "| # | Kind | Name | From | Since |", "|---|---|---|---|---|",
-            "| 1 | do | pull the Mac's dotfiles | coordinator | 2026-11-18 14:05 |", "", "## Decisions"])
+            "| 1 | do | pull the laptop's dotfiles | coordinator | 2026-11-18 14:05 |", "", "## Decisions"])
 
     def test_stuck_runs_come_first_then_calls_then_do_items_oldest_first(self):
         lines = project(("do", "pull the dotfiles"), ("review", "push the cast fix"), ("decide", "keep the v1 export"),
@@ -41,8 +41,8 @@ class Queue(unittest.TestCase):
                          [(4, "stuck"), (2, "review"), (3, "decide"), (1, "do"), (5, "do")])
 
     def test_an_id_never_comes_back(self):
-        lines = project(("decide", "keep the v1 export"), ("decide", "request Casper on ready"))
-        self.assertEqual(q.done(lines, 2).name, "request Casper on ready")
+        lines = project(("decide", "keep the v1 export"), ("decide", "request a reviewer on ready"))
+        self.assertEqual(q.done(lines, 2).name, "request a reviewer on ready")
         self.assertEqual(q.add(lines, "do", "pull the dotfiles", "coordinator", NOW).id, 3)
         with self.assertRaisesRegex(q.QueueError, "no open Queue item 2"):
             q.done(lines, 2)
