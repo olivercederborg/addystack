@@ -47,9 +47,10 @@ in this order:
 4. Repo precedent. This shows consistency, not idiom.
 
 When repo precedent and the library's idiom disagree, show both and say which one the
-project's rules favor. To claim one option is best, name the project's constraints and
-compare the viable alternatives against them. A comparison, or a claim that no
-alternative exists, states the search scope and the date.
+project's rules favor. Recommending a fix claims it's the best option, beyond that it
+works. To claim one option is best, name the project's constraints and compare the
+viable alternatives against them, the library's own API for the job among them. A
+comparison, or a claim that no alternative exists, states the search scope and the date.
 
 ## Depth
 
