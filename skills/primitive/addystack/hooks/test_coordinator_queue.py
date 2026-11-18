@@ -173,6 +173,17 @@ class CoordinatorQueue(unittest.TestCase):
         routine = [{"key": "a", "class": "routine", "text": "push the fix"}]
         self.assertIsNone(self.run_on("✅ **Fixed.**\n\n" + block(options=routine)))
 
+    def test_before_its_queue_a_stop_on_a_call_hands_that_call_to_import(self):
+        self.write(PROJECT)  # no Queue section yet
+        post = [{"key": "a", "class": "stop:post", "text": "request a reviewer on #6013 and #5463"}]
+        found = self.run_on("🟡 **Request a reviewer?**\n\n" + block(options=post))
+        self.assertIn('{"state":"done","standing":[{"id":1,"kind":"decide","name":"request a reviewer on #6013 and '
+                      '#5463"}]}', found)
+        long = [{"key": "a", "class": "stop:post", "text": "request a reviewer on #6013 and #5463, " + "then " * 20}]
+        found = self.run_on("🟡 **Request a reviewer?**\n\n" + block(options=long))
+        self.assertIn('{"state":"done","standing":[]}', found)
+        self.assertIn("the call this reply stops on, option a \"request a reviewer on #6013", found)
+
     def test_a_name_with_raw_html_shows_escaped_and_still_picks(self):
         self.write(PROJECT, ("decide", "merge #123 after the <pre> fix", WORKER))
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #123"}]

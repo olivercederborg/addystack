@@ -133,9 +133,10 @@ def problems(turn, reply, items, earlier=()):
         elif named != queued:
             found.append(f"its turn block's item {item.id} is {item.kind} \"{item.name}\", but the queue's is "
                          f"{queued['kind']} \"{queued['name']}\"")
-    if not items and not turn.needs and turn.state == "stop":
-        found += [f"it stops on option {option.key}, {option.cls} \"{option.text}\", with nothing in `needs`, so that "
-                  "call isn't on the queue" for option in turn.options if option.cls != "routine"][:1]
+    call = stop_call(turn)
+    if call and not items:
+        found.append(f"it stops on option {call.key}, {call.cls} \"{call.text}\", with nothing in `needs`, so that "
+                     "call isn't on the queue")
     if items:
         top = items[0]
         if not turn.needs or turn.needs[0].id != top.id:
@@ -175,15 +176,36 @@ def strips(line, match, top, count):
                for name in {top.name.casefold(), project_queue.shown(top.name).casefold()})
 
 
+def stop_call(turn):
+    """The option a reply stops on for the user's call while `needs` is empty: its first that
+    isn't routine; None for any other reply."""
+    if turn is None or turn.state != "stop" or turn.needs:
+        return None
+    return next((option for option in turn.options if option.cls != "routine"), None)
+
+
 def pending(turn, earlier):
     """What a project from before the queue still holds open, oldest first: each item the reply
-    before named and this one doesn't, then this reply's own, each (kind, name) once."""
+    before named and this one doesn't, then this reply's own, each (kind, name) once, then the
+    call it stops on with nothing in `needs`, as a decide, when its text can name a need."""
     named = set(turn.items)
-    listed = [item for item in earlier if item not in named] + sorted(turn.items, key=lambda item: item.id)
-    return list(dict.fromkeys((item.kind, item.name) for item in listed))
+    listed = [(item.kind, item.name) for item in earlier if item not in named]
+    listed += [(item.kind, item.name) for item in sorted(turn.items, key=lambda item: item.id)]
+    if (call := stop_call(turn)) and names_a_need(call.text):
+        listed.append(("decide", call.text))
+    return list(dict.fromkeys(listed))
 
 
-def feedback(project, path, items, found, open_items=()):
+def names_a_need(text):
+    """Whether text can be a need's name, as turn_block reads one."""
+    try:
+        turn_block.read_need({"id": 1, "kind": "decide", "name": text}, 0, {})
+        return True
+    except turn_block.Malformed:
+        return False
+
+
+def feedback(project, path, items, found, open_items=(), call=None):
     where = "~/" + str(path.relative_to(Path.home()))
     script = "the coordinator skill's `scripts/project.py`"
     reasons = "; ".join(found)
@@ -193,7 +215,10 @@ def feedback(project, path, items, found, open_items=()):
         return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
                 f"thread puts to the user goes on its queue, in {where}, and this project's predates it. Start it "
                 "with every call still open, oldest first: the turn block below holds what the reply before and this "
-                "one named; add to its `standing` any other call an earlier reply put to the user that's still open, "
+                "one named; add to its `standing` "
+                + (f"the call this reply stops on, option {call.key} \"{call.text}\", as a decide named in 80 "
+                   "characters or fewer, and " if call and not names_a_need(call.text) else "")
+                + "any other call an earlier reply put to the user that's still open, "
                 f"then run {script} with it on standard input:\n\n`{path.parent} queue import` <<'EOF'\n{block}\nEOF"
                 "\n\nAdd `--from <id>=\"<worker> <thread link>\"` for a call a worker asked and `--stuck <id>` for a "
                 "stuck run, as your Workers table shows. Then `queue done` each the user already answered. Send your "
@@ -247,7 +272,7 @@ def main():
         reasons = problems(turn, reply, items, earlier)
     if not reasons:
         return
-    text = feedback(found[0], path, items, reasons, pending(turn, earlier) if items is None else ())
+    text = feedback(found[0], path, items, reasons, pending(turn, earlier) if items is None else (), stop_call(turn))
     # Codex's Stop takes only decision and reason, and its input carries turn_id, as in
     # bare_references.py; Claude Code continues through additionalContext.
     if "turn_id" in event:
