@@ -82,9 +82,10 @@ lenses' **Rating** section, each give a rating; re-band one that rests on a drop
 finding, then show the lower one.
 
 When the PR has a Decisions table, raise findings on a listed decision first, by its
-number (`D2`). Keep findings with a concrete consequence, and at most three
-non-blocking ones, those with the worst consequence. Count every dropped one with its reason: nits, speculative
-failures, points others already raised, broad refactors, and non-blocking past three.
+number (`D2`). Keep findings with a concrete consequence: every one that holds the
+approval, and at most three other non-blocking ones, those with the worst consequence.
+Count every dropped one with its reason: nits, speculative failures, points others
+already raised, broad refactors, and non-blocking past three.
 A failed required check that this PR's change causes, or makes worse than the base's
 run of it (read with `gh`), is a blocking finding.
 
