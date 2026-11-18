@@ -6830,9 +6830,14 @@ class RoutineStop(unittest.TestCase):
         # Two options is an ordinary stop, and a reply from before the cap still parses.
         self.assertIsNone(self.run_on(self.with_turn(options=three[:2], needs=need)))
         self.assertEqual(len(turn_block.parse(reply).options), 3)
-        # A routine `a` with nothing waiting is sent on, not back: the agent does it instead.
+        # A routine `a` with nothing waiting is sent on, not back: the agent does it instead, so the reply
+        # doesn't stop on its options and its third isn't logged.
         routine = self.with_turn(options=[self.ROUTINE, *three[1:]], needs=[])
-        self.assertIn("isn't a stop", self.feedback(routine))
+        with tempfile.TemporaryDirectory() as folder:
+            log = pathlib.Path(folder, "reply-log.jsonl")
+            out = self.run_on(routine, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertIn("isn't a stop", out["hookSpecificOutput"]["additionalContext"])
+            self.assertFalse(log.exists())
 
     def test_send_backs_cite_a_turn_block_spec_that_exists(self):
         """With a reply rules file that has a Turn block section, that file; with none, or
