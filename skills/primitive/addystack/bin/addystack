@@ -9,6 +9,7 @@
     addystack doctor
     addystack print-config [--layers]  the resolved config as JSON
     addystack policy --repo PATH [--explain]
+    addystack replies-report [--since DAY] [--until DAY] [--json]
 
 Errors exit 1 and bad usage exits 2. `--check` and `--dry-run` never write. `build`
 writes resolved.json and the built parts to the state folder, and each enabled host's
@@ -25,8 +26,12 @@ Private overrides, for tests and dry runs; each defaults to the value after it:
     ADDYSTACK_CODEX_MD   Codex's file          ~/.codex/AGENTS.md
     ADDYSTACK_SKILLS_CLI update's skills CLI   npx -y skills
     ADDYSTACK_SCHEMA_URL init's schema URL     none until the kit's repo is public
+    ADDYSTACK_REPLY_LOG  the reply log         reply-log.jsonl in the state folder
 
 `install` also keeps a ledger of the hooks it wrote, installed.json in the state folder.
+`replies-report` sums the reply log (hooks/reply_log.py), the reply-shape rules the Stop
+hooks log instead of sending a reply back, per rule from --since up to, not including,
+--until (UTC days; by default the 7 days through today).
 """
 from __future__ import annotations
 
@@ -41,6 +46,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
@@ -50,6 +56,7 @@ sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
 import config  # noqa: E402
 import doctor as _doctor  # noqa: E402
 import reconcile  # noqa: E402
+import reply_log  # noqa: E402
 import resolved  # noqa: E402
 import skill_layer  # noqa: E402
 import skills_cli  # noqa: E402
@@ -490,6 +497,22 @@ def policy(args: argparse.Namespace) -> int:
     return 0
 
 
+def replies_report(args: argparse.Namespace) -> int:
+    """Prints the reply log's violations per rule, with each rule's top sessions, as
+    Markdown, or with --json as one JSON object."""
+    until = args.until or datetime.now(timezone.utc).date() + timedelta(days=1)
+    since = args.since or until - timedelta(days=7)
+    if since >= until:
+        print(f"addystack: --since {since} isn't before --until {until}", file=sys.stderr)
+        return 2
+    report = reply_log.summary(reply_log.rows(since, until))
+    if args.json:
+        print(json.dumps({"since": str(since), "until": str(until), "log": str(reply_log.path()), **report}))
+    else:
+        print(reply_log.markdown(report, since, until))
+    return 0
+
+
 COMMANDS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "install": install,
     "update": update,
@@ -498,6 +521,7 @@ COMMANDS: Dict[str, Callable[[argparse.Namespace], int]] = {
     "doctor": doctor,
     "print-config": print_config,
     "policy": policy,
+    "replies-report": replies_report,
 }
 
 
@@ -524,6 +548,11 @@ def parser() -> argparse.ArgumentParser:
     policy_command = sub.add_parser("policy", help="a checkout's policy as JSON")
     policy_command.add_argument("--repo", required=True, help="the checkout the work lands in")
     policy_command.add_argument("--explain", action="store_true", help="add each rule that matched")
+    report_command = sub.add_parser("replies-report", help="the reply log's violations per rule")
+    report_command.add_argument("--since", type=date.fromisoformat, metavar="DAY", help="first UTC day, YYYY-MM-DD")
+    report_command.add_argument("--until", type=date.fromisoformat, metavar="DAY",
+                                help="the UTC day after the last, YYYY-MM-DD")
+    report_command.add_argument("--json", action="store_true", help="one JSON object instead of Markdown")
     return commands
 
 
