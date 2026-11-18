@@ -25,14 +25,24 @@ interrupts a paragraph. A line reader can tell whether a top-level fence holds i
 when it can place every fence line, so `picked` returns None for a reply with a fence
 marker after a list marker or `>`, indented 4+ or by a tab, or in an indented fence a less
 indented line may end with its list item: merge-gate reads a pick as a merge go, and a
-refused one costs the user a typed go. Raw HTML that the renderer reads by HTML's rules, not
-CommonMark's, such as an open `<title>`, can make the block text, and a code span doesn't
-hide a `<` once a link destination eats its backtick. So a pick counts only when every `<`
-outside fences before the block, inline code included, is in a fold line (`<details>`,
-`<summary>…</summary>`, `</details>`) followed by a blank line, or opens an autolink
-(`<t3-thread://…>`, with no space, `<`, `>`, or backtick in it): CommonMark never reads one
-as HTML, since a tag name can't run into a `:`, and the coordinator names a worker's thread
-that way on its merge cards. T3's session importer
+refused one costs the user a typed go. Raw HTML can hide the block in three ways, and a
+pick counts only when the lines outside fences before it, inline code included, since a
+code span doesn't hide a `<` once a link destination eats its backtick, hold none of them:
+- An element the renderer reads by HTML's rules, not CommonMark's, as text to its end tag:
+  a start tag of `script`, `style`, `textarea`, `title`, `xmp`, `iframe`, `noembed`,
+  `noframes`, `noscript`, or `plaintext`, or of `pre`, whose CommonMark HTML block runs to
+  `</pre>` past any fence. So does any `<!` or `<?`: a comment, CDATA, or declaration. A
+  `<table>` or one of its parts moves what follows it out of the table and leaves the block
+  inside it, so the block is no longer the reply's last node.
+- A line that starts with HTML, past list and quote markers, and isn't followed by a blank
+  line: its HTML block runs to the next blank line, so the lines after it are raw HTML, not
+  fences or a block of their own. An autolink (`<t3-thread://…>`) starts no HTML block.
+- Such a line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
+  `<div title="x`: the HTML block hands it to the renderer raw, and what follows becomes
+  the tag's attribute.
+Other tags, such as `<code>` in a fold's summary or `Option<T>` in inline code, are safe:
+CommonMark reads inline HTML only as a whole tag, which ends where HTML's tokenizer ends it.
+T3's session importer
 shows the reply after JS `trim()`, so a pick needs the block certain both as written and
 trimmed, with the same Turn. Known limits: code spans are read line by line, so one that
 wraps onto the next line doesn't hide a mention there, and a record with more than one
@@ -56,10 +66,15 @@ Class = Literal["routine", "decision", "stop:merge", "stop:push", "stop:post", "
 OPENER = re.compile(r"( {0,3})(`{3,}(?=[^`]*$)|~{3,})")
 # A fence marker after any indent and container prefixes ("- ", "1. ", "> ").
 MARKER = re.compile(r"([ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*)(?:`{3}|~{3})")
-# The raw HTML a reply may hold and still count a pick: a fold's own lines.
-FOLD = re.compile(r"<details(?: open)?>(?:<summary>[^<>]*</summary>)?|<summary>[^<>]*</summary>|</details>")
-# A URI autolink per CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span.
-AUTOLINK = re.compile(r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>")
+# Raw HTML that reads what follows as text or as markup to its own end, anywhere on a line.
+UNSAFE = re.compile(r"<(?:[!?]|(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript|plaintext|pre|"
+                    r"table|caption|colgroup|col|tbody|thead|tfoot|tr|td|th)(?=[\t\f />]|$))", re.I)
+# A line that may start an HTML block: a <, past list and quote markers, that doesn't open a
+# URI autolink (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
+HTML_START = re.compile(r"[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*<"
+                        r"(?![A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>)[A-Za-z/]")
+TAG = re.compile(r"</?[A-Za-z]")
+SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")
 TICKS = re.compile(r"`+")
 BLOCK = re.compile(r"<!--\s*turn\b\s*(.*?)\s*-->\s*\Z", re.S)
@@ -122,8 +137,8 @@ def in_fence(lines):
 def scan(lines):
     """in_fence's marks for lines, and whether they and the raw HTML before the last
     top-level turn block line are certain. Certain is False when a fence marker sits where
-    a container may hold it, or a line outside fences holds a < outside an autolink and
-    isn't a fold line followed by a blank line, as the module docstring says."""
+    a container may hold it, or a line outside fences holds raw HTML that may hide the
+    block, as the module docstring says."""
     marks, sure, fence, indent = [], True, None, 0
     for line in lines:
         if fence:
@@ -143,10 +158,60 @@ def scan(lines):
     for at in range(top):
         line = lines[at]
         after = lines[at + 1] if at + 1 < len(lines) else ""
-        if not marks[at] and "<" in AUTOLINK.sub("", line) \
-                and not (FOLD.fullmatch(line.strip(" \t")) and not after.strip(" \t")):
+        if not marks[at] and (UNSAFE.search(line) or HTML_START.match(line) and (after.strip(" \t") or not closed(line))):
             sure = False
     return marks, sure
+
+
+def closed(line):
+    """Whether the WHATWG tokenizer, reading line from its data state, is back in it at the
+    line's end: every tag it opens ends with a > outside a quoted attribute value, and every
+    `</` that starts no end tag, a bogus comment, at the next >."""
+    at = 0
+    while (at := line.find("<", at)) >= 0:
+        if TAG.match(line, at):
+            at = tag_end(line, at + (2 if line[at + 1] == "/" else 1))
+        elif line.startswith("</", at):
+            at = line.find(">", at + 2) + 1 or None
+        else:
+            at += 1
+        if at is None:
+            return False
+    return True
+
+
+def tag_end(line, at):
+    """Where the tag whose name starts at line[at] ends, just past its >, by the WHATWG
+    tokenizer's tag states (HTML 13.2.5.8 to 13.2.5.40), or None when the line ends first."""
+    state = "name"
+    while at < len(line):
+        char = line[at]
+        # The states that hand the character on to another one unread.
+        if state == "self-closing" and char != ">" or state == "after value" and char not in SPACE + "/>":
+            state = "before attribute"
+            continue
+        if state in ("before attribute", "attribute") and char in "/>" or state == "attribute" and char in SPACE:
+            state = "after attribute"
+            continue
+        if state == "before value" and char not in SPACE + "\"'>":
+            state = "unquoted"
+            continue
+        if state in ("double", "single"):
+            state = "after value" if char == ('"' if state == "double" else "'") else state
+        elif char == ">":
+            return at + 1
+        elif char in SPACE:
+            state = "before attribute" if state in ("name", "unquoted", "after value") else state
+        elif char == "/" and state in ("name", "after attribute", "after value"):
+            state = "self-closing"
+        elif char == "=" and state in ("attribute", "after attribute"):
+            state = "before value"
+        elif char in "\"'" and state == "before value":
+            state = "double" if char == '"' else "single"
+        elif state in ("before attribute", "after attribute"):
+            state = "attribute"  # an = here starts a name too
+        at += 1
+    return None
 
 
 def carriers(line):
