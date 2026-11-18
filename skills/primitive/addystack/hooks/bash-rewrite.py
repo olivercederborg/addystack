@@ -303,9 +303,7 @@ def wait_fix(payload, tool_input, command):
     """A note when a foreground call in a session that waits in the foreground
     (t3_child.holds_turn) sleeps longer than its timeout but inside LONG, whose timeout main()
     then raises to LONG, as no-foreground-waits.py expects; else None."""
-    timeout = tool_input.get("timeout")
-    timeout = timeout if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0 \
-        else shell_syntax.DEFAULT_TIMEOUT * 1000
+    timeout = shell_syntax.call_timeout(tool_input.get("timeout"))
     if timeout >= LONG or shell_syntax.waits_in_one_call(command, timeout) \
             or not shell_syntax.waits_in_one_call(command, LONG):
         return None

@@ -259,6 +259,12 @@ def hides_waits(command):
     return _count(QUOTABLE, command) != _count(QUOTABLE, shell_code(command))
 
 
+def call_timeout(timeout_ms):
+    """A Bash call's timeout in ms: timeout_ms when it's a positive number, else the default."""
+    valid = isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) and timeout_ms > 0
+    return timeout_ms if valid else DEFAULT_TIMEOUT * 1000
+
+
 def waits_in_one_call(command, timeout_ms):
     """Whether a command's sleeps (counted_wait), with MARGIN to spare, end inside a call
     whose timeout is timeout_ms."""
@@ -282,9 +288,7 @@ def held(command, timeout_ms, holds_turn, rewrites):
     # A session that waits in the foreground goes by its sleeps' total when every one is certain.
     seconds = counted_wait(command)
     if seconds and holds_turn():
-        timeout = timeout_ms if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) \
-            and timeout_ms > 0 else DEFAULT_TIMEOUT * 1000
-        limit = LONGEST if rewrites() else min(timeout, LONGEST)
+        limit = LONGEST if rewrites() else min(call_timeout(timeout_ms), LONGEST)
         return None if waits_in_one_call(command, limit) else \
             f"its sleeps add up to {seconds:g} seconds, past the {limit // 1000:g} seconds one call allows"
     if any(seconds > LIMIT for seconds in _counted_loop_seconds(code)):
