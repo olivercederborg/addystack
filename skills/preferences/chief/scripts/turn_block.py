@@ -167,7 +167,7 @@ def scan(lines):
     depth = 0
     for at in range(top):
         for match in DETAILS.finditer(lines[at]) if not marks[at] else ():
-            closes = match.group(1) and match.start() == len(lines[at]) - len(lines[at].lstrip(" ")) <= 3
+            closes = match.group(1) and match.start() <= 3 and not lines[at][:match.start()].strip(" ")
             depth = max(depth - 1, 0) if closes else depth + (not match.group(1))
     sure = sure and not depth
     for at in range(top):
