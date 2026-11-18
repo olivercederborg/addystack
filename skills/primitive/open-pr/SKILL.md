@@ -114,8 +114,8 @@ it is new.
 
 **Check the body** with `scripts/check-body.mjs body.md`: it parses each Mermaid block,
 and rejects a check line that counts tests. Run it before every `--body-file` post and
-before showing a body for approval. Quoting a label, as in `A["call (x)"]`, fixes most. Its Mermaid line goes in the
-checks.
+before showing a body for approval. Quoting a label, as in `A["call (x)"]`, fixes most.
+Its Mermaid line goes in the checks.
 
 **Evidence.** Show the change working, before and after. When the UI changes, use
 screenshots side by side (`pr-ui-artifacts` captures them), uploaded with `--attach` on
