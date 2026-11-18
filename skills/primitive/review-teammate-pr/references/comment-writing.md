@@ -15,8 +15,8 @@ after one read.
 - **Lead with what happens:** the first sentence states, as fact, what a user or caller
   would see, in plain words, before any symbol names. The review verified it, so say it
   the way the user would.
-- **Suggest the fix:** offer it as something the author can take, as in "Z would fix
-  it" or "a test like … could cover it", the way a colleague suggests.
+- **Suggest the fix** step 2 picked, as something the author can take, as in "Z would
+  fix it" or "a test like … could cover it", the way a colleague suggests.
 - **Speak the glossary:** before drafting, read the repo's glossary (the root and the
   touched package's `CONTEXT.md`, laid out as `domain-modeling` says). Name each domain
   concept by its term, swap any word from an _Avoid_ line for the term it points to, and
@@ -31,12 +31,6 @@ after one read.
 - **Add a snippet when the fix would otherwise be ambiguous, or when the comment argues
   for a different pattern** (test style, call shape, structure): show it before and
   after. Keep any example the card already showed.
-  - **Fix the cause:** before a fix goes in, name the root cause. Compare a fix at the
-    cause, a fix at the symptom, and the library's own analogous API against the repo's
-    rules, and show that comparison in the card. When the fix at the cause fits the
-    PR's scope, suggest it. When it would grow the PR well past that scope, suggest the
-    in-scope fix, or none, and name the root cause as a possible follow-up. Until the
-    comparison is done, state the problem with no fix.
   - **Exact replacement of the anchored lines** in one file: a `suggestion` block with
     only the after code, at its real indentation. It replaces every line in the range,
     and GitHub shows it as before and after with an apply button. Name any import or
