@@ -22,7 +22,7 @@ Match this to the requested lifecycle. Ask when none was given. Owned-only capsu
 Run this skill's trusted bundled [`inspect-capsule.mjs`](../scripts/inspect-capsule.mjs), resolving its path from the skill directory and passing the capsule root as its argument. Use its safe output instead of printing files that may contain claim tokens or secrets.
 
 - `lakebed.json` names an exact update target. State its deploy ID and URL when resolvable, then get target-specific approval unless the request already approved it.
-- `.lakebed/deploy.json` is only a legacy candidate. Check its saved API and URL or deploy ID; when authenticated, compare it with `npx lakebed@0.0.41 deploy list --json`. If create versus update stays unclear, explain both and get approval for either.
+- `.lakebed/deploy.json` is only a legacy candidate. Check its saved API and URL or deploy ID; when authenticated, compare it with `npx lakebed@0.0.41 deploy list --json`. Lakebed creates a new deploy when the saved one is gone or expired, so explain both outcomes and get approval for either, and treat a returned deploy ID that differs from the saved one as a new deploy.
 - No binding or candidate means create.
 
 Before an owned update, report local server-environment key names, never values. Lakebed replaces the hosted set with the local set; an absent or empty file removes all hosted keys. Get approval for that replacement.
