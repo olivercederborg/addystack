@@ -25,7 +25,10 @@ writes with `project.py queue`. A reply goes back, with each reason, when:
   the reply says what waits, and how much, without being asked.
 
 The send-back names the top item, its need, and `queue done` for an answer the coordinator
-hasn't recorded, since an answered call left on the queue would come back as its top.
+hasn't recorded, since an answered call left on the queue would come back as its top. It
+posts the reply a second time, since T3 shows a reply before a Stop hook judges it, which is
+why format rules go to the reply log (reply_budget.py); this check still sends back, since a
+logged row would leave the user to ask what waits, the failure it's here for.
 
 A project from before the queue keeps its open calls only in turn blocks. Until it has a
 Queue section, an item the reply before this turn's prompt named, and this reply doesn't,
