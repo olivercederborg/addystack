@@ -173,6 +173,14 @@ class Classify(Repo):
         self.assertEqual(self.kinds(head),
                          {"deploy": [f"commit {sha} 'Ship to production': says \"Ship to production\""]})
 
+    def test_a_subject_that_ships_a_change_claims_no_deploy(self):
+        # addystack f3cd47e and 267f28e: "Ship" as the subject's verb, with no environment,
+        # made verify-work ask for deploy evidence that couldn't exist.
+        self.change({"src/a.ts": "x\n"}, "Ship the confirmed cause's fix in slim-scope's shape, not only the lines "
+                                         "it needs")
+        self.change({"src/b.ts": "x\n"}, "Ship the turn block spec and cite it when the user keeps no reply rules file")
+        self.assertEqual(self.kinds("HEAD"), {})
+
     def test_bad_revisions_raise(self):
         with self.assertRaisesRegex(evidence.EvidenceError, "git diff"):
             evidence.classify(self.repo, self.base, "nope")
