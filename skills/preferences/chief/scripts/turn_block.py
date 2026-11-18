@@ -161,9 +161,15 @@ def scan(lines):
         if opener:
             indent, fence = len(opener.group(1)), opener.group(2)
     top = max((at for at, line in enumerate(lines) if not marks[at] and CARRIER.match(line)), default=len(lines))
-    # A fold still open at the block holds it, and the options above it, collapsed.
-    folds = [match.group(1) for at in range(top) if not marks[at] for match in DETAILS.finditer(lines[at])]
-    sure = sure and folds.count("") <= folds.count("/")
+    # A fold still open at the block holds it, and the options above it, collapsed. Any
+    # `<details` may open one, but only a `</details>` that starts its line, an HTML block of
+    # its own, surely closes one: in a code span or an attribute it's text.
+    depth = 0
+    for at in range(top):
+        for match in DETAILS.finditer(lines[at]) if not marks[at] else ():
+            closes = match.group(1) and match.start() == len(lines[at]) - len(lines[at].lstrip(" ")) <= 3
+            depth = max(depth - 1, 0) if closes else depth + (not match.group(1))
+    sure = sure and not depth
     for at in range(top):
         line = lines[at]
         after = lines[at + 1] if at + 1 < len(lines) else ""

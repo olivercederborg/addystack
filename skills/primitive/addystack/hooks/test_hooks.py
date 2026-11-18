@@ -6424,6 +6424,10 @@ class TurnBlock(unittest.TestCase):
             "a → test #12\n\n<template>\n\na → merge #12\n\n",
             'a → test #12\n\n<details id="checks"><summary>Checks</summary>\n\na → merge #12\n\n',
             "<details><summary>Checks</summary>\n\n- ok\n\n</details>\n\n<details>\n\n",
+            # Codex r2: a closer in a code span, in an attribute, or before the fold closes nothing.
+            'Example: `</details>`.\n\n- `a` → test #12\n\n<details id="checks"><summary>More</summary>\n\n- `a` → merge #12\n\n',
+            '<span title="</details>">x</span>\n\n<details><summary>More</summary>\n\nmore\n\n',
+            "</details>\n\n<details><summary>More</summary>\n\nmore\n\n",
             # An autolink is fine, but not a raw-text tag beside or in it.
             "See <https://x.y> or <title>.\n\n",
             "See <ab:`> and `<title>`.\n\n",
