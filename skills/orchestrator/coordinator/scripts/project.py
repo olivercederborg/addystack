@@ -9,6 +9,13 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L]
                                     set a Workers row's columns, adding the row if it's new
   project.py DIR listen KEY VALUE   set `- KEY: VALUE` under Listening
+  project.py DIR queue add KIND NAME [--from F]
+                                    queue an item that waits on the user (KIND: stuck,
+                                    decide, review, or do), then print the queue
+  project.py DIR queue done ID --answer A
+                                    take the item off the queue, adding its answer under
+                                    Decisions, then print the queue
+  project.py DIR queue show         print the strip and need a reply shows, and every item
   project.py DIR phase SLUG --result R (--goal G --proof P | --park REASON)
                                     end the running phase: save project.md to
                                     phases/<NN>-SLUG.md, add its line under Phases, reset
@@ -19,7 +26,7 @@ of the file byte for byte and replaces the file atomically.
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
 
-TEXT or VALUE `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
+TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
 `done: #12 MERGED`. Exits 2 on a usage error and 1 on a file it can't edit."""
 from __future__ import annotations
@@ -34,6 +41,8 @@ import tempfile
 import time
 from datetime import date, datetime
 from pathlib import Path
+
+import project_queue
 
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
           "replaced by <worker>", "absorbed into <worker>")
@@ -50,6 +59,13 @@ Coordinator: {coordinator} · Checkout: {checkout} · Mode: {mode}
 {goal}
 Proof: {proof}
 Follow-ups: none
+
+## Queue
+
+Next id: 1
+
+| # | Kind | Name | From | Since |
+|---|---|---|---|---|
 
 ## Decisions
 
@@ -70,6 +86,27 @@ Follow-ups: none
 
 class ProjectError(Exception):
     pass
+
+
+def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
+          source: str | None = None, ident: int | None = None, answer: str | None = None) -> str:
+    """Runs a `queue` action on lines and returns what it prints: the queue as `show` gives
+    it, after a line naming the item an add or done touched. `done` records the answer
+    under Decisions, so a resolved call keeps its trail."""
+    try:
+        if action == "add":
+            item = project_queue.add(lines, kind, name, source or "coordinator")
+            head = [f"queued {item.id}: {item.kind} · {item.name}"]
+        elif action == "done":
+            text = _line("answer", answer or "")
+            item = project_queue.done(lines, ident)
+            decide(lines, f"queue {item.id} ({item.kind}) {item.name} → {text}")
+            head = [f"done {item.id}: {item.kind} · {item.name}"]
+        else:
+            head = []
+        return "\n".join([*head, project_queue.show(project_queue.read(lines))])
+    except project_queue.QueueError as error:
+        raise ProjectError(str(error))
 
 
 def _section(lines: list[str], name: str) -> tuple[int, int]:
@@ -559,6 +596,15 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
+    queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
+    adding = queued.add_parser("add", allow_abbrev=False)
+    adding.add_argument("kind", choices=project_queue.KINDS)
+    adding.add_argument("name")
+    adding.add_argument("--from", dest="source")
+    resolving = queued.add_parser("done", allow_abbrev=False)
+    resolving.add_argument("ident", type=int, metavar="id")
+    resolving.add_argument("--answer", required=True)
+    queued.add_parser("show", allow_abbrev=False)
     args = parser.parse_args(argv)
     if args.command == "phase" and (args.goal is None) != (args.proof is None):
         ending.error("--goal needs --proof, and --park takes neither")
@@ -592,6 +638,15 @@ def main(argv: list[str]) -> int:
         lines = path.read_text().split("\n")
         if args.command == "tick":
             return _tick(args.dir, lines, args.send)
+        if args.command == "queue":
+            answer = getattr(args, "answer", None)
+            printed = queue(lines, args.action, kind=getattr(args, "kind", None), name=getattr(args, "name", None),
+                            source=getattr(args, "source", None), ident=getattr(args, "ident", None),
+                            answer=sys.stdin.read() if answer == "-" else answer)
+            if args.action != "show":
+                _write(path, "\n".join(lines))
+            print(printed)
+            return 0
         if args.command in ("decide", "learn"):
             body = sys.stdin.read() if args.text == "-" else args.text
             (decide if args.command == "decide" else learn)(lines, body)

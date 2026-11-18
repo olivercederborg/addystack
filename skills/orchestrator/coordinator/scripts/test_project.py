@@ -141,6 +141,43 @@ class Project(Fixture, unittest.TestCase):
         self.assertIn(f"## Decisions\n\n- {TODAY} · first\n\n## Workers", text)
         self.assertIn("|---|---|---|---|---|---|\n| a | — | — | running | — | — |\n\n## Learnings", text)
         self.assertIn(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Heartbeat: none\n", text)
+        self.assertIn("Follow-ups: none\n\n## Queue\n\nNext id: 1\n\n| # | Kind | Name | From | Since |\n"
+                      "|---|---|---|---|---|\n\n## Decisions", text)
+        self.assertEqual(self.project("queue", "show").stdout, "Nothing waits on the user.\n")
+
+
+class Queue(Fixture, unittest.TestCase):
+    def test_add_done_and_show_keep_the_queue_and_its_answers(self):
+        added = self.project("queue", "add", "do", "pull the Mac's dotfiles").stdout
+        self.assertTrue(added.startswith("queued 1: do · pull the Mac's dotfiles\n1 of 1 needs you · coordinator\n"))
+        self.project("queue", "add", "decide", "keep the v1 export", "--from", "export-v2 <t3-thread://v2/e/8f>")
+        self.assertEqual(self.project("queue", "show").stdout.split("\n")[:2], [
+            "1 of 2 need you · export-v2 <t3-thread://v2/e/8f>",
+            'needs: [{"id":2,"kind":"decide","name":"keep the v1 export"}]'])
+        self.assertIn("## Queue\n\nNext id: 3\n\n| # | Kind | Name | From | Since |\n|---|---|---|---|---|\n"
+                      "| 1 | do | pull the Mac's dotfiles | coordinator |", self.text())
+        self.assertTrue(self.text().index("## Queue") < self.text().index("## Decisions"))
+        done = self.project("queue", "done", "2", "--answer", "-", stdin='the user: "a"\n').stdout
+        self.assertTrue(done.startswith("done 2: decide · keep the v1 export\n1 of 1 needs you · coordinator\n"))
+        self.assertIn(f"merged 31ddd00.\n- {TODAY} · queue 2 (decide) keep the v1 export → the user: \"a\"\n",
+                      self.text())
+
+    def test_a_refused_queue_edit_leaves_the_file_untouched(self):
+        self.project("queue", "add", "decide", "keep the v1 export")
+        before = self.text()
+        for args, error in [(["add", "decide", "ok"], "a word of 3+ letters"),
+                            (["done", "7", "--answer", "a"], "no open Queue item 7"),
+                            (["done", "1", "--answer", "  "], "--answer takes one non-empty line")]:
+            with self.subTest(args=args):
+                self.assertIn(error, self.project("queue", *args, code=1).stderr)
+                self.assertEqual(self.text(), before)
+        self.project("queue", "add", "blocked", "keep it", code=2)
+
+    def test_a_phase_keeps_the_open_queue(self):
+        self.project("queue", "add", "decide", "keep the v1 export")
+        queue = self.text()[self.text().index("## Queue"):self.text().index("## Decisions")]
+        self.project("phase", "audit", "--result", "five reports", *NEXT)
+        self.assertIn(queue, self.text())
 
 
 LISTENING = PROJECT[PROJECT.index("## Listening"):]
