@@ -38,7 +38,7 @@ Tie the stop to the field that caused it:
   the architecture pick, and the go that starts the build.
 - **`trust`**: `draft` stops at a draft stack; `gate` marks ready and merges once the
   merge gate allows it; `merge-on-go` merges when the user's go names merging.
-- **`pushVia: gh-stack`**: a hook blocks `git push` and the agent pushes with `gh stack`.
+- **`pushVia: gh-stack`**: the agent pushes and opens PRs with `gh stack`.
 
 Name the source: the rule's index and its `match`, or the repo file's path. When the
 repo file made a field stricter, say the user's config can't loosen it there.
