@@ -90,7 +90,7 @@ class Render(unittest.TestCase):
                          [filled(e["command"]) for e in MANIFEST["claude"] if e["event"] == "PreToolUse" and e["matcher"] == "Bash"])
         self.assertEqual(next(h for h in bash if h["command"].endswith("merge-gate.py")),
                          {"type": "command", "command": filled("{{kit}}/hooks/merge-gate.py"), "timeout": 60, "onFailure": "block"})
-        self.assertNotIn("matcher", hooks["Stop"][0])
+        self.assertNotIn("matcher", hooks["SessionStart"][0])
 
     def test_each_event_runs_in_manifest_order(self):
         for runtime in hook_parity.RUNTIMES:
@@ -118,9 +118,7 @@ class Render(unittest.TestCase):
         names = {event: [pathlib.PurePath(c.split()[0]).name for c in commands({event: groups})]
                  for event, groups in hooks.items()}
         self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py"])
-        self.assertEqual(names["Stop"], ["bare_references.py", "routine_stop.py", "upload_handoff.py", "reply_budget.py",
-                                         "coordinator_queue.py"])
-        self.assertEqual([len(groups) for groups in hooks.values()], [1, 1, 1])
+        self.assertEqual([len(groups) for groups in hooks.values()], [1, 1])
 
     def cli(self, *args):
         return subprocess.run([sys.executable, str(HOOKS / "render_hooks.py"), *args],
@@ -144,17 +142,17 @@ class Render(unittest.TestCase):
         # it; a user's own hook on a script in the kit's folder stays.
         ledger = pathlib.Path(os.environ["ADDYSTACK_STATE"], "installed.json")
         stale_command = f"{HOOKS}/no-longer-in-the-manifest.py"
-        ledger.write_text(json.dumps({"version": 1, "hooks": {"claude": [["Stop", stale_command]]}}))
+        ledger.write_text(json.dumps({"version": 1, "hooks": {"claude": [["SessionStart", stale_command]]}}))
         self.addCleanup(ledger.unlink)
         with tempfile.TemporaryDirectory() as folder:
             settings = pathlib.Path(folder, "settings.json")
             mine = {"hooks": [{"type": "command", "command": "~/bin/mine.sh"}]}
             mine_in_kit = {"hooks": [{"type": "command", "command": f"{HOOKS}/my-personal-hook.sh"}]}
             stale = {"hooks": [{"type": "command", "command": stale_command}]}
-            settings.write_text(json.dumps({"hooks": {"Stop": [mine, stale, mine_in_kit], "Notification": [mine]}}))
+            settings.write_text(json.dumps({"hooks": {"SessionStart": [mine, stale, mine_in_kit], "Notification": [mine]}}))
             hooks = json.loads(self.cli("--runtime", "claude", "--profile", "darwin", "--into", str(settings)))["hooks"]
             self.assertEqual(hooks["Notification"], [mine])
-            self.assertEqual(hooks["Stop"], [mine, *render_hooks.render("claude", "darwin")["Stop"], mine_in_kit])
+            self.assertEqual(hooks["SessionStart"], [mine, *render_hooks.render("claude", "darwin")["SessionStart"], mine_in_kit])
 
     def test_without_into_prints_a_hooks_file(self):
         out = self.cli("--runtime", "codex", "--profile", "linux")
@@ -174,26 +172,26 @@ class ParityProfiles(unittest.TestCase):
     def test_a_hook_for_every_host_is_still_required_on_linux(self):
         home = RenderedHome(self, "linux")
         hooks = render_hooks.render("claude", "linux")
-        hooks["Stop"][0]["hooks"] = [h for h in hooks["Stop"][0]["hooks"] if not h["command"].endswith("pr_watch.py")]
+        for group in hooks["PreToolUse"]:
+            group["hooks"] = [h for h in group["hooks"] if not h["command"].endswith("ready-gate.py")]
         home.write("claude", hooks)
         self.assertEqual(hook_parity.drift("claude", profile="sandbox"),
-                         [f"claude: missing Stop {filled('{{kit}}/hooks/pr_watch.py')}"])
+                         [f"claude: missing PreToolUse {filled('{{kit}}/hooks/ready-gate.py')}"])
 
     def test_a_reordered_hook_is_drift(self):
         home = RenderedHome(self, "darwin")
         hooks = render_hooks.render("codex", "darwin")
-        stop = hooks["Stop"][0]["hooks"]
-        stop[1], stop[2] = stop[2], stop[1]
+        start = hooks["SessionStart"][0]["hooks"]
+        start[1], start[2] = start[2], start[1]
         home.write("codex", hooks)
         self.assertEqual(hook_parity.drift("codex", profile="darwin"), [
-            "codex: Stop runs bare_references.py, upload_handoff.py, routine_stop.py, reply_budget.py, "
-            "coordinator_queue.py; manifest order is bare_references.py, routine_stop.py, upload_handoff.py, "
-            "reply_budget.py, coordinator_queue.py"])
+            "codex: SessionStart runs reply-shape-context.py, skills-checkout-check.py, reply-shape-context.py --rules; "
+            "manifest order is reply-shape-context.py, reply-shape-context.py --rules, skills-checkout-check.py"])
 
     def test_regrouping_without_reordering_isnt_drift(self):
         home = RenderedHome(self, "darwin")
         hooks = render_hooks.render("codex", "darwin")
-        hooks["Stop"] = [{"hooks": [hook]} for hook in hooks["Stop"][0]["hooks"]]
+        hooks["SessionStart"] = [{"hooks": [hook]} for hook in hooks["SessionStart"][0]["hooks"]]
         home.write("codex", hooks)
         self.assertEqual(hook_parity.drift("codex", profile="darwin"), [])
 

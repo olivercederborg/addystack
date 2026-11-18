@@ -13,7 +13,6 @@ inputs=(skills/primitive/addystack/hooks skills/optional/reply-shape/SKILL.md re
         skills/primitive/addystack/scripts/stack.sh skills/primitive/addystack/lib
         skills/primitive/addystack/addystack.defaults.jsonc skills/primitive/addystack/schema
         skills/primitive/addystack/bin skills/primitive/addystack/core
-        skills/primitive/addystack/references/turn-block.md
         skills/primitive/review-loop/scripts/verdicts.py)
 cd "$(git rev-parse --show-toplevel)"
 # --no-renames lists both sides, so a rename out of the hooks folder counts.

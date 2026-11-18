@@ -3,7 +3,7 @@
 Takes over hooks/render_hooks.py and hooks/hook_parity.py, which stay as thin wrappers
 until M3. Each hooks/manifest.json entry has an `id`, `tags` (`safety`, `workflow`,
 `replies`, `machine`), an optional `requires` (a dotted Resolved path that must be truthy,
-such as `replies.turnBlock`, or `path=value` for one that must equal a string, such as
+such as `replies.rules`, or `path=value` for one that must equal a string, such as
 `replies.style=reply-shape`), and a `{{kit}}` prefix on its command. Selection runs in
 this order and keeps manifest order, since Codex trusts a hook by its position:
 

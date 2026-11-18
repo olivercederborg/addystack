@@ -2,45 +2,25 @@
 """Finds whether a Claude Code or Codex session is a T3 delegated child, from T3's state
 database (T3_STATE_DB overrides its path). A child is a `thread:delegated-task:` thread,
 or a coordinator's worker on a linked machine: a top-level thread there whose first user
-message an agent wrote, with a line starting "Worker of: t3-thread://". The hooks that
-read it: reply-shape-context.py, which skips the reply rules for a child that doesn't opt
-in, bare_references.py, which leaves a child's replies to its parent unless it opts in,
-and routine_stop.py, which holds a worker's turn block to its brief's project. Any doubt, such
-as a missing, locked, or changed database, reads as "not a child".
+message an agent wrote, with a line starting "Worker of: t3-thread://".
+reply-shape-context.py reads it to skip the reply rules for a child that doesn't opt in.
+Any doubt, such as a missing, locked, or changed database, reads as "not a child".
 
 It also lists the messages agents sent into a session's thread, such as an owner's
 `t3_thread_send` report, which a transcript records like a message the user typed;
-transcripts.py drops them, and names the project a ◆ coordinator thread runs, which
-coordinator_queue.py reads."""
+transcripts.py drops them."""
 import json, os, pathlib, re, sqlite3
 
 STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
 # A coordinator's brief names it on its own line.
 _WORKER_OF = re.compile(r"^Worker of: t3-thread://\S", re.M)
-# A worker's brief also names its project, as the coordinator's `◆` title does.
-_PROJECT = re.compile(r"^Project: *(\S.*)", re.M)
 # A brief line that asks for the user's reply rules, as an eval player that plays their session does.
 OPT_IN = "Reply rules: on"
-# A coordinator's title, `◆ <project>`, after any status emoji, as in `🟡 ◆ suite-audit`.
-_COORDINATOR = re.compile(r"(?:^|\s)◆ (\S+)")
 
 
 def rules_on(brief):
     """True when a child's brief has a line starting with OPT_IN."""
     return isinstance(brief, str) and any(line.startswith(OPT_IN) for line in brief.splitlines())
-
-
-def worker_project(brief):
-    """The name on a coordinator worker's `Project:` line, or None for any other brief. The
-    coordinator opens the brief with its `Mode:`, `Worker of:`, and `Project:` lines, after
-    any "Act as the …" line T3 adds, so a brief that quotes them further down, in a code
-    block or not, isn't a worker's."""
-    if not isinstance(brief, str):
-        return None
-    head = re.sub(r"\AAct as the [^\n]*\n", "", brief.strip()).lstrip()
-    head = re.split(r"\n\s*\n", head, maxsplit=1)[0]
-    found = _PROJECT.search(head) if head.startswith(("Mode: ", "Worker of: ")) and _WORKER_OF.search(head) else None
-    return found.group(1).strip() if found else None
 
 
 def connect():
@@ -55,29 +35,6 @@ def threads(db, session_id):
         "where json_extract(payload_json, '$.nativeThreadRef.nativeId') = ?1 "
         "or json_extract(payload_json, '$.nativeConversationHeadRef.nativeId') = ?1",
         (session_id,)).fetchall()
-
-
-def coordinator_project(session_id):
-    """(project, thread id) when the session's T3 thread is a ◆ coordinator, read from its
-    title; None for any other session or a database it can't read."""
-    if not isinstance(session_id, str) or not session_id:
-        return None
-    try:
-        db = connect()
-        try:
-            owners = [row[0] for row in threads(db, session_id)]
-            titles = db.execute(
-                f"select thread_id, title from orchestration_v2_projection_threads where thread_id in "
-                f"({','.join('?' * len(owners))})", owners).fetchall() if owners else []
-        finally:
-            db.close()
-    except sqlite3.Error:
-        return None
-    for thread, title in titles:
-        found = _COORDINATOR.search(title) if isinstance(title, str) else None
-        if found:
-            return found.group(1), thread
-    return None
 
 
 def delegated_brief(session_id):

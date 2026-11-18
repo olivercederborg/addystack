@@ -1,9 +1,8 @@
 """Tests for lib/hookset.py: every manifest entry carries an id, tags, and a {{kit}}
 command; select() applies the preset's tags, then requires, then enable and disable, then
 hosts, in manifest order; a config shaped like the maintainer's selects today's whole
-manifest (plan check 1); turnBlock off drops routine_stop and reply_budget even under
-`all` (check 7); render() groups by event and matcher; and drift() compares only the hooks
-addystack installs."""
+manifest (plan check 1); render() groups by event and matcher; and drift() compares only the
+hooks addystack installs."""
 from __future__ import annotations
 
 import json, os, pathlib, shlex, sys, tempfile, unittest, unittest.mock
@@ -90,18 +89,6 @@ class Select(unittest.TestCase):
                            for e in hookset.select(resolved, runtime, host)]
                     self.assertEqual(got, want)
 
-    def test_turn_block_off_drops_routine_stop_and_reply_budget(self):
-        """Check 7, and an explicit enable can't bypass `requires`."""
-        for enable in ([], ["routine-stop", "reply-budget"]):
-            resolved = resolve(json.dumps({"hooks": {"preset": "all", "enable": enable},
-                                           "replies": {"turnBlock": False}}))
-            for runtime in MANIFEST:
-                with self.subTest(enable=enable, runtime=runtime):
-                    selected = ids(hookset.select(resolved, runtime, "darwin"))
-                    self.assertNotIn("routine-stop", selected)
-                    self.assertNotIn("reply-budget", selected)
-                    self.assertIn("bare-references", selected)
-
     def test_reply_hooks_follow_their_preferences(self):
         """D11: a reply hook whose preference is off isn't selected, even when enabled."""
         cases = [({"style": "own"}, []),
@@ -118,13 +105,13 @@ class Select(unittest.TestCase):
                     self.assertEqual(got, want)
 
     def test_enable_and_disable_by_id(self):
-        resolved = resolve('{ "hooks": { "enable": ["bare-references"], "disable": ["merge-gate"] } }')
+        resolved = resolve('{ "hooks": { "enable": ["skills-checkout-check"], "disable": ["merge-gate"] } }')
         for runtime in MANIFEST:
             with self.subTest(runtime=runtime):
                 selected = ids(hookset.select(resolved, runtime, "darwin"))
-                self.assertIn("bare-references", selected)
+                self.assertIn("skills-checkout-check", selected)
                 self.assertNotIn("merge-gate", selected)
-                self.assertNotIn("routine-stop", selected)
+                self.assertNotIn("keychain-home-guard", selected)
 
     def test_hosts_apply_last(self):
         resolved = resolve('{ "hooks": { "preset": "all" } }')
@@ -255,7 +242,7 @@ class Drift(unittest.TestCase):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
         self.settings = pathlib.Path(folder.name, "settings.json")
-        self.resolved = resolve('{ "hooks": { "preset": "all" }, "replies": { "turnBlock": true } }')
+        self.resolved = resolve(json.dumps({"hooks": {"preset": "all"}, "replies": {"rules": str(RULES)}}))
         self.hooks = hookset.render(hookset.select(self.resolved, "claude"))
 
     def drift(self):
@@ -266,15 +253,15 @@ class Drift(unittest.TestCase):
         self.assertEqual(self.drift(), [])
 
     def test_a_users_own_hook_isnt_compared(self):
-        self.hooks["Stop"].append({"hooks": [{"type": "command", "command": "~/bin/my-hook.sh"}]})
+        self.hooks.setdefault("Stop", []).append({"hooks": [{"type": "command", "command": "~/bin/my-hook.sh"}]})
         self.assertEqual(self.drift(), [])
 
     def test_a_users_hook_sharing_a_kit_scripts_name_isnt_compared(self):
-        self.hooks["Stop"].append({"hooks": [{"type": "command", "command": "/opt/my-hooks/merge-gate.py"}]})
+        self.hooks.setdefault("Stop", []).append({"hooks": [{"type": "command", "command": "/opt/my-hooks/merge-gate.py"}]})
         self.assertEqual(self.drift(), [])
 
     def test_a_users_hook_on_a_kit_script_no_manifest_entry_runs_isnt_compared(self):
-        self.hooks["Stop"].append({"hooks": [{"type": "command",
+        self.hooks.setdefault("Stop", []).append({"hooks": [{"type": "command",
                                               "command": f"{self.resolved['kit']}/hooks/my-personal-hook.sh"}]})
         self.assertEqual(self.drift(), [])
 
@@ -288,7 +275,7 @@ class Drift(unittest.TestCase):
         with tempfile.TemporaryDirectory() as legacy:
             mine = pathlib.Path(legacy, "merge-gate.py")
             mine.write_text("#!/bin/sh\n")
-            self.hooks["Stop"].append({"hooks": [{"type": "command", "command": str(mine)}]})
+            self.hooks.setdefault("Stop", []).append({"hooks": [{"type": "command", "command": str(mine)}]})
             with unittest.mock.patch.object(hookset, "_legacy_dirs", lambda: (legacy,)):
                 self.assertEqual(self.drift(), [])
 
@@ -302,14 +289,13 @@ class Drift(unittest.TestCase):
         self.assertEqual(drift, [f"claude: extra SessionStart {link}"])
 
     def test_a_missing_selected_hook_is_drift(self):
-        stop = self.hooks["Stop"][0]["hooks"]
-        dropped = stop.pop()
-        self.assertEqual(self.drift(), [f"claude: missing Stop {dropped['command']}"])
+        dropped = self.hooks["SessionStart"][0]["hooks"].pop()
+        self.assertEqual(self.drift(), [f"claude: missing SessionStart {dropped['command']}"])
 
     def test_a_hook_the_config_no_longer_selects_is_extra(self):
-        self.resolved["replies"]["turnBlock"] = False
-        self.assertEqual(self.drift(), [f"claude: extra Stop {hookset._kit(self.resolved)}/hooks/{name}"
-                                        for name in ("routine_stop.py", "reply_budget.py", "coordinator_queue.py")])
+        self.resolved["replies"]["rules"] = None
+        self.assertEqual(self.drift(), [f"claude: extra SessionStart {hookset._kit(self.resolved)}/hooks/"
+                                        "reply-shape-context.py --rules"])
 
 
 class ClaudeConfigDir(unittest.TestCase):

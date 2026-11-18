@@ -1,7 +1,5 @@
-# Copy of skills/primitive/addystack/hooks/project_queue.py, written by scripts/sync-copies.py: edit the source, then run the script.
 """A coordinator project's queue: every call and Do that waits on the user, in the `## Queue`
-table of its project.md. The coordinator writes it only through `project.py queue`, and
-coordinator_queue.py, a Stop hook, reads it to hold each reply in that thread to it.
+table of its project.md. The coordinator writes it only through `project.py queue`.
 
 Its replies used to carry the queue in the turn block alone, rewritten from memory each
 turn, with the waiting calls in `standing`, a list the reply doesn't show. In the 14 days

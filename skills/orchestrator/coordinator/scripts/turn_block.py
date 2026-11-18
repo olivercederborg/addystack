@@ -53,7 +53,7 @@ shows the reply after JS `trim()`, so a pick needs the block certain both as wri
 trimmed, with the same Turn. Known limits: code spans are read line by line, so one that
 wraps onto the next line doesn't hide a mention there, and a record with more than one
 text part is joined untrimmed here but trimmed part by part by the importer, which 0 of
-26,386 assistant records did in 14 days. `in_fence` is the fence reader bare_references.py
+26,386 assistant records did in 14 days. `in_fence` is the fence reader check_examples.py
 shares."""
 from __future__ import annotations
 
@@ -119,7 +119,7 @@ class Turn:
     elapsed: str | None  # running only
     project: str | None = None  # 1-40 characters; threads that share it group into one row
     # Items still open from earlier replies that don't block this turn's next step. They
-    # never count as needing the user: attention and the routine-stop rule read needs only.
+    # never count as needing the user: attention reads needs only.
     standing: tuple[Need, ...] = ()
 
     @property
