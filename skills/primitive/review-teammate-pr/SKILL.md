@@ -71,11 +71,11 @@ callers, probe them with `scripts/probe-worktree.sh`, comparing the compiler's e
 lists from a tree that typechecks cleanly.
 
 **Pick each shape** before judging the PR's approach or choosing a fix. For each
-pattern the PR adds and each fix you'd suggest, read the library's own API and docs for
-the job, the repo's rules for the area (`AGENTS.md`, ADRs, `CONTEXT.md`, design docs),
-and the nearest sibling code. Pick the cleanest long-term shape at the cause that fits
-the PR's scope; fewest lines only breaks a tie. When the fix at the cause would grow the
-PR well past its scope, pick the in-scope fix and name the cause as a follow-up.
+pattern the PR adds and each fix you'd suggest, read the library's or tool's own API,
+config, and docs for the job, the repo's rules for the area (`AGENTS.md`, ADRs,
+`CONTEXT.md`, design docs), and the code that already does the job. Pick the cleanest
+long-term shape at the cause that fits the PR's scope; fewest lines only breaks a tie.
+Past the PR's scope, pick the in-scope fix and name the cause as a follow-up.
 
 For a large PR, split the lenses across parallel sub-agents. On every PR, also run a
 read-only pass by the other provider in parallel, as a T3 child task on the
