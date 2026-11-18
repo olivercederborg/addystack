@@ -10,7 +10,8 @@ installed is a note, since a user may install some with `--skill` and update lea
 removed one removed; with the claude host enabled and verify-work in its skill folder,
 agents/work-verifier.md in Claude Code's folder is the work-verifier agent, as install links
 it (reconcile.agent()), or a file holding verify-work's copy's text; the installed hooks match the selection
-(hookset.drift); and the tools the policy needs, `gh` and `gh stack` when the defaults or
+(hookset.drift), and with the codex host enabled, `codex app-server` loads, trusts, and
+enables each kit hook in its hooks.json (_codex_skips); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
 A check skipped because the config didn't resolve reports `skipped: …`, with ok True,
