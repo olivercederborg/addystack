@@ -149,7 +149,8 @@ design change back through `architect`, log both, and keep going.
 4. Report only what is new or still open, with the size in the fold's checks line, as
    `diff +120 −30 → +150 −30`. New findings continue the numbering.
 
-After three rounds without **Clean**, list what's still open and let the user decide.
+After three rounds without **Clean**, start no fourth: fix the third round's findings whose
+call is **fix**, then list what's still open and let the user decide.
 With autonomy, put the open findings at the top of the PR description instead and go
 on; a later fix still gets verify-work's re-check.
 Every round counts toward the three, including a "confirmation" round. When a round's
