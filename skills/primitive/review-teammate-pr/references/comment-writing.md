@@ -7,9 +7,9 @@ after one read.
 - **Match the wording to the user's decision:**
   - **blocking**: what happens, then the fix: "X does Y. Z would fix it."
   - **non-blocking**: prefix `Non-blocking:`, and end on the fix or the test.
-    For a defect, start with the exact prefix `Non-blocking:`, then add a separate
-    sentence saying the approval waits on its fix. Other non-blocking findings can
-    wait for a later PR.
+    For a defect or an in-scope Cleanup, which hold the approval, start with the exact
+    prefix `Non-blocking:`, then add a separate sentence saying the approval waits on
+    its fix. Other non-blocking findings can wait for a later PR.
   - **question**: prefix `Question:` and ask it. Only when the code can't show the
     intent, such as a contract a later milestone may need. A question never blocks.
 - **Lead with what happens:** the first sentence states, as fact, what a user or caller

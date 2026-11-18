@@ -22,10 +22,11 @@ before you report if its text has left your context.
 
 A finding line here shows its call in place of a severity: **blocking**,
 **non-blocking**, **question**, or **drop**. A kept finding holds the approval when its
-call is blocking or it's a **defect**, a verified error this PR introduces;
-non-blocking style, follow-up ideas, and questions about intent don't. A real problem
-the PR didn't cause or worsen, such as a security gap beside it, is a note for the user
-outside the findings: filing it is their call.
+call is blocking, it's a **defect** (a verified error this PR introduces), or it's a
+Cleanup on lines this PR wrote whose better shape fits its scope, since a merged PR is
+finished. Optional niceties, follow-up ideas, and questions about intent don't. A real
+problem the PR didn't cause or worsen, such as a security gap beside it, is a note for
+the user outside the findings: filing it is their call.
 
 When a verified finding can't be hit yet and depends on what the author meant, such as
 a contract for a later milestone, its call is **question**. Cite the PR's own test or
@@ -239,7 +240,7 @@ When the author has addressed the comments, or a push dismissed the user's appro
 End by recommending the step the verdict calls for:
 
 - **Approve**: approve.
-- **Approve, with non-blocking style or follow-up ideas left**: approve with them as a follow-up PR; approve.
+- **Approve, with Optional niceties or follow-up ideas left**: approve with them as a follow-up PR; approve.
 - **Held** by an open finding: post any new findings without approving.
 
 **Done when:** every earlier comment has a status, and there is a verdict: approve
