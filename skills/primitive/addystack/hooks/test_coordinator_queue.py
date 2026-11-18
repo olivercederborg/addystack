@@ -178,6 +178,10 @@ class CoordinatorQueue(unittest.TestCase):
         found = self.run_on("🟡 **Request a reviewer?**\n\n" + block(options=post))
         self.assertIn('{"state":"done","standing":[{"id":1,"kind":"decide","name":"request a reviewer on #6013 and '
                       '#5463"}]}', found)
+        named = self.run_on("🟡 **Request a reviewer?**\n\n" + block(options=post, standing=[
+            need(3, "request a reviewer on #6013 and #5463")]))  # the call it stops on, already named: once
+        self.assertIn('{"state":"done","standing":[{"id":1,"kind":"decide","name":"request a reviewer on #6013 and '
+                      '#5463"}]}', named)
         long = [{"key": "a", "class": "stop:post", "text": "request a reviewer on #6013 and #5463, " + "then " * 20}]
         found = self.run_on("🟡 **Request a reviewer?**\n\n" + block(options=long))
         self.assertIn('{"state":"done","standing":[]}', found)
@@ -245,6 +249,10 @@ class CoordinatorQueue(unittest.TestCase):
                             transcript_path=str(transcript))
         self.assertIn('{"id":1,"kind":"decide","name":"stop format send-backs"},'
                       '{"id":2,"kind":"do","name":"pull the dotfiles"}]}', found)
+        # A call the reply renumbered is the same call: it goes in once.
+        renumbered = block("running", standing=[need(1, "stop format send-backs")], elapsed="2 min")
+        self.assertIn('{"state":"done","standing":[{"id":1,"kind":"decide","name":"stop format send-backs"}]}',
+                      self.run_on(renumbered, transcript_path=str(transcript)))
         # Two items one block names apart stay two, even under one name.
         twins = block("running", needs=[need(10, "approve deployment"), need(11, "approve deployment")], elapsed="1 min")
         self.assertIn('{"id":1,"kind":"decide","name":"approve deployment"},{"id":2,"kind":"decide","name":"approve '
