@@ -233,29 +233,42 @@ def _hooks(value: Optional[Resolved]) -> Check:
     trust = _codex_skips(value) if "codex" in _enabled(value) else []
     if lines or trust:
         fix = " and ".join(step for step, needed in (("addystack install", lines),
-                                                     ("trust and enable each in codex's /hooks", trust)) if needed)
+                                                     (_CODEX_FIX, trust)) if needed)
         return Check("hooks", False, "; ".join(lines + trust), fix)
     return Check("hooks", True, "match the selection" if _enabled(value) else "no host enabled", None)
 
 
+_CODEX_FIX = ("trust and enable each in codex's /hooks; for one that isn't loaded, check "
+              "`[features] hooks` in its config.toml and that hooks.json parses")
+
+
 def _codex_skips(value: Resolved) -> List[str]:
-    """A line for each kit hook Codex lists but won't run: untrusted, or disabled. Codex keys
-    both by a hook's position, so removing an entry above a gate hands the gate its state.
-    Nothing when codex can't answer, which leaves the check to drift."""
+    """A line for each kit hook in Codex's hooks.json that Codex won't run: not loaded,
+    untrusted, or disabled. Codex keys trust and the enabled flag by a hook's position, so
+    removing an entry above a gate hands the gate its state. Nothing when codex can't
+    answer, or hooks.json can't be read, which leaves the check to drift."""
     import hook_parity
+    path = hookset.settings_path("codex")
     try:
         data = hook_parity.codex_hooks()
-    except hook_parity.NotChecked:
+        installed = json.loads(path.read_text()).get("hooks", {})
+    except (hook_parity.NotChecked, OSError, ValueError):
         return []
+    source = os.path.realpath(path)
+    listed = {(hook.get("eventName"), hook.get("command")): hook for entry in data
+              for hook in entry.get("hooks", []) if os.path.realpath(hook.get("sourcePath", "")) == source}
     owned = hookset.owner(value)
     lines = []
-    for hook in (hook for entry in data for hook in entry.get("hooks", [])):
-        if not owned(hook.get("eventName", ""), hook.get("command", "")):
-            continue
-        status = hook.get("trustStatus")
-        state = status if status not in hook_parity.RUNS else "disabled" if hook.get("enabled") is False else None
-        if state:
-            lines.append(f"codex: {hook.get('key')} is {state}: {hook.get('command')}")
+    for event, groups in installed.items():
+        for command in (hook.get("command", "") for group in groups for hook in group.get("hooks", [])):
+            if not owned(event, command):
+                continue
+            hook = listed.get((event[0].lower() + event[1:], command))
+            status = hook.get("trustStatus") if hook else None
+            state = ("isn't loaded" if hook is None else f"is {status}" if status not in hook_parity.RUNS
+                     else "is disabled" if hook.get("enabled") is False else None)
+            if state:
+                lines.append(f"codex: {event} {command} {state}")
     return lines
 
 
