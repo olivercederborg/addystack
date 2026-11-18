@@ -1,6 +1,6 @@
 """A Bash command's own syntax, for bash-rewrite.py and no-foreground-waits.py: its quoted
-text and heredoc bodies masked at the same offsets, and a time limit on each `until` or
-`while` loop that sleeps.
+text and heredoc bodies masked at the same offsets, a time limit on each `until` or `while`
+loop that sleeps, and whether the command holds the turn too long (held).
 
 no-foreground-waits denied 294 such loops from Oct 26 to Nov 9, 2026 ("no upper bound"),
 and 88% passed on the retry, about 3 s later. bash-rewrite now puts a guard,
@@ -176,3 +176,53 @@ def bound_waits(command, timeout_ms=None):
         notes.append(f"gave the `{match.group()}` loop a guard that exits 124 once the command has run {seconds}s; "
                      "run a longer wait with run_in_background or Monitor")
     return edits, notes
+
+
+# The Bash tool's longest timeout, in ms: past it, a command moves to the background anyway.
+LONGEST = 600000
+# The most a counted loop may sleep: the Bash tool's default timeout, in seconds.
+LIMIT = 120
+WATCH = re.compile(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b")
+SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
+
+
+def _unquoted(text):
+    text = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", text, flags=re.S)
+    return re.sub(r"'[^']*'", "''", text)
+
+
+def _sleeps(text):
+    return [float(s) for s in re.findall(r"\bsleep\s+(\d+(?:\.\d+)?)\b", text)]
+
+
+def _counted_loop_seconds(text):
+    for match in re.finditer(r"\bfor\s+\w+\s+in\s+(.*?);?\s*do\b(.*?)\bdone\b", text, flags=re.S):
+        items, body = match.groups()
+        bounds = (re.search(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)", items)
+                  or re.search(r"\{(\d+)\.\.(\d+)\}", items))
+        if bounds:
+            start, end = bounds.groups()
+            count = int(end) - int(start or 1) + 1
+        else:
+            count = len(items.split())
+        yield count * sum(_sleeps(body))
+
+
+def held(command, timeout_ms, rewrites):
+    """Why a command run in the foreground holds the turn too long, or None. rewrites is a
+    callable, read only when needed: whether bash-rewrite.py runs before Bash and so bounds
+    its `until` and `while` loops."""
+    code = _unquoted(command)
+    if WATCH.search(code):
+        return "`gh … watch` holds the turn until CI finishes"
+    if any(_sleeps(body) for body in SLEEPING_LOOP.findall(code)):
+        edits = bound_waits(command, timeout_ms)[0] if rewrites() else []
+        if not edits or unguarded(apply(command, edits)):
+            return "a sleeping `until`/`while` loop holds the turn with no upper bound"
+    if any(seconds > LIMIT for seconds in _counted_loop_seconds(code)):
+        reason = f"this loop can sleep for more than {LIMIT} seconds"
+    elif any(seconds >= 60 for seconds in _sleeps(code)):
+        reason = "a sleep of a minute or more holds the turn"
+    else:
+        return None
+    return reason

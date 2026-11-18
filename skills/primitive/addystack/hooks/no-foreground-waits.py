@@ -12,32 +12,22 @@ In a T3 delegated child it points at counted loops instead, since the parent tak
 child's turn ends as its result, so a child can't end its turn to wait on a background task.
 So does a work-verifier fork, since its background work stops when it hands back: on Nov 7,
 2026, verify-102-2's fork took this hook's run_in_background advice for its build and handed
-back without a verdict.
+back without a verdict. The rules live in shell_syntax.held, which bash-rewrite.py also
+reads for a verifier's background call it moves to the foreground.
 
 Known limit: loops written inside a script file or heredoc that the command runs aren't
 seen."""
 import json, os, re, sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import shell_syntax, t3_child  # noqa: E402
+
 payload = json.load(sys.stdin)
 tool_input = payload.get("tool_input") or {}
 if tool_input.get("run_in_background"):
     sys.exit(0)
 command = tool_input.get("command", "")
-
-
-def unquoted(text):
-    text = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", text, flags=re.S)
-    return re.sub(r"'[^']*'", "''", text)
-
-
-code = unquoted(command)
-LIMIT = 120
-SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
-
-
-def sleeps(text):
-    return [float(s) for s in re.findall(r"\bsleep\s+(\d+(?:\.\d+)?)\b", text)]
 
 
 def rewrite_installed():
@@ -53,52 +43,11 @@ def rewrite_installed():
         return False
 
 
-def unbounded_loops():
-    """Whether a sleeping `until`/`while` loop runs without bash-rewrite.py's guard: any,
-    unless bash-rewrite runs before Bash and its guard directly follows every `until` and
-    `while` in the command, quoted ones included."""
-    if not any(sleeps(body) for body in SLEEPING_LOOP.findall(code)):
-        return False
-    if not rewrite_installed():
-        return True
-    sys.path.insert(0, str(Path(__file__).resolve().parent))
-    import shell_syntax
-    edits = shell_syntax.bound_waits(command, tool_input.get("timeout"))[0]
-    return not edits or shell_syntax.unguarded(shell_syntax.apply(command, edits))
-
-
-def counted_loop_seconds(text):
-    for match in re.finditer(r"\bfor\s+\w+\s+in\s+(.*?);?\s*do\b(.*?)\bdone\b", text, flags=re.S):
-        items, body = match.groups()
-        bounds = (re.search(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)", items)
-                  or re.search(r"\{(\d+)\.\.(\d+)\}", items))
-        if bounds:
-            start, end = bounds.groups()
-            count = int(end) - int(start or 1) + 1
-        else:
-            count = len(items.split())
-        yield count * sum(sleeps(body))
-
-
-reason = None
-if re.search(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b", code):
-    reason = "`gh … watch` holds the turn until CI finishes"
-elif unbounded_loops():
-    reason = "a sleeping `until`/`while` loop holds the turn with no upper bound"
-elif any(seconds > LIMIT for seconds in counted_loop_seconds(code)):
-    reason = f"this loop can sleep for more than {LIMIT} seconds"
-elif any(seconds >= 60 for seconds in sleeps(code)):
-    reason = "a sleep of a minute or more holds the turn"
-
+reason = shell_syntax.held(command, tool_input.get("timeout"), rewrite_installed)
 if not reason:
     sys.exit(0)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import t3_child  # noqa: E402
-
-# A child's session resumed outside T3 has no parent, so T3 must be running it too.
-if payload.get("agent_type") == "work-verifier" or (
-        os.environ.get("T3CODE_CLI_PATH") and t3_child.delegated_brief(payload.get("session_id")) is not None):
+if t3_child.holds_turn(payload):
     # A child's parent takes each turn end as its result, so pr_watch.py sends back a turn that
     # ends on background work; R76's child moved its commit to the background on this advice.
     advice = ("Wait in counted loops whose sleeps add up to under 2 minutes each, such as "

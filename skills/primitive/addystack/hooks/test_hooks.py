@@ -1300,24 +1300,61 @@ class BashRewrite(unittest.TestCase):
         "npx storybook build",
     ]
 
-    def test_denies_any_verifier_background_run_but_a_server(self):
-        for command in ["until grep -q exit /tmp/b.log; do sleep 15; done", "sleep 300", "./run-checks.sh"]:
+    def test_moves_a_verifier_background_run_to_the_foreground(self):
+        moved = lambda command, **extra: {"command": command, "description": "d", "timeout": 600000, **extra}
+        for command, tool_input in [
+            # Recorded denials, Nov 11 to 18, 2026, each retried in the foreground with this timeout.
+            ('bun run --cwd apps/web typecheck > /tmp/vw-5748-typecheck.log 2>&1; echo "exit $?" >> /tmp/vw-5748-typecheck.log',
+             {"timeout": 600000}),
+            ("cd /tmp/r140-verify && python3 ~/r140/repro.py 07baa6f verify-head > claude-head.log 2>&1", {"timeout": 1800000}),
+            ("./run-checks.sh", {}),
+        ]:
             with self.subTest(command=command):
-                out = self.verifier(command, run_in_background=True)
-                self.assertEqual(out["permissionDecision"], "deny")
-                self.assertIn("nohup", out["permissionDecisionReason"])
+                out = self.verifier(command, run_in_background=True, **tool_input)
+                self.assertEqual(out["permissionDecision"], "allow")
+                self.assertEqual(out["updatedInput"], moved(command))
+                self.assertIn("in the foreground", out["additionalContext"])
+                self.assertIn("split it", out["additionalContext"])
+        # A sleeping `until` loop moves with bound_waits' guard on it.
+        out = self.verifier("until grep -q exit /tmp/b.log; do sleep 15; done", run_in_background=True)
+        self.assertEqual(out["permissionDecision"], "allow")
+        self.assertIn('[ "$SECONDS" -lt ', out["updatedInput"]["command"])
+        self.assertNotIn("run_in_background", out["updatedInput"])
+        # A server stays in the background.
         for command, description in [("bun run dev --port 3000", "d"), ("python3 -m http.server 8000", "d"),
                                      ("./bin/serve", "Start the preview server")]:
             with self.subTest(command=command):
                 self.assertIsNone(self.verifier(command, run_in_background=True, description=description))
 
-    def test_denies_a_verifier_build_run_in_the_background(self):
+    def test_denies_a_verifier_background_run_it_cant_move(self):
+        for command, why in [
+            # It never ends.
+            ("tail -n 20 -f /tmp/dev.log", "runs until it's stopped"),
+            ("log stream --predicate 'process == \"App\"'", "runs until it's stopped"),
+            ("bun run test:unit --watch", "runs until it's stopped"),
+            ("watch -n 5 ls /tmp/out", "runs until it's stopped"),
+            ("sleep infinity", "runs until it's stopped"),
+            # A wait that no-foreground-waits.py denies in the foreground too.
+            ("for r in 43417828138 43417828448; do gh run watch $r --exit-status; done", "holds the turn until CI"),
+            ("sleep 900", "a sleep of a minute or more"),
+            ("for i in $(seq 1 130); do [ -e /tmp/released ] && break; sleep 5; done", "can sleep for more than"),
+            ("while true; do sleep 70; done", "no upper bound"),
+        ]:
+            with self.subTest(command=command):
+                out = self.verifier(command, run_in_background=True)
+                self.assertEqual(out["permissionDecision"], "deny")
+                self.assertIn(why, out["permissionDecisionReason"])
+                self.assertIn("nohup", out["permissionDecisionReason"])
+        out = self.verifier("swift test & echo started", run_in_background=True)
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("`&`", out["permissionDecisionReason"])
+
+    def test_moves_a_verifier_build_run_in_the_background_to_the_foreground(self):
         for command in self.BUILDS:
             with self.subTest(command=command):
                 out = self.verifier(command, run_in_background=True, timeout=3600000)
-                self.assertEqual(out["permissionDecision"], "deny")
-                self.assertIn("timeout: 600000", out["permissionDecisionReason"])
-                self.assertIn("split it", out["permissionDecisionReason"])
+                self.assertEqual(out["permissionDecision"], "allow")
+                self.assertEqual(out["updatedInput"], {"command": command, "description": "d", "timeout": 600000})
 
     def test_denies_a_verifier_build_sent_to_the_background_with_an_ampersand(self):
         for command in [
