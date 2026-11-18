@@ -27,8 +27,12 @@ T3 session on Oct 30, 2026).
 - **Verifier builds and tests.** In a work-verifier fork, a build or test (BUILD_OR_TEST)
   runs with a 600000 ms timeout, the most Bash allows, and one sent to the background with
   `&` is denied, unless the command `wait`s for it. Any command but a server (pr_watch.py's
-  SERVES) asked to run with `run_in_background` is denied too: matching runners by name
-  missed 86 of a week's backgrounded checks, such as typechecks and pre-commit runs. Bash
+  SERVES) asked to run with `run_in_background` runs in the foreground with that timeout
+  instead, where denying it cost 118 verifier turns in the week to Nov 18, 2026, each
+  retried that way; matching runners by name had missed 86 of a week's backgrounded checks,
+  such as typechecks and pre-commit runs. It stays denied when it can't end there: it never
+  ends (ENDLESS), or it waits as no-foreground-waits.py denies in the foreground
+  (shell_syntax.held), which that hook can't see, since every hook reads the call as sent. Bash
   moves a command past its timeout (2 minutes by default) to the background, and a fork's
   background work stops when it hands back, so the work and the verdict waiting on it are
   lost. That cost tower-app three verdicts on Nov 7 to 8, 2026 (verify-102-2,
@@ -37,6 +41,10 @@ T3 session on Oct 30, 2026).
   runs to 40 words, as verify-102-2's 56 did; a top-level session's forks get no check.
   Work past 10 minutes still moves, as verify-107-1's and verify-107-4's did, so each note
   says to split it.
+- **Waits in one call.** In a work-verifier fork or a T3 delegated child (t3_child.holds_turn),
+  a foreground call whose plain sleeps and counted loops (shell_syntax.counted_wait) run past
+  its timeout but end inside 600000 ms gets that timeout, since no-foreground-waits.py lets
+  such a session wait that long in one call instead of in 2-minute loops.
 
 In bypass permissions mode the fixed command is allowed; in any other mode it's asked, so
 the hook never approves a command the permission rules would have asked about. A deny from
@@ -48,6 +56,7 @@ git behind a wrapper such as `env` or `sudo`, `set -o pipefail` inside a group t
 before the pipe, and positional parameters (`$1:a`)."""
 import json, os, pathlib, re, shlex, sys
 
+import shell_syntax
 from shell_syntax import apply, blank, bound_waits, mask_heredocs, shell_code
 
 # open-pr's check, copied beside the kit (scripts/copies.txt), so it runs without open-pr installed.
@@ -166,7 +175,7 @@ TOKEN = re.compile(r"\(|\)|\{|\}|;;?|\n|&&|\|\||&|(?<![\w-])(?:do|then|done|fi|e
 KEYWORD_AFTER = re.compile(r"(?:^|[;\n&|({)}]|(?<![\w-])(?:do|then|else|done|fi|esac))\s*\Z")
 VERIFIER = "work-verifier"
 # Bash's most; a command past it moves to the background however long its timeout.
-LONG = 600000
+LONG = shell_syntax.LONGEST
 LOST = ("A work-verifier fork's background work stops when the fork hands back, so this work and the "
         "verdict waiting on it would be lost. ")
 SPLIT = ("If it could take longer than 10 minutes, split it into batches that each finish under that, "
@@ -230,29 +239,79 @@ def unwaited(code):
     return [job for job, _, _ in jobs]
 
 
+# A command that runs until it's stopped: following a file or log, or watching for changes.
+# Known limit: one the same command stops and waits for, as in `tail -f x & p=$!; …; kill $p`,
+# stays denied, as it was before the move.
+#
+# A moved call faces the checks the same command gets in the foreground, which is how the
+# fork retried every one of these denials, plus the two the move itself adds: a helper meant
+# to run on (ENDLESS, or a sleep or loop in quoted text) and an `&` job left unwaited, which
+# keep the deny when in doubt. So the foreground checks' own limits carry over: a sleep whose
+# length is quoted or a variable, a loop over "$@", a sleep `xargs` repeats, a CI watch behind
+# `gh -R` or `env`, and a `while true` with no sleep run as they would in the foreground, and
+# a reused `pid=$!` reads as waited for. None was among the 118 denials replayed.
+ENDLESS = re.compile(r"(?<![\w./-])(?:tail\b[^;&|\n]*\s(?:-\w*[fF]\w*|--follow)|log\s+stream|sleep\s+infinity)(?![\w-])"
+                     r"|(?:^|[;&|(\n])\s*watch\s|\s--watch\b")
+
+
 def verifier_fix(payload, tool_input, command):
-    """(deny reason, None) when a work-verifier fork would background a build or test,
-    (None, note) when its build or test needs the long timeout, else (None, None)."""
+    """(deny reason, note, moved) for a work-verifier fork's call: a deny when it would
+    background a build or test with `&`, or asks for run_in_background for work that can't
+    run in the foreground; else moved when it asks for run_in_background, and a note when
+    that or its build or test needs the long timeout. (None, None, False) for any other call."""
     if payload.get("agent_type") != VERIFIER:
-        return None, None
-    if tool_input.get("run_in_background"):
+        return None, None, False
+    background = tool_input.get("run_in_background")
+    if background:
         import pr_watch  # here, so only a verifier's background call loads it
         if pr_watch.SERVES.search(command) or pr_watch.LONG_LIVED.search(str(tool_input.get("description") or "")):
-            return None, None
-        return (f"{LOST}Run it in the foreground with `timeout: {LONG}`; only a server, such as a dev server on a "
-                "port, runs with run_in_background here. Start another helper you stop yourself, such as a log "
-                f"recorder, with `nohup … > <log> 2>&1 &`. {SPLIT}"), None
+            return None, None, False
     code = run_code(command)
-    if not BUILD_OR_TEST.search(code):
-        return None, None
-    if any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
-        return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None
+    builds = BUILD_OR_TEST.search(code)
+    if builds and any(BUILD_OR_TEST.search(job) for job in unwaited(code)):
+        return f"`&` puts this build or test in the background. {LOST}Drop the `&`, or `wait` for it in the same command. {SPLIT}", None, False
+    # Only a job that is one detached command is a helper: `nohup a && b &` leaves b undetached.
+    if background and any(not re.fullmatch(r"\s*(?:nohup|setsid)\b[^;&|]*", job) for job in unwaited(code)):
+        # In the foreground, the call would return while the job still runs, and lose it the same way.
+        return (f"`&` sends part of this command to the background with no `wait` for it. {LOST}Drop the `&` or "
+                "`wait` for it in the same command, and run it in the foreground; start a helper you stop yourself "
+                f"with `nohup … > <log> 2>&1 &`. {SPLIT}"), None, False
+    if background:
+        # The fork waits in the foreground, so the rules no-foreground-waits.py would apply there apply now.
+        # Quotes don't hide a flag from the command that reads it: `tail '-f'` follows too.
+        held = ("it runs until it's stopped" if ENDLESS.search(re.sub(r"['\"]", "", command))
+                else "it runs a sleep or loop in quoted text, which may not end" if shell_syntax.hides_waits(command)
+                else shell_syntax.held(command, LONG, lambda: True, lambda: True))
+        if held:
+            return (f"{LOST}It can't run in the foreground either: {held}. Only a server, such as a dev server on "
+                    "a port, runs with run_in_background here. Wait in counted loops whose sleeps add up to under "
+                    f"9 minutes each, with `timeout: {LONG}`, and start a helper you stop yourself, such as a log "
+                    f"recorder, with `nohup … > <log> 2>&1 &`. {SPLIT}"), None, False
+        return None, (f"ran it in the foreground with a {LONG} ms timeout instead of in the background, since a "
+                      "work-verifier fork's background work stops when it hands back. " + SPLIT.rstrip(".")), True
+    if not builds:
+        return None, None, False
     timeout = tool_input.get("timeout")
     if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout >= LONG:
-        return None, None
+        return None, None, False
     return None, (f"raised the timeout to {LONG} ms, since Bash moves a build or test past its timeout to the "
                   "background, and a work-verifier fork's background work stops when it hands back. "
-                  + SPLIT.rstrip("."))  # main() ends each note with its own period
+                  + SPLIT.rstrip(".")), False  # main() ends each note with its own period
+
+
+def wait_fix(payload, tool_input, command):
+    """A note when a foreground call in a session that waits in the foreground
+    (t3_child.holds_turn) sleeps longer than its timeout but inside LONG, whose timeout main()
+    then raises to LONG, as no-foreground-waits.py expects; else None."""
+    timeout = shell_syntax.call_timeout(tool_input.get("timeout"))
+    if timeout >= LONG or shell_syntax.waits_in_one_call(command, timeout) \
+            or not shell_syntax.waits_in_one_call(command, LONG):
+        return None
+    import t3_child  # here, so only a long wait reads T3's database
+    if not t3_child.holds_turn(payload):
+        return None
+    return (f"raised the timeout to {LONG} ms, since its sleeps add up to {shell_syntax.counted_wait(command):g} s, "
+            "and a session that waits in the foreground may wait that long in one call")
 
 
 def main():
@@ -267,9 +326,11 @@ def main():
     pipe_edits, pipe_notes, heads = pipefail_fixes(command)
     zsh_edits, zsh_notes = modifier_fixes(command)
     body_edits, body_notes = body_check_fixes(command)
+    refused, timeout_note, moved = verifier_fix(payload, tool_input, command)
+    background = tool_input.get("run_in_background") and not moved
+    timeout_note = timeout_note or (None if background or refused else wait_fix(payload, tool_input, command))
     # A call sent to the background holds no turn, so its loop may run on.
-    wait_edits, wait_notes = ([], []) if tool_input.get("run_in_background") else bound_waits(command, tool_input.get("timeout"))
-    refused, timeout_note = verifier_fix(payload, tool_input, command)
+    wait_edits, wait_notes = ([], []) if background else bound_waits(command, LONG if moved else tool_input.get("timeout"))
     if heads:
         refused = (f"`{heads[0]}` can stop the git step partway: once head has its lines, the next write "
                    "kills it with SIGPIPE, and the `&&` chain runs on with head's status. Pipe it into "
@@ -291,7 +352,8 @@ def main():
         "hookEventName": "PreToolUse",
         "permissionDecision": "allow" if payload.get("permission_mode") == "bypassPermissions" else "ask",
         "permissionDecisionReason": f"bash-rewrite.py {notes}.",
-        "updatedInput": {**tool_input, "command": apply(command, pipe_edits + zsh_edits + body_edits + wait_edits),
+        "updatedInput": {**{key: value for key, value in tool_input.items() if not (moved and key == "run_in_background")},
+                         "command": apply(command, pipe_edits + zsh_edits + body_edits + wait_edits),
                          **({"timeout": LONG} if timeout_note else {})},
         "additionalContext": f"bash-rewrite.py changed the command before it ran: it {notes}. Write it that way next time.",
     }}))

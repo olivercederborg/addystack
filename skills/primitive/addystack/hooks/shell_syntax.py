@@ -1,6 +1,6 @@
 """A Bash command's own syntax, for bash-rewrite.py and no-foreground-waits.py: its quoted
-text and heredoc bodies masked at the same offsets, and a time limit on each `until` or
-`while` loop that sleeps.
+text and heredoc bodies masked at the same offsets, a time limit on each `until` or `while`
+loop that sleeps, and whether the command holds the turn too long (held).
 
 no-foreground-waits denied 294 such loops from Oct 26 to Nov 9, 2026 ("no upper bound"),
 and 88% passed on the retry, about 3 s later. bash-rewrite now puts a guard,
@@ -176,3 +176,123 @@ def bound_waits(command, timeout_ms=None):
         notes.append(f"gave the `{match.group()}` loop a guard that exits 124 once the command has run {seconds}s; "
                      "run a longer wait with run_in_background or Monitor")
     return edits, notes
+
+
+# The Bash tool's longest timeout, in ms: past it, a command moves to the background anyway.
+LONGEST = 600000
+# The most a counted loop may sleep in a session that may wait in the background: the Bash
+# tool's default timeout, in seconds.
+LIMIT = 120
+WATCH = re.compile(r"\bgh\s+pr\s+checks\b[^;&|]*--watch\b|\bgh\s+run\s+watch\b")
+SLEEPING_LOOP = re.compile(r"\b(?:until|while)\b(?!\s+(?:IFS=\S*\s+)?read\b).*?\bdo\b(.*?)\bdone\b", re.S)
+# A `for` loop whose `do` and `done` stand where commands start, so `[ -e done ]` ends nothing.
+FOR_LOOP = re.compile(r"(?<![\w$-])for\s+\w+\s+in\s+([^;\n]*?)\s*[;\n]\s*do(?![\w-])(.*?)[;\n&]\s*done(?![\w-])", re.S)
+DONE = re.compile(r"(?<![\w$./-])done(?![\w./-])")
+RANGE = re.compile(r"\$\(\s*seq\s+(?:(\d+)\s+)?(\d+)\s*\)|\{(\d+)\.\.(\d+)\}")
+
+
+def _unquoted(text):
+    text = re.sub(r"<<-?\s*(['\"])(\w+)\1.*?\n.*?\n\2\b", "", text, flags=re.S)
+    return re.sub(r"'[^']*'", "''", text)
+
+
+def _sleeps(text):
+    return [float(s) for s in re.findall(r"\bsleep\s+(\d+(?:\.\d+)?)\b", text)]
+
+
+def _counted_loop_seconds(text):
+    for match in re.finditer(r"\bfor\s+\w+\s+in\s+(.*?);?\s*do\b(.*?)\bdone\b", text, flags=re.S):
+        items, body = match.groups()
+        bounds = RANGE.search(items)
+        count = _range_passes(bounds) if bounds else len(items.split())
+        yield count * sum(_sleeps(body))
+
+
+def _range_passes(found):
+    """The passes of a RANGE match: `$(seq [a] b)` counts up only, `{a..b}` either way."""
+    if found.group(2):
+        return max(int(found.group(2)) - int(found.group(1) or 1) + 1, 0)
+    return abs(int(found.group(4)) - int(found.group(3))) + 1
+
+
+def _passes(items):
+    """How many times a `for` loop over items runs, or None when that isn't certain."""
+    found = RANGE.fullmatch(items.strip())
+    if found:
+        return _range_passes(found)
+    words = items.split()
+    return len(words) if all(re.fullmatch(r"[\w./:@%+=,-]+", word) for word in words) else None
+
+
+def counted_wait(command):
+    """The seconds a command's sleeps add up to, when each is certain: a plain `sleep N`,
+    outside any loop or in a `for` loop over a `$(seq …)` or `{a..b}` range or unquoted
+    literal words that holds no other loop. 0 with no sleep, and None when any sleep isn't
+    certain, such as one in quoted text or a heredoc, in an `until` or `while` loop, which
+    bound_waits bounds instead, or in a command with a function, `eval`, or backticks."""
+    code = shell_code(command)
+    # A sleep in quoted text or a heredoc may run, and a function, eval, or backticks may repeat one.
+    if _count(ANY_SLEEP, command) != _count(ANY_SLEEP, code) or FUNCTION.search(code) or EVAL.search(code) \
+            or "`" in code:
+        return None
+    if not _count(ANY_SLEEP, code):
+        return 0
+    loops = list(FOR_LOOP.finditer(code))
+    # Each loop word and each `done` belongs to one of those loops, or a boundary is in doubt.
+    if _count(ANY_SLEEP, code) != _count(PLAIN_SLEEP, code) or not _count(LOOP_WORD, code) == _count(DONE, code) \
+            == len(loops):
+        return None
+    total = sum(float(s) for s in PLAIN_SLEEP.findall(code))
+    for loop in loops:
+        # The items as written, since masking reads `"$@"` as one word.
+        items, body = command[loop.start(1):loop.end(1)], loop.group(2)
+        each, passes = sum(float(s) for s in PLAIN_SLEEP.findall(body)), _passes(items)
+        if each and passes is None:
+            return None
+        total += (passes - 1) * each if each else 0
+    return total
+
+
+def hides_waits(command):
+    """Whether quoted text or a heredoc holds `sleep`, `while`, `until`, `select`, or `eval`,
+    which a shell such as `bash -c '…'` may run where held can't read it."""
+    return _count(QUOTABLE, command) != _count(QUOTABLE, shell_code(command))
+
+
+def call_timeout(timeout_ms):
+    """A Bash call's timeout in ms: timeout_ms when it's a positive number, else the default."""
+    valid = isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) and timeout_ms > 0
+    return timeout_ms if valid else DEFAULT_TIMEOUT * 1000
+
+
+def waits_in_one_call(command, timeout_ms):
+    """Whether a command's sleeps (counted_wait), with MARGIN to spare, end inside a call
+    whose timeout is timeout_ms."""
+    seconds = counted_wait(command)
+    return seconds is not None and seconds + MARGIN <= timeout_ms / 1000
+
+
+def held(command, timeout_ms, holds_turn, rewrites):
+    """Why a command run in the foreground holds the turn too long, or None. holds_turn and
+    rewrites are callables, read only when needed: whether the session waits in the
+    foreground (t3_child.holds_turn), and whether bash-rewrite.py runs before Bash and so
+    bounds its `until` and `while` loops and raises its timeout. Such a session may sleep in
+    one call up to LONGEST, since its retry was the same wait split into 2-minute calls."""
+    code = _unquoted(command)
+    if WATCH.search(code):
+        return "`gh … watch` holds the turn until CI finishes"
+    if any(_sleeps(body) for body in SLEEPING_LOOP.findall(code)):
+        edits = bound_waits(command, timeout_ms)[0] if rewrites() else []
+        if not edits or unguarded(apply(command, edits)):
+            return "a sleeping `until`/`while` loop holds the turn with no upper bound"
+    # A session that waits in the foreground goes by its sleeps' total when every one is certain.
+    seconds = counted_wait(command)
+    if seconds and holds_turn():
+        limit = LONGEST if rewrites() else min(call_timeout(timeout_ms), LONGEST)
+        return None if waits_in_one_call(command, limit) else \
+            f"its sleeps add up to {seconds:g} seconds, past the {limit // 1000:g} seconds one call allows"
+    if any(seconds > LIMIT for seconds in _counted_loop_seconds(code)):
+        return f"this loop can sleep for more than {LIMIT} seconds"
+    if any(seconds >= 60 for seconds in _sleeps(code)):
+        return "a sleep of a minute or more holds the turn"
+    return None
