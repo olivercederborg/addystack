@@ -229,7 +229,9 @@ class Merge(unittest.TestCase):
 
     def test_every_retired_kit_hook_is_drift_and_an_install_removes_it(self):
         # Codex review of r165: settings kept running the deleted hooks, and drift said nothing.
-        removed = {"bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py", "unparsed-bash-rewrite.py"}
+        removed = {"bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py", "unparsed-bash-rewrite.py",
+                   "bug-route.py", "coordinator-light.py", "existing_work.py", "gh-stack-only.py",
+                   "require-writing-for-agents.py", "t3-children-only.py", "thread-titles.py"}
         self.assertLessEqual(removed, set(hookset.RETIRED))
         resolved = resolve("{}")
         owned = hookset.owner(resolved)

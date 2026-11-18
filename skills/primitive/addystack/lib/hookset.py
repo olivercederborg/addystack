@@ -45,7 +45,9 @@ _FIELDS = ("matcher", "timeout", "onFailure")
 # reply-shape's UI cards (Nov 2026), and the rest with r165's cut to the hooks that guard
 # hard-to-undo steps (Nov 18, 2026).
 RETIRED = ("reply-card.py", "bash-rewrite.py", "no-foreground-waits.py", "ssh-signing-blocked.py",
-           "unparsed-bash-rewrite.py")
+           "unparsed-bash-rewrite.py", "bug-route.py", "coordinator-light.py", "existing_work.py",
+           "gh-stack-only.py", "require-writing-for-agents.py", "t3-children-only.py",
+           "thread-titles.py")
 
 
 @dataclass(frozen=True)
