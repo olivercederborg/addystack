@@ -28,12 +28,7 @@ included, until one link to it says what it is: "[DEV-3127, Allow failure-only e
 emails](https://…)". Its other mentions may then stay short or plain. A bare id gives the user nothing to decide on and
 nowhere to click; on Nov 17, 2026 the user corrected three bare ids in one thread. Code
 blocks and the turn block aren't read. Only the DEV team's ids count, as in
-existing_work.py: UTF-8, ADR-0029, or GPT-6 share the shape but aren't issues.
-
-A PR cited as "PR #75" is held to the same rule: "[PR #75, Send back unlinked tracker
-ids](https://github.com/…/pull/75)". "PR 75" isn't read, since "PR 1" and "PR 2" are mostly
-planned stack layers with nothing to link yet, and neither is a bare "#75". A link to a T3
-thread counts, since its label is the thread's title."""
+existing_work.py: UTF-8, ADR-0029, or GPT-6 share the shape but aren't issues."""
 import itertools, json, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -61,9 +56,9 @@ IS_COUNT = re.compile(COUNT, re.I)
 NAMED_AFTER = re.compile(r"(?:'s)?\s*(?:\((?=[^)]*[A-Za-z]{3})[^)]*\)|,\s+(?:the\s+|an?\s+)?[A-Z][a-z]|,\s+the\s)")
 # A visible line that defines a number: "**1** · …", "1. …", "48: …", "| 1 | …", "### Option 1 · …".
 DEFINES = re.compile(r"^\s*(?:[-*]\s+)?(?:#+\s*)?(?:[A-Z][a-z]+\s+)?(\d+)\s*(?:·|—|[.:)]\s|\||$)|^\|\s*(\d+)\s*\|")
-# A Linear issue id, "DEV-3127", where only the DEV team key counts, or a PR, "PR #75".
-TRACKER_ID = re.compile(r"(?<![\w/#.-])(?:DEV-\d+|PR #\d+)(?![\w/-])")
-LINK = re.compile(r"\[([^\]]*)\]\(\s*<?[a-z][\w+.-]*://[^)]*\)")  # http(s), t3-thread, …
+# A Linear issue id: "DEV-3127". Only the DEV team key counts.
+TRACKER_ID = re.compile(r"(?<![\w/#.-])DEV-\d+(?![\w-])")
+LINK = re.compile(r"\[([^\]]*)\]\(\s*<?https?://[^)]*\)")
 
 
 def shown(text):
@@ -185,7 +180,7 @@ def problems(text, names={}):
 
 
 def unlinked_ids(text):
-    """One line per tracker id or PR the reader can't click or doesn't know: one outside a
+    """One line per tracker id the reader can't click or doesn't know: an id outside a
     link, or one no link names. Folds count, since the user opens them; code blocks, code
     spans, and the turn block don't, since a literal such as `Closes DEV-3724` can't
     become a link."""
@@ -290,10 +285,9 @@ def main():
     if bare or unnamed:
         listing = "\n".join(f"- {line}" for line in bare + unnamed)
         parts.append(
-            "These issue ids and PRs give the user nothing to decide on and nowhere to click:\n" + listing +
-            "\nMake each one a link to the issue or PR, and let at least one link to it say what it is, as "
-            "in \"[DEV-3127, Allow failure-only export emails](https://linear.app/…/issue/DEV-3127/…)\" or "
-            "\"[PR #75, Send back unlinked tracker ids](https://github.com/…/pull/75)\". "
+            "These tracker ids give the user nothing to decide on and nowhere to click:\n" + listing +
+            "\nMake each one a link to the issue, and let at least one link to it say what it is, as "
+            "in \"[DEV-3127, Allow failure-only export emails](https://linear.app/…/issue/DEV-3127/…)\". "
             "Look the title and URL up rather than guess.")
     feedback = ("\n\n".join(parts) + "\n\nSend your whole reply again, unchanged except for these fixes. "
                 "T3 shows only a turn's last message and folds the rest away, so the resent reply has "

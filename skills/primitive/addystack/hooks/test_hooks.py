@@ -5834,25 +5834,6 @@ class BareReferences(unittest.TestCase):
         turn = block({"state": "stop", "needs": [], "options": [{"key": "a", "class": "routine", "text": "add DEV-3127"}]})
         self.assertEqual(self.bounce(f"- [DEV-3127, Allow failure-only export emails]({url})\n\n" + turn), "")
 
-    def test_holds_pr_references_to_the_same_rule(self):
-        url = "https://github.com/acme/app/pull/75"
-        for reply, expect in [
-            ("**Next**\n\n- **a**: merge PR #75 after the fix.\n", "'PR #75' in:"),
-            (f"- [PR #75]({url}) is green.\n", "'PR #75' in:"),  # linked, but never named
-        ]:
-            with self.subTest(reply=reply):
-                reason = self.bounce(reply)
-                self.assertIn(expect, reason)
-                self.assertIn("[PR #75, Send back unlinked tracker ids]", reason)
-        for reply in [
-            f"✅ **[PR #75, Send back unlinked tracker ids]({url}) is green.**\n\nPR #75 needs one review.\n",
-            "- Reviewed #75 and `gh pr view 75`; a PRO 75 plan, PR-75 branch.\n",
-            "- PR 1 is building, then PR 2. The reviewer rated PR #5/10.\n",  # planned layers, a score
-            "- [Summarize PR #3847 Handoff](t3-thread://v1/0ddb) is waiting.\n",  # a T3 thread's title names it
-        ]:
-            with self.subTest(reply=reply):
-                self.assertEqual(self.bounce(reply), "")
-
     def test_a_fact_tables_reader_row_is_an_item(self):
         table = "🟡 **Two items wait.**\n\n| Problem | The export is stuck. |\n|---|---|\n"
         self.assertEqual(bare_references.problems(table + "| Decide | Keep item 48 as it is? |\n"),
