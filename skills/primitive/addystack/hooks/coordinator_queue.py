@@ -35,8 +35,11 @@ logged row would leave the user to ask what waits, the failure it's here for.
 
 A project from before the queue keeps its open calls only in turn blocks. Until it has a
 Queue section, an item the reply before this turn's prompt named, and this reply doesn't,
-counts as waiting too, and the send-back asks for `project.py queue import`, which starts
-the Queue with every item a turn block names. `queue add` refuses such a project, so its
+counts as waiting too, and the send-back carries the turn block for `project.py queue
+import`, which starts the Queue with every item it names: those items, then this reply's,
+oldest first. A call only an older reply named, or named in prose alone, is the
+coordinator's to add to that block, since nothing recorded an answer before the queue, so
+no reply's history says which are still open. `queue add` refuses such a project, so its
 Queue can't start without those calls; once it exists, only `queue done` takes one off.
 
 Known limits: it reads Markdown a line at a time, not as rendered. A strip in an indented
@@ -172,17 +175,29 @@ def strips(line, match, top, count):
                for name in {top.name.casefold(), project_queue.shown(top.name).casefold()})
 
 
-def feedback(project, path, items, found):
+def pending(turn, earlier):
+    """What a project from before the queue still holds open, oldest first: each item the reply
+    before named and this one doesn't, then this reply's own, each (kind, name) once."""
+    named = set(turn.items)
+    listed = [item for item in earlier if item not in named] + sorted(turn.items, key=lambda item: item.id)
+    return list(dict.fromkeys((item.kind, item.name) for item in listed))
+
+
+def feedback(project, path, items, found, open_items=()):
     where = "~/" + str(path.relative_to(Path.home()))
     script = "the coordinator skill's `scripts/project.py`"
     reasons = "; ".join(found)
     if items is None:
+        block = project_queue.as_json({"state": "done", "standing": [
+            {"id": at, "kind": kind, "name": name} for at, (kind, name) in enumerate(open_items, 1)]})
         return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
-                f"thread puts to the user goes on its queue, in {where}, and this project's predates it: start it with "
-                f"{script} `{path.parent} queue import`, with the turn block of the reply that names every item still "
-                "open on standard input, which queues each in the order it arose; then `queue done` each the user already "
-                "answered. Send your whole reply again, ending on the queue's top item as `queue show` prints it; T3 "
-                "shows only a turn's last message, so it has to stand on its own. Add no note about the change.")
+                f"thread puts to the user goes on its queue, in {where}, and this project's predates it. Start it "
+                "with every call still open, oldest first: the turn block below holds what the reply before and this "
+                "one named; add to its `standing` any other call an earlier reply put to the user that's still open, "
+                f"then run {script} with it on standard input:\n\n`{path.parent} queue import` <<'EOF'\n{block}\nEOF"
+                "\n\nThen `queue done` each the user already answered. Send your whole reply again, ending on the "
+                "queue's top item as `queue show` prints it; T3 shows only a turn's last message, so it has to stand "
+                "on its own. Add no note about the change.")
     if not items:
         return (f"This ◆ {project} thread's reply hides what waits on the user: {reasons}. Every call or Do this "
                 f"thread puts to the user goes on its queue first, in {where}: queue each one still open with {script} "
@@ -223,13 +238,14 @@ def main():
         turn = turn_block.parse(reply)
     except turn_block.Malformed:
         turn = None
+    earlier = earlier_items(event.get("transcript_path")) if items is None else ()
     if turn is None:
         reasons = unparsed(reply, items) if items else []
     else:
-        reasons = problems(turn, reply, items, earlier_items(event.get("transcript_path")) if items is None else ())
+        reasons = problems(turn, reply, items, earlier)
     if not reasons:
         return
-    text = feedback(found[0], path, items, reasons)
+    text = feedback(found[0], path, items, reasons, pending(turn, earlier) if items is None else ())
     # Codex's Stop takes only decision and reason, and its input carries turn_id, as in
     # bare_references.py; Claude Code continues through additionalContext.
     if "turn_id" in event:

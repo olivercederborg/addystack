@@ -172,6 +172,9 @@ def as_json(value) -> str:
 
 def show(items: list[Item] | None) -> str:
     """What `project.py queue show` prints: the strip and the top item's need, then each item."""
+    if items is None:
+        return ("This project has no Queue yet, so what waits on the user is unknown: start it with `queue import`, "
+                "with a turn block naming every call still open on standard input.")
     if not items:
         return "Nothing waits on the user."
     listed = [f"  {item.id} {item.kind} · {item.name} · {item.source} · since {item.since}" for item in items]

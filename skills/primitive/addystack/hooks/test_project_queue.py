@@ -95,7 +95,7 @@ class Queue(unittest.TestCase):
             "  1 do · pull the dotfiles · coordinator · since 2026-11-18 14:05"])
         self.assertTrue(q.show(q.read(project(("do", "pull it")))).startswith("1 of 1 needs you · pull it · coordinator\n"))
         self.assertEqual(q.show(q.read(project())), "Nothing waits on the user.")
-        self.assertEqual(q.show(None), "Nothing waits on the user.")
+        self.assertTrue(q.show(None).startswith("This project has no Queue yet, so what waits on the user is unknown"))
 
     def test_the_strip_writes_brackets_as_entities_and_keeps_links(self):
         lines = project()

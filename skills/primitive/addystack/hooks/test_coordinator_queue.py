@@ -201,7 +201,7 @@ class CoordinatorQueue(unittest.TestCase):
                       "hold", found)
         self.write(PROJECT)  # no Queue section yet: an import starts it
         found = self.run_on(CARD + block(needs=[SEND_BACKS]))
-        self.assertIn("this project's predates it: start it with", found)
+        self.assertIn("this project's predates it. Start it with every call still open, oldest first", found)
         self.assertIn(f"`{self.project_md.parent} queue import`", found)
         self.assertIsNone(self.run_on("✅ **Nothing waits on you.**\n\n" + block("done")))
         lines = PROJECT.split("\n")
@@ -222,8 +222,15 @@ class CoordinatorQueue(unittest.TestCase):
         self.write(PROJECT)  # no Queue section yet
         found = self.run_on(quiet, transcript_path=str(transcript))
         self.assertIn('the reply before named decide 2 "stop format send-backs", which the queue doesn\'t hold', found)
-        self.assertIn(f"start it with the coordinator skill's `scripts/project.py` `{self.project_md.parent} queue import`",
+        self.assertIn(f"`scripts/project.py` with it on standard input:\n\n`{self.project_md.parent} queue import` <<'EOF'",
                       found)
+        self.assertIn('<<\'EOF\'\n{"state":"done","standing":[{"id":1,"kind":"decide","name":"stop format send-backs"}]}'
+                      "\nEOF", found)
+        # An earlier call and a new one: the block to import holds both, the earlier first.
+        found = self.run_on("🟡 **Pull the dotfiles?**\n\n" + block(needs=[need(4, "pull the dotfiles", "do")]),
+                            transcript_path=str(transcript))
+        self.assertIn('{"id":1,"kind":"decide","name":"stop format send-backs"},'
+                      '{"id":2,"kind":"do","name":"pull the dotfiles"}]}', found)
         self.assertIsNone(self.run_on(quiet))  # no transcript to read: nothing carried
         # Once the Queue exists, it's the record: what it holds is what waits.
         self.write(PROJECT, ("decide", "stop format send-backs", WORKER))
