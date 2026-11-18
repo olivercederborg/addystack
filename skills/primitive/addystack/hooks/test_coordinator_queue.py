@@ -238,13 +238,18 @@ class CoordinatorQueue(unittest.TestCase):
         self.assertIsNone(self.run_on(hidden, title="◇ audit · R153"))
         self.assertIsNone(self.run_on(hidden, title="◆ other-project"))
         self.assertIsNone(self.run_on(hidden, stop_hook_active=True))
-        self.assertIsNone(self.run_on("⏳ no block"))
+        found = self.run_on("⏳ no block")  # routine_stop.py sends it back, and the resend isn't checked
+        self.assertIn("it has no valid turn block, so its `needs` can't start with the queue's top item, 2", found)
+        self.assertIn(f"no line the user sees carries the strip `1 of 2 need you · stop format send-backs · {WORKER}`",
+                      found)
         self.assertIsNotNone(self.run_on(hidden, title="🟡 ◆ audit"))
         text = self.project_md.read_text()
         self.project_md.write_text(text.replace(LINK, "<t3-thread://v2/env-mac/thread-other>"))
         self.assertIsNone(self.run_on(hidden))
         self.project_md.write_text(text.replace("| 1 | do |", "| 1 | blocked |"))
         self.assertIsNone(self.run_on(hidden))
+        self.write(PROJECT)  # nothing queued: a reply without a block is routine_stop.py's alone
+        self.assertIsNone(self.run_on("⏳ no block"))
 
 
 if __name__ == "__main__":

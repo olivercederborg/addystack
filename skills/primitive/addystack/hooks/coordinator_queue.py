@@ -47,9 +47,11 @@ show` prints it.
 A coordinator is a thread whose T3 title holds `◆ <project>` (t3_child.coordinator_project),
 and its project.md is `~/.local/state/orchestrate/<project>/project.md` whose `Coordinator:`
 link names that thread. Doubt allows: outside T3, a session T3 doesn't know, another thread's
-project.md, a Queue table it can't read, or a reply with no valid turn block, which
-routine_stop.py sends back. `stop_hook_active` keeps it to one send per stop, as the other
-Stop hooks do, so a reply after another hook sent the agent on isn't checked again.
+project.md, a Queue table it can't read, or a reply with no valid turn block while nothing
+is queued, which routine_stop.py sends back. `stop_hook_active` keeps it to one send per
+stop, as the other Stop hooks do, so a resend another hook asked for isn't checked again;
+while the queue holds items, a reply with no valid block gets the queue's reasons in the
+same send-back as routine_stop.py's, since its resend won't be checked.
 Coordinators run on Claude (t3-delegation's Roles table), so it ships for Claude Code alone."""
 import json, os, re, sys
 from pathlib import Path
@@ -135,10 +137,25 @@ def problems(turn, reply, items, earlier=()):
         top = items[0]
         if not turn.needs or turn.needs[0].id != top.id:
             found.append(f"its `needs` doesn't start with the queue's top item, {top.id}")
-        if not any(strips(line, match, top, len(items))
-                   for line in visible_lines(reply) for match in project_queue.STRIP.finditer(line)):
+        if not shows_strip(reply, items):
             found.append(f"no line the user sees carries the strip `{project_queue.strip(items)}`")
     return found
+
+
+def unparsed(reply, items):
+    """Why a reply with no valid turn block hides a queue that holds items. routine_stop.py
+    sends it back for the block, and `stop_hook_active` keeps any hook from checking the
+    resend, so the queue's reasons go back with it."""
+    found = [f"it has no valid turn block, so its `needs` can't start with the queue's top item, {items[0].id}"]
+    if not shows_strip(reply, items):
+        found.append(f"no line the user sees carries the strip `{project_queue.strip(items)}`")
+    return found
+
+
+def shows_strip(reply, items):
+    """Whether a line the user sees carries the strip for the queue's top item."""
+    return any(strips(line, match, items[0], len(items))
+               for line in visible_lines(reply or "") for match in project_queue.STRIP.finditer(line))
 
 
 def strips(line, match, top, count):
@@ -200,10 +217,16 @@ def main():
     reply = event.get("last_assistant_message")
     try:
         items = project_queue.read(lines)
-        turn = turn_block.parse(reply)
-    except (project_queue.QueueError, turn_block.Malformed):
+    except project_queue.QueueError:
         return
-    reasons = problems(turn, reply, items, earlier_items(event.get("transcript_path")) if items is None else ())
+    try:
+        turn = turn_block.parse(reply)
+    except turn_block.Malformed:
+        turn = None
+    if turn is None:
+        reasons = unparsed(reply, items) if items else []
+    else:
+        reasons = problems(turn, reply, items, earlier_items(event.get("transcript_path")) if items is None else ())
     if reasons:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop",
                                                  "additionalContext": feedback(found[0], path, items, reasons)}}))
