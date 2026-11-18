@@ -51,15 +51,15 @@ def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     common = {"time": now, "hook": hook, "session": event.get("session_id"), "turn": turn,
               "cwd": event.get("cwd"), "headline": headline(event.get("last_assistant_message") or "")}
-    rows = "".join(json.dumps({**common, "rule": rule, "detail": detail}, ensure_ascii=False) + "\n"
-                   for rule, detail in broken)
+    # ASCII escapes, so a lone surrogate in a reply can't fail the write.
+    rows = "".join(json.dumps({**common, "rule": rule, "detail": detail}) + "\n" for rule, detail in broken)
     try:
         target = path()
         target.parent.mkdir(parents=True, exist_ok=True)
         # Only the user reads it: a row holds a reply's headline, and the state folder is world-readable.
         with open(os.open(target, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600), "a", encoding="utf-8") as log:
             log.write(rows)
-    except OSError:
+    except (OSError, RuntimeError):  # RuntimeError: a ~user override expanduser can't resolve
         pass
 
 

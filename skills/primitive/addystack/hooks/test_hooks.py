@@ -4824,6 +4824,19 @@ class ReplyBudget(unittest.TestCase):
                         self.assertEqual(rows[0]["headline"], reply.splitlines()[0][:100])
                         self.assertTrue(rows[0]["time"].endswith("+00:00"))
 
+    def test_a_log_that_cant_be_written_keeps_the_send_back(self):
+        # Codex review, round 1: a lone surrogate or an unresolvable ~user path crashed the hook before its merge note.
+        reply = "✅ **\ud800**\n\n" + "word " * 101 + "\n\n" + self.merge_gate_reply("merge #90, then deploy")
+        for log in ("~no_such_user_r153/reply-log.jsonl", "/dev/null/reply-log.jsonl"):
+            with self.subTest(log):
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": reply}),
+                                     capture_output=True, text=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": log})
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertIn("merge-gate", json.loads(out.stdout)["hookSpecificOutput"]["additionalContext"])
+        sent, rows = self.sent_and_logged(reply)
+        self.assertIn("merge-gate", sent)
+        self.assertEqual(rows[0]["headline"], "✅ **\ud800**")
+
     def test_the_log_is_the_users_alone(self):
         # A row holds a reply's headline, and the state folder is readable by others (Codex review, round 1).
         with tempfile.TemporaryDirectory() as folder:
