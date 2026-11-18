@@ -1339,8 +1339,10 @@ class BashRewrite(unittest.TestCase):
             ("sleep infinity", "runs until it's stopped"),
             # A wait that no-foreground-waits.py denies in the foreground too.
             ("for r in 43417828138 43417828448; do gh run watch $r --exit-status; done", "holds the turn until CI"),
-            ("sleep 900", "a sleep of a minute or more"),
-            ("for i in $(seq 1 130); do [ -e /tmp/released ] && break; sleep 5; done", "can sleep for more than"),
+            ("sleep 900", "past the 600 seconds"),
+            ("for i in $(seq 1 130); do [ -e /tmp/released ] && break; sleep 5; done", "past the 600 seconds"),
+            # Codex r1: a descending range counted as a negative number of passes.
+            ("for i in {50..1}; do sleep 15; done", "past the 600 seconds"),
             ("while true; do sleep 70; done", "no upper bound"),
         ]:
             with self.subTest(command=command):
@@ -2607,6 +2609,7 @@ class NoForegroundWaits(unittest.TestCase):
             'bash -c "until [ -f /tmp/x ]; do sleep 5; done"',
             'for i in $(seq 1 115); do [ -s "$f" ] && break; sleep 5; done; cat "$f"',
             "for i in {1..30}; do sleep 10; done",
+            "for i in {30..1}; do sleep 10; done",
             "sleep 60; tail -3 /tmp/s1-build.log",
             "gh pr checks 133 --watch --interval 20 >/dev/null 2>&1; gh pr checks 133",
             "gh run watch 37744773690 --interval 20 --exit-status",

@@ -205,7 +205,8 @@ def _counted_loop_seconds(text):
                   or re.search(r"\{(\d+)\.\.(\d+)\}", items))
         if bounds:
             start, end = bounds.groups()
-            count = int(end) - int(start or 1) + 1
+            count = abs(int(end) - int(start or 1)) + 1 if items.lstrip().startswith("{") \
+                else int(end) - int(start or 1) + 1
         else:
             count = len(items.split())
         yield count * sum(_sleeps(body))
@@ -268,14 +269,16 @@ def held(command, timeout_ms, holds_turn, rewrites):
         edits = bound_waits(command, timeout_ms)[0] if rewrites() else []
         if not edits or unguarded(apply(command, edits)):
             return "a sleeping `until`/`while` loop holds the turn with no upper bound"
+    # A session that waits in the foreground goes by its sleeps' total when every one is certain.
+    seconds = counted_wait(command)
+    if seconds and holds_turn():
+        timeout = timeout_ms if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) \
+            and timeout_ms > 0 else DEFAULT_TIMEOUT * 1000
+        limit = LONGEST if rewrites() else min(timeout, LONGEST)
+        return None if waits_in_one_call(command, limit) else \
+            f"its sleeps add up to {seconds:g} seconds, past the {limit // 1000:g} seconds one call allows"
     if any(seconds > LIMIT for seconds in _counted_loop_seconds(code)):
-        reason = f"this loop can sleep for more than {LIMIT} seconds"
-    elif any(seconds >= 60 for seconds in _sleeps(code)):
-        reason = "a sleep of a minute or more holds the turn"
-    else:
-        return None
-    timeout = timeout_ms if isinstance(timeout_ms, (int, float)) and not isinstance(timeout_ms, bool) \
-        and timeout_ms > 0 else DEFAULT_TIMEOUT * 1000
-    if holds_turn() and waits_in_one_call(command, LONGEST if rewrites() else min(timeout, LONGEST)):
-        return None
-    return reason
+        return f"this loop can sleep for more than {LIMIT} seconds"
+    if any(seconds >= 60 for seconds in _sleeps(code)):
+        return "a sleep of a minute or more holds the turn"
+    return None
