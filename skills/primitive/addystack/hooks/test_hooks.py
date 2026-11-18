@@ -4844,6 +4844,10 @@ class ReplyBudget(unittest.TestCase):
             subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": self.SNOOP}), text=True,
                            check=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
             self.assertEqual(log.stat().st_mode & 0o777, 0o600)
+            log.chmod(0o644)  # Codex review, round 2: an existing log is narrowed too
+            subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"last_assistant_message": self.SNOOP}), text=True,
+                           check=True, env={**os.environ, "ADDYSTACK_REPLY_LOG": str(log)})
+            self.assertEqual((log.stat().st_mode & 0o777, len(log.read_text().splitlines())), (0o600, 2))
 
     def test_content_and_merge_rules_still_send_back(self):
         # The turn block and merge options are machine-read; the Pick's source, a round's Size trail and

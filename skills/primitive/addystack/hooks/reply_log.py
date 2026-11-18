@@ -58,6 +58,7 @@ def record(event: dict, hook: str, broken: Iterable[Tuple[str, str]]) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         # Only the user reads it: a row holds a reply's headline, and the state folder is world-readable.
         with open(os.open(target, os.O_RDWR | os.O_APPEND | os.O_CREAT, 0o600), "r+b") as log:
+            os.fchmod(log.fileno(), 0o600)  # a log made before, or by hand, too; one it can't fix isn't written
             # A row a failed write cut short ends without a newline; start on a line of our own.
             end, torn = log.seek(0, os.SEEK_END), False
             if end:
