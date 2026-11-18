@@ -179,29 +179,23 @@ the slot or resource. Once it's sent, set the worker back to `running` with Wait
 cleared. A real call is one of the stops in the user's instructions, or a product call
 no probe settles; only those reach the user.
 
-**Queue order**: stuck runs, then calls, then Do items, oldest first within each. Each
-reply shows only the top one, as the [decision card](references/views.md#decision-card-example) with a strip naming the
-queue and the worker's thread:
-
-````markdown
-🟡 **Keep the v1 export endpoint for one release?**
-
-1 of 3 need you · export-v2 <t3-thread://v2/0c5f5b0f/thread-8f2c41>
-
-**Problem**: two partner scripts still call v1, so removing it breaks their nightly sync.
-
-**Pick**: yes, keep it one release with a deprecation header.
-
-**Source**: v1's access log, 60 calls a night from the two scripts.
-````
+**The queue**: each real call, stuck run, and Do the user owes goes into project.md's
+Queue in the turn it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
+--from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
+oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
+included, ends on the top item: the
+[decision card](references/views.md#decision-card-example) the first time, then its
+question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
+export-v2 <thread link>`, and the item's need for the turn block's `needs`; the
+`coordinator-queue` Stop hook sends back a reply without them.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
-words. In the same reply, show the next card with no recap. When the queue is empty,
-reply with a one-line status: a ⏳ line while any worker runs, else
-a **Done** line.
+words, and run `queue done <id> --answer "<their words>"`. In the same reply, show the
+next item with no recap. With the queue empty, the reply is one line: a ⏳ line while any
+worker runs, else a **Done** line.
 
-**Done when:** every answer is sent and recorded, and the reply shows the next card or
-the one-line status.
+**Done when:** every answer is sent and off the queue, and the reply ends on the queue's
+top item or the one-line status.
 
 ## 6. Merge
 

@@ -52,6 +52,8 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
 - **`standing`** (optional): items still open from earlier replies that don't block this
   turn's next step, in `needs`' item shape. An `id` is unique across both lists, any state
   may carry it, and alone it doesn't make a `stop`; only `needs` counts as needing the user.
+  So a decide or review the user still owes stays in `needs`, shown, until they answer it;
+  a thread that queues several shows the first and says how many wait.
 - **`options`**: the Next options in order, as `{"key", "class", "text"}`, with `text` 1-400
   characters, not blank. The first is the recommended one.
 - **`project`** (optional): 1-40 characters, not blank; threads that share it group into one row.

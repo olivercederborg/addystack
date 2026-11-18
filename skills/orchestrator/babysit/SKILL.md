@@ -15,7 +15,8 @@ collect every fix, push once, then reply against the pushed head. The pass ends 
 **maintenance done**, or with each unfinished PR watched while CI runs. A wake that
 changes nothing, such as a Vercel, Graphite, or Linear comment, or a green check while
 a required one still runs, with no person's comment, fix, or watch to start, is a quiet
-watch wake: its reply has no ⏳ line, headline, or status report.
+watch wake: its reply has no ⏳ line, headline, or status report, and in a ◆
+coordinator thread it ends on the queue's top item while the queue holds one.
 
 `watch_pull_request` wakes the thread when a check fails, the required checks pass,
 someone else comments or reviews, or the branch starts to conflict. Only comments
