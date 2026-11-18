@@ -19,7 +19,8 @@ keep it simple" · "but isnt it the best long term solution ?".
 
 **Pattern:**
 - **PRs**: vertical slices of up to about 1000 changed lines.
-- **Review loops**: stop at the skill's round cap and list what's still open.
+- **Review loops**: stop at the skill's round cap and list what's still open. A fix the
+  PR needs still lands before it merges.
 - **Option `a`**: inside the PR's scope, or it names the scope change it makes.
 
 **Tell:** a plan that grew without the user asking, or a follow-up PR for a finding on
