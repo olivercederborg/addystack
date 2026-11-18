@@ -185,15 +185,16 @@ def stop_call(turn):
 
 
 def pending(turn, earlier):
-    """What a project from before the queue still holds open, oldest first: each item the reply
-    before named and this one doesn't, then this reply's own, each (kind, name) once, then the
-    call it stops on with nothing in `needs`, as a decide, when its text can name a need."""
-    named = set(turn.items)
-    listed = [(item.kind, item.name) for item in earlier if item not in named]
-    listed += [(item.kind, item.name) for item in sorted(turn.items, key=lambda item: item.id)]
-    if (call := stop_call(turn)) and names_a_need(call.text):
-        listed.append(("decide", call.text))
-    return list(dict.fromkeys(listed))
+    """What a project from before the queue still holds open, oldest first, as (kind, name):
+    each item the reply before named that this one doesn't, by id or by kind and name, since a
+    reply may renumber; then each of this reply's own, distinct ids kept apart even when
+    their names match; then the call it stops on with nothing in `needs`, as a decide, when
+    its text can name a need."""
+    own = [(item.kind, item.name) for item in sorted(turn.items, key=lambda item: item.id)]
+    listed = [(item.kind, item.name) for item in earlier if item not in turn.items and (item.kind, item.name) not in own]
+    if (call := stop_call(turn)) and names_a_need(call.text) and ("decide", call.text) not in own:
+        own.append(("decide", call.text))
+    return listed + own
 
 
 def names_a_need(text):

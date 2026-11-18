@@ -114,9 +114,11 @@ def imported(lines: list[str], text: str, sources: dict[int, str] | None = None,
     if unknown := sorted({*sources, *stuck} - {need.id for need in items}):
         raise ProjectError(f"the turn block has no item {', '.join(map(str, unknown))}")
     project_queue.create(lines)
-    # A turn block's name may run over lines; a queue row holds one, as the reply shows it.
-    return [project_queue.add(lines, "stuck" if need.id in stuck else need.kind, " ".join(need.name.split()),
-                              sources.get(need.id, "coordinator")) for need in items]
+    # A turn block's name may run over lines; a queue row holds one line, so each line break,
+    # with the spaces around it, becomes one space, and the rest of the name stays as written.
+    return [project_queue.add(lines, "stuck" if need.id in stuck else need.kind,
+                              re.sub(r"[ \t]*(?:\r\n|\r|\n)[ \t]*", " ", need.name), sources.get(need.id, "coordinator"))
+            for need in items]
 
 
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,

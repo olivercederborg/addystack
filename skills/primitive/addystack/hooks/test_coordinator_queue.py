@@ -245,6 +245,10 @@ class CoordinatorQueue(unittest.TestCase):
                             transcript_path=str(transcript))
         self.assertIn('{"id":1,"kind":"decide","name":"stop format send-backs"},'
                       '{"id":2,"kind":"do","name":"pull the dotfiles"}]}', found)
+        # Two items one block names apart stay two, even under one name.
+        twins = block("running", needs=[need(10, "approve deployment"), need(11, "approve deployment")], elapsed="1 min")
+        self.assertIn('{"id":1,"kind":"decide","name":"approve deployment"},{"id":2,"kind":"decide","name":"approve '
+                      'deployment"}', self.run_on(twins))
         self.assertIsNone(self.run_on(quiet))  # no transcript to read: nothing carried
         # Once the Queue exists, it's the record: what it holds is what waits.
         self.write(PROJECT, ("decide", "stop format send-backs", WORKER))

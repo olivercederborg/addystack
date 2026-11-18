@@ -168,8 +168,10 @@ class Queue(Fixture, unittest.TestCase):
             self.assertIn("takes a turn block", self.project("queue", "import", stdin=refused, code=1).stderr)
         self.assertEqual(self.text(), PROJECT)
         (self.dir / "project.md").write_text(PROJECT)
-        wrapped = '{"state":"done","standing":[{"id":4,"kind":"decide","name":"approve\\nthe release"}]}'
-        self.assertIn("imported 1: decide · approve the release", self.project("queue", "import", stdin=wrapped).stdout)
+        wrapped = ('{"state":"done","standing":[{"id":4,"kind":"decide","name":"approve \\nthe release"},'
+                   '{"id":5,"kind":"decide","name":"keep token `a  b`"}]}')
+        out = self.project("queue", "import", stdin=wrapped).stdout
+        self.assertIn("imported 1: decide · approve the release\nimported 2: decide · keep token `a  b`\n", out)
         (self.dir / "project.md").write_text(PROJECT)
         quoted = 'A block looks like `<!-- turn {"state":"done"} -->`.\n\n' + reply
         self.assertIn("imported 3: decide · request a reviewer on ready", self.project("queue", "import", stdin=quoted).stdout)
