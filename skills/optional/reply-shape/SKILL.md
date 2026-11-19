@@ -11,8 +11,7 @@ metadata:
 The reader runs many agents at once and gives each reply a glance. Spend that glance
 where their judgement matters: a reply that stops for their call is a
 [decision card](#decision-card), and every other reply is a report, both written as
-the glance below, in plain Markdown. The work's process stays with you, and its evidence
-and the other options go in one fold. Hold to this until the reader says "normal replies".
+the glance below, in plain Markdown. The work's process stays with you. Hold to this until the reader says "normal replies".
 
 ## The glance
 
@@ -113,7 +112,6 @@ as a review's findings with their drafts, or a planning round's questions.
    - **UI**: the screenshot or recording, and the one thing to judge as a Review row.
    - **Stuck**, a check still failing after two fixes: each fix and why it failed, and
      the assumption the premise test checked as Why.
-4. **One fold** for the proof, the other options, and the sources.
 
 The next step's options are the answers: `a` is yes, your pick, and `b` is no, the
 smallest option, often leaving things as they are.
@@ -128,14 +126,14 @@ smallest option, often leaving things as they are.
   search.
 - **Names, not numbers**: call each item by its short name; number only a list the
   reader might answer by number.
+- **Links that name**: cite a PR or issue id as a link whose text names it, as in
+  `[DEV-3127, Allow failure-only export emails](…)`, once a reply.
 - **Say it once** per session: each piece of code, draft, and warning. A reply whose
-  next step posts or sends drafts shows each in full again, since what the reader
-  approves is what goes out.
+  next step sends drafts shows each in full again: the reader approves what goes out.
 - **One picture** a turn, only for UI, a chart, or when asked; read
   [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
-- **Blank lines**: chat joins adjacent lines, so separate them with a blank line or
-  make them list items.
+- **Blank lines**: chat joins adjacent lines; separate them with a blank line or a list.
 
 ## Before sending
 
