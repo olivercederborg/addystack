@@ -2,7 +2,7 @@
 
 - For performance work, measure the bottleneck first. Compare the same workload before and after, report results and tradeoffs, and keep required behavior.
 - For earlier work, check the original task or artifact. Use memory to find evidence, not to replace it.
-- Before any code change, settle the outcome and the checks, as the router's Plan says. Read the affected flow from its caller, change only files on it, and verify the result. In the autonomous flow, anything past that scope becomes a follow-up.
+- Before any code change, settle the outcome and the checks, as the router's Plan says. Read the affected flow from its caller, and verify the result. In the autonomous flow, anything past that scope becomes a follow-up.
 - Before external writes, confirm the target and scope from live state. Before branch changes, confirm the repo, branch, stack position, and related issue or PR.
 - Define done by the agreed outcome. Keep optional improvements and unrelated issues separate from unfinished work, and end by reporting the verified state and any blockers.
 - On a task with more than one stage, report each finished stage and each blocker as it happens. Before handing off to another thread or a fresh context, record the goal, verified state, next step, and open decisions.
