@@ -25,8 +25,8 @@ Calls, one per candidate: **recommended** or **alternative**.
 - **Plan**: the decisions, the **For architect** questions, and the **Not in scope**
   list from `scope-grill`, taken from this conversation, the saved plan, the ticket, or
   the spec, or the caller's brief. The approved shape settles each For architect
-  question. When there is no agreed plan or brief and the change isn't trivial, offer
-  `scope-grill` first.
+  question. When there is no agreed plan or brief and the change touches more than one
+  module, offer `scope-grill` first.
 - **Trace**: for each module the change touches, read its public interface and its
   callers through imports and tests, on a branch with nothing missing from the
   just-fetched default: `git rev-list --count HEAD..origin/<default>` is 0, because a
@@ -176,7 +176,8 @@ any open question is a **Decide** note. Then stop: the user goes on with the nex
 the router picks against the contract (or `build` when they want to go step by step),
 or changes the shape. With autonomy, return to the caller instead of stopping.
 
-**Done when:** the user has the commit and the hand-off.
+**Done when:** the headline names the contract commit's SHA, the shape is the approved
+typed call stack, and each open question is a **Decide** note.
 
 ## During the build
 
