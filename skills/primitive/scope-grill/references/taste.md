@@ -39,8 +39,10 @@ glossary (`CONTEXT.md`) wins where it's more specific.
 
 - **Native first.** Use the platform's native control before a custom one, such as iOS
   27 buttons, sheets, and keyboards.
-- **Principles, not looks.** "Clean", "fluid", "floating", "spacious". Take a cited app
-  or designer's approach, never palette, components, or timings; match a mockup made
-  for this app. Treat "overpowering", "cramped", and "AI-generated looking" as defects.
+- **Principles, not looks.** Take a cited app or designer's approach (spacing,
+  hierarchy, motion), never palette, components, or timings; match a mockup made for
+  this app. Screenshot the result beside the reference, and fix each spot with tighter
+  spacing than the reference (cramped) or more visual weight than its primary element
+  (overpowering).
 - **See it first.** For a new flow or screen, build a prototype with every state side
   by side before the real change.
