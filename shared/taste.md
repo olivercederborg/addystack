@@ -27,8 +27,8 @@ glossary (`CONTEXT.md`) wins where it's more specific.
 
 - **Ecosystem idioms.** Write what the library's own ecosystem writes. For Effect,
   check how OpenCode and t3code do it.
-- **Short, specific names.** Rename a vague or long name in the same pass, and its
-  stale siblings with it.
+- **Short, specific names.** Rename a name over three words, or one a sibling would fit
+  just as well, in the same pass, and its stale siblings with it.
 - **Effect modules.** Import a module as a namespace and name its main type after it:
   `import * as Program`, then `Program.Program`.
 - **No real providers.** Unit and e2e tests never call a real external service, such
