@@ -54,8 +54,9 @@ Sync mode, when the description drifted:
 - **Diff**: each PR against its parent branch.
 - **Rules**: read the repo's version-control and PR guidance, and its PR template if it
   has one.
-- **Scope**: if the diff mixes unrelated outcomes or is too big to review, say so and
-  offer `split-pull-request` (when installed) before writing.
+- **Scope**: if the diff mixes outcomes that could each merge alone, or changes over
+  400 lines outside lockfiles and generated files, say so and offer
+  `split-pull-request` (when installed) before writing.
 - **Kit output**, when available: the ticket's **Not in scope** section (from
   `scope-grill`), the latest `verify-work` verdict and checks line, and the latest
   `review-loop` result.
@@ -149,8 +150,9 @@ show the test that fails on the base and passes here, or the command output.
   `Shape-Picked-By: agent`, add an **Interface** bullet with its short SHA and
   `Shape-Alternative`.
 
-**Done when:** every part is filled or omitted on purpose, the picture covers every
-behavior change in the diff, and `check-body.mjs` passes on the body.
+**Done when:** every template section and body bullet is filled, or left out by a rule
+above (such as an empty Not in scope), the picture covers every behavior change in the
+diff, and `check-body.mjs` passes on the body.
 
 ## 3. Sync an existing PR
 
