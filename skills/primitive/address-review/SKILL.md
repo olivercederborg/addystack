@@ -102,9 +102,10 @@ Verify each claim against the PR head and, in a stack, whether another PR alread
 handles it. Give each item one call:
 
 - **Fix**: fully solve it at the cause, in slim-scope's shape.
-- **Decline**: the claim is wrong, or the change isn't worth the risk. The evidence
-  covers every path the claim names, so a path you haven't run rules out Decline. A
-  "no rule asks for X" reason names the conventions doc you read in full.
+- **Decline**: the claim is wrong, or its fix would break a path you name and the real
+  input can't reach the defect. The evidence covers every path the claim names, so a path
+  you haven't run rules out Decline. A "no rule asks for X" reason names the conventions
+  doc you read in full.
 - **Defer**: valid, but slim-scope says it waits. Name the follow-up in a few words.
 - **No change**: already handled.
 

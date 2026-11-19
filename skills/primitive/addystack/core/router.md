@@ -45,9 +45,10 @@ child task's brief with `Mode: planning <gated|autonomous>, trust <draft|gate|me
   plan save, architect's pick, the go that starts autopilot, and autopilot's interface,
   scope, and third-retry gates.
 
-Every other step outside Stops has autonomy. If {{user}} withholds it for the session
-("no autonomy"), nothing has it: skills wait as they would without this file,
-Continuation is off, and code work takes the gated flow.
+Every other step outside Stops has autonomy, including one a non-kit skill such as
+pr-ui-artifacts says to ask before. If {{user}} withholds it for the session ("no
+autonomy"), nothing has it: skills wait as they would without this file, Continuation
+is off, and code work takes the gated flow.
 
 ## Stops
 
@@ -85,8 +86,3 @@ fix still gets verify-work's re-check.
 A question asking you to act ("can you…?", "can't you just…?") is an instruction: do
 it. A question about which, when, whether, or why ("why not X?", "is it…?") gets an
 answer, and any change it implies becomes option `a`, not an edit.
-
-## Skills outside the addystack kit
-
-Skills the addystack kit doesn't own, such as pr-ui-artifacts or capture-ui-artifacts, ask
-first only at a stop. Otherwise they go ahead and log the call.

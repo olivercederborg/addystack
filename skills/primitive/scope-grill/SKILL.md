@@ -167,8 +167,8 @@ each option, show:
 
 - **A wider pick** changes the plan and Size trail in the next round and shows any new
   questions it creates.
-- **A second PR**: when the size passes what one reviewable PR can hold, say so and
-  propose a split into vertical slices, each shipping a working part of the outcome. A
+- **A second PR**: when the Size line passes ~20 files or one migration plus its
+  callers, say so and propose a split into vertical slices, each shipping a working part of the outcome. A
   wide rename or contract change goes expand → migrate → contract.
 - **A removed premise**: when a decision removes the reason behind an earlier pick, such
   as a tool that makes a feared conflict cheap, reopen that pick in the next round.

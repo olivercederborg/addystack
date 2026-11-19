@@ -53,8 +53,8 @@ the date.
 
 ## Depth
 
-Keep reading until more reading wouldn't change the decision. Widen the search when
-sources conflict or leave a material gap.
+Stop once every applicable Sources row has an answer and the last source read added
+nothing new. Widen the search when two sources disagree or a row has no answer.
 
 - **Uncertain API combinations or runtime behavior**: run a minimal example against
   the installed version before calling it working. Label an untested sketch

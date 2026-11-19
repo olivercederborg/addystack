@@ -75,7 +75,7 @@ addystack adds the two-option cap and each option's class.
   - `stop:post`: a message to a person.
   - `stop:prod`: a production write or a migration on shared data.
   - `stop:credential`: a missing credential, account, or secret.
-  - `decision`: a product call, a real fork, a plan gate, or an option after answering a
-    read-only question.
+  - `decision`: a product call, a fork (two options that change different files or
+    outcomes), a plan gate, or an option after answering a read-only question.
   - `routine`: anything else outside the stops, such as fix, verify, review, push the
     user's own branch, open a draft PR, or watch.
