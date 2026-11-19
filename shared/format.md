@@ -8,7 +8,8 @@ style (their global instructions, or the reply style they installed).
 or Cleanup, done when nothing needs fixing.
 
 - **Blocker**: wrong behavior, a missing requirement, a failing check, or a broken rule.
-- **Cleanup**: slop, scope creep, or a non-idiomatic pattern with a clear better form.
+- **Cleanup**: dead or duplicate code, scope creep, or a non-idiomatic pattern whose
+  idiomatic form a grounding source (docs, installed source, a sibling) shows.
 - **Optional**: what can wait outside the agreed outcome: a nicety with no correctness or
   maintenance cost, or a fix the slim-scope principle says waits. Any other cost the
   change caused or worsened is a Blocker or Cleanup, fixed in this change.
