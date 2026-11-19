@@ -57,7 +57,8 @@ before reporting: reviewers are part of the round, not a background watch.
 - **Branch**: diff against the stack parent, or against the merge-base with the default
   branch.
 - **PR**: the live PR diff.
-- **Working changes**: staged, unstaged, and relevant untracked files.
+- **Working changes**: staged, unstaged, and untracked files that aren't gitignored or
+  build output.
 
 **Done when:** the target, base, and head are known.
 
