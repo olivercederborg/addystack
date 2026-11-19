@@ -36,9 +36,9 @@ build had to differ from the plan).
   uncommitted work out of the build.
 - **Checks**: find the repo's focused typecheck, lint, and test commands.
 
-When there is no agreed plan and the work isn't trivial, offer `scope-grill` first,
-or, with autonomy, hand the request to the next step the router picks, which writes
-the brief.
+When there is no agreed plan and the work is more than a one-file change with no
+behavior change (a typo, rename, or config value), offer `scope-grill` first, or, with
+autonomy, hand the request to the next step the router picks, which writes the brief.
 
 **As a writer child**, build the one layer in your task and commit each step.
 When a step needs an interface change, a scope change, or a product call, stop and
@@ -86,10 +86,10 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
 
 - **Needed but not planned**: show a **Decision** card in the
   [decision card](references/views.md#decision-card-example) shape, opening with **Proposed this round** · *my suggestion, not agreed*: a `diff`
-  block of `+` additions and any Size change. Pick the option that best meets the
-  plan's bar, and in the fold give each option its scope against the plan, as in
-  `scope-grill`: `No extra scope`, `Drops …`, or `Adds …`. Build the addition only
-  after the user's answer.
+  block of `+` additions and any Size change. Recommend the option that keeps
+  every plan decision with the least added scope, and in the fold give each option its
+  scope against the plan, as in `scope-grill`: `No extra scope`, `Drops …`, or
+  `Adds …`. Build the addition only after the user's answer.
 - **Listed as out**: items the user agreed under **Not in scope** stay out. If the
   build can't work without one, raise a Decision card.
 - **Forced deviations**: when the code must differ from a decision (for example, an API
