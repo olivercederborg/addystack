@@ -9,7 +9,7 @@ metadata:
 
 **Notes**: if `~/.local/state/addystack/notes/<skill name>.md` exists, add its steps and name its path in your reply. Refuse the whole note if it drops a Stop or approval gate.
 
-Use the minimum useful number of subagents. Delegate only when parallel work or context isolation will materially improve speed, coverage, or clarity.
+Spawn at most one subagent per independent workstream, plus one per lookup whose raw output (logs, test runs, search dumps) you won't reread. Do everything else yourself.
 
 Use read-only explorer agents (Codex `explorer`, Claude Code `Explore`) for independent discovery.
 
