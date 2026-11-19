@@ -19,8 +19,8 @@ End on exactly one, and say which:
   commit, no PR.
 - **changed**: proven doc, map, or harness corrections ship in one PR, or stay as local
   commits on one branch when the run may not push.
-- **blocked**: coverage couldn't finish, or a proven fix couldn't ship safely. Name what
-  blocked it.
+- **blocked**: coverage couldn't finish, or a proven fix couldn't ship: its live proof
+  failed, or it needs an edit outside edit scope. Name what blocked it.
 
 ## Edit scope
 
