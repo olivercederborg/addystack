@@ -46,8 +46,8 @@ State, in plain English, the constraint the code cannot show: why the **non-obvi
 Make these moves inside the code the change touched. A move that reaches past it, such as splitting a file the change edited one line of or merging a type other code owns, goes in the report as a suggestion.
 
 1. **Inverted pyramid.** Within a file, lead with the exported or significant functions and push helpers below them. Don't bury the lead.
-2. **Related concepts over monoliths.** Break a large file into modules that each own one concept.
-3. **Combine overlapping concepts.** If two types, functions, or constants overlap significantly, merge them. The fewer distinct concepts a reader must hold in their head, the better.
+2. **Related concepts over monoliths.** Split a file that holds two concepts with separate callers into one module per concept.
+3. **Combine overlapping concepts.** If two types, functions, or constants hold the same fields or do the same job for every caller, merge them. The fewer distinct concepts a reader must hold in their head, the better.
 4. **Use shared code.** Check for an existing library or utility function (ex. file path parsing) before inlining one.
 5. **Derivability.** If a value can be computed from values already in scope, don't pass or store it separately. Removing derivable state often simplifies signatures, types, and control flow in one move. Example: an `isDirty` parameter that is always `editorContent !== baseline` can be dropped.
 
