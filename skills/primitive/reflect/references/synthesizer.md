@@ -34,9 +34,10 @@ Apply each criterion to every finding:
   ("the linter at SHA `bd91aa7` counts chars/4").
 - **One-off**: something that happened once, with no sign it recurs, is not a learning.
 - **Convergence**: findings echoed by 2+ reviewers carry higher confidence. A finding
-  from one reviewer needs evidence past one turn: 2 or more cited turns, 2 or more
-  sessions in `<SESSION_COUNTS>`, the line or current fact a cut cites, or a
-  Mechanisms row's matcher count or commit SHAs; otherwise reject it as `convergence`.
+  from one reviewer needs evidence that shows the failure itself: a cited turn quoting
+  the wrong step or the user's correction, the line or current fact a cut cites, or a
+  Mechanisms row's matcher count or commit SHAs. When its evidence only suggests a
+  failure could happen, reject it as `convergence`.
 - **Decision-changing**: a future agent does something different because of the edit,
   not just reads more text.
 - **Mechanism first**: when a hook, lint rule, script, or type could enforce the rule
