@@ -5,7 +5,7 @@ This file sets what an addystack skill reports. Each workflow skill points here 
 style (their global instructions, or the reply style they installed).
 
 **Severity** for code findings. The verdict follows the worst: not done with any Blocker
-or Cleanup, done when only Optional findings, or none, remain.
+or Cleanup, done when nothing needs fixing.
 
 - **Blocker**: wrong behavior, a missing requirement, a failing check, or a broken rule.
 - **Cleanup**: dead or duplicate code, scope creep, or a non-idiomatic pattern whose
