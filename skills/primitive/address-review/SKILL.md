@@ -122,8 +122,9 @@ in the fold as a card, as the shared Cards rule says, and a call that needs the 
 decision is a decision card. Small local fixes, such as a rename, an import, or a
 guard, show their code after fixing.
 
-The headline counts the calls and is marked by the worst claim that holds. When
-every call is clear, recommend all recommended calls, then push, reply, resolve, and
+The headline counts the calls and is marked by the worst claim that holds. When no
+call needs the user's decision (a product call no probe settles), recommend all
+recommended calls, then push, reply, resolve, and
 offer the same calls stopping before the push. One answer settles the round. Taking
 the recommendation runs steps 3 and 4 without stopping, and ends with the report and the posted
 replies, or at the report when a check fails or a fix has to differ from what was shown. When
