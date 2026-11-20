@@ -67,8 +67,8 @@ before reporting: reviewers are part of the round, not a background watch.
 Run `scripts/packet.sh <pr N | range PARENT..HEAD | working | plan FILE> --checks FILE`,
 with each check already run as a `command → result` line in FILE. Add `--intent FILE`
 for the user's plan or stated intent, `--only PATH` for each file the user names, and
-`--keep PATH` for a lockfile, generated, vendored, or binary file that's central to the
-change. It writes the packet and the one prompt every reviewer gets under
+`--keep PATH` for a lockfile, generated, vendored, or binary file the change's intent
+names or edits by hand. It writes the packet and the one prompt every reviewer gets under
 `.review-loop/` in the repo, and prints both paths and the loop's **baseline** size.
 Every later round, and step 5's size check, reruns this command at the new head, with
 `--base <round 1's Base>` for `working`. From round 2, add `--round N --previous FILE
