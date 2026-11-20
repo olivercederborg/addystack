@@ -32,7 +32,7 @@ Mark any safety fact you can't get to step 4 unproven, out loud. Don't round it 
 3. Look where grep stops. Read the source of the library you call, and check its pinned version and any local patch. Work out when things run: microtasks, unmount and teardown, Solid versus React. Follow what a symbol search misses: the JSON an API returns, a DB column, a wire format, another language reading the same bytes, a feature flag, code three hops downstream. For data the change sends off the device or service, list every field each route or event carries; a deny-list filter stays unproven until it covers them all.
 4. Be honest about each risk. Give it a real chance of happening and a real cost if it does. Keep the risks you confirmed; list the ones you checked and cleared separately. Cite a real `file:line`; a search that finds nothing is still an answer; never make up a caller or an API.
 5. Prove the one fact. Write a script or test that runs the real code, usually one small script that imports the same library the app ships and calls the exact function you're worried about. Run it and paste what happened.
-6. For a big or wide change, ask several models the same question, as `review-loop` does, and merge the answers, since different models catch different real bugs.
+6. For a change that touches more than one package, a shared format, persistence, or a dependency, ask several models the same question, as `review-loop` does, and merge the answers.
 
 ## What to hand back
 

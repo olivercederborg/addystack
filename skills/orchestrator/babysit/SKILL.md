@@ -99,9 +99,8 @@ Without autonomy, fix after the user's pick, as address-review does.
 
 **Reverify.** After the fixes and any restack, recompute each layer's patch-id with
 `python3 scripts/verdicts.py status <parent> <head>`. A changed one gets autopilot's
-step 4 **Re-check**, under its rules: at most three review-loop rounds, and a layer past
-the cap lists its open findings at the top of its PR description. An unchanged one keeps
-its verdict and reruns its checks at the new head.
+step 4 **Re-check**, under review-loop's round cap. An unchanged one keeps its verdict
+and reruns its checks at the new head.
 
 **Done when:** every conflict is resolved, every open thread has a call, every failing
 check has a rerun, a restack, a fix, or a named cause outside the PR, and every changed
@@ -114,8 +113,7 @@ layer is reverified, and any past the review-loop cap lists its open findings.
 - **Reply** after the push, against the pushed head, with address-review's step 4:
   its [reply style](references/reply-style.md), the
   [agent disclosure](references/disclosure.md), `Fixed in` with the remote head's SHA,
-  and its resolve defaults. With autonomy, post
-  replies to bots. Keep replies to people as drafts in a **Review** note.
+  and its resolve defaults.
 - **Stale descriptions**: when a fix makes a PR description stale, update it with
   `open-pr`.
 
@@ -151,7 +149,7 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   wake runs another pass.
 - **Done**: call `unwatch_pull_request` for each PR in scope, watched or not, so the
   thread returns to the user's inbox. Then stop at the user's merge rule for the repo's
-  trust value, and report. Merging or marking ready waits for whatever that rule needs.
+  trust value, and report.
 - **In a coordinator's worker** (its brief has a `Worker of:` line), the coordinator
   owns the watch, in place of both bullets above: run the pass, leave watching and
   unwatching to the coordinator, and report maintenance done, or what the next wake

@@ -49,15 +49,16 @@ are known.
 
 ## 2. Build in steps
 
-Split the plan into small vertical slices, each a thin working path through the code,
-and build one slice at a time:
+Split the plan into vertical slices, each one commit that runs end to end and passes
+its own checks, and build one slice at a time:
 
-1. **Ground** each non-trivial API call or pattern with
-   [grounding](references/grounding.md) before writing it.
-2. **Red.** Where behavior can regress, write the fewest tests that cover the step's
-   distinct cases, at the plan's test seam, each asserting real behavior. Watch each
-   fail for the right reason. Use `tdd` when it's installed, with the plan's test seams
-   as the seams the user already confirmed.
+1. **Ground** each API call or pattern the repo doesn't already use at the installed
+   version with [grounding](references/grounding.md) before writing it.
+2. **Red.** For each step that changes behavior (not only a rename, move, or comment),
+   write the fewest tests that cover the step's distinct cases, at the plan's test seam,
+   each asserting real behavior. Watch each fail on its assertion, not on an import,
+   type, or setup error. Use `tdd` when it's installed, with the plan's test seams as
+   the seams the user already confirmed.
 3. **Green.** Write the smallest code that passes, using the glossary's names and the
    plan's decisions. Refactoring comes later, in `verify-work`.
 4. **Check.** Run the focused checks for the touched files. A failing check stops the
@@ -75,7 +76,7 @@ and build one slice at a time:
    `git commit` on a `gh stack` branch). Run the pre-commit checks in the repo's
    version-control guidance first, such as a comment-convention scan.
 
-When a check fails and the cause isn't clear, use `diagnosing-bugs` when it's
+When a check still fails after one fix attempt, use `diagnosing-bugs` when it's
 installed: form a hypothesis you can disprove, then test it. Tag debug logs with a
 unique prefix (`[DEBUG-a4f2]`), and remove them before the step's commit.
 

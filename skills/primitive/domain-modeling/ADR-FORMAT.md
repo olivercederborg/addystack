@@ -30,7 +30,7 @@ Scan `docs/adr/` for the highest existing number and increment by one.
 
 All three of these must be true:
 
-1. **Hard to reverse**: the cost of changing your mind later is meaningful
+1. **Hard to reverse**: undoing it needs a data migration, a public API change, or edits across more than one module
 2. **Surprising without context**: a future reader will look at the code and wonder "why on earth did they do it this way?"
 3. **The result of a real trade-off**: there were genuine alternatives and you picked one for specific reasons
 

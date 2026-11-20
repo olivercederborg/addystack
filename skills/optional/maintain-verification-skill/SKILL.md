@@ -66,7 +66,8 @@ the app and never edit files.
 ## 4. Reconcile
 
 - **Drift**: spot-check each cited drift against the source. Leave clean claims alone.
-- **States**: merge overlapping recipes into as few app states as practical.
+- **States**: merge recipes that start from the same account, seed data, and screen into
+  one app state.
 - **Churn**: sweep the last 30 days of commits, busiest folders first, for user-facing
   surfaces the map lacks. A surface counts as missing only with a concrete source path.
 

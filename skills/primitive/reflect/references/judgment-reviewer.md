@@ -52,7 +52,7 @@ List each durable learning. For each:
 - **Routing**: the `SKILL.md` path and section, OR `tune description: <skill path>`, OR
   `mechanism: <hook | lint | script | type>` when a check could enforce it, OR
   `cut: <file + lines>`, OR
-  `new skill: <kebab-name>` when no existing skill is a real home.
+  `new skill: <kebab-name>` when no existing skill's description names the situation.
 
 Skip trivial things (typos, tool retries, mechanical setup). Skip anything the skill the
 parent followed already says clearly. Skip details that drift: SHAs, current file paths,

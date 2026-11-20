@@ -148,8 +148,8 @@ ask to drop a finding in their own words.
 
 Each finding carries its recommended call, and one answer takes every one and posts
 the drafts. The user can also answer by number, as in "post 1 and 2". When challenged,
-re-check, say what changed, and downgrade or drop the finding if the evidence calls for
-it.
+re-check with a probe or source, say what changed, drop the finding when the re-check
+doesn't reproduce it, and downgrade it when its consequence shrinks.
 
 **Done when:** every finding is blocking, non-blocking, a question, or dropped.
 
@@ -212,7 +212,7 @@ When the author has addressed the comments, or a push dismissed the user's appro
 
 End by recommending the step the verdict calls for:
 
-- **Approve**: approve.
+- **Approve**, with no finding left: approve.
 - **Approve, with Optional niceties or follow-up ideas left**: approve with them as a follow-up PR; approve.
 - **Held** by an open finding: post any new findings without approving.
 
