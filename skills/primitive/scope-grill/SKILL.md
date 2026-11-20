@@ -53,13 +53,13 @@ Not in scope, so a later run picks it up.
   answer widened the scope, say so.
 - **Work the design tree.** A round asks only the **frontier**: decisions whose
   prerequisites are settled. Recompute it after each answer.
-- **Rounds** have one to three open frontier questions, highest impact first. Ask only
-  decisions that need the user's input; don't add a question to fill the round. Each has
-  a recommended option, and one answer can settle the round: every pick, or every pick
-  but the ones it overrides by number.
+- **Rounds** have one to three open frontier questions, the one whose options differ
+  most in Size first. Ask only decisions that need the user's input; don't add a
+  question to fill the round. Each has a recommended option, and one answer can settle
+  the round: every pick, or every pick but the ones it overrides by number.
 - **Facts are yours; decisions are the user's.** Look up what the code, config, or
-  tools can answer, using sub-agents in parallel if needed. While a lookup runs, only
-  the questions that depend on it wait.
+  tools can answer, with parallel sub-agents when two or more lookups are independent.
+  While a lookup runs, only the questions that depend on it wait.
 
 ## 3. Show each option's impact
 
@@ -80,8 +80,7 @@ name, such as `+4 more in the fold`:
    on the plan's Size line, not here.
 3. Print **The plan so far** as its own heading every time, then these plain headings
    in order: **Building** · **Not building** · **Assuming** (say if wrong) · **Size**.
-   Show the complete Size on its line, including PRs, files and migrations; use
-   `Size`, not a synonym, so the Stop check can read it. Mark each Building
+   Use `Size`, not a synonym, so the Stop check can read it. Mark each Building
    clause `(you)`, `(you, round N)`, or `(me, round N)`; write the heading exactly as
    **Assuming** (say if wrong), with each value on its heading line as in the example.
    Keep about five Building clauses,
