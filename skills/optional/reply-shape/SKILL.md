@@ -129,7 +129,7 @@ smallest option, often leaving things as they are.
 - **Links that name**: cite a PR or issue id as a link whose text names it, as in
   `[DEV-3127, Allow failure-only export emails](…)`, once a reply.
 - **Say it once** per session: each piece of code, draft, and warning. A reply whose
-  next step sends drafts shows each in full again: the reader approves what goes out.
+  next step posts or sends drafts shows each in full again: the reader approves what goes out.
 - **One picture** a turn, only for UI, a chart, or when asked; read
   [pictures](references/pictures.md) first.
 - **Tangents wait**: a side issue becomes a later next-step option.
