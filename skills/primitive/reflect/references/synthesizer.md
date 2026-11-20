@@ -34,7 +34,8 @@ Apply each criterion to every finding:
   ("the linter at SHA `bd91aa7` counts chars/4").
 - **One-off**: something that happened once, with no sign it recurs, is not a learning.
 - **Convergence**: findings echoed by 2+ reviewers carry higher confidence. A finding
-  from one reviewer must clear a higher bar on the other criteria.
+  from one reviewer needs 2 or more cited turns, or 2 or more sessions in
+  `<SESSION_COUNTS>`; otherwise reject it as `convergence`.
 - **Decision-changing**: a future agent does something different because of the edit,
   not just reads more text.
 - **Mechanism first**: when a hook, lint rule, script, or type could enforce the rule
@@ -53,8 +54,8 @@ Apply each criterion to every finding:
 - **Cuts**: a line in a loaded skill or rule that duplicates another file or states a
   stale fact is an Accepted row routed as `cut: <file + lines>`, with the other file's
   line, or the current fact, as its evidence.
-- **Existing skill first**: propose a new skill only when no existing skill is a real
-  home, the pattern recurs, and the topic deserves its own skill.
+- **Existing skill first**: propose a new skill only when no existing skill's description
+  names the situation and the pattern recurs in 2 or more cited turns or sessions.
 - **Skill was used**: accept only edits to a skill the session loaded. A skill marked
   read counts only when the digest shows the session following its steps. A skill
   marked only authored is the work under review, not a guide the session followed. If a skill should
