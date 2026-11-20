@@ -51,6 +51,6 @@ Explain the concrete benefit of a proposed idiomatic rewrite; a different spelli
 
 ## Existing code
 
-Inspect the repository before adding a pattern or library. New code uses the stronger pattern, even when repo precedent differs.
+Inspect the repository before adding a pattern or library.
 
 **Done when:** each changed behavior was checked against every relevant reference, and any rule you broke is named with its reason.
