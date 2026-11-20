@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Coordinate subagents when a task has at least two independent workstreams, or when exploration, tests, logs, or research would add substantial noise to the main context. Do not use for small, sequential, or tightly coupled work.
+description: Coordinate subagents when a task has at least two independent workstreams, or when exploration, tests, logs, or research would put output you won't reread into the main context. Do not use for small, sequential, or tightly coupled work.
 metadata:
   layer: primitive
 ---
@@ -19,7 +19,7 @@ Use writer agents (Codex `worker`, Claude Code `general-purpose`) only when impl
 
 Give each fresh-context agent a brief, per **The brief** below. Tell leaf agents to complete their assignment directly and not delegate.
 
-Before delegating, check that no agent already owns the work. Keep assignments distinct, and keep the models and roles a skill or the user assigned. Do not let agents edit the same files concurrently. Use one writer when work is sequential, tightly coupled, or touches shared mutable state. Let agents message each other directly when one result unblocks another assigned task.
+Before delegating, check that no agent already owns the work. Keep assignments distinct, and keep the models and roles a skill or the user assigned. Use one writer when work is sequential, tightly coupled, or touches shared mutable state. Let agents message each other directly when one result unblocks another assigned task.
 
 Keep user communication, approvals, integration, final verification, and the final answer with the parent agent. An owner thread is a parent for its own PR. Continue useful parent work while subagents run, then synthesize their results without duplicating completed investigation.
 
