@@ -28,7 +28,7 @@ the glance below, in plain Markdown. The work's process stays with you. Hold to 
    **items** instead: a list item per PR, finding, option, or running job, its name in
    bold and a clause of at most 12 words, details under it or in the fold. Group by
    the thing, and findings by severity under a bold **Must fix**, then **Cleanups**.
-   - **Header row**: the subject: a PR as a link, then what it changes, its state, and
+   - **Header row**: the subject: a PR as a link naming its change, then its state and
      size; or one word, such as Problem or Change, then the point.
    - **Rows**: at most five, each `label | value`. Every value, the header's too, is at
      most 20 words. The label is one word from this list: Risk, what could go wrong;
@@ -55,7 +55,7 @@ it stays under 60 words. A mid-turn progress message is one line.
 ````markdown
 ✅ **Exports no longer time out on big companies.**
 
-| [#212](https://github.com/acme/app/pull/212) | Exports page their rows · draft · +86 −40 in 3 files |
+| [#212, Exports page their rows](https://github.com/acme/app/pull/212) | draft · +86 −40 in 3 files |
 |---|---|
 | Risk | ⚠️ A year of rows still takes about 40 s. |
 | Why | Paging sits inside `Export`, so its callers don't change. |
