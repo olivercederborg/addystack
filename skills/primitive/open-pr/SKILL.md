@@ -115,7 +115,8 @@ it is new.
 
 **Check the body** with `scripts/check-body.mjs body.md`: it parses each Mermaid block,
 rejects a check line that counts tests, and flags a screenshot outside a full
-Before | After row. Run it before every `--body-file` post and
+Before | After row; an image whose alt text starts with `Visual:`, from a repo's
+PR-visual tool, passes. Run it before every `--body-file` post and
 before showing a body for approval. Quoting a label, as in `A["call (x)"]`, fixes most.
 Its Mermaid line goes in the checks.
 
