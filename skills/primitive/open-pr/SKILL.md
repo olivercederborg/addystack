@@ -133,7 +133,7 @@ screenshots (`pr-ui-artifacts` captures them) in one row per screen or state:
 A screen with no before says so in italics. Upload them with `--attach` on
 `gh pr create`, `gh pr edit`, or `gh pr comment`: each `![…](./file)` in the `--body-file`
 becomes the uploaded image. To size a wide one, swap its uploaded image for
-`<img src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
+`<img alt="<its alt text>" src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
 show the test that fails on the base and passes here, or the command output.
 
 **Other rules:**
