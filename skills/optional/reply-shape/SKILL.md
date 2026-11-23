@@ -47,7 +47,7 @@ the glance below, in plain Markdown. The work's process stays with you. Hold to 
    when only the reader's merge go is left, the reply is a ship gate instead. When only
    background work is left, the reply is the ⏳ headline, an item per job if several, and
    one `then: …` clause, what you'll do when it lands, with no table:
-   "⏳ **CI on #12, 6 min in**, then: fix any failure".
+   "⏳ **CI on paged exports, 6 min in**, then: fix any failure".
 
 **Budget**: a fact that fits no row or view goes in the fold, and any other prose above
 it stays under 60 words. A mid-turn progress message is one line.
