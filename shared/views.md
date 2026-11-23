@@ -164,8 +164,8 @@ main
 
 ## Ship gate
 
-A merge go or a push go. The header row is the PR as a link, then what it changes for a
-user or caller, not its title, its state, and the `size:` rating
+A merge go or a push go. The header row is the PR as a link whose text says what it
+changes for a user or caller, not its title, then its state, and the `size:` rating
 `scripts/github.sh target N` prints, with `leaving out` only when those files outweigh
 the rest, and the thread that made it when another did. A push go's header is the branch
 and its unpushed commits. Its rows:
@@ -189,14 +189,14 @@ phrase per cell, `none` when empty, and no row that's empty for all:
 ````markdown
 🟡 **Merge #124, so a retried upload stops creating a second receipt?**
 
-| [#124](https://github.com/acme/app/pull/124) | A retry reuses its receipt · draft · +120 −30 in 4 files |
+| [#124, A retry reuses its receipt](https://github.com/acme/app/pull/124) | draft · +120 −30 in 4 files |
 |---|---|
 | Risk | ⚠️ blast-radius not run: it adds a unique index on receipts. |
 | Risk | ⚠️ Review 8/10: the timeout path has no test. |
 | Proof | verify-work Done at head · CI · tests 41/41 · no restack |
 | Undo | Revert #124, then drop the index. |
 
-| You accept | [#124](https://github.com/acme/app/pull/124) |
+| You accept | #124 |
 | --- | --- |
 | New | a unique index on each receipt's upload id |
 | Changes | the upload API answers a retry with the first receipt |
@@ -234,7 +234,7 @@ would pass a view's six rows.
 | Proof | verify-work Done on both at head · CI · no restack |
 | Undo | Revert #125, then #124, and drop the index. |
 
-| You accept | [#124](https://github.com/acme/app/pull/124) uploads · 8/10 | [#125](https://github.com/acme/app/pull/125) server · 9/10 |
+| You accept | [#124, A retry reuses its receipt](https://github.com/acme/app/pull/124) · 8/10 | [#125, Receipts return their upload id](https://github.com/acme/app/pull/125) · 9/10 |
 | --- | --- | --- |
 | New | a unique index on receipts' upload id | an upload id field on receipts |
 | Changes | a retry gets its first receipt back | the receipts API returns each upload id |
