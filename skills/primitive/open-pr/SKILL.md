@@ -115,7 +115,8 @@ it is new.
 
 **Check the body** with `scripts/check-body.mjs body.md`: it parses each Mermaid block,
 rejects a check line that counts tests, and flags a screenshot outside a full
-Before | After row. Run it before every `--body-file` post and
+Before | After row; an image whose alt text starts with `Visual:`, from a repo's
+PR-visual tool, passes. Run it before every `--body-file` post and
 before showing a body for approval. Quoting a label, as in `A["call (x)"]`, fixes most.
 Its Mermaid line goes in the checks.
 
@@ -132,7 +133,7 @@ screenshots (`pr-ui-artifacts` captures them) in one row per screen or state:
 A screen with no before says so in italics. Upload them with `--attach` on
 `gh pr create`, `gh pr edit`, or `gh pr comment`: each `![…](./file)` in the `--body-file`
 becomes the uploaded image. To size a wide one, swap its uploaded image for
-`<img src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
+`<img alt="<its alt text>" src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
 show the test that fails on the base and passes here, or the command output.
 
 **Other rules:**

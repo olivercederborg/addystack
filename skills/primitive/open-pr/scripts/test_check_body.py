@@ -85,6 +85,16 @@ class CheckBody(unittest.TestCase):
         ])
         self.assertEqual(screenshots(body), ([], 0))
 
+    def test_passes_a_rendered_visual_outside_a_table(self):
+        body = "\n".join([
+            "## Visual",
+            "![Visual: retries reuse their receipt](./pr-visual.png)",
+            "<img alt=\"Visual: retries reuse their receipt\" src=\"https://x/y.png\" width=\"880\">",
+            "![Visualized setup](./setup.png)",
+            "<img data-alt=\"Visual: x\" src=\"https://x/y.png\">",
+        ])
+        self.assertEqual(screenshots(body), ([4, 5], 1))
+
 
 if __name__ == "__main__":
     unittest.main()
