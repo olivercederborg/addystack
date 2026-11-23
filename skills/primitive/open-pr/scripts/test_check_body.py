@@ -1,18 +1,22 @@
-"""Runs check-body.mjs on sample PR bodies: each counted line must be flagged, and each
-clean one must pass."""
+"""Runs check-body.mjs on sample PR bodies: each counted line and each screenshot outside a
+Before | After table must be flagged, and each clean body must pass."""
 import pathlib, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check-body.mjs"
 
 
-def check(body):
-    """The flagged line numbers, and the script's exit code."""
+def check(body, problem="counts tests"):
+    """The line numbers flagged with `problem`, and the script's exit code."""
     with tempfile.NamedTemporaryFile("w", suffix=".md") as file:
         file.write(body)
         file.flush()
         run = subprocess.run(["node", str(SCRIPT), file.name], capture_output=True, text=True)
-    lines = [int(line.split(":")[1].split()[0]) for line in run.stdout.splitlines() if "counts tests" in line]
+    lines = [int(line.split(":")[1].split()[0]) for line in run.stdout.splitlines() if problem in line]
     return lines, run.returncode
+
+
+def screenshots(body):
+    return check(body, problem="Before | After")
 
 
 class CheckBody(unittest.TestCase):
@@ -41,6 +45,42 @@ class CheckBody(unittest.TestCase):
             "- **Checks**: ✅ browser tests (3 browsers) · ✅ Python 3.13 unit tests",
         ])
         self.assertEqual(check(body), ([], 0))
+
+
+    def test_flags_screenshots_outside_a_before_after_table(self):
+        body = "\n".join([
+            "**Setup asks for fewer fields.**",
+            "![Setup](./setup.png)",
+            "",
+            "| Screen | Old | New |",
+            "|---|---|---|",
+            "| Setup | ![Old](./old.png) | ![New](./new.png) |",
+            "",
+            "<img src=\"./row.png\" width=\"400\">",
+        ])
+        self.assertEqual(screenshots(body), ([2, 6, 8], 1))
+
+    def test_flags_a_row_missing_its_before_or_after(self):
+        body = "\n".join([
+            "| Screen | Before | After |",
+            "|---|---|---|",
+            "| Setup | ![Before](./a.png) |  |",
+            "| Row |  | ![After](./b.png) |",
+        ])
+        self.assertEqual(screenshots(body), ([3, 4], 1))
+
+    def test_passes_a_before_after_table(self):
+        body = "\n".join([
+            "| Screen | **Before** | **After** |",
+            "|:---|:---:|:---:|",
+            "| Setup | ![Before](./a.png) | ![After](./b.png) |",
+            "| Prompt | _new screen_ | <img src=\"./c.png\" width=\"400\"> |",
+            "",
+            "```markdown",
+            "![Example](./example.png)",
+            "```",
+        ])
+        self.assertEqual(screenshots(body), ([], 0))
 
 
 if __name__ == "__main__":
