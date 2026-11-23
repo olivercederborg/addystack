@@ -114,14 +114,25 @@ Use `diff` when the surrounding shape already exists, and the whole block when m
 it is new.
 
 **Check the body** with `scripts/check-body.mjs body.md`: it parses each Mermaid block,
-and rejects a check line that counts tests. Run it before every `--body-file` post and
+rejects a check line that counts tests, and flags a screenshot outside a full
+Before | After row. Run it before every `--body-file` post and
 before showing a body for approval. Quoting a label, as in `A["call (x)"]`, fixes most.
 Its Mermaid line goes in the checks.
 
-**Evidence.** Show the change working, before and after. When the UI changes, use
-screenshots side by side (`pr-ui-artifacts` captures them), uploaded with `--attach` on
-`gh pr create`, `gh pr edit`, or `gh pr comment`: a body reference such as
-`![Before](./before.png)` in the `--body-file` becomes the uploaded image. Otherwise,
+**Evidence.** Show the change working, before and after. When the UI changes, put the
+screenshots (`pr-ui-artifacts` captures them) in one row per screen or state:
+
+```markdown
+| Screen | Before | After |
+|---|---|---|
+| Setup | ![Before](./setup-before.png) | ![After](./setup-after.png) |
+| Prompt | _new screen_ | ![After](./prompt.png) |
+```
+
+A screen with no before says so in italics. Upload them with `--attach` on
+`gh pr create`, `gh pr edit`, or `gh pr comment`: each `![…](./file)` in the `--body-file`
+becomes the uploaded image. To size a wide one, swap its uploaded image for
+`<img src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
 show the test that fails on the base and passes here, or the command output.
 
 **Other rules:**
