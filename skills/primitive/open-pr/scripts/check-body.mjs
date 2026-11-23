@@ -33,7 +33,7 @@ const testCount =
 // A screenshot is a Markdown image or an <img> tag outside inline code.
 const screenshot = /!\[[^\]]*\]\([^)]*\)|<img\b/i;
 // A rendered visual, as Markdown or as the <img> a later resize swaps in.
-const visual = /!\[\s*Visual:[^\]]*\]\([^)]*\)|<img\b[^>]*\balt=["']\s*Visual:[^>]*>/gi;
+const visual = /!\[\s*Visual:[^\]]*\]\([^)]*\)|<img\b[^>]*\salt=["']\s*Visual:[^>]*>/gi;
 const fence = /^\s*(```|~~~)/;
 const tableRow = /^\s*\|/;
 const separatorRow = /^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-*:?\s*$/;

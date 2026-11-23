@@ -91,8 +91,9 @@ class CheckBody(unittest.TestCase):
             "![Visual: retries reuse their receipt](./pr-visual.png)",
             "<img alt=\"Visual: retries reuse their receipt\" src=\"https://x/y.png\" width=\"880\">",
             "![Visualized setup](./setup.png)",
+            "<img data-alt=\"Visual: x\" src=\"https://x/y.png\">",
         ])
-        self.assertEqual(screenshots(body), ([4], 1))
+        self.assertEqual(screenshots(body), ([4, 5], 1))
 
 
 if __name__ == "__main__":
