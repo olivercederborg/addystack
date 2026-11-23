@@ -4,7 +4,8 @@
 // count ("✅ 56 package tests") goes stale after the next fix round, and every screenshot
 // sits in a Before | After table row with both cells filled, so a reviewer can compare
 // (a screen with no before writes italic text such as _new screen_). The screenshot
-// check skips code fences.
+// check skips code fences, and a rendered image whose alt text starts with "Visual:",
+// which a repo's PR-visual tool writes, since it has no before to sit beside.
 //
 //   check-body.mjs FILE...     one line per problem; exit 1 when any is found
 import { spawnSync } from "node:child_process";
@@ -31,6 +32,8 @@ const testCount =
 
 // A screenshot is a Markdown image or an <img> tag outside inline code.
 const screenshot = /!\[[^\]]*\]\([^)]*\)|<img\b/i;
+// A rendered visual, as Markdown or as the <img> a later resize swaps in.
+const visual = /!\[\s*Visual:[^\]]*\]\([^)]*\)|<img\b[^>]*\balt=["']\s*Visual:[^>]*>/gi;
 const fence = /^\s*(```|~~~)/;
 const tableRow = /^\s*\|/;
 const separatorRow = /^\s*\|?(\s*:?-+:?\s*\|)+\s*:?-*:?\s*$/;
@@ -63,7 +66,7 @@ for (const file of files) {
         misplace(i, "Before | After row has an empty cell; write _new screen_ (or other italic text) where there's no image");
       }
     }
-    if (!table && screenshot.test(text.replace(/`[^`]*`/g, ""))) {
+    if (!table && screenshot.test(text.replace(/`[^`]*`/g, "").replace(visual, ""))) {
       misplace(i, "screenshot outside a Before | After table; put it in a row beside its before");
     }
   };
