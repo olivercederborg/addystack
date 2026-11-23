@@ -3,7 +3,8 @@
 // check-mermaid.mjs), its check lines name checks without counting tests, since a
 // count ("✅ 56 package tests") goes stale after the next fix round, and every screenshot
 // sits in a Before | After table row with both cells filled, so a reviewer can compare
-// (a screen with no before writes italic text such as _new screen_). Code fences are skipped.
+// (a screen with no before writes italic text such as _new screen_). The screenshot
+// check skips code fences.
 //
 //   check-body.mjs FILE...     one line per problem; exit 1 when any is found
 import { spawnSync } from "node:child_process";
@@ -49,25 +50,30 @@ for (const file of files) {
     misplaced++;
     console.log(`${file}:${i + 1} ❌ ${problem}`);
   };
+  // Screenshots, outside code fences: in a Before | After table, each row fills both.
+  const checkScreenshots = (text, i) => {
+    if (!tableRow.test(text)) table = undefined;
+    else if (table === undefined) {
+      const header = cells(text).map(label);
+      const [before, after] = ["before", "after"].map((name) => header.findIndex((cell) => cell.startsWith(name)));
+      table = before >= 0 && after >= 0 ? { before, after } : null;
+    } else if (table && !separatorRow.test(text)) {
+      const row = cells(text);
+      if (!row[table.before] || !row[table.after]) {
+        misplace(i, "Before | After row has an empty cell; write _new screen_ (or other italic text) where there's no image");
+      }
+    }
+    if (!table && screenshot.test(text.replace(/`[^`]*`/g, ""))) {
+      misplace(i, "screenshot outside a Before | After table; put it in a row beside its before");
+    }
+  };
   readFileSync(file, "utf8")
     .split("\n")
     .forEach((text, i) => {
-      if (fence.test(text)) inFence = !inFence;
-      if (inFence || fence.test(text)) return;
-      if (!tableRow.test(text)) table = undefined;
-      else if (table === undefined) {
-        const header = cells(text).map(label);
-        const [before, after] = [header.indexOf("before"), header.indexOf("after")];
-        table = before >= 0 && after >= 0 ? { before, after } : null;
-      } else if (table && !separatorRow.test(text)) {
-        const row = cells(text);
-        if (!row[table.before] || !row[table.after]) {
-          misplace(i, "Before | After row has an empty cell; write _new screen_ (or other italic text) where there's no image");
-        }
-      }
-      if (!table && screenshot.test(text.replace(/`[^`]*`/g, ""))) {
-        misplace(i, "screenshot outside a Before | After table; put it in a row beside its before");
-      }
+      const fenceLine = fence.test(text);
+      if (fenceLine) inFence = !inFence;
+      if (fenceLine || inFence) table = undefined;
+      else checkScreenshots(text, i);
       const [, hashes, title] = text.match(heading) ?? [];
       if (hashes && (!checksLevel || hashes.length <= checksLevel)) {
         checksLevel = checksHeading.test(title) ? hashes.length : 0;

@@ -47,6 +47,9 @@ class CheckBody(unittest.TestCase):
         self.assertEqual(check(body), ([], 0))
 
 
+    def test_flags_counts_inside_a_code_fence(self):
+        self.assertEqual(check("```text\n✅ 56 tests\n```"), ([2], 1))
+
     def test_flags_screenshots_outside_a_before_after_table(self):
         body = "\n".join([
             "**Setup asks for fewer fields.**",
@@ -71,7 +74,7 @@ class CheckBody(unittest.TestCase):
 
     def test_passes_a_before_after_table(self):
         body = "\n".join([
-            "| Screen | **Before** | **After** |",
+            "| Screen | **Before** (light) | **After** (light) |",
             "|:---|:---:|:---:|",
             "| Setup | ![Before](./a.png) | ![After](./b.png) |",
             "| Prompt | _new screen_ | <img src=\"./c.png\" width=\"400\"> |",
