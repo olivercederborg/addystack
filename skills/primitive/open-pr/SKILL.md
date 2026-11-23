@@ -126,12 +126,13 @@ screenshots (`pr-ui-artifacts` captures them) in one row per screen or state:
 | Screen | Before | After |
 |---|---|---|
 | Setup | ![Before](./setup-before.png) | ![After](./setup-after.png) |
-| Prompt | _new screen_ | <img src="./prompt.png" width="400"> |
+| Prompt | _new screen_ | ![After](./prompt.png) |
 ```
 
-A screen with no before says so in italics; `<img width>` sizes a wide one. Upload them
-with `--attach` on `gh pr create`, `gh pr edit`, or `gh pr comment`: each reference in the
-`--body-file` becomes the uploaded image. Otherwise,
+A screen with no before says so in italics. Upload them with `--attach` on
+`gh pr create`, `gh pr edit`, or `gh pr comment`: each `![…](./file)` in the `--body-file`
+becomes the uploaded image. To size a wide one, swap its uploaded image for
+`<img src="<uploaded URL>" width="400">` in a later `gh pr edit`. Otherwise,
 show the test that fails on the base and passes here, or the command output.
 
 **Other rules:**
