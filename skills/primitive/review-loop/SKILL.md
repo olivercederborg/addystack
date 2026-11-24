@@ -123,8 +123,8 @@ follow-up finding with why.
   including a round with no findings.
   A round with findings to fix recommends fixing them, one commit each, and
   re-reviewing until Clean.
-  A clean round ends by recommending verify-work, then open-pr, leaving out a step
-  that already ran on the current head.
+  A clean round ends by recommending verify-work, then open-pr, or, with autonomy, by
+  running them, leaving out a step that already ran on the current head.
 - **Shape**: the worst finding's fix as a `diff` of the enclosing code.
 - **Findings** each name who raised it.
 - **The fold**: the reviewer counts, the checks line, one evidence line per finding, and
