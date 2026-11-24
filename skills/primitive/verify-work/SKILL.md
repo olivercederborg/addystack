@@ -193,9 +193,9 @@ unless it's a Not verified whose run can now happen. A full pass skips this step
 2. **Checks**: the Verification checks, a trial merge with the base branch's tip
    (`git merge-tree --write-tree <tip> <head>` exits 0; the tip is `origin/<base branch>`
    after a fetch, or the parent layer in an unpushed stack), and the PR lens.
-3. **Blockers**: rerun the run or test that showed each fixed Blocker, and each real run
-   whose code the delta changes. A delta crossing a boundary the last real runs didn't
-   cover gets its own Real run, as does each run that verdict couldn't do.
+3. **Blockers**: rerun the run or test that showed each fixed Blocker. A delta that
+   changes code crossing a real boundary gets its own Real run through it, as does each
+   run that verdict couldn't do.
 4. **Earlier findings**: each one marked fix is gone at the head, with every other
    instance of its class the change caused, searched across the repo. Name each fixed one
    as gone, and keep one still there as a finding line under its old number. Ones it
