@@ -229,6 +229,21 @@ for i, arg in enumerate(args):
         positional.append(arg)
 target = positional[0] if positional else None
 repo_args = ["-R", repo] if repo else []
+
+def checkout(path):
+    try:
+        return subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True,
+                              timeout=20).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+# A merge named with -R from outside any checkout, as `cd /tmp && gh pr merge 12 -R o/r`, is
+# checked in the session's own checkout when that's a clone of the same repo: the checks need
+# only its git objects and verdict store. The clone is matched to the repo below.
+session = payload.get("cwd") or os.getcwd()
+borrowed = bool(repo) and cwd != session and not checkout(cwd) and checkout(session)
+if borrowed:
+    cwd = session
 # A merge the gate can't place in its checkout gets pointed at the locator.
 WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
          "checkout of the repo, prints the checkout to merge from and the merge line to run there")
@@ -279,6 +294,13 @@ try:
 
     owner, name = run("gh", "repo", "view", *([repo] if repo else []), "--json", "owner,name",
                       "--jq", '"\\(.owner.login) \\(.name)"').split()
+    if borrowed:
+        clone = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd=cwd,
+                               capture_output=True, text=True, timeout=40,
+                               env={k: v for k, v in os.environ.items() if k != "GH_REPO"}).stdout.strip()
+        if clone.lower() != f"{owner}/{name}".lower():
+            deny(f"this merge runs outside a checkout of {owner}/{name}, so the gate can't read its verdicts: run "
+                 f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
                    "potentialMergeCommit { oid } stack { number } "
                    "commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } }"

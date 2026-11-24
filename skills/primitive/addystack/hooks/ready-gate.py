@@ -308,8 +308,14 @@ def same_repo(one, other):
     return place(one) == place(other)
 
 
+def origin(cwd):
+    """The checkout's origin URL, or "" outside a checkout or without one."""
+    return subprocess.run(["git", "remote", "get-url", "origin"], cwd=cwd, capture_output=True, text=True).stdout
+
+
 def targets(kind, args, cwd):
-    """(label, base, head) for each PR the command marks ready, as refs or SHAs."""
+    """The checkout to check in, and (label, base, head) for each PR the command marks ready,
+    as refs or SHAs."""
     repo = flag(args, "-R", "--repo")
     if kind == "ready":
         positional = options(args)[1]
@@ -317,10 +323,21 @@ def targets(kind, args, cwd):
                             "--json", "number,url,baseRefName,baseRefOid,headRefOid"))
         # A PR another repo holds (-R, GH_REPO, its URL, or gh's pick in a fork's clone) is fetched from it.
         home = re.sub(r"/pull/\d+/?$", "", pr["url"])
-        origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=cwd, capture_output=True, text=True).stdout
-        source = "origin" if origin.strip() and same_repo(origin, home) else home + ".git"
+        # A ready that names its repo (-R, GH_REPO) and runs outside any checkout, as `cd ~ && gh
+        # pr ready 12 -R o/r`, is checked in the session's own checkout when that's a clone of
+        # the PR's repo: the gate needs only its git objects and verdict store.
+        session = payload.get("cwd") or os.getcwd()
+        inside = lambda path: subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path,
+                                             capture_output=True).returncode == 0
+        named = bool(repo or os.environ.get("GH_REPO"))
+        if named and not inside(cwd) and cwd != session and inside(session) and same_repo(origin(session), home):
+            cwd = session
+        elif named and not inside(cwd):
+            raise RuntimeError(f"`{cwd}` isn't a checkout of {home}, so its verdicts can't be read: run it from one, "
+                               f"as `cd <checkout of {home}> && gh pr ready {pr['number']}`")
+        source = "origin" if origin(cwd).strip() and same_repo(origin(cwd), home) else home + ".git"
         run(cwd, "git", "fetch", "--quiet", "--no-tags", source, pr["baseRefName"], f"pull/{pr['number']}/head")
-        return [(f"#{pr['number']}", pr["baseRefOid"], pr["headRefOid"])]
+        return cwd, [(f"#{pr['number']}", pr["baseRefOid"], pr["headRefOid"])]
     if kind == "create":
         # gh's own picks: --head names a pushed branch it won't push; the base is --base,
         # then the branch's gh-merge-base config, then the default branch.
@@ -334,8 +351,8 @@ def targets(kind, args, cwd):
         refs = [base] + ([branch] if named else [])
         run(cwd, "git", "fetch", "--quiet", "--no-tags", "origin",
             *(f"+refs/heads/{ref}:refs/remotes/origin/{ref}" for ref in refs))
-        return [(f"the new PR from {branch}", f"refs/remotes/origin/{base}",
-                 f"refs/remotes/origin/{branch}" if named else branch)]
+        return cwd, [(f"the new PR from {branch}", f"refs/remotes/origin/{base}",
+                      f"refs/remotes/origin/{branch}" if named else branch)]
     remote = flag(args, "--remote") or "origin"
     stack = json.loads(run(cwd, "gh", "stack", "view", "--json"))
     trunk = stack["trunk"]
@@ -347,7 +364,7 @@ def targets(kind, args, cwd):
         pr = branch.get("pr") or {}
         found.append((f"#{pr['number']}" if pr.get("number") else branch["name"], parent, branch["name"]))
         parent = branch["name"]
-    return found
+    return cwd, found
 
 
 missing, skips = [], []
@@ -359,7 +376,8 @@ try:
         # The gate's gh calls see the GH_REPO this ready's gh would; -R in args still wins.
         os.environ.pop("GH_REPO", None)
         os.environ.update({"GH_REPO": repo} if repo else {})
-        for label, base, head in targets(kind, args, cwd):
+        cwd, found = targets(kind, args, cwd)
+        for label, base, head in found:
             base, head = (run(cwd, "git", "rev-parse", "--verify", f"{ref}^{{commit}}") for ref in (base, head))
             review = verdicts.find_review(cwd, verdicts.diff(cwd, base, head))
             if not review:

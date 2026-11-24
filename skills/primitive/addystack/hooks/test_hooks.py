@@ -1259,6 +1259,8 @@ if a[:2] == ["pr", "view"]:
     print(s["pr"])
 elif a[:2] == ["stack", "view"]:
     print(json.dumps(s["stack"])) if "stack_error" not in s else sys.exit(s["stack_error"])
+elif a[:2] == ["repo", "view"] and "nameWithOwner" in a:
+    print(s.get("clone", "o/r"))  # the repo of the checkout gh runs in
 elif a[:2] == ["repo", "view"]:
     print("o r")
 elif a[:2] == ["api", "graphql"]:
@@ -1414,6 +1416,21 @@ class MergeGate(unittest.TestCase):
         self.verify(13)  # each PR of GitHub's stack still needs its own Done
         scenario('\u2717 current branch "feat/x" is not part of a stack', [(1, (12, "OPEN")), (2, (13, "OPEN"))])
         self.assertIn("#12 has no Done verdict", self.reason("gh stack merge 13"))
+
+    def test_checks_a_merge_run_outside_a_checkout_in_the_sessions_clone(self):
+        # Nov 23, 2026: `cd /tmp && … gh pr merge 6136 -R o/r --squash` was denied as "not a git
+        # repository", though the session's own checkout is a clone of o/r.
+        self.scenario()
+        self.verify(12)
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside)
+        self.assertIsNone(self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
+        self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 --squash"))  # no -R
+        self.scenario(clone="x/y")
+        self.assertIn("this merge runs outside a checkout of o/r, so the gate can't read its verdicts: run it from "
+                      "one, as `cd <checkout of o/r> && gh pr merge 12 -R o/r --squash`",
+                      self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
+        self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 -R o/r", cwd=outside))
 
     def test_denies_a_red_or_running_default_branch(self):
         self.verify(12)
@@ -2983,14 +3000,32 @@ class ReadyGate(unittest.TestCase):
         return subprocess.run([sys.executable, str(HOOKS / "verdicts.py"), "review", base, head, *result],
                               cwd=self.repo, env=self.env, capture_output=True, text=True)
 
-    def output(self, command):
-        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": self.repo}
+    def output(self, command, cwd=None):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd or self.repo}
         out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env=self.env,
                              capture_output=True, text=True, check=True).stdout
         return json.loads(out) if out else {}
 
-    def denial(self, command):
-        return self.output(command).get("hookSpecificOutput", {}).get("permissionDecisionReason")
+    def denial(self, command, cwd=None):
+        return self.output(command, cwd).get("hookSpecificOutput", {}).get("permissionDecisionReason")
+
+    def test_checks_a_ready_run_outside_a_checkout_in_the_sessions_clone(self):
+        # Nov 18, 2026: `cd ~ && … gh pr ready 5568 --repo o/r` was denied as "not a git
+        # repository", though the session's own checkout is a clone of o/r.
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside)
+        command = f"cd {outside} && gh pr view 12 --repo o/r && gh pr ready 12 --repo o/r"
+        self.assertIn(f"#12 has no review-loop result for its diff at head {self.head[:12]}", self.denial(command))
+        self.review(self.main, self.head, "--rounds", "1")
+        self.assertEqual(self.output(command), {})
+        other = os.path.join(self.dir, "other")  # a session in a clone of another repo
+        subprocess.run(["git", "init", "-q", other], check=True)
+        subprocess.run(["git", "-C", other, "remote", "add", "origin", "https://example.com/x/y.git"], check=True)
+        for cwd in (other, outside):
+            with self.subTest(cwd=cwd):
+                self.assertIn(f"isn't a checkout of {os.path.join(self.dir, 'origin')}, so its verdicts can't be read: "
+                              f"run it from one, as `cd <checkout of {os.path.join(self.dir, 'origin')}> && gh pr ready 12`",
+                              self.denial(command, cwd))
 
     def test_no_result_blocks_and_names_the_head_and_the_recorder(self):
         reason = self.denial("gh pr ready 12")
