@@ -241,6 +241,9 @@ class TargetBranch(unittest.TestCase):
         (self.repo / "h").write_text("uncommitted\n")  # its checks would run this, not the head
         self.assertNotIn("known", last())
         self.git("checkout", "-q", "h")
+        (self.repo / "lib.py").write_text("untracked\n")  # a module the head lacks can pass its tests
+        self.assertNotIn("known", last())
+        (self.repo / "lib.py").unlink()
         self.git("switch", "-q", "--detach", "layer1")  # this checkout isn't at the head target reads
         self.assertNotIn("known", last())
 

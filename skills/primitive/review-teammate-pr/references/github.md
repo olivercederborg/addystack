@@ -47,7 +47,7 @@ whether a Done verdict covers it, its `size:` without lockfiles, vendored, gener
 or binary files, review-loop's result with its rating as `review:`, and the newest
 verdict recorded on the PR's branch as
 JSON (`verdict`, `findings`, `reviewed` with its `base` and `head`, and `known` when the
-checkout is clean at `head_sha` and a re-check of this diff can only repeat it), or `last: none`.
+checkout, untracked files included, is clean at `head_sha` and a re-check of this diff can only repeat it), or `last: none`.
 
 ## Merge state: `github.sh mergeable N`
 
