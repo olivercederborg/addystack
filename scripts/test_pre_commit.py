@@ -109,19 +109,31 @@ class DaggerOrHost(unittest.TestCase):
             (self.bin / "dagger").chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         untracked, refs = extra.pop("UNTRACKED", ()), extra.pop("REFS", 1)
+        # OLD_TIP pushes a commit from before .githooks/suites.sh, made under this checkout's
+        # HEAD; REMOTE is the remote's tip the push names; PREPARE runs after the commits.
+        old_tip, remote, prepare = extra.pop("OLD_TIP", False), extra.pop("REMOTE", "0" * 40), extra.pop("PREPARE", None)
         env.update(PATH=f"{self.bin}:/usr/bin:/bin", DAGGER_LOG=str(self.log), DAGGER_ENGINE=str(engine),
                    DAGGER_CHECK=str(check), DAGGER_MODULE=str(module), DAGGER_LIST=listed,
                    HOST_RAN=str(self.ran), **extra)
         # The push sends HEAD, committed with whatever the test changed, so the hook checks
         # this checkout; a push from a dirty one checks a scratch worktree of the tip.
+        commit = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "--no-verify"]
         subprocess.run(["git", "add", "-A"], cwd=self.repo, env=env, check=True)
+        if old_tip:
+            subprocess.run(["git", "rm", "-q", "--cached", ".githooks/suites.sh"], cwd=self.repo, env=env, check=True)
+            subprocess.run([*commit, "-m", "old"], cwd=self.repo, env=env, check=True)
+            old_tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True,
+                                     text=True).stdout
+            subprocess.run(["git", "add", "-A"], cwd=self.repo, env=env, check=True)
         for path in untracked:  # left out of the push, as a file not committed yet
             subprocess.run(["git", "rm", "-q", "--cached", path], cwd=self.repo, env=env, check=True)
-        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty",
-                        "--no-verify", "-m", "push"], cwd=self.repo, env=env, check=True)
-        tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True, text=True).stdout
+        subprocess.run([*commit, "-m", "push"], cwd=self.repo, env=env, check=True)
+        tip = old_tip or subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True,
+                                        text=True).stdout
+        if prepare:
+            prepare()
         run = subprocess.run([str(self.repo / ".githooks" / "pre-push"), "origin", "url"], cwd=self.repo, env=env,
-                             input="".join(f"refs/heads/b{n} {tip.strip()} refs/heads/b{n} {'0' * 40}\n"
+                             input="".join(f"refs/heads/b{n} {tip.strip()} refs/heads/b{n} {remote}\n"
                                            for n in range(refs)),
                              capture_output=True, text=True)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
@@ -204,11 +216,54 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(calls, [LIST, RUN])
 
-    def test_a_tip_from_before_suites_sh_uses_this_checkouts(self):
-        # Review of #103, round 2: a pushed tip from before this hook has no .githooks/suites.sh.
-        run, _ = self.push(dagger=False, UNTRACKED=[".githooks/suites.sh"])
+    def hooks_suite(self):
+        """A hook test that leaves a file behind when it runs, so a test sees the hooks suite ran."""
+        hooks = self.repo / "skills" / "primitive" / "addystack" / "hooks"
+        hooks.mkdir(parents=True)
+        ran = pathlib.Path(self.folder.name, "hooks-suite-ran")
+        (hooks / "test_hook.py").write_text("import pathlib, unittest\nclass H(unittest.TestCase):\n"
+                                            f"    def test_runs(self):\n        pathlib.Path({str(ran)!r}).touch()\n")
+        return ran
+
+    def test_a_tip_from_before_suites_sh_runs_every_suite_with_this_commits_helpers(self):
+        # Review of #103, rounds 2 and 3: a pushed tip from before this hook has no
+        # .githooks/suites.sh, and its detector lists its own inputs, so every hook input
+        # counts as changed, and the helpers come from this checkout's commit, never an edit
+        # in progress that would skip a suite.
+        hooks_ran = self.hooks_suite()
+        edit = lambda: (self.repo / ".githooks" / "suites.sh").write_text("host_suites() { :; }\n")
+        run, _ = self.push(dagger=False, OLD_TIP=True, PREPARE=edit)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
+        self.assertTrue(hooks_ran.exists())
+
+    def test_a_tip_from_before_suites_sh_needs_a_commit_that_has_it(self):
+        run, _ = self.push(dagger=False, UNTRACKED=[".githooks/suites.sh"])
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("predates .githooks/suites.sh", run.stderr)
+        self.assertFalse(self.ran.exists())
+
+    def test_a_remote_tip_this_clone_lacks_counts_every_hook_input(self):
+        # Review of #103, round 3: the default branch's fork point stood in for an unknown
+        # remote tip, and could hide a hook input the push changes.
+        hooks_ran = self.hooks_suite()
+        self.script("hook-inputs-staged.sh", '[ "$1" = "$(git hash-object -t tree /dev/null)" ] && exit 0; exit 1')
+        tip = lambda: subprocess.run(["git", "update-ref", "refs/remotes/origin/HEAD", "HEAD"], cwd=self.repo, check=True)
+        run, _ = self.push(dagger=False, REMOTE="1" * 40, PREPARE=tip)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(hooks_ran.exists())
+
+    def test_a_sparse_checkout_still_checks_every_committed_suite(self):
+        # Review of #103, round 3: the scratch worktree took this checkout's sparse patterns.
+        failing = self.repo / "skills" / "primitive" / "broken" / "scripts"
+        failing.mkdir(parents=True)
+        (failing / "test_broken.py").write_text("import unittest\nclass B(unittest.TestCase):\n"
+                                                "    def test_fails(self):\n        self.fail('broken skill')\n")
+        sparse = lambda: subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "/.githooks/", "/scripts/"],
+                                        cwd=self.repo, check=True, capture_output=True)
+        run, _ = self.push(dagger=False, PREPARE=sparse)
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("broken skill", run.stderr)
 
     def test_without_dagger_the_host_suites_run(self):
         run, _ = self.push(dagger=False)

@@ -16,10 +16,13 @@ tips=() froms=()
 while read -r _ local _ remote; do
   if [ "$local" != "$zero" ] && [ "$local" != "$remote" ]; then
     # What the push adds to: the remote's old tip, or, for a new branch, where it forks from
-    # the default branch; with neither, the empty tree, so every hook input counts.
+    # the default branch. A remote tip this clone lacks, or a new branch with no default
+    # branch to fork from, gives the empty tree, so every hook input counts as changed.
     from=$remote
-    if [ "$from" = "$zero" ] || ! git cat-file -e "$from^{commit}" 2> /dev/null; then
+    if [ "$from" = "$zero" ]; then
       from=$(git merge-base "$local" refs/remotes/origin/HEAD 2> /dev/null) || from=$(git hash-object -t tree /dev/null)
+    elif ! git cat-file -e "$from^{commit}" 2> /dev/null; then
+      from=$(git hash-object -t tree /dev/null)
     fi
     # One check per distinct tip; its froms join with a space, so any of them counts.
     for at in "${!tips[@]}"; do
@@ -115,12 +118,13 @@ elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
 fi
 }
 
-# Each tip in a scratch worktree of its committed tree, so Dagger and the host suites read
-# exactly what the push sends, never a file only this checkout has (untracked, ignored, or
-# hidden by status settings); it's removed when the check ends or is interrupted. Each runs
-# in its own subshell under set -e, so a failing step fails the push, with the tip's own
-# helpers, so an edit in progress can't change what the push is checked by, or this
-# checkout's for a tip from before they existed.
+# Each tip in a scratch worktree of its whole committed tree, so Dagger and the host suites
+# read exactly what the push sends: never a file only this checkout has (untracked, ignored,
+# or hidden by status settings), and every file a sparse checkout leaves out. It's removed
+# when the check ends or is interrupted. Each runs in its own subshell under set -e, so a
+# failing step fails the push, with committed helpers only, so an edit in progress can't
+# change what the push is checked by: the tip's own, or, for a tip from before suites.sh,
+# this checkout's commit's.
 for at in "${!tips[@]}"; do
   tip=${tips[$at]} from=${froms[$at]}
   (
@@ -128,19 +132,29 @@ for at in "${!tips[@]}"; do
     root=$scratch/kit
     trap 'git -C "$checkout" worktree remove --force "$root" 2> /dev/null; rm -rf "$scratch"' EXIT
     trap 'exit 130' INT TERM
-    git -C "$checkout" worktree add -q --detach "$root" "$tip"
-    helpers=$root
-    [ -f "$root/.githooks/suites.sh" ] || helpers=$checkout
-    . "$helpers/.githooks/suites.sh"
-    # The hook tests run on the host (macOS-only ones, or all on a fallback) only when the
-    # push changes their inputs, as pre-commit reads them from the index; a detector that
-    # errors counts as a change.
-    hooks_staged=false
-    for base in $from; do
-      detected=0
-      (cd "$root" && "$helpers/scripts/hook-inputs-staged.sh" "$base" "$tip") || detected=$?
-      [ "$detected" = 1 ] || hooks_staged=true
-    done
+    git -C "$checkout" -c core.sparseCheckout=false worktree add -q --detach "$root" "$tip"
+    if [ -f "$root/.githooks/suites.sh" ]; then
+      . "$root/.githooks/suites.sh"
+      # The hook tests run on the host (macOS-only ones, or all on a fallback) only when the
+      # push changes their inputs, as pre-commit reads them from the index; a detector that
+      # errors counts as a change.
+      hooks_staged=false
+      for base in $from; do
+        detected=0
+        (cd "$root" && scripts/hook-inputs-staged.sh "$base" "$tip") || detected=$?
+        [ "$detected" = 1 ] || hooks_staged=true
+      done
+    else
+      # An older tip's detector reads no range and lists its own inputs, so every hook
+      # input counts as changed.
+      git -C "$checkout" show HEAD:.githooks/suites.sh > "$scratch/suites.sh" || {
+        echo "pre-push: $tip predates .githooks/suites.sh, and this checkout's commit has none to check it with;" \
+             "push it from a checkout of main" >&2
+        exit 1
+      }
+      . "$scratch/suites.sh"
+      hooks_staged=true
+    fi
     check_tree
   )
 done
