@@ -238,6 +238,9 @@ class TargetBranch(unittest.TestCase):
                        env={**os.environ, "VERIFY_WORK_HOOK_CONTEXT": context})
         last = lambda: json.loads(self.target("--branch", "layer2", "--parent", "layer1").stdout.splitlines()[-1])
         self.assertIn("Done stands", last()["known"])
+        (self.repo / "h").write_text("uncommitted\n")  # its checks would run this, not the head
+        self.assertNotIn("known", last())
+        self.git("checkout", "-q", "h")
         self.git("switch", "-q", "--detach", "layer1")  # this checkout isn't at the head target reads
         self.assertNotIn("known", last())
 

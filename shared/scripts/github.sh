@@ -197,8 +197,9 @@ query($owner:String!,$repo:String!,$expression:String!){repository(owner:$owner,
     [ -f "$verdicts" ] || verdicts="$(dirname "$(realpath "$0")")/../../skills/primitive/addystack/hooks/verdicts.py"
     python3 "$verdicts" status "$base_sha" "$head_sha"
     # The branch's last verdict, for verify-work's quick re-check, and whether a re-check can
-    # change it, read only at head_sha: a checkout past it holds commits no verdict saw.
-    if [ "$match" = matches ]; then
+    # change it, read only in a clean checkout at head_sha: a checkout past it holds commits
+    # no verdict saw, and uncommitted changes would be what its checks run.
+    if [ "$match" = matches ] && [ "$clean" = yes ]; then
       python3 "$verdicts" last "$branch" "$base_sha" "$head_sha"
     else
       python3 "$verdicts" last "$branch"
