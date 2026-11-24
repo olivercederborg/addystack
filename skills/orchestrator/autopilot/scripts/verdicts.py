@@ -390,24 +390,21 @@ def last(cwd: Path, branch: str) -> Receipt | None:
 
 def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     """Why a re-check of `base...head` after `receipt` can only repeat it, or "" when it
-    can find something new: while the diff and its merge base are the ones it checked, a
-    Not verified waits on the real run it names, and a Not done waits on a commit for
-    each finding it marked fix, since a restack onto a parent can bring the fix in. A
-    changed diff gets its re-check, which still owes the run. A diff that won't read
-    gives "", so the re-check runs."""
-    fixes = [text for text in receipt.findings if re.search(r"→ fix\b", text)]
+    can find something new: a Not verified waits on the real run it names, and a Not
+    done waits on a commit for each finding it marked fix while the diff and its merge
+    base are the ones it checked, since a restack onto a parent can bring the fix in. A
+    diff that won't read gives "", so the re-check runs."""
     if receipt.verdict == "not-verified":
-        why = "not verified until it runs: " + "; ".join(receipt.findings)
-    elif receipt.verdict == "not-done" and fixes:
-        why = f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes)
-    else:
+        return "not verified until it runs: " + "; ".join(receipt.findings)
+    fixes = [text for text in receipt.findings if re.search(r"→ fix\b", text)]
+    if receipt.verdict != "not-done" or not fixes:
         return ""
     try:
         same = (_patch_id(cwd, diff(cwd, base, head)) == receipt.patch_id
                 and _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed)))
     except VerdictError:
         return ""
-    return why if same else ""
+    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes) if same else ""
 
 
 def status(cwd: Path, base: str, head: str) -> str:
