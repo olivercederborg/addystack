@@ -3001,6 +3001,62 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(merge.returncode, 0)  # the trial merge is clean
         self.assertNotEqual(subprocess.run(check, cwd=self.repo, capture_output=True).returncode, 0)  # the checks fail it
 
+    def test_a_done_stands_only_for_its_own_commits_rebased(self):
+        # Review of #99: a commit added after a Done can leave the whole diff's patch-id the
+        # same, since patch-id ignores where a hunk lands: here it moves `access = True` from
+        # admin() to guest(). The re-check reads that commit; a kept Done would not.
+        body = "    # one\n    # two\n    # three\n    access = False\n    # four\n    # five\n    # six\n    return access\n"
+        text = "def admin():\n" + body + "\n\ndef guest():\n" + body
+        def commit(content, message):
+            pathlib.Path(self.repo, "policy.py").write_text(content)
+            self.git("add", "policy.py")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        self.base = commit(text, "policy")
+        self.git("checkout", "-q", "-b", "work")
+        self.head = commit(text.replace("access = False", "access = True", 1), "allow admin")
+        idiom = pathlib.Path(self.dir, "idiom.txt")
+        idiom.write_text("none: a plain assignment\n")
+        self.record(branch="work", evidence={"idiom": [str(idiom)]})
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
+        first, rest = text.rsplit("access = False", 1)
+        head = commit(first + "access = True" + rest, "allow guest instead")
+        self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, head)),
+                         self.patch_id())  # the same patch-id, so the merge gate's Done covers it too
+        self.assertIsNone(self.known("work", self.base, head))
+
+    def test_a_done_with_a_merge_commit_or_a_binary_file_gets_a_full_recheck(self):
+        # verify-work's re-check runs a full pass on both, since range-diff can't show them.
+        self.git("checkout", "-q", "-b", "work")
+        pathlib.Path(self.repo, "asset.bin").write_bytes(b"\0\1")
+        self.git("add", "asset.bin")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "asset")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIsNone(self.known("work", self.base, self.head))
+        self.git("checkout", "-q", "-b", "side", self.base)
+        pathlib.Path(self.repo, "g").write_text("side\n")
+        self.git("add", "g")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "side")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-ff", "-m", "merge", "side")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIsNone(self.known("work", self.base, self.head))
+
+    def test_a_done_another_verdict_superseded_or_new_evidence_needs_gets_a_recheck(self):
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        self.record()
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "-m", "refactor f")
+        reworded = self.git("rev-parse", "HEAD").strip()  # the same diff, now a refactor: parity evidence owed
+        self.assertIn("parity", verdicts.classify(pathlib.Path(self.repo), self.base, reworded))
+        self.assertIsNone(self.known(branch, self.base, reworded))
+        self.git("reset", "-q", "--hard", self.head)
+        self.git("checkout", "-q", "-b", "other")
+        self.record(verdict="not-done", findings=["1 · Blocker · x → fix"], branch="other")
+        self.assertIsNone(self.known(branch, self.base, self.head))  # the merge gate reads the Not done
+
     def commit_change(self, text):
         pathlib.Path(self.repo, "f").write_text(text)
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", text)

@@ -402,17 +402,44 @@ def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     if receipt.verdict == "not-done" and not fixes:
         return ""
     try:
+        if receipt.verdict == "done":
+            return (f"same diff as {receipt.reviewed.head[:12]}, Done stands; rerun the layer's checks and a trial "
+                    "merge at the new head") if _rebased(cwd, receipt, base, head) else ""
         same = (_patch_id(cwd, diff(cwd, base, head)) == receipt.patch_id
-                and (receipt.verdict == "done"
-                     or _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed))))
+                and _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed)))
     except VerdictError:
         return ""
-    if not same:
-        return ""
-    if receipt.verdict == "done":
-        return (f"same diff as {receipt.reviewed.head[:12]}, Done stands; rerun the layer's checks and a trial merge"
-                " at the new head")
-    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes)
+    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes) if same else ""
+
+
+def _commits(cwd: Path, base: str, head: str) -> list[str]:
+    """The patch-id of each commit in `base...head`, oldest first, or VerdictError when the
+    range holds a merge commit, whose change no single patch shows."""
+    fork = _git(cwd, "merge-base", base, head).strip()
+    if _git(cwd, "rev-list", "--merges", f"{fork}..{head}").strip():
+        raise VerdictError(f"a merge commit in {fork[:12]}..{head[:12]}")
+    log = _git(cwd, "log", "-p", "--reverse", "--format=commit %H", "--no-color", "--no-ext-diff", "--no-textconv",
+               "--full-index", f"{fork}..{head}")
+    return [line.split(" ")[0] for line in _git(cwd, "patch-id", "--verbatim", stdin=log).splitlines()]
+
+
+def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
+    """Whether a Done still covers `base...head` without reading it again: its commits are
+    the reviewed ones, rebased one for one with no merge commit, so no commit added since can
+    share the whole diff's patch-id; no file is binary, whose change no text diff shows; the
+    store's latest verdict for the patch is still this Done, as the merge gate reads it; and
+    its evidence backs every kind the range now needs."""
+    import evidence as kinds  # here, so a broken evidence.py can't break find_done or status
+
+    patch_id = _patch_id(cwd, diff(cwd, base, head))
+    latest = _latest(cwd, patch_id)
+    if patch_id != receipt.patch_id or not latest or latest.verdict != "done":
+        return False
+    if _commits(cwd, base, head) != _commits(cwd, *astuple(receipt.reviewed)):
+        return False
+    if any(line.startswith("-\t-\t") for line in _git(cwd, "diff", "--numstat", f"{base}...{head}").splitlines()):
+        return False
+    return not any(kinds.done_gap(kind, receipt.evidence.get(kind, [])) for kind in classify(cwd, base, head))
 
 
 def status(cwd: Path, base: str, head: str) -> str:
