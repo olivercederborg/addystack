@@ -162,11 +162,11 @@ its code, and every PR step 1 marked for a restack is restacked.
 
 As soon as the fixes are done, draft the replies in the
 [reply style](references/reply-style.md), each starting with the
-[agent disclosure](references/disclosure.md). Recommend the rest of the loop:
-push, unless **Approval** already lets you push now, post the displayed drafts,
-resolve, and, when the fixes make sections of the PR description stale, update them
-with open-pr. Offer pushing only while the push waits on the user. Creating an issue
-for a Defer is its own option.
+[agent disclosure](references/disclosure.md). Do what **Approval** already lets you do
+now: the push, and, when the fixes make sections of the PR description stale, their
+update with open-pr. Recommend the rest of the loop: the push while it waits, posting
+the displayed drafts, and resolving. Offer pushing only while the push waits on the
+user. Creating an issue for a Defer is its own option.
 
 Drafts that step would post show in full below a **Review** note, in every reply whose
 approval posts them. Replies that already went out with the user's approval go in the fold.
