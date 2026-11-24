@@ -3797,10 +3797,10 @@ class PushGate(unittest.TestCase):
         self.assertIn('the user\'s "a" picks "push the cleanup, post the reply, re-request the teammate on #6119", a '
                       "stop:post option of your reply before it, and only a stop:push option allows a push that "
                       "dismisses an approval", reason)
-        # Its b, a stop:push option that doesn't say the push dismisses an approval.
+        # Its b, a stop:push option that doesn't say the push dismisses an approval, and says "no".
         reason = self.reason(self.COORDINATOR, said=("fix it", self.offer(*self.CARD_OPTIONS), "b"), cwd=self.dir)
-        self.assertIn('picks "no: push the cleanup only", a stop:push option of your reply before it, which doesn\'t '
-                      "say the push dismisses an approval", reason)
+        self.assertIn('picks "no: push the cleanup only", a stop:push option of your reply before it, which isn\'t '
+                      "a plain request to push that says it dismisses an approval", reason)
 
     def test_allows_a_push_the_users_go_names_the_dismissal_of(self):
         # #6091's restack, the go the brief names, and the go the deny message suggests.
@@ -3818,7 +3818,13 @@ class PushGate(unittest.TestCase):
         for said, why in [
             (("fix it", self.offer({**restack, "class": "decision"}, text="Restack?\n\n"), "a"), "a decision option"),
             (("fix it", self.offer({**restack, "text": "restack #6091 onto develop and push"}, text="Restack?\n\n"), "a"),
-             "doesn't say the push dismisses"),
+             "isn't a plain request to push"),
+            # verify-work, Nov 24, 2026: a stop:push option that refuses or puts off the push.
+            *((("fix it", self.offer({**restack, "text": text}, text="Restack?\n\n"), "a"), "isn't a plain request to push")
+              for text in ("don't push #6091 yet, it would dismiss the teammate's approval",
+                           "hold #6091: pushing would dismiss the teammate's approval",
+                           "push #6091 only if it doesn't dismiss the teammate's approval",
+                           "wait for the teammate; a push to #6091 would dismiss the approval")),
             (("fix it", self.offer({**restack, "text": "push #6092 (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
              "doesn't name #6091"),
             (("fix it", self.offer({**restack, "text": "push it (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),

@@ -14,10 +14,10 @@ as one command, so the check printed the 12:12 re-approval only after the push r
 dismissed it.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
-option, in the reply it answers, whose text names each PR (#N) and says the push
-dismisses an approval ("dismiss"), or a short typed request to push, restack, sync, or
-submit that names each PR and the dismissal, with no refusal, condition, or question in
-it. A pick of any other class, such as the coordinator's `stop:post` "push the cleanup,
+option, in the reply it answers, or a short typed request, either one a request to push,
+restack, sync, or submit that names each PR (#N) and says the push dismisses an approval
+("dismiss"), with no refusal, condition, or question in it, so "no: push the cleanup
+only" or "don't push #6091 yet, it would dismiss …" isn't one. A pick of any other class, such as the coordinator's `stop:post` "push the cleanup,
 post the reply, re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child,
 or, in T3, a state database it can't read or a session no T3 thread owns.
 
@@ -326,7 +326,7 @@ def unnamed(text):
 def user_go():
     """(go, note): whether the user's latest prompt allows dismissing every live approval,
     and, for one that doesn't, why. A go is literal_go naming each PR, or a key that picks a
-    stop:push option of the reply it answered that says "dismiss" and names each PR."""
+    stop:push option of the reply it answered whose text is one."""
     try:
         import turn_block, user_turn
         found = user_turn.exchanges(payload)
@@ -347,8 +347,8 @@ def user_go():
         picks = f'{said} picks "{option.text}", a {option.cls} option of your reply before it'
         if option.cls != "stop:push":
             return False, f"{picks}, and only a stop:push option allows a push that dismisses an approval"
-        if not DISMISS.search(option.text):
-            return False, f"{picks}, which doesn't say the push dismisses an approval"
+        if not literal_go(option.text):  # as a typed go: a push, the dismissal, and no refusal or condition
+            return False, f"{picks}, which isn't a plain request to push that says it dismisses an approval"
         missing = unnamed(option.text)
         return (True, None) if not missing else (False, f"{picks}, which doesn't name {missing}")
     except Exception:
