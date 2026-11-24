@@ -222,19 +222,8 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     gaps = [(kind, gap, required[kind]) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
     if "mutants" not in required and (survived := kinds.survivors(evidence.get("mutants", []))):
         gaps.append(("mutants", survived, ["supplied"]))  # a survivor the verifier found refuses Done on any path
-    # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
-    # and left out of a Done would hide its survivors. Only a Done reads them, so a Not done
-    # still revokes one when the folder won't read.
-    saved, left = _store(cwd).parent / "evidence", []
-    try:
-        try:
-            folders = list(saved.iterdir()) if verdict == "done" else []
-        except FileNotFoundError:  # no evidence saved yet; any other error could hide a log
-            folders = []
-        left = kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
-                                       and head.startswith(folder.name)], evidence.get("mutants", []))
-    except OSError as error:
-        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+    # Only a Done reads them, so a Not done still revokes one when the folder won't read.
+    left = _left_out_mutants(cwd, head, evidence.get("mutants", [])) if verdict == "done" else []
     if left:
         survived = [mutant for _, mutants in left for mutant in mutants]
         gaps.append(("mutants", f"{_shown([Path(path).name for path, _ in left])} in this head's evidence folder "
@@ -388,6 +377,24 @@ def last(cwd: Path, branch: str) -> Receipt | None:
     return None
 
 
+def _left_out_mutants(cwd: Path, head: str, passed: list[str]) -> list:
+    """evidence.left_out_mutants for the mutant logs saved for `head`, in a folder named by
+    its SHA or a prefix of 7 or more: a Done that leaves one out would hide its survivors.
+    VerdictError when the folder won't read, since any error could hide a log."""
+    import evidence as kinds
+
+    saved = _store(cwd).parent / "evidence"
+    try:
+        try:
+            folders = list(saved.iterdir())
+        except FileNotFoundError:  # no evidence saved yet
+            folders = []
+        return kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
+                                       and head.startswith(folder.name)], passed)
+    except OSError as error:
+        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+
+
 def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     """Why a re-check of `base...head` after `receipt` can only repeat it, or "" when it
     can find something new: a Not verified waits on the real run it names; a Done stands
@@ -425,12 +432,18 @@ def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
     latest = _latest(cwd, patch_id)
     if patch_id != receipt.patch_id or not latest or latest.verdict != "done":
         return False
-    ranges = []
+    ranges, forks = [], []
     for old, new in (astuple(receipt.reviewed), (base, head)):
         fork = _git(cwd, "merge-base", old, new).strip()
         if _git(cwd, "rev-list", "--merges", f"{fork}..{new}").strip():
             return False
         ranges.append(f"{fork}..{new}")
+        forks.append(fork)
+    # The same patches on the same files as the Done read them: a base that changed a file
+    # the diff touches can move an equal hunk to other lines, which no patch comparison sees.
+    paths = [path for path in _git(cwd, "diff", "--name-only", "-z", "--no-renames", f"{base}...{head}").split("\0") if path]
+    if not paths or _git(cwd, "diff", "--name-only", "--no-renames", *forks, "--", *paths).strip():
+        return False
     pairs = re.findall(r"^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+) ([=!<>]) (?:\d+|-+):",
                        _git(cwd, "range-diff", "--no-color", *ranges), flags=re.M)
     if not pairs or set(pairs) != {"="}:
@@ -443,7 +456,9 @@ def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
             refs, problems = kinds.check(kind, receipt.evidence.get(kind, []), cwd)
             if problems or kinds.done_gap(kind, refs):
                 return False
-    except (OSError, ValueError, kinds.EvidenceError):  # a log gone or unreadable since: read it again
+        if _left_out_mutants(cwd, head, receipt.evidence.get("mutants", [])):
+            return False
+    except (OSError, ValueError, kinds.EvidenceError, VerdictError):  # a log gone or unreadable since: read it again
         return False
     return True
 

@@ -3037,6 +3037,9 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), moved, head)),
                          self.patch_id())
         self.assertIsNone(self.known("work", moved, head))
+        # Round 3: with context the base changed identically in both places, range-diff pairs
+        # the moved hunk as =; a base that changed a file the diff touches gets a re-check.
+        self.assertEqual(verdicts._git(pathlib.Path(self.repo), "diff", "--name-only", self.base, moved).split(), ["policy.py"])
 
     def test_a_done_with_a_merge_commit_or_a_binary_file_gets_a_full_recheck(self):
         # verify-work's re-check runs a full pass on both, since range-diff can't show them.
@@ -3085,6 +3088,13 @@ class Verdicts(unittest.TestCase):
         log.write_text("killed: one\nkilled: two\nsurvived: three\n")  # the required log now shows a survivor
         self.assertIsNone(self.known(branch, self.base, self.head))
         log.unlink()
+        self.assertIsNone(self.known(branch, self.base, self.head))
+        # Review of #99, round 3: a mutant log saved for the head since, which a new Done must pass.
+        self.record()
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        saved = self.store().parent / "evidence" / self.head[:12]
+        saved.mkdir(parents=True)
+        (saved / "mutants.log").write_text("killed: one\nkilled: two\nsurvived: three\n")
         self.assertIsNone(self.known(branch, self.base, self.head))
 
     def commit_change(self, text):
