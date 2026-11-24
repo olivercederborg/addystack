@@ -233,16 +233,41 @@ repo_args = ["-R", repo] if repo else []
 WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
          "checkout of the repo, prints the checkout to merge from and the merge line to run there")
 
+def github_stack(n):
+    """The open PRs `gh stack merge n` merges, read from GitHub's stack of PR n, bottom
+    first up to n, or [n] when n is in no stack, for a checkout gh stack places in none."""
+    owner, name = run("gh", "repo", "view", *([repo] if repo else []), "--json", "owner,name",
+                      "--jq", '"\\(.owner.login) \\(.name)"').split()
+    query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
+             f"stackOf: pullRequest(number: {n}) {{ stack {{ entries(first: 100) {{ nodes {{ position "
+             "pullRequest { number state } } } } } } }")
+    stack = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]["stackOf"]["stack"]
+    if not stack:
+        return [n]
+    entries = [entry["pullRequest"] for entry in sorted(stack["entries"]["nodes"], key=lambda entry: entry["position"])]
+    below = entries[:[entry["number"] for entry in entries].index(n) + 1]  # a ValueError fails closed
+    return [entry["number"] for entry in below if entry["state"] == "OPEN"]
+
 numbers = None
 try:
     if kind == "pr":
         numbers = [int(run("gh", "pr", "view", *([target] if target else []), *repo_args,
                            "--json", "number", "--jq", ".number"))]
     else:
-        stack = json.loads(run("gh", "stack", "view", "--json"))
-        numbers = [b["pr"]["number"] for b in stack["branches"]
-                   if b.get("pr") and not b.get("isMerged") and b["pr"].get("state") == "OPEN"]
-        if target:
+        try:
+            stack = json.loads(run("gh", "stack", "view", "--json"))
+        except RuntimeError as error:
+            # `gh stack merge N` merges GitHub's stack of N from any checkout of the repo,
+            # even one on no branch or on a branch in no local stack.
+            if not (target and target.isdigit() and re.search(r"not part of a stack|not on any branch", str(error))):
+                raise
+            stack = None
+        if stack is None:
+            numbers = github_stack(int(target))
+        else:
+            numbers = [b["pr"]["number"] for b in stack["branches"]
+                       if b.get("pr") and not b.get("isMerged") and b["pr"].get("state") == "OPEN"]
+        if target and stack is not None:
             if not target.isdigit() or int(target) not in numbers:
                 deny(f"can't tell which PRs `gh stack merge {target}` merges from this checkout's "
                      f"stack (open PRs: {numbers}); pass one of those PR numbers", WHERE)

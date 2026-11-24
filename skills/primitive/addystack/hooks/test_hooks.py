@@ -1382,6 +1382,39 @@ class MergeGate(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command, cwd=self.dir))
 
+    def test_reads_githubs_stack_when_no_local_stack_holds_the_pr(self):
+        # Nov 11, 16, 19, and 20, 2026: `gh stack merge N` from a checkout on no branch, or on
+        # a branch in no local stack, was denied as "couldn't check", though gh stack merges
+        # GitHub's stack of N from there.
+        def scenario(error, entries, alone=()):
+            self.scenario(prs={n: "SUCCESS" for n in (12, 13)}, stack_error=error)
+            data = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+            data["repository"]["stackOf"] = {"stack": {"entries": {"nodes": [
+                {"position": at, "pullRequest": {"number": n, "state": state}} for at, (n, state) in entries]}}
+                if entries else None}
+            for n in alone:
+                data["repository"][f"p{n}"]["stack"] = None
+            pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(data))
+        self.verify(12)
+        self.verify(13)
+        for error in ['\u2717 current branch "feat/x" is not part of a stack',
+                      "\u2717 failed to get current branch: git: not on any branch"]:
+            with self.subTest(error=error):
+                scenario(error, [(2, (13, "OPEN")), (1, (12, "OPEN")), (0, (11, "MERGED"))])
+                self.assertIsNone(self.reason("gh stack merge 13 --yes --squash"))
+                scenario(error, [(1, (12, "OPEN")), (2, (13, "OPEN"))])
+                self.assertIsNone(self.reason("gh stack merge 12"))  # only the PRs up to 12
+                self.assertIn("couldn't check the merge", self.reason("gh stack merge --yes"))  # no PR to read
+                scenario(error, None, alone=[12])
+                self.assertIn("#12 is in no stack on GitHub, so `gh stack merge` can't merge it: use `gh pr merge 12`",
+                              self.reason("gh stack merge 12 --yes --squash"))
+                scenario(error, [(1, (14, "OPEN"))])  # a stack that doesn't hold the PR fails closed
+                self.assertIn("couldn't check the merge", self.reason("gh stack merge 12"))
+        pathlib.Path(self.repo, ".git", "verify-work", "verdicts.tsv").unlink()
+        self.verify(13)  # each PR of GitHub's stack still needs its own Done
+        scenario('\u2717 current branch "feat/x" is not part of a stack', [(1, (12, "OPEN")), (2, (13, "OPEN"))])
+        self.assertIn("#12 has no Done verdict", self.reason("gh stack merge 13"))
+
     def test_denies_a_red_or_running_default_branch(self):
         self.verify(12)
         for state, words in [("FAILURE", "is red"), ("PENDING", "still running")]:
