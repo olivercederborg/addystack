@@ -101,7 +101,7 @@ elif [ "$listing" != 0 ]; then
   echo "pre-commit: Dagger can't reach its engine (is Docker running?), so the test suites run here"
   host_suites
 elif missing=$(unmatched) && [ -n "$missing" ]; then
-  echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-commit" >&2
+  echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-push" >&2
   exit 1
 elif ! dagger check -qq "${checks[@]}"; then
   echo "pre-commit: a Dagger check failed. If its test can't find a file, add the file to that" \
@@ -136,8 +136,7 @@ for at in "${!tips[@]}"; do
     if [ -f "$root/.githooks/suites.sh" ]; then
       . "$root/.githooks/suites.sh"
       # The hook tests run on the host (macOS-only ones, or all on a fallback) only when the
-      # push changes their inputs, as pre-commit reads them from the index; a detector that
-      # errors counts as a change.
+      # push changes their inputs; a detector that errors counts as a change.
       hooks_staged=false
       for base in $from; do
         detected=0

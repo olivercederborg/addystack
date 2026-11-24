@@ -16,7 +16,7 @@ KIT = "/kit"
 TOOL = "skills/primitive/addystack"
 
 # The hook tests' inputs, the same list scripts/hook-inputs-staged.sh keeps for
-# pre-commit; hooks_tests fails when the two differ.
+# pre-push; hooks_tests fails when the two differ.
 HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies.md",
                f"{TOOL}/scripts/stack.sh",
                f"{TOOL}/lib", f"{TOOL}/addystack.defaults.jsonc", f"{TOOL}/schema",
@@ -40,7 +40,7 @@ SKILL_SUITES = {
     "skills/primitive/show-me-your-work": [],
     "skills/primitive/verify-work": [],
 }
-# Where pre-commit's glob finds each kit suite: a shipped skill's scripts/, and
+# Where the host fallback's glob (.githooks/suites.sh) finds each kit suite: a shipped skill's scripts/, and
 # shared/scripts/. The preferences and preset skills, outside the release, run theirs on the
 # host, in pre-commit's last step.
 SUITE_TESTS = ("skills/primitive/*/scripts/test_*.py", "skills/orchestrator/*/scripts/test_*.py",
@@ -284,7 +284,7 @@ class Skills:
     @function
     @check
     async def suites_listed(self, kit: source(*SUITE_TESTS)) -> None:
-        """Every skill with scripts/test_*.py has a check here, as pre-commit's glob finds it."""
+        """Every skill with scripts/test_*.py has a check here, as the host fallback's glob finds it."""
         found = {path.rsplit("/scripts/", 1)[0] for pattern in SUITE_TESTS for path in await kit.glob(pattern)}
         if missing := sorted(found - SKILL_SUITES.keys()):
             raise ValueError(f"add a check and a SKILL_SUITES entry for {', '.join(missing)}")

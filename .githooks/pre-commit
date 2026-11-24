@@ -6,7 +6,7 @@
 # differ from their sources or left a symlink in the kit,
 # whose built global/built/*.md file differs from its sources (in the workshop), whose
 # example replies break reply-shape's layout, whose reply-rules payload passes 8,000
-# characters, or whose touched folders' skill-script or hook tests fail on this machine.
+# characters, or whose touched skills' script tests fail on this machine.
 # The kit's Dagger suites run once per push, in .githooks/pre-push; the preferences, preset,
 # and workshop suites, which Dagger leaves out, run here on every commit.
 # Enable once per clone:
@@ -41,10 +41,7 @@ fi
 if [[ -x "$root/maintainer/build-global.py" ]]; then "$root/maintainer/build-global.py" --check; fi
 "$root/scripts/check_examples.py"
 "$root/scripts/check-reply-budget.py"
-# The hook tests matter only when the commit changes a file they depend on. That check
-# reads the index, so it runs before the unset below.
-hooks_staged=false
-if "$root/scripts/hook-inputs-staged.sh"; then hooks_staged=true; fi
+# The staged paths, read from the index before the unset below.
 staged=()
 while IFS= read -r -d '' path; do staged+=("$path"); done < <(git diff --cached --name-only --no-renames -z)
 # Git runs hooks with GIT_DIR and its other repo-local variables set (always in a
@@ -53,23 +50,20 @@ unset $(git rev-parse --local-env-vars)
 
 . "$root/.githooks/suites.sh"
 
-# The host suites of the folders this commit touches: a skill's own scripts/, shared/'s,
-# scripts/' (which also tests these hooks), and the hook tests when their inputs are staged,
-# from the list read before the unset above. The full set runs through Dagger at push
-# (.githooks/pre-push), so a suite that reads files outside its folder still runs before
+# The host suites of the skills this commit touches, each its own scripts/, from the list
+# read before the unset above. shared/'s, scripts/', and the hook tests run one test after
+# another here, slower than Dagger runs them, so they run only at push (.githooks/pre-push),
+# in Dagger's full set, so a suite that reads files outside its folder still runs before
 # the branch reaches GitHub.
 touched=()
 while IFS= read -r -d '' path; do
   case $path in
     skills/preferences/* | skills/preset/*) continue ;;  # their suites run below on every commit
     skills/*/*/*) folder=${path#skills/}; folder="skills/${folder%%/*}/$(cut -d/ -f2 <<< "$folder")/scripts" ;;
-    shared/*) folder=shared/scripts ;;
-    scripts/* | .githooks/*) folder=scripts ;;
     *) continue ;;
   esac
   [[ " ${touched[*]-} " == *" $root/$folder "* ]] || touched+=("$root/$folder")
 done < <(printf '%s\0' "${staged[@]-}")
-if $hooks_staged; then touched+=("$root"/skills/primitive/addystack/hooks); fi
 run_suites "${touched[@]-}"
 # The suites the kit's Dagger module leaves out: the preferences and preset skills', which
 # stay out of the release, and a workshop checkout's maintainer/'s. They run here whenever

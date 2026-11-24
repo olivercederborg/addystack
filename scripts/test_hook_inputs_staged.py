@@ -1,6 +1,5 @@
-"""Tests for hook-inputs-staged.sh: a staged change to any file the hook tests depend on
-says run, a docs-only or unstaged change says skip, and a `git commit <paths>` is read
-from its temporary index."""
+"""Tests for hook-inputs-staged.sh: a pushed range that changes any file the hook tests
+depend on says run, and a docs-only range, or a change left out of the range, says skip."""
 import os, pathlib, re, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "hook-inputs-staged.sh"
@@ -46,8 +45,13 @@ class HookInputsStaged(unittest.TestCase):
         (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
         (self.repo / path).write_text(text)
 
+    def changed(self, *rev):
+        return subprocess.run([str(SCRIPT), *rev], cwd=self.repo, env=ENV, capture_output=True).returncode == 0
+
     def staged(self):
-        return subprocess.run([str(SCRIPT)], cwd=self.repo, env=ENV, capture_output=True).returncode == 0
+        """Whether committing what's staged changes a hook input, read from the range."""
+        self.git("commit", "-q", "--allow-empty", "-m", "change")
+        return self.changed("HEAD~1", "HEAD")
 
     def test_finds_the_outside_inputs(self):
         self.assertIn("skills/optional/reply-shape/SKILL.md", outside_inputs())
@@ -58,20 +62,19 @@ class HookInputsStaged(unittest.TestCase):
                 self.write(path, "changed\n")
                 self.git("add", path)
                 self.assertTrue(self.staged())
-                self.git("reset", "-q", "--hard")
+                self.git("reset", "-q", "--hard", "HEAD~1")
                 self.git("clean", "-qfd")
 
     def test_runs_for_a_deletion_and_a_rename_out_of_hooks(self):
         self.git("rm", "-q", f"{KIT}/hooks/a.py")
         self.assertTrue(self.staged())
-        self.git("reset", "-q", "--hard")
+        self.git("reset", "-q", "--hard", "HEAD~1")
         self.git("mv", f"{KIT}/hooks/a.py", "docs/a.py")
         self.assertTrue(self.staged())
 
     def test_reads_a_pushed_range_given_one(self):
         # .githooks/pre-push gives the push's range, so the commits decide, not the index.
-        changed = lambda *rev: subprocess.run([str(SCRIPT), *rev], cwd=self.repo, env=ENV,
-                                              capture_output=True).returncode == 0
+        changed = self.changed
         self.write("docs/notes.md", "changed\n")
         self.git("commit", "-qam", "docs")
         self.assertFalse(changed("HEAD~1", "HEAD"))
@@ -79,6 +82,7 @@ class HookInputsStaged(unittest.TestCase):
         self.git("commit", "-qam", "hooks")
         self.assertTrue(changed("HEAD~2", "HEAD"))
         self.assertFalse(changed("HEAD", "HEAD"))
+        self.assertFalse(changed("HEAD"))  # a range needs both ends
         self.assertTrue(changed(subprocess.run(["git", "hash-object", "-t", "tree", "/dev/null"], cwd=self.repo,
                                                capture_output=True, text=True).stdout.strip(), "HEAD"))
 
@@ -87,26 +91,11 @@ class HookInputsStaged(unittest.TestCase):
         self.git("add", "docs/notes.md")
         self.assertFalse(self.staged())
 
-    def test_skips_an_unstaged_hooks_change(self):
+    def test_skips_a_hooks_change_left_out_of_the_range(self):
         self.write(f"{KIT}/hooks/a.py", "changed\n")
         self.write("docs/notes.md", "changed\n")
         self.git("add", "docs/notes.md")
         self.assertFalse(self.staged())
-
-    def test_reads_the_temporary_index_of_a_commit_with_paths(self):
-        hook = self.repo / ".githooks" / "pre-commit"
-        hook.parent.mkdir()
-        hook.write_text(f'#!/bin/sh\n{SCRIPT} && echo run > "{self.repo}/result" || echo skip > "{self.repo}/result"\n')
-        hook.chmod(0o755)
-        self.git("config", "core.hooksPath", str(hook.parent))
-        self.write(f"{KIT}/hooks/a.py", "changed\n")
-        self.git("commit", "-q", "-m", "hooks", "--", f"{KIT}/hooks/a.py")
-        self.assertEqual((self.repo / "result").read_text(), "run\n")
-        self.write(f"{KIT}/hooks/a.py", "staged, not committed\n")
-        self.git("add", f"{KIT}/hooks/a.py")
-        self.write("docs/notes.md", "changed\n")
-        self.git("commit", "-q", "-m", "docs", "--", "docs/notes.md")
-        self.assertEqual((self.repo / "result").read_text(), "skip\n")
 
 
 if __name__ == "__main__":

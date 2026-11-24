@@ -1,4 +1,5 @@
-# Sourced by .githooks/pre-commit and .githooks/pre-push, with $root and $hooks_staged set.
+# Sourced by .githooks/pre-commit and .githooks/pre-push, with $root set, and $hooks_staged
+# for host_suites, which only pre-push runs.
 # Each folder's test_*.py, on this machine, counting the suites it runs in suites_ran.
 suites_ran=0
 run_suites() {
@@ -28,7 +29,7 @@ host_suites() {
   run_suites "${dirs[@]}"
   if [ "$suites_ran" = 0 ]; then
     echo "pre-commit: no host test suite ran, since none of these has a test_*.py:" \
-         "${dirs[*]#"$root"/}; fix host_suites' folder list in .githooks/pre-commit" >&2
+         "${dirs[*]#"$root"/}; fix host_suites' folder list in .githooks/suites.sh" >&2
     exit 1
   fi
 }

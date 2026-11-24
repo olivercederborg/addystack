@@ -340,7 +340,6 @@ class PreCommit(unittest.TestCase):
                      "check-links.py", "sync-format.sh", "sync-notes.py", "sync-skill-list.py", "sync-copies.py",
                      "check_examples.py", "check-reply-budget.py"]:
             self.write(f"scripts/{lint}", "#!/bin/sh\nexit 0\n").chmod(0o755)
-        self.write("scripts/hook-inputs-staged.sh", "#!/bin/sh\nexit 1\n").chmod(0o755)
         self.ran = {}
         for folder in ["scripts", "shared/scripts", "skills/primitive/one/scripts", "skills/orchestrator/two/scripts",
                        "maintainer"]:
@@ -382,10 +381,13 @@ class PreCommit(unittest.TestCase):
         self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])  # the workshop's always run
         self.assertFalse(self.log.exists())
 
-    def test_maps_each_staged_path_to_its_folders_suite(self):
-        run, ran = self.commit("shared/views.md", "scripts/check-x.py", "skills/orchestrator/two/references/a.md")
+    def test_runs_a_touched_skills_suite_and_leaves_the_slow_ones_to_push(self):
+        # verify-work on #103: shared/'s, scripts/', and the hook suites run one test after
+        # another on the host, slower than Dagger at commit today, so only pre-push runs them.
+        run, ran = self.commit("shared/views.md", "scripts/check-x.py", ".githooks/pre-push",
+                               "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.md")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(ran, ["maintainer", "scripts", "shared/scripts", "skills/orchestrator/two/scripts"])
+        self.assertEqual(ran, ["maintainer", "skills/orchestrator/two/scripts"])
 
     def test_a_docs_only_commit_runs_no_kit_suite(self):
         run, ran = self.commit("README.md", "CHANGELOG.md")
