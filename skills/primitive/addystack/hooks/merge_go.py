@@ -19,10 +19,11 @@ import re
 # "merge after #36" waits, "merge #55, skip #36" refuses, "merge #55 and fix #36" adds a
 # step, and "PR #36", "stack #3", or "merge 5 #36" names no repo. No list holds every such
 # word, so merge-gate.py holds a go that names a repo to the PRs it names (REPO_NAMED).
+# push-gate.py reads the same names, so a push step ("restack #6091") names no repo either.
 NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
             r"|no|never|dont|skip|drop|ignore|hold|without|with|on|onto|into|in|from|for|of|by|to"
             r"|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those|prs?|pull"
-            r"|issues?|stacks?|branch|merge|fix|push|rebase|revert|verify|deploy|release|review|close)")
+            r"|issues?|stacks?|branch|merge|fix|push|force-push|restack|sync|submit|rebase|revert|verify|deploy|release|review|close)")
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[\w.-]*[a-z][\w.-]*)"  # owner/12306 or 1password, not 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
 # Whether a text names a PR with its repo: "dotfiles #36", dotfiles#36, sam/12306#36, or

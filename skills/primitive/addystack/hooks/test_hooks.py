@@ -2438,7 +2438,10 @@ class MergeGo(unittest.TestCase):
                      "merge never #36", "merge #55, ignore #36", "merge #55 and drop #36", "merge later #36",
                      "merge maybe #36", "merge #55, hold #36", "merge #55 and revert #36", "merge #55 and push #36",
                      "merge #55 and deploy #36", "merge #55 and verify #36", "merge #55 and close #36",
-                     "merge #55, release #36", "merge #55, review #36"]:
+                     "merge #55, release #36", "merge #55, review #36",
+                     # push-gate's steps, Nov 24, 2026: "restack #6091" read as the repo restack.
+                     "merge #55 and restack #36", "merge #55, sync #36", "merge #55 and submit #36",
+                     "merge #55 and force-push #36"]:
             with self.subTest(text=text):
                 self.assertFalse(merge_go.literal_go(text))
 
