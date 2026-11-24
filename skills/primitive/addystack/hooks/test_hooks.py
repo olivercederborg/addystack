@@ -2914,7 +2914,7 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(self.known(branch, self.base, self.head), "not verified until it runs: 1 · the iOS run needs a device")
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "-m", "reworded")
         self.assertIn("needs a device", self.known(branch, self.base, self.git("rev-parse", "HEAD").strip()))
-        # R178: a commit since changes the diff, so its re-check reads that code; it still owes the run.
+        # A commit since changes the diff, so its re-check reads that code, and still owes the run.
         self.assertIsNone(self.known(branch, self.base, self.commit_change("c\n")))
 
     def test_last_knows_a_fix_marked_finding_without_a_commit(self):
@@ -3080,7 +3080,6 @@ class Verdicts(unittest.TestCase):
         self.assertTrue(verdicts.known(pathlib.Path(self.repo), receipt, self.base, self.head))
         with unittest.mock.patch.object(verdicts, "classify", return_value={"parity": ["a rule added since"]}):
             self.assertEqual(verdicts.known(pathlib.Path(self.repo), receipt, self.base, self.head), "")
-        self.git("reset", "-q", "--hard", self.head)
         self.git("checkout", "-q", "-b", "other")
         self.record(verdict="not-done", findings=["1 · Blocker · x → fix"], branch="other")
         self.assertIsNone(self.known(branch, self.base, self.head))  # the merge gate reads the Not done
@@ -3105,10 +3104,11 @@ class Verdicts(unittest.TestCase):
         self.assertIsNone(self.known(branch, self.base, self.head))
 
     def test_a_done_survives_a_rebase_of_a_long_branch(self):
-        # verify-work on #99: range-diff pads its numbers to the widest, so 9 commits print
-        # " 1:  abc =  1:  def", and a 10th "10:  abc = 10:  def".
+        # verify-work on #99: range-diff pads its numbers to the widest, so 10 commits print
+        # " 1:  abc =  1:  def" up to "10:  abc = 10:  def", and a regex for one space read
+        # only row 10, keeping a Done whose rows 1-9 changed.
         self.git("checkout", "-q", "-b", "long")
-        for n in range(9):
+        for n in range(10):
             pathlib.Path(self.repo, f"n{n}").write_text(f"{n}\n")
             self.git("add", f"n{n}")
             self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", f"n{n}")
@@ -3121,7 +3121,21 @@ class Verdicts(unittest.TestCase):
         parent = self.git("rev-parse", "HEAD").strip()
         self.git("checkout", "-q", "long")
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "parent")
-        self.assertIn("Done stands", self.known("long", parent, self.git("rev-parse", "HEAD").strip()))
+        rebased = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("Done stands", self.known("long", parent, rebased))
+        # Rows 2 and 3 rewritten so the whole diff stays the same: n1 first holds x, and n2's
+        # commit sets it back as it adds n2.
+        self.git("reset", "-q", "--hard", f"{rebased}~9")
+        for name, files in (("n1", {"n1": "x\n"}), ("n2", {"n1": "1\n", "n2": "2\n"})):
+            for path, text in files.items():
+                pathlib.Path(self.repo, path).write_text(text)
+            self.git("add", "-A")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", name)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "cherry-pick", f"{rebased}~7..{rebased}")
+        rewritten = self.git("rev-parse", "HEAD").strip()
+        self.assertEqual(verdicts.diff(pathlib.Path(self.repo), parent, rewritten),
+                         verdicts.diff(pathlib.Path(self.repo), parent, rebased))
+        self.assertIsNone(self.known("long", parent, rewritten))
 
     def test_a_done_gets_a_recheck_when_the_base_changed_a_file_the_diff_touches(self):
         # verify-work on #99: with no function context, range-diff pairs a moved hunk as =.
