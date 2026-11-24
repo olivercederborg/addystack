@@ -158,14 +158,14 @@ pass.
   or changes a public API, run `blast-radius` first.
 - **`review-loop`** for the other model's review, through its last round, with
   **`verify-work`** beside round 1 on the same head, given its parent and the plan's
-  goal and Not in scope. A fix from either gets the **Re-check**.
+  goal and Not in scope. Fix once both report; each fix gets the **Re-check**.
 - **Fix** every Blocker and Cleanup inside the plan yourself, with `build`, on the
   layer that owns it, one commit per fix, since the session that holds the findings
   fixes them without a cold start. Skip build's push, submit, and report (its step 4),
   since step 5 pushes and reports the whole stack. Then rebase the layers above. Queue
   Optional findings for the report.
 - **Re-check** a fix: `review-loop`'s next round, under the cap, with `verify-work`'s
-  quick re-check, which finds the last verdict itself, beside it, or alone after the loop.
+  quick re-check beside it as in round 1, or alone after the loop.
 - **Verdicts by patch**: log each layer's verdict receipt. After a rebase or restack,
   recompute its patch-id with `python3 scripts/verdicts.py status <parent layer> <head>`,
   where the parent layer is the branch below, or the default branch for layer 1. A
