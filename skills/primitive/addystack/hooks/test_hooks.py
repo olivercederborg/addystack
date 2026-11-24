@@ -1395,6 +1395,7 @@ class MergeGate(unittest.TestCase):
         # cd -P, an assignment before cd, and builtin cd and command cd move the shell too.
         self.assertIsNone(self.reason(f"cd -P {self.repo} && gh pr merge 12", cwd=self.dir))
         for command in [f"cd {self.dir}; cd .; gh pr merge 12 --squash", f"X=1 cd {self.dir} && gh pr merge 12",
+                        f"noglob cd {self.dir} && gh pr merge 12",
                         f"builtin cd {self.dir} && gh pr merge 12", f"command cd {self.dir} && gh pr merge 12"]:
             with self.subTest(command=command):
                 self.assertIn("couldn't check the merge", self.reason(command))
@@ -1407,6 +1408,13 @@ class MergeGate(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn("so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
                               "gh pr merge 12", self.reason(command))
+        # verify-work on #102, round 2: eval or source runs code that may cd, and a cd that
+        # may not run, though it doesn't move, may still set the directory `cd -` returns to.
+        for command in [f"eval cd {self.dir} && gh pr merge 12", ". ./env.sh && gh pr merge 12",
+                        f"cd {self.dir}; false || cd {self.dir}; cd - && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIn("so the gate can't tell which checkout the merge runs in", self.reason(command))
+        self.assertIn("runs `.`, whose code it can't read", self.reason(". ./env.sh && gh pr merge 12"))
         # zsh's AUTO_CD enters a directory named as a command, as ready-gate.py reads it.
         self.assertIn("which zsh's AUTO_CD enters", self.reason("repo && gh pr merge 12", cwd=self.dir))
 
@@ -3253,7 +3261,8 @@ class ReadyGate(unittest.TestCase):
                         "cd +1 && gh pr ready 12", "cd -2 && gh pr ready 12", f"{outer} && gh pr ready 12",
                         f"HOME={outer}; cd && gh pr ready 12", f"export HOME={outer}; cd ~/x && gh pr ready 12",
                         # verify-work on #102: an escaped cd, as merge-gate.py reads it through shell_dirs.
-                        f"\\cd {outer} && gh pr ready 12"]:
+                        f"\\cd {outer} && gh pr ready 12",
+                        f"cd {outer}; false || cd {outer}; cd - && gh pr ready 12"]:
             with self.subTest(command=command):
                 self.assertIn("can't tell which checkout", self.denial(command))
         for command in ["GH_REPO=$R gh pr ready 12", "true && export GH_REPO=o/upstream; gh pr ready 12",

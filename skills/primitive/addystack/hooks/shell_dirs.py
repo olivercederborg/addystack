@@ -3,7 +3,7 @@ gates that check what a command reaches from where it runs (ready-gate.py, merge
 `Walk` follows cd, pushd, and popd, and records in `unknown` why it can't tell once a change
 it can't read may have run: inside a subshell, pipeline, or block, after `||`, in an `&&`
 chain past its end, to where only the shell knows (a variable, ~+, a dir-stack entry, CDPATH,
-a changed HOME, zsh's AUTO_CD), or an escaped `\\cd`. Its `unsure` gives a caller the same
+a changed HOME, zsh's AUTO_CD), an escaped `\\cd`, or eval or source. Its `unsure` gives a caller the same
 reading for another setting, such as GH_REPO."""
 import os
 import re
@@ -12,9 +12,11 @@ import shutil
 # Shell words that lead a command. A block opens at the first set and closes at CLOSES, and a
 # cd or GH_REPO inside one may not run.
 OPENS, CLOSES = {"if", "while", "until", "for", "select", "case", "{"}, {"fi", "done", "esac", "}"}
-LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command"}  # builtin cd is cd
+# builtin cd is cd, as is zsh's noglob cd or nocorrect cd.
+LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command", "noglob", "nocorrect"}
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 MOVES = ("cd", "pushd", "popd")
+OPAQUE = ("eval", "source", ".")  # run code in this shell that the gate doesn't read, which may cd
 
 
 def unreadable(word):
@@ -99,7 +101,9 @@ class Walk:
 
     def follow(self, words, lead):
         command = words[lead] if lead < len(words) else None
-        if command and command.lstrip("\\") in MOVES and command not in MOVES:
+        if command in OPAQUE:
+            self.unknown.setdefault("dir", f"runs `{command}`, whose code it can't read")
+        elif command and command.lstrip("\\") in MOVES and command not in MOVES:
             self.unknown.setdefault("dir", f"runs `{' '.join(words[lead:])}`, an escaped `{command[1:]}` it can't read")
         elif command and command not in MOVES and not shutil.which(command) and os.path.isdir(
                 os.path.join(self.cwd, os.path.expanduser(command))):
@@ -108,6 +112,8 @@ class Walk:
             said = f"runs `{command}`"
             # A cd that may not run matters only when it would move the shell.
             if self.may_not_run() and command == "cd" and self.resolve(command, words[lead + 1:]) == self.cwd:
+                if self.previous != self.cwd:
+                    self.previous = None  # it may set OLDPWD to here, so a later `cd -` can't be read
                 return
             if self.unsure("dir", said):
                 return
