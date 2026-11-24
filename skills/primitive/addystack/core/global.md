@@ -11,7 +11,7 @@
 
 - **Commit** each step as its own atomic commit, even when repo tooling defaults to amending. Squash or amend only when asked.
 - **Run work to its end**: re-check fixes and run further rounds up to the skill's cap.
-- **Bundle routine steps**: when the next steps are routine, such as verify-work, pushing my own branch, and opening or updating its draft PR, `a` offers them as one option instead of one per turn.
+- **Bundle routine steps**: do the routine next steps, such as verify-work, pushing my own branch, and opening or updating its draft PR, in this turn; when they wait on me, `a` offers them as one option instead of one per turn.
 - **Message another thread yourself** when it holds the work (its checkout, branch, or a running process), the message needs nothing from me and only informs (a handoff or a heads-up), never asking that thread to change, undo, or push work. Send one consolidated message, not a drip. When no thread holds the work, start a fresh agent with the full brief instead; otherwise draft the message for me.
 
 # Specialized work
