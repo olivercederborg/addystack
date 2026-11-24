@@ -60,8 +60,9 @@ while IFS= read -r -d '' path; do
   case $path in
     skills/preferences/* | skills/preset/*) continue ;;  # their suites run below on every commit
     skills/*/*/scripts/*) ;;
-    # Markdown outside scripts/, which Dagger's skill checks leave out too (skill_source in
-    # .dagger/src/skills/main.py), so a SKILL.md or reference edit runs no suite until push.
+    # Markdown outside scripts/, which Dagger's skill checks leave out too unless SKILL_SUITES
+    # lists it (skill_source in .dagger/src/skills/main.py), so a SKILL.md or reference edit
+    # runs no suite until push.
     skills/*/*/*.md) continue ;;
     skills/*/*/*) ;;
     *) continue ;;

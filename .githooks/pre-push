@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs the kit's Dagger suites once per push, on each branch tip the push
 # sends, so a failure is blocked before the branch reaches GitHub; .githooks/pre-commit
-# runs only the lints and the touched folders' suites on this machine. `gh stack push`
+# runs only the lints and the touched skills' suites on this machine. `gh stack push`
 # and `gh stack submit` run git push, which runs this hook.
 # Enable once per clone (it enables pre-commit too):
 #   git config core.hooksPath .githooks

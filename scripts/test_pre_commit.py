@@ -195,7 +195,7 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(calls, [LIST])
 
     def test_checks_the_committed_tip_not_the_checkouts_other_files(self):
-        # Review of #103: a suite that passes only on an untracked file in this checkout must
+        # A suite that passes only on an untracked file in this checkout must
         # fail the push, since the tip it sends lacks the file; and a failing host suite in
         # the scratch worktree that check runs in must fail it too.
         (self.repo / "scripts" / "helper.py").write_text("VALUE = 1\n")
@@ -209,7 +209,7 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(len(worktrees.splitlines()), 1)  # the scratch worktree is gone
 
     def test_checks_each_distinct_tip_once(self):
-        # Review of #103, round 2: two refs at one tip check it once.
+        # Two refs at one tip check it once.
         (self.bin / "dagger").write_text(FAKE_DAGGER)
         (self.bin / "dagger").chmod(0o755)
         run, calls = self.push(REFS=2)
@@ -226,7 +226,7 @@ class DaggerOrHost(unittest.TestCase):
         return ran
 
     def test_a_tip_from_before_suites_sh_runs_every_suite_with_this_commits_helpers(self):
-        # Review of #103, rounds 2 and 3: a pushed tip from before this hook has no
+        # A pushed tip from before this hook has no
         # .githooks/suites.sh, and its detector lists its own inputs, so every hook input
         # counts as changed, and the helpers come from this checkout's commit, never an edit
         # in progress that would skip a suite.
@@ -244,8 +244,8 @@ class DaggerOrHost(unittest.TestCase):
         self.assertFalse(self.ran.exists())
 
     def test_a_remote_tip_this_clone_lacks_counts_every_hook_input(self):
-        # Review of #103, round 3: the default branch's fork point stood in for an unknown
-        # remote tip, and could hide a hook input the push changes.
+        # The default branch's fork point can't stand in for a remote tip this clone lacks:
+        # it could hide a hook input the push changes.
         hooks_ran = self.hooks_suite()
         self.script("hook-inputs-staged.sh", '[ "$1" = "$(git hash-object -t tree /dev/null)" ] && exit 0; exit 1')
         tip = lambda: subprocess.run(["git", "update-ref", "refs/remotes/origin/HEAD", "HEAD"], cwd=self.repo, check=True)
@@ -254,7 +254,7 @@ class DaggerOrHost(unittest.TestCase):
         self.assertTrue(hooks_ran.exists())
 
     def test_a_sparse_checkout_still_checks_every_committed_suite(self):
-        # Review of #103, round 3: the scratch worktree took this checkout's sparse patterns.
+        # The scratch worktree ignores this checkout's sparse patterns.
         failing = self.repo / "skills" / "primitive" / "broken" / "scripts"
         failing.mkdir(parents=True)
         (failing / "test_broken.py").write_text("import unittest\nclass B(unittest.TestCase):\n"
@@ -382,8 +382,8 @@ class PreCommit(unittest.TestCase):
         self.assertFalse(self.log.exists())
 
     def test_runs_a_touched_skills_suite_and_leaves_the_slow_ones_to_push(self):
-        # verify-work on #103: shared/'s, scripts/', and the hook suites run one test after
-        # another on the host, slower than Dagger at commit today, so only pre-push runs them.
+        # shared/'s, scripts/', and the hook suites run one test after another on the host,
+        # slower than Dagger runs them, so only pre-push runs them.
         run, ran = self.commit("shared/views.md", "scripts/check-x.py", ".githooks/pre-push",
                                "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.json")
         self.assertEqual(run.returncode, 0, run.stderr)
