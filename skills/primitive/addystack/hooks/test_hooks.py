@@ -1373,6 +1373,15 @@ class MergeGate(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command))
 
+    def test_reads_a_cd_path_that_ends_at_a_semicolon(self):
+        # Nov 16 and 23, 2026: `cd <worktree>; gh stack merge …` was read as the path `<worktree>;`.
+        self.scenario()
+        self.verify(12)
+        for command in [f"cd {self.repo}; gh pr merge 12 --squash", f"cd {self.repo}&& gh pr merge 12",
+                        f"cd {self.repo}|| true; gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command, cwd=self.dir))
+
     def test_denies_a_red_or_running_default_branch(self):
         self.verify(12)
         for state, words in [("FAILURE", "is red"), ("PENDING", "still running")]:

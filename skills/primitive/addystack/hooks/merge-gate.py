@@ -78,7 +78,8 @@ if not match:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-cds = re.findall(r"\bcd\s+(\S+)", code[:match.start()])
+# A cd path ends where its word does: `cd dir; gh pr merge` goes to dir, not `dir;`.
+cds = re.findall(r"\bcd\s+([^\s;&|()<>]+)", code[:match.start()])
 if cds:
     cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(cds[-1])))
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
