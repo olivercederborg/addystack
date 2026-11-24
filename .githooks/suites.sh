@@ -32,4 +32,3 @@ host_suites() {
     exit 1
   fi
 }
-

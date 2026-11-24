@@ -108,12 +108,15 @@ class DaggerOrHost(unittest.TestCase):
             (self.bin / "dagger").write_text(FAKE_DAGGER)
             (self.bin / "dagger").chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        untracked = extra.pop("UNTRACKED", ())
         env.update(PATH=f"{self.bin}:/usr/bin:/bin", DAGGER_LOG=str(self.log), DAGGER_ENGINE=str(engine),
                    DAGGER_CHECK=str(check), DAGGER_MODULE=str(module), DAGGER_LIST=listed,
                    HOST_RAN=str(self.ran), **extra)
         # The push sends HEAD, committed with whatever the test changed, so the hook checks
         # this checkout; a push from a dirty one checks a scratch worktree of the tip.
         subprocess.run(["git", "add", "-A"], cwd=self.repo, env=env, check=True)
+        for path in untracked:  # left out of the push, as a file not committed yet
+            subprocess.run(["git", "rm", "-q", "--cached", path], cwd=self.repo, env=env, check=True)
         subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty",
                         "--no-verify", "-m", "push"], cwd=self.repo, env=env, check=True)
         tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True, text=True).stdout
@@ -177,6 +180,20 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(run.returncode, 1)
         self.assertIn("no Dagger check matches skills:suites-listed;", run.stderr)
         self.assertEqual(calls, [LIST])
+
+    def test_checks_the_committed_tip_not_the_checkouts_other_files(self):
+        # Review of #103: a suite that passes only on an untracked file in this checkout must
+        # fail the push, since the tip it sends lacks the file; and a failing host suite in
+        # the scratch worktree that check runs in must fail it too.
+        (self.repo / "scripts" / "helper.py").write_text("VALUE = 1\n")
+        (self.repo / "scripts" / "test_uses_helper.py").write_text(
+            "import unittest, helper\nclass T(unittest.TestCase):\n    def test_it(self):\n"
+            "        self.assertEqual(helper.VALUE, 1)\n")
+        run, _ = self.push(dagger=False, UNTRACKED=["scripts/helper.py"])
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("helper", run.stderr)
+        worktrees = subprocess.run(["git", "worktree", "list"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertEqual(len(worktrees.splitlines()), 1)  # the scratch worktree is gone
 
     def test_without_dagger_the_host_suites_run(self):
         run, _ = self.push(dagger=False)

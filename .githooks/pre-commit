@@ -7,7 +7,8 @@
 # whose built global/built/*.md file differs from its sources (in the workshop), whose
 # example replies break reply-shape's layout, whose reply-rules payload passes 8,000
 # characters, or whose touched folders' skill-script or hook tests fail on this machine.
-# Every suite runs through Dagger once per push, in .githooks/pre-push.
+# The kit's Dagger suites run once per push, in .githooks/pre-push; the preferences, preset,
+# and workshop suites, which Dagger leaves out, run here on every commit.
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 set -euo pipefail
@@ -60,6 +61,7 @@ unset $(git rev-parse --local-env-vars)
 touched=()
 while IFS= read -r -d '' path; do
   case $path in
+    skills/preferences/* | skills/preset/*) continue ;;  # their suites run below on every commit
     skills/*/*/*) folder=${path#skills/}; folder="skills/${folder%%/*}/$(cut -d/ -f2 <<< "$folder")/scripts" ;;
     shared/*) folder=shared/scripts ;;
     scripts/* | .githooks/*) folder=scripts ;;

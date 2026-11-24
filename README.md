@@ -80,8 +80,8 @@ git config core.hooksPath .githooks
 ```
 
 The pre-commit hook runs the lints and the touched folders' tests on this machine, and
-the pre-push hook, which `gh stack push` and `submit` run, runs every suite through
-Dagger once per push when it can reach an engine (`dagger check -l` lists them).
+the pre-push hook, which `gh stack push` and `submit` run, runs the kit's Dagger suites
+once per push when it can reach an engine (`dagger check -l` lists them).
 
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run
