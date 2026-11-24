@@ -206,7 +206,7 @@ diff, and `check-body.mjs` passes on the body.
 - **In a stack**, publish only the PRs the user approved, and keep the stacking tool's
   own stack links instead of writing a second copy.
 
-After publishing, run address-review on any feedback already on the PR.
+After publishing a new PR, run address-review on any feedback already on it.
 
 **Done when:** every approved PR shows its approved title and body, and the links are
 shared.
