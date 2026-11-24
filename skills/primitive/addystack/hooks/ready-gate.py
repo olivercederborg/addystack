@@ -173,6 +173,9 @@ unknown, pending, depth, cases, tick, ors, moved, readies = {}, {}, 0, 0, False,
 loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
 QUOTED = re.findall(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", command)
 OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", "local", "readarray", "mapfile", "getopts"}
+# A function, trap, or alias the command defines runs code the gate doesn't follow to its
+# call, so no loop name in such a command is one the gate can read.
+DEFINES = bool(re.search(r"\b[A-Za-z_][\w-]*\s*\(\s*\)|\b(?:function|trap|alias)\s", code))
 if re.search(r"\$\{GH_REPO:?=", command):  # an expansion that assigns, even inside quotes
     unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
 pieces = re.split(r"(&&|\|\||[;|&\n()`])", code)  # `$(…)` and backticks run their command
@@ -203,7 +206,7 @@ for at in range(0, len(pieces), 2):
     # source, or a builtin that writes a variable by name, run inside the loop.
     for loop in loops:
         n = re.escape(loop[0])
-        if words[lead:lead + 1] and words[lead] in OPAQUE or any(re.search(rf"(?<![\w$.{{/-]){n}(?!\w)", re.sub(rf"\$\{{?{n}\}}?", "", quoted))
+        if DEFINES or words[lead:lead + 1] and words[lead] in OPAQUE or any(re.search(rf"(?<![\w$.{{/-]){n}(?!\w)", re.sub(rf"\$\{{?{n}\}}?", "", quoted))
                          for quoted in QUOTED):
             loop[1] = None
         if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))

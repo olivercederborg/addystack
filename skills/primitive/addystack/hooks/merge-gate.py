@@ -103,9 +103,12 @@ for at in range(0, len(pieces), 2):
     assigned = 0
     while assigned < len(words) and re.match(r"[A-Za-z_]\w*=", words[assigned]):
         assigned += 1
-    if words[assigned:assigned + 1] not in (["cd"], ["pushd"], ["popd"]):
+    # builtin cd and command cd are cd; an escaped or quoted \cd or 'cd' is one the gate can't read.
+    wrapped = words[assigned:assigned + 1] in (["builtin"], ["command"])
+    named = words[assigned + wrapped:assigned + wrapped + 1]
+    if named not in (["cd"], ["pushd"], ["popd"]) and not re.fullmatch(r"\\(?:cd|pushd|popd)|''", "".join(named)):
         continue
-    plain = (not assigned and words[0] in ("cd", "pushd") and len(words) == 2
+    plain = (not assigned and not wrapped and named in (["cd"], ["pushd"]) and len(words) == 2
              and not words[1].startswith(("-", "+")))
     target = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1]))) if plain else None
     # It runs whenever the merge does: it starts a command list, or the merge's && chain holds it.

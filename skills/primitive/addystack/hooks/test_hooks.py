@@ -1397,7 +1397,10 @@ class MergeGate(unittest.TestCase):
                         f"true | cd {self.dir}; gh pr merge 12", "popd && gh pr merge 12",
                         # Round 3: a cd in a && chain the merge isn't in, after an assignment, in a case arm.
                         f"false && cd {self.dir}; cd . && gh pr merge 12", f"X=1 cd {self.dir} && gh pr merge 12",
-                        f"case x in y) cd {self.dir} ;; esac; gh pr merge 12"]:
+                        f"case x in y) cd {self.dir} ;; esac; gh pr merge 12",
+                        # verify-work on #102: builtin cd and command cd move the shell too.
+                        f"builtin cd {self.dir} && gh pr merge 12", f"command cd {self.dir} && gh pr merge 12",
+                        f"\\cd {self.dir} && gh pr merge 12"]:
             with self.subTest(command=command):
                 self.assertIn("so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
                               "gh pr merge 12", self.reason(command))
@@ -3079,7 +3082,10 @@ class ReadyGate(unittest.TestCase):
                         # Round 3: a write in quoted text, code the gate can't see into, and a
                         # single-quoted '$n', which gh reads as the branch named $n.
                         'for n in 12; do let "n = 13"; gh pr ready "$n"; done',
-                        'for n in 12; do eval "$X"; gh pr ready $n; done', "for n in 12; do gh pr ready '$n'; done"]:
+                        'for n in 12; do eval "$X"; gh pr ready $n; done', "for n in 12; do gh pr ready '$n'; done",
+                        # verify-work on #102: a function defined before the loop that rewrites n.
+                        "f(){ n=13; }; for n in 12; do f; gh pr ready $n; done",
+                        "trap 'n=13' DEBUG; for n in 12; do gh pr ready $n; done"]:
             with self.subTest(command=command):
                 self.assertIn("reads a shell variable or quoted text the gate can't expand: write each PR out, as "
                               "`gh pr ready 12 && gh pr ready 13`", self.denial(command))
