@@ -31,8 +31,8 @@ One block per reply; these are three alternatives.
 
 The shared fields and their limits are prefrontal-turns' base, the spec Prefrontal reads.
 
-- **`state`**: `stop` ends on Next, only when option `a` crosses a stop or is a
-  decision, or a need waits on the user; a `routine` step is otherwise done in this
+- **`state`**: `stop` ends on Next, only when option `a` crosses a stop, is a decision,
+  or waits on a need only the user can meet; a `routine` step is otherwise done in this
   turn, not offered. `done` ends on Done, and `running` on a ⏳ line while CI, a child,
   or a watch runs, or is the block alone where a skill makes that a quiet watch wake's
   whole reply.
