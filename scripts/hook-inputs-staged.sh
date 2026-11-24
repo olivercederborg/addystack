@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exits 0 when the commit being made changes a file the hook tests (the addystack skill's
+# Exits 0 when the commit being made (or the range given) changes a file the hook tests (the addystack skill's
 # hooks/test_*.py) depend on, and 1 when it doesn't, so the pre-commit hook skips them
 # (about 3 minutes) on other commits. Those files are everything under that hooks/, the
 # kit files a hook or hook test names as `HOOKS.parent / "…"` or `.parent.parent / "…"`,
@@ -15,5 +15,10 @@ inputs=(skills/primitive/addystack/hooks skills/optional/reply-shape/SKILL.md re
         skills/primitive/addystack/bin skills/primitive/addystack/core
         skills/primitive/review-loop/scripts/verdicts.py)
 cd "$(git rev-parse --show-toplevel)"
-# --no-renames lists both sides, so a rename out of the hooks folder counts.
-! git diff --cached --quiet --no-renames -- "${inputs[@]}"
+# --no-renames lists both sides, so a rename out of the hooks folder counts. Given
+# `<from> <to>`, as .githooks/pre-push gives a push's range, it reads those commits instead.
+if [ $# = 2 ]; then
+  ! git diff --quiet --no-renames "$1" "$2" -- "${inputs[@]}"
+else
+  ! git diff --cached --quiet --no-renames -- "${inputs[@]}"
+fi

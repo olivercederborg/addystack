@@ -68,6 +68,20 @@ class HookInputsStaged(unittest.TestCase):
         self.git("mv", f"{KIT}/hooks/a.py", "docs/a.py")
         self.assertTrue(self.staged())
 
+    def test_reads_a_pushed_range_given_one(self):
+        # .githooks/pre-push gives the push's range, so the commits decide, not the index.
+        changed = lambda *rev: subprocess.run([str(SCRIPT), *rev], cwd=self.repo, env=ENV,
+                                              capture_output=True).returncode == 0
+        self.write("docs/notes.md", "changed\n")
+        self.git("commit", "-qam", "docs")
+        self.assertFalse(changed("HEAD~1", "HEAD"))
+        self.write(f"{KIT}/hooks/a.py", "changed\n")
+        self.git("commit", "-qam", "hooks")
+        self.assertTrue(changed("HEAD~2", "HEAD"))
+        self.assertFalse(changed("HEAD", "HEAD"))
+        self.assertTrue(changed(subprocess.run(["git", "hash-object", "-t", "tree", "/dev/null"], cwd=self.repo,
+                                               capture_output=True, text=True).stdout.strip(), "HEAD"))
+
     def test_skips_a_docs_only_commit(self):
         self.write("docs/notes.md", "changed\n")
         self.git("add", "docs/notes.md")
