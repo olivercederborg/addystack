@@ -3024,6 +3024,19 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, head)),
                          self.patch_id())  # the same patch-id, so the merge gate's Done covers it too
         self.assertIsNone(self.known("work", self.base, head))
+        # Review of #99, round 2: a rebase can move the hunk itself. The base changes admin()'s
+        # context, so `git rebase --apply` lands `access = True` in guest() under one commit
+        # whose patch-id still matches; range-diff pairs it as changed (!).
+        self.git("reset", "-q", "--hard", self.head)
+        self.git("checkout", "-q", "-b", "parent", self.base)
+        moved = commit(text.replace("# two", "# parent changed it", 1), "change admin's context")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "--apply", "parent")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("def guest", self.git("diff", moved, head))
+        self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), moved, head)),
+                         self.patch_id())
+        self.assertIsNone(self.known("work", moved, head))
 
     def test_a_done_with_a_merge_commit_or_a_binary_file_gets_a_full_recheck(self):
         # verify-work's re-check runs a full pass on both, since range-diff can't show them.
@@ -3034,6 +3047,11 @@ class Verdicts(unittest.TestCase):
         self.head = self.git("rev-parse", "HEAD").strip()
         self.record(branch="work")
         self.assertIsNone(self.known("work", self.base, self.head))
+        self.git("reset", "-q", "--hard", "HEAD~1")  # a text-only branch, so only the merge commit stops it
+        self.commit_change("c\n")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
         self.git("checkout", "-q", "-b", "side", self.base)
         pathlib.Path(self.repo, "g").write_text("side\n")
         self.git("add", "g")
@@ -3056,6 +3074,18 @@ class Verdicts(unittest.TestCase):
         self.git("checkout", "-q", "-b", "other")
         self.record(verdict="not-done", findings=["1 · Blocker · x → fix"], branch="other")
         self.assertIsNone(self.known(branch, self.base, self.head))  # the merge gate reads the Not done
+
+    def test_a_done_whose_evidence_no_longer_backs_it_gets_a_recheck(self):
+        # Review of #99, round 2: a kind the verdict was required to back, and a log gone since.
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        log = pathlib.Path(self.dir, "mutants.log")
+        log.write_text("killed: one\nkilled: two\nkilled: three\n")
+        self.record(evidence={"mutants": [str(log)]}, require=["mutants"])
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        log.write_text("killed: one\nkilled: two\nsurvived: three\n")  # the required log now shows a survivor
+        self.assertIsNone(self.known(branch, self.base, self.head))
+        log.unlink()
+        self.assertIsNone(self.known(branch, self.base, self.head))
 
     def commit_change(self, text):
         pathlib.Path(self.repo, "f").write_text(text)
