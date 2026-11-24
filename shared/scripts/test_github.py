@@ -4,6 +4,7 @@ prints what it always has."""
 import json, os, pathlib, subprocess, tempfile, unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "github.sh"
+VERDICTS = SCRIPT.parent.parent.parent / "skills" / "primitive" / "addystack" / "hooks" / "verdicts.py"
 
 GH = r"""#!/usr/bin/env python3
 import json, os, sys
@@ -227,6 +228,18 @@ class TargetBranch(unittest.TestCase):
         fields = self.fields(self.target("--branch", "layer2", "--parent", "layer1"))
         self.assertEqual(fields["head_sha"], self.git("rev-parse", "layer2"))
         self.assertNotEqual(fields["head_sha"], self.git("rev-parse", "origin/layer2"))
+
+    def test_a_recheck_reads_known_only_at_the_head(self):
+        # Review of #99: a checkout ahead of the head target reads holds commits the kept
+        # Done never saw, so its re-check reads them.
+        context = json.dumps({"session_id": "s", "agent_id": "a", "agent_type": "work-verifier"})
+        subprocess.run(["python3", str(VERDICTS), "record", self.git("rev-parse", "layer1"), self.git("rev-parse", "layer2"),
+                        "--branch", "layer2"], cwd=self.repo, check=True, capture_output=True,
+                       env={**os.environ, "VERIFY_WORK_HOOK_CONTEXT": context})
+        last = lambda: json.loads(self.target("--branch", "layer2", "--parent", "layer1").stdout.splitlines()[-1])
+        self.assertIn("Done stands", last()["known"])
+        self.git("switch", "-q", "--detach", "layer1")  # this checkout isn't at the head target reads
+        self.assertNotIn("known", last())
 
     def test_a_missing_branch_fails(self):
         result = self.target("--branch", "nope")
