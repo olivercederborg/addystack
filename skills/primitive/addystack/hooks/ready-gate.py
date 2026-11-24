@@ -169,6 +169,7 @@ cwd, previous, pushed = payload.get("cwd") or os.getcwd(), None, []
 repo, exported = os.environ.get("GH_REPO") or None, "GH_REPO" in os.environ  # the shell's, from this session's
 allexport = False
 unknown, pending, depth, cases, tick, ors, moved, readies = {}, {}, 0, 0, False, False, False, []
+loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
 if re.search(r"\$\{GH_REPO:?=", command):  # an expansion that assigns, even inside quotes
     unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
 pieces = re.split(r"(&&|\|\||[;|&\n()`])", code)  # `$(…)` and backticks run their command
@@ -185,7 +186,11 @@ for at in range(0, len(pieces), 2):
     while lead < len(words) and (words[lead] in LEADS or ASSIGNMENT.match(words[lead])):
         depth, cases = depth + (words[lead] in OPENS), cases + (words[lead] == "case")
         lead += 1
+    if lead and words[lead - 1] == "for" and lead < len(words):
+        listed = words[lead + 2:] if words[lead + 1:lead + 2] == ["in"] else None  # bare `for n` reads "$@"
+        loops.append((words[lead], None if listed is None or any(map(unreadable, listed)) else listed, depth))
     depth, cases = depth - bool(words[:1] and words[0] in CLOSES), cases - (words[:1] == ["esac"])
+    loops = [loop for loop in loops if loop[2] <= depth]
     command = words[lead] if lead < len(words) else None
     if command in TEXT:
         continue
@@ -257,7 +262,16 @@ for at in range(0, len(pieces), 2):
                 if said:
                     reasons.append(f"this command {said}, so the gate can't tell which repo the ready reads: "
                                    "name it with `-R <owner>/<repo>`")
-            readies.append((kind, args, cwd, value, moved, reasons))
+            # A literal loop's ready runs once per word, as `for n in 12 13; do gh pr ready $n; done`.
+            runs = [args]
+            for name, listed, _ in loops:
+                here = re.compile(rf"\${name}\b|\${{{name}}}")
+                if listed and any(here.search(arg) for arg in args):
+                    runs = [[here.sub(word, arg) for arg in one] for one in runs for word in listed]
+            if kind == "ready" and any("$" in arg for arg in options(args)[1]) and runs == [args]:
+                reasons.append(f"its `gh pr ready {' '.join(options(args)[1])}` reads a shell variable the gate "
+                               "can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
+            readies += [(kind, one, cwd, value, moved, reasons) for one in runs]
     # A create, even a draft or a dry run, may push its branch first, so it moves a later ready's head.
     moved = moved or bool(MOVES.search(pieces[at])) or "gh" in words and names in (["pr", "create"], ["pr", "new"])
 if not readies:

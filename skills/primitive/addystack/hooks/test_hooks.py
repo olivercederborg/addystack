@@ -3009,6 +3009,39 @@ class ReadyGate(unittest.TestCase):
     def denial(self, command, cwd=None):
         return self.output(command, cwd).get("hookSpecificOutput", {}).get("permissionDecisionReason")
 
+    def test_a_literal_loop_marks_each_of_its_prs_ready(self):
+        # 10 denials Nov 10-23, 2026: `for n in 6118 6080 6081; do gh pr ready $n; done` was
+        # read as `gh pr view $n` and denied as "couldn't check".
+        self.publish(12, self.main, self.head)
+        self.git("checkout", "-q", "-b", "second", self.main)
+        second = self.commit({"k": "2\n"}, "second")
+        twelve = json.loads(pathlib.Path(self.scenario_path).read_text())["prs"]["12"]
+        self.publish(13, self.main, second)
+        scenario = json.loads(pathlib.Path(self.scenario_path).read_text())
+        scenario["prs"]["12"] = twelve
+        pathlib.Path(self.scenario_path).write_text(json.dumps(scenario))
+        self.review(self.main, self.head, "--rounds", "1")
+        loops = [f"cd {self.repo}; for n in 12 13; do gh pr ready $n 2>&1 | tail -1; done; "
+                 "for n in 12 13; do gh pr view $n --json number,isDraft --jq '.number'; done",
+                 "for p in 12 13; do gh pr ready $p --repo o/r && gh pr edit $p --repo o/r --add-reviewer x; done",
+                 "for n in 12 13\ndo\n  gh pr ready ${n}\ndone",
+                 "for r in o/r; do for n in 12 13; do gh pr ready $n -R $r; done; done"]
+        for command in loops:
+            with self.subTest(command=command):
+                self.assertEqual(self.denial(command), f"Ready gate: #13 has no review-loop result for its diff at head "
+                                 f"{second[:12]} (base {self.main[:12]}). " + self.denial("gh pr ready 13").split(". ", 1)[1])
+        self.review(self.main, second, "--rounds", "1")
+        for command in loops:
+            with self.subTest(command=command):
+                self.assertEqual(self.output(command), {})
+        # A list only the shell knows still denies, naming the command that passes.
+        for command in ["for n in $(gh pr list --json number -q '.[].number'); do gh pr ready $n; done",
+                        "for n; do gh pr ready $n; done", "for n in 12 13; do :; done; gh pr ready $n",
+                        "for n in 12 $M; do gh pr ready $n; done", "gh pr ready $PR"]:
+            with self.subTest(command=command):
+                self.assertIn("reads a shell variable the gate can't expand: write each PR out, as "
+                              "`gh pr ready 12 && gh pr ready 13`", self.denial(command))
+
     def test_checks_a_ready_run_outside_a_checkout_in_the_sessions_clone(self):
         # Nov 18, 2026: `cd ~ && … gh pr ready 5568 --repo o/r` was denied as "not a git
         # repository", though the session's own checkout is a clone of o/r.
