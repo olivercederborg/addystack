@@ -171,6 +171,8 @@ repo, exported = os.environ.get("GH_REPO") or None, "GH_REPO" in os.environ  # t
 allexport = False
 unknown, pending, depth, cases, tick, ors, moved, readies = {}, {}, 0, 0, False, False, False, []
 loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
+QUOTED = re.findall(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", command)
+OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", "local", "readarray", "mapfile", "getopts"}
 if re.search(r"\$\{GH_REPO:?=", command):  # an expansion that assigns, even inside quotes
     unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
 pieces = re.split(r"(&&|\|\||[;|&\n()`])", code)  # `$(…)` and backticks run their command
@@ -196,9 +198,14 @@ for at in range(0, len(pieces), 2):
             listed = None
         loops.append([name, listed, depth, at])
     # A word that is a loop's name (read n, printf -v n, an inner for n) or sets it (n=13,
-    # n+=1, n++, ${n:=13}) may change it before a ready in that loop, which then can't read it.
+    # n+=1, n++, ${n:=13}) may change it before a ready in that loop, which then can't read it,
+    # as may code the gate can't see into: quoted text naming it (let "n = 13"), or eval,
+    # source, or a builtin that writes a variable by name, run inside the loop.
     for loop in loops:
         n = re.escape(loop[0])
+        if words[lead:lead + 1] and words[lead] in OPAQUE or any(re.search(rf"(?<![\w$.{{/-]){n}(?!\w)", re.sub(rf"\$\{{?{n}\}}?", "", quoted))
+                         for quoted in QUOTED):
+            loop[1] = None
         if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))
                and not (at == loop[3] and word == loop[0] and words.index(word) == lead) for word in words):
             loop[1] = None
@@ -284,9 +291,9 @@ for at in range(0, len(pieces), 2):
                 here = re.compile(rf"\${name}\b|\${{{name}}}")
                 if listed and any(here.search(arg) for arg in args):
                     runs = [[here.sub(lambda _, word=word: word, arg) for arg in one] for one in runs for word in listed]
-            if kind == "ready" and any("$" in arg for one in runs for arg in one):
-                reasons.append(f"its `gh pr ready {' '.join(options(args)[1])}` reads a shell variable the gate "
-                               "can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
+            if kind == "ready" and any("$" in arg or arg == "''" for one in runs for arg in options(one)[1]):
+                reasons.append(f"its `gh pr ready {' '.join(options(args)[1])}` reads a shell variable or quoted "
+                               "text the gate can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
             readies += [(kind, one, cwd, value, moved, reasons) for one in runs]
     # A create, even a draft or a dry run, may push its branch first, so it moves a later ready's head.
     moved = moved or bool(MOVES.search(pieces[at])) or "gh" in words and names in (["pr", "create"], ["pr", "new"])
@@ -360,12 +367,14 @@ def targets(kind, args, cwd):
         inside = lambda path: subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True,
                                              text=True).stdout.strip() == "true"  # a bare repo prints false
         named = bool(repo or os.environ.get("GH_REPO"))
-        if named and not inside(cwd) and cwd != session and inside(session) and same_repo(origin(session), home):
+        here = inside(cwd)
+        if named and not here and cwd != session and inside(session) and same_repo(origin(session), home):
             cwd = session
-        elif named and not inside(cwd):
+        elif named and not here:
             raise RuntimeError(f"`{cwd}` isn't a checkout of {home}, so its verdicts can't be read: run it from one, "
                                f"as `cd <checkout of {home}> && gh pr ready {pr['number']}`")
-        source = "origin" if origin(cwd).strip() and same_repo(origin(cwd), home) else home + ".git"
+        remote = origin(cwd)
+        source = "origin" if remote.strip() and same_repo(remote, home) else home + ".git"
         run(cwd, "git", "fetch", "--quiet", "--no-tags", source, pr["baseRefName"], f"pull/{pr['number']}/head")
         return cwd, [(f"#{pr['number']}", pr["baseRefOid"], pr["headRefOid"])]
     if kind == "create":

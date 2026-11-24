@@ -78,30 +78,43 @@ if not match:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-# Each cd before the merge, in order, from where the last one left the shell; a cd path
-# ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`. A cd that may
-# not run in this shell (in a subshell, pipeline, or block, or after `||`) leaves the
-# checkout unknown.
-uncertain, depth, tick = False, 0, False
-pieces = re.split(r"(&&|\|\||[;|&\n()`])", code[:match.start()])
+# Where the merge runs. The gate follows a cd only in a shape it can read for certain: a
+# plain `cd PATH` (or pushd) that starts a command list, after the start, `;`, or a new line,
+# or that sits in the merge's own `&&` chain, outside any subshell, block, or case arm; its
+# path ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`. Any other
+# cd that would move the shell (after `||` or in a `&&` chain the merge isn't in, in a
+# pipeline, subshell, block, or case arm, with options or an assignment before it, popd)
+# leaves the checkout unknown, and the gate denies, naming the command that passes. A
+# command substitution, as in `d=$(ls -d …); cd $d`, runs in its own shell and moves nothing.
+pieces = re.split(r"(&&|\|\||[;|&\n()`])", re.sub(r"\$\([^()`]*\)", "''", code[:match.start()]))
+uncertain, depth, cases, tick = False, 0, 0, False
 for at in range(0, len(pieces), 2):
-    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ""
-    depth += {"(": 1, ")": -1, "`": -1 if tick else 1}.get(before, 0)
+    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ";"
+    # Inside a case block a pattern's ) closes no subshell; the block itself keeps depth up.
+    depth += {"(": 0 if cases else 1, ")": 0 if cases else -1, "`": -1 if tick else 1}.get(before, 0)
     tick ^= before == "`"
     words = pieces[at].split()
     while words and words[0] in ("if", "then", "else", "elif", "while", "until", "for", "do", "case", "select", "{",
-                                 "!", "time", "builtin", "command"):
-        depth += words.pop(0) in ("if", "while", "until", "for", "case", "select", "{")
-    depth -= bool(words[:1] and words[0] in ("fi", "done", "esac", "}"))
-    if words[:1] in (["cd"], ["pushd"], ["popd"]):
-        if words[0] == "popd" or len(words) != 2 or words[1].startswith(("-", "+")):
-            uncertain = True  # a cd with options, to home, or by the dir stack
-            continue
-        target = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1])))
-        if depth or "|" in (before, after) or before == "||" or after == "&":
-            uncertain = uncertain or target != cwd  # it may not run, which matters only if it moves
-        else:
-            cwd = target
+                                 "!", "time"):
+        word = words.pop(0)
+        depth, cases = depth + (word in ("if", "while", "until", "for", "case", "select", "{")), cases + (word == "case")
+    if words[:1] and words[0] in ("fi", "done", "esac", "}"):
+        depth, cases = depth - 1, cases - (words[0] == "esac")
+    assigned = 0
+    while assigned < len(words) and re.match(r"[A-Za-z_]\w*=", words[assigned]):
+        assigned += 1
+    if words[assigned:assigned + 1] not in (["cd"], ["pushd"], ["popd"]):
+        continue
+    plain = (not assigned and words[0] in ("cd", "pushd") and len(words) == 2
+             and not words[1].startswith(("-", "+")))
+    target = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1]))) if plain else None
+    # It runs whenever the merge does: it starts a command list, or the merge's && chain holds it.
+    runs = (not depth and after in (";", "\n", "&&", "||")
+            and (before in ("", ";", "\n") or before == "&&" and set(pieces[at + 1::2]) <= {"&&"}))
+    if plain and runs:
+        cwd = target
+    elif target != cwd:  # one that may not run matters only if it moves
+        uncertain = True
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
 # checkout's stack, with no flag that can name another repo. Any other shell, such as a
@@ -125,8 +138,10 @@ def deny(*reasons):
     sys.exit(0)
 
 if uncertain:
-    deny(f"this command runs `cd` inside a subshell, pipeline, or block, or after `||`, so the gate can't tell "
-         f"which checkout the merge runs in: run `cd <checkout> && {match.group(0).strip()}` on its own")
+    deny(f"this command runs a `cd` that may not run, or that the gate can't read, before the merge (in a subshell, "
+         f"pipeline, block, or case arm, after `||` or a `&&` chain the merge isn't in, or with options or an "
+         f"assignment before it), so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
+         f"{match.group(0).strip()}` on its own")
 # The checks below read one merge, so a second would merge on the first one's go and verdict.
 if len(merges) > 1:
     deny(f"this command runs {len(merges)} merges and the gate checks one: run each merge as its own command")
@@ -252,6 +267,8 @@ for i, arg in enumerate(args):
         positional.append(arg)
 target = positional[0] if positional else None
 repo_args = ["-R", repo] if repo else []
+# gh api reads GH_HOST, not -R, so a repo named on another host sends its host to every query.
+HOST = ["--hostname", repo.split("/")[0]] if repo and repo.count("/") == 2 else []
 
 def checkout(path):
     try:
@@ -279,7 +296,7 @@ def github_stack(n):
     query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
              f"stackOf: pullRequest(number: {n}) {{ stack {{ entries(first: 100) {{ nodes {{ position "
              "pullRequest { number state } } } } } } }")
-    stack = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]["stackOf"]["stack"]
+    stack = json.loads(run("gh", "api", "graphql", *HOST, "-f", f"query={query}"))["data"]["repository"]["stackOf"]["stack"]
     if not stack:
         return [n]
     entries = [entry["pullRequest"] for entry in sorted(stack["entries"]["nodes"], key=lambda entry: entry["position"])]
@@ -321,7 +338,8 @@ try:
         url = lambda *named: subprocess.run(["gh", "repo", "view", *named, "--json", "url", "--jq", ".url"], cwd=cwd,
                                             capture_output=True, text=True, timeout=40,
                                             env={k: v for k, v in os.environ.items() if k != "GH_REPO"}).stdout.strip()
-        if not url() or url().lower() != url(repo).lower():
+        clone = url()
+        if not clone or clone.lower() != url(repo).lower():
             deny(f"this merge runs outside a checkout of {owner}/{name}, so the gate can't read its verdicts: run "
                  f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
@@ -331,7 +349,7 @@ try:
     query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
              "defaultBranchRef { name target { ... on Commit { oid statusCheckRollup { state } } } } "
              f"{prs} }} }}")
-    data = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]
+    data = json.loads(run("gh", "api", "graphql", *HOST, "-f", f"query={query}"))["data"]["repository"]
 
     import resolved, verdicts  # here, so a broken module blocks only merges
     # An unresolved policy can still read gate, when every rule is gate, so it never counts.

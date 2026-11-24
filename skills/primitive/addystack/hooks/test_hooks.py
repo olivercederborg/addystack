@@ -1266,6 +1266,9 @@ elif a[:2] == ["repo", "view"] and "url" in a:  # a named repo's URL, or the che
 elif a[:2] == ["repo", "view"]:
     print("o r")
 elif a[:2] == ["api", "graphql"]:
+    host = a[a.index("--hostname") + 1] if "--hostname" in a else "github.com"
+    if host != s.get("host", "github.com"):
+        sys.exit(f"gh: {host} isn't the repo's host")
     print(json.dumps({"data": {"repository": s["repository"]}}))
 else:
     sys.exit(1)
@@ -1391,11 +1394,13 @@ class MergeGate(unittest.TestCase):
         self.assertIn("couldn't check the merge", self.reason(f"cd {self.dir}; cd .; gh pr merge 12 --squash"))
         for command in ["(cd child); cd .. && gh pr merge 12 --squash", f"false || cd {self.dir}; gh pr merge 12",
                         f"if true; then cd {self.dir}; fi; gh pr merge 12", f"cd -P {self.repo} && gh pr merge 12",
-                        f"true | cd {self.dir}; gh pr merge 12", "popd && gh pr merge 12"]:
+                        f"true | cd {self.dir}; gh pr merge 12", "popd && gh pr merge 12",
+                        # Round 3: a cd in a && chain the merge isn't in, after an assignment, in a case arm.
+                        f"false && cd {self.dir}; cd . && gh pr merge 12", f"X=1 cd {self.dir} && gh pr merge 12",
+                        f"case x in y) cd {self.dir} ;; esac; gh pr merge 12"]:
             with self.subTest(command=command):
-                self.assertIn("this command runs `cd` inside a subshell, pipeline, or block, or after `||`, so the gate "
-                              "can't tell which checkout the merge runs in: run `cd <checkout> && gh pr merge 12",
-                              self.reason(command))
+                self.assertIn("so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
+                              "gh pr merge 12", self.reason(command))
 
     def test_reads_githubs_stack_when_no_local_stack_holds_the_pr(self):
         # Nov 11, 16, 19, and 20, 2026: `gh stack merge N` from a checkout on no branch, or on
@@ -1446,9 +1451,12 @@ class MergeGate(unittest.TestCase):
         self.scenario()  # review of #102: o/r on another host isn't this clone's o/r
         self.assertIn("this merge runs outside a checkout of o/r",
                       self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
+        self.scenario(clone="https://ghe.example/o/r", host="ghe.example")  # a clone of it: its queries go there
+        self.assertIsNone(self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
         self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 -R o/r", cwd=outside))
         bare = os.path.join(outside, "bare.git")  # review of #102: git calls a bare repo no work tree
         subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        self.scenario()
         self.assertIsNone(self.reason(f"cd {bare} && gh pr merge 12 -R o/r --squash"))
 
     def test_denies_a_red_or_running_default_branch(self):
@@ -3055,7 +3063,6 @@ class ReadyGate(unittest.TestCase):
         for command in loops:
             with self.subTest(command=command):
                 self.assertEqual(self.output(command), {})
-        self.assertIn("couldn't check", self.denial("for n in 12; do gh pr ready '$n'; done"))  # the branch named $n
         # A list only the shell knows still denies, naming the command that passes.
         for command in ["for n in $(gh pr list --json number -q '.[].number'); do gh pr ready $n; done",
                         "for n; do gh pr ready $n; done", "for n in 12 13; do :; done; gh pr ready $n",
@@ -3068,9 +3075,13 @@ class ReadyGate(unittest.TestCase):
                         # Round 2: a write the round-1 check missed, an inner loop that rebinds
                         # n and ends, and a single-quoted '$n', which the shell passes as is.
                         'for n in 12; do printf -v n %s 13; gh pr ready "$n"; done',
-                        'for n in 12; do for n in 13; do :; done; gh pr ready "$n"; done']:
+                        'for n in 12; do for n in 13; do :; done; gh pr ready "$n"; done',
+                        # Round 3: a write in quoted text, code the gate can't see into, and a
+                        # single-quoted '$n', which gh reads as the branch named $n.
+                        'for n in 12; do let "n = 13"; gh pr ready "$n"; done',
+                        'for n in 12; do eval "$X"; gh pr ready $n; done', "for n in 12; do gh pr ready '$n'; done"]:
             with self.subTest(command=command):
-                self.assertIn("reads a shell variable the gate can't expand: write each PR out, as "
+                self.assertIn("reads a shell variable or quoted text the gate can't expand: write each PR out, as "
                               "`gh pr ready 12 && gh pr ready 13`", self.denial(command))
 
     def test_checks_a_ready_run_outside_a_checkout_in_the_sessions_clone(self):
