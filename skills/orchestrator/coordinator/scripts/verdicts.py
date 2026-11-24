@@ -390,21 +390,29 @@ def last(cwd: Path, branch: str) -> Receipt | None:
 
 def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     """Why a re-check of `base...head` after `receipt` can only repeat it, or "" when it
-    can find something new: a Not verified waits on the real run it names, and a Not
-    done waits on a commit for each finding it marked fix while the diff and its merge
-    base are the ones it checked, since a restack onto a parent can bring the fix in. A
-    diff that won't read gives "", so the re-check runs."""
+    can find something new: a Not verified waits on the real run it names; a Done stands
+    while the diff is the one it checked, on any base, though a new base can still break
+    it, so the reason names the checks and trial merge to rerun; and a Not done waits on
+    a commit for each finding it marked fix while the diff and its merge base are the
+    ones it checked, since a restack onto a parent can bring the fix in. A diff that
+    won't read gives "", so the re-check runs."""
     if receipt.verdict == "not-verified":
         return "not verified until it runs: " + "; ".join(receipt.findings)
     fixes = [text for text in receipt.findings if re.search(r"→ fix\b", text)]
-    if receipt.verdict != "not-done" or not fixes:
+    if receipt.verdict == "not-done" and not fixes:
         return ""
     try:
         same = (_patch_id(cwd, diff(cwd, base, head)) == receipt.patch_id
-                and _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed)))
+                and (receipt.verdict == "done"
+                     or _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed))))
     except VerdictError:
         return ""
-    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes) if same else ""
+    if not same:
+        return ""
+    if receipt.verdict == "done":
+        return (f"same diff as {receipt.reviewed.head[:12]}, Done stands; rerun the layer's checks and a trial merge"
+                " at the new head")
+    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes)
 
 
 def status(cwd: Path, base: str, head: str) -> str:

@@ -2948,11 +2948,58 @@ class Verdicts(unittest.TestCase):
             self.record(verdict="not-done", findings=findings)
             self.assertIsNone(self.known(branch, self.base, self.head), findings)  # nothing marked fix
         self.record()
-        self.assertIsNone(self.known(branch, self.base, self.head))
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        self.commit_change("c\n")  # a commit since changes the diff, so the re-check reads it
         self.assertNotIn("known", json.loads(self.last(branch).stdout))
         usage = subprocess.run(["python3", str(HOOKS / "verdicts.py"), "last", branch, self.base], cwd=self.repo,
                                capture_output=True, text=True)
         self.assertEqual(usage.returncode, 2)
+
+    def test_last_keeps_a_done_across_a_rebase_that_leaves_the_diff_the_same(self):
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        self.record()
+        self.git("checkout", "-q", "-b", "parent", self.base)  # the base gains an unrelated commit
+        pathlib.Path(self.repo, "g").write_text("g\n")
+        self.git("add", "g")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "g")
+        parent = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", branch)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "parent")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertNotEqual(head, self.head)
+        self.assertEqual(self.known(branch, parent, head), f"same diff as {self.head[:12]}, Done stands; rerun the "
+                         "layer's checks and a trial merge at the new head")
+        self.assertIsNotNone(verdicts.find_done(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), parent,
+                                                                                       head)))  # the gate keeps it too
+        self.assertIsNone(self.known(branch, parent, "nope"))  # a diff that won't read runs the re-check
+
+    def test_a_kept_done_still_fails_the_checks_a_new_base_breaks(self):
+        # A rebase that leaves the patch the same can still break it: the base renames
+        # the function the diff's test calls. known() keeps the Done, so the checks it
+        # names must be what catches this.
+        def commit(name, text, message):
+            pathlib.Path(self.repo, name).write_text(text)
+            self.git("add", name)
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "-b", "trunk", self.head)
+        base = commit("lib.py", "def total(xs):\n    return sum(xs)\n", "lib")
+        self.git("checkout", "-q", "-b", "work")
+        self.base = base
+        self.head = commit("test_lib.py", "import unittest, lib\n\n\nclass T(unittest.TestCase):\n"
+                           "    def test_total(self):\n        self.assertEqual(lib.total([1, 2]), 3)\n", "test")
+        check = ["python3", "-m", "unittest", "-q", "test_lib"]
+        self.assertEqual(subprocess.run(check, cwd=self.repo, capture_output=True).returncode, 0)
+        self.record(branch="work")
+        self.git("checkout", "-q", "trunk")
+        broken = commit("lib.py", "def sum_of(xs):\n    return sum(xs)\n", "rename total")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "trunk")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("Done stands; rerun the layer's checks", self.known("work", broken, head))
+        merge = subprocess.run(["git", "merge-tree", "--write-tree", broken, head], cwd=self.repo, capture_output=True)
+        self.assertEqual(merge.returncode, 0)  # the trial merge is clean
+        self.assertNotEqual(subprocess.run(check, cwd=self.repo, capture_output=True).returncode, 0)  # the checks fail it
 
     def commit_change(self, text):
         pathlib.Path(self.repo, "f").write_text(text)
