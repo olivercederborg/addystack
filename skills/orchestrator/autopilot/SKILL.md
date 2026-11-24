@@ -165,7 +165,7 @@ pass.
   since step 5 pushes and reports the whole stack. Then rebase the layers above. Queue
   Optional findings for the report.
 - **Re-check** a fix: `review-loop`'s next round, under the cap, with `verify-work`'s
-  quick re-check beside it as in round 1, or alone after the loop.
+  quick re-check beside it as in round 1, or alone past the cap.
 - **Verdicts by patch**: log each layer's verdict receipt. After a rebase or restack,
   recompute its patch-id with `python3 scripts/verdicts.py status <parent layer> <head>`,
   where the parent layer is the branch below, or the default branch for layer 1. A
