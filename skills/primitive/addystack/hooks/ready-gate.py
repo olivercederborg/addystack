@@ -24,7 +24,9 @@ heredoc, a create or submit aimed at a repo other than `origin` (`-R`, `GH_REPO`
 through `workdir`, and a hook timeout, which Codex lets through. `gh stack submit` without
 `--auto` in a terminal opens an editor whose new PRs default to ready; agents run it
 without a terminal, which opens drafts."""
-import json, os, re, shutil, signal, subprocess, sys
+import json, os, re, signal, subprocess, sys
+
+from shell_dirs import ASSIGNMENT, LEADS, Walk, unreadable
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 RECORD = os.path.join(HERE, "verdicts.py").replace(os.path.expanduser("~"), "~", 1)
@@ -53,7 +55,6 @@ WORDS = {("pr", "ready"): "ready", ("pr", "create"): "create", ("pr", "new"): "c
 # Commands that print or search their arguments, so a gh among them is text, not a command.
 TEXT = {"echo", "printf", "print", ":", "true", "false", "test", "[", "[[", "grep", "egrep", "fgrep", "rg", "ag",
         "man", "which", "type", "whatis", "apropos"}
-ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 
 
 # The options that take a value, which is never a flag, in the commands the gate reads: gh pr
@@ -112,64 +113,12 @@ def switch(args, *names):
     return value.lower() not in ("false", "f", "0")
 
 
-# Shell words that lead a command. A block opens at the first set and closes at CLOSES, and a
-# cd or GH_REPO inside one may not run.
-OPENS, CLOSES = {"if", "while", "until", "for", "select", "case", "{"}, {"fi", "done", "esac", "}"}
-LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command"}  # builtin cd is cd
-
-
-def unreadable(word):
-    """Whether a path or value holds what only the shell can expand: a variable, a glob, or a
-    quoted string with spaces, which reads as ''."""
-    return word == "''" or bool(re.search(r"[$*?\[{]", word))
-
-
-CDPATH = bool(os.environ.get("CDPATH") or re.search(r"(?<![\w$])CDPATH=", code))  # set in the session or command
-HOME_SET = bool(re.search(r"(?<![\w$])HOME=", code))  # a cd home or to ~ then goes where the command says
-
-
-def resolve(command, args, cwd, previous, pushed):
-    """Where cd, pushd, or popd leaves the shell, or None when the gate can't read it. cd
-    -P resolves symlinks first, as `..` then leaves the link's target."""
-    physical = False
-    while command == "cd" and args[:1] and re.fullmatch(r"-[LPe@]+", args[0]):
-        for letter in args.pop(0)[1:]:
-            physical = {"L": False, "P": True}.get(letter, physical)
-    if command == "cd" and args == ["-"]:
-        return previous
-    if command == "popd":
-        return pushed.pop() if pushed and not args else None
-    path = args[0] if args else "~"
-    # A dir-stack entry (+1, -2), a ~ form other than a home (~+, ~-), or a name CDPATH may
-    # find elsewhere is where only the shell knows.
-    if (len(args) > 1 or (command == "pushd" and not args) or unreadable(path) or path[:1] in "+-"
-            or path.startswith("~") and (HOME_SET or os.path.expanduser(path) == path)
-            or CDPATH and not re.match(r"(?:/|~|\.\.?(?:/|$))", path)):
-        return None
-    if command == "pushd":
-        pushed.append(cwd)
-    target = os.path.join(cwd, os.path.expanduser(path))
-    return os.path.realpath(target) if physical else os.path.normpath(target)
-
-
-def unsure(key, said):
-    """Whether a cd or GH_REPO in the current command may not run before what follows, noting
-    why in unknown; one that runs only while an && chain holds goes to pending."""
-    if depth or ors or "|" in (before, after) or after == "&":
-        unknown.setdefault(key, f"{said} inside a subshell, pipeline, or block, or after `||`")
-        return True
-    if before == "&&":
-        pending[key] = f"{said} only if the command before it succeeds"
-    return False
-
-
-# Where the shell is and which repo GH_REPO names as it runs each command; unknown says why the
-# gate can't tell from there on, and pending holds what an && chain set, which stands only
-# while the chain does.
-cwd, previous, pushed = payload.get("cwd") or os.getcwd(), None, []
+# Where the shell is (shell_dirs.Walk, as merge-gate.py reads it too) and which repo GH_REPO
+# names as it runs each command; the walk's unknown says why the gate can't tell from there on.
+walk = Walk(code, payload.get("cwd") or os.getcwd())
 repo, exported = os.environ.get("GH_REPO") or None, "GH_REPO" in os.environ  # the shell's, from this session's
 allexport = False
-unknown, pending, depth, cases, tick, ors, moved, readies = {}, {}, 0, 0, False, False, False, []
+moved, readies = False, []
 loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
 QUOTED = re.findall(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", command)
 OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", "local", "readarray", "mapfile", "getopts"}
@@ -177,21 +126,10 @@ OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", 
 # call, so no loop name in such a command is one the gate can read.
 DEFINES = bool(re.search(r"\b[A-Za-z_][\w-]*\s*\(\s*\)|\b(?:function|trap|alias)\s", code))
 if re.search(r"\$\{GH_REPO:?=", command):  # an expansion that assigns, even inside quotes
-    unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
-pieces = re.split(r"(&&|\|\||[;|&\n()`])", code)  # `$(…)` and backticks run their command
-for at in range(0, len(pieces), 2):
-    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ""
-    if before in (";", "\n", "&", "||"):
-        unknown, pending = {**pending, **unknown}, {}
-        ors = before == "||"
-    # Inside a case block, a pattern's ) closes no subshell; the block itself keeps depth up.
-    depth += {"(": 0 if cases else 1, ")": 0 if cases else -1, "`": -1 if tick else 1}.get(before, 0)
-    tick ^= before == "`"
-    words = pieces[at].split()
-    lead = 0
-    while lead < len(words) and (words[lead] in LEADS or ASSIGNMENT.match(words[lead])):
-        depth, cases = depth + (words[lead] in OPENS), cases + (words[lead] == "case")
-        lead += 1
+    walk.unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
+pieces, unsure = walk.pieces, walk.unsure
+for at, words, lead in walk:
+    depth, cwd, unknown = walk.depth, walk.cwd, walk.unknown
     if lead and words[lead - 1] == "for" and lead < len(words):
         name = words[lead]
         listed = words[lead + 2:] if words[lead + 1:lead + 2] == ["in"] else None  # bare `for n` reads "$@"
@@ -212,20 +150,10 @@ for at in range(0, len(pieces), 2):
         if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))
                and not (at == loop[3] and word == loop[0] and words.index(word) == lead) for word in words):
             loop[1] = None
-    depth, cases = depth - bool(words[:1] and words[0] in CLOSES), cases - (words[:1] == ["esac"])
     loops = [loop for loop in loops if loop[2] <= depth]
     command = words[lead] if lead < len(words) else None
     if command in TEXT:
         continue
-    if command and command not in ("cd", "pushd", "popd") and not shutil.which(command) and os.path.isdir(
-            os.path.join(cwd, os.path.expanduser(command))):
-        unknown.setdefault("dir", f"names the directory `{command}`, which zsh's AUTO_CD enters")
-    if command in ("cd", "pushd", "popd") and not unsure("dir", f"runs `{command}`"):
-        target = resolve(command, words[lead + 1:], cwd, previous, pushed)
-        if target is None:
-            unknown.setdefault("dir", f"runs `{' '.join(words[lead:])}`, whose directory it can't read")
-        else:
-            previous, cwd = cwd, target
     # gh sees GH_REPO only once it's exported: by export, declare -x, set -a, or the session.
     # Any other way a command touches GH_REPO (export -n, typeset +x, env -u) it doesn't follow.
     shell_options = [word for word in (words[lead + 1:] if command in ("export", "declare", "typeset", "unset") else [])

@@ -39,6 +39,8 @@ checks from the current directory and prints the PRs it resolves, then each reas
 that would merge."""
 import contextlib, glob, json, os, re, subprocess, sys
 
+from shell_dirs import Walk
+
 DRY_RUN = sys.argv[1:2] == ["--dry-run"]
 # Where the deny reasons send an agent that merged from the wrong checkout.
 STACK_SH = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "scripts",
@@ -78,46 +80,14 @@ if not match:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-# Where the merge runs. The gate follows a cd only in a shape it can read for certain: a
-# plain `cd PATH` (or pushd) that starts a command list, after the start, `;`, or a new line,
-# or that sits in the merge's own `&&` chain, outside any subshell, block, or case arm; its
-# path ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`. Any other
-# cd that would move the shell (after `||` or in a `&&` chain the merge isn't in, in a
-# pipeline, subshell, block, or case arm, with options or an assignment before it, popd)
-# leaves the checkout unknown, and the gate denies, naming the command that passes. A
-# command substitution, as in `d=$(ls -d …); cd $d`, runs in its own shell and moves nothing.
-pieces = re.split(r"(&&|\|\||[;|&\n()`])", re.sub(r"\$\([^()`]*\)", "''", code[:match.start()]))
-uncertain, depth, cases, tick = False, 0, 0, False
-for at in range(0, len(pieces), 2):
-    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ";"
-    # Inside a case block a pattern's ) closes no subshell; the block itself keeps depth up.
-    depth += {"(": 0 if cases else 1, ")": 0 if cases else -1, "`": -1 if tick else 1}.get(before, 0)
-    tick ^= before == "`"
-    words = pieces[at].split()
-    while words and words[0] in ("if", "then", "else", "elif", "while", "until", "for", "do", "case", "select", "{",
-                                 "!", "time"):
-        word = words.pop(0)
-        depth, cases = depth + (word in ("if", "while", "until", "for", "case", "select", "{")), cases + (word == "case")
-    if words[:1] and words[0] in ("fi", "done", "esac", "}"):
-        depth, cases = depth - 1, cases - (words[0] == "esac")
-    assigned = 0
-    while assigned < len(words) and re.match(r"[A-Za-z_]\w*=", words[assigned]):
-        assigned += 1
-    # builtin cd and command cd are cd; an escaped or quoted \cd or 'cd' is one the gate can't read.
-    wrapped = words[assigned:assigned + 1] in (["builtin"], ["command"])
-    named = words[assigned + wrapped:assigned + wrapped + 1]
-    if named not in (["cd"], ["pushd"], ["popd"]) and not re.fullmatch(r"\\(?:cd|pushd|popd)|''", "".join(named)):
-        continue
-    plain = (not assigned and not wrapped and named in (["cd"], ["pushd"]) and len(words) == 2
-             and not words[1].startswith(("-", "+")))
-    target = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1]))) if plain else None
-    # It runs whenever the merge does: it starts a command list, or the merge's && chain holds it.
-    runs = (not depth and after in (";", "\n", "&&", "||")
-            and (before in ("", ";", "\n") or before == "&&" and set(pieces[at + 1::2]) <= {"&&"}))
-    if plain and runs:
-        cwd = target
-    elif target != cwd:  # one that may not run matters only if it moves
-        uncertain = True
+# Where the merge runs, read as ready-gate.py reads it (shell_dirs.Walk): a cd that may not run
+# before the merge, or whose directory the gate can't read, leaves the checkout unknown, and
+# the gate denies, naming the command that passes. A command substitution, as in
+# `d=$(ls -d …); cd $d`, runs in its own shell and moves nothing.
+walk = Walk(re.sub(r"\$\([^()`]*\)", "''", code[:match.start()]), cwd)
+for _ in walk:
+    pass
+cwd = walk.cwd
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
 # checkout's stack, with no flag that can name another repo. Any other shell, such as a
@@ -140,11 +110,6 @@ def deny(*reasons):
     }}))
     sys.exit(0)
 
-if uncertain:
-    deny(f"this command runs a `cd` that may not run, or that the gate can't read, before the merge (in a subshell, "
-         f"pipeline, block, or case arm, after `||` or a `&&` chain the merge isn't in, or with options or an "
-         f"assignment before it), so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
-         f"{match.group(0).strip()}` on its own")
 # The checks below read one merge, so a second would merge on the first one's go and verdict.
 if len(merges) > 1:
     deny(f"this command runs {len(merges)} merges and the gate checks one: run each merge as its own command")
@@ -280,6 +245,13 @@ def checkout(path):
     except (OSError, subprocess.SubprocessError):
         return False
 
+# A merge the gate can't place in its checkout gets pointed at the locator.
+WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
+         "checkout of the repo, prints the checkout to merge from and the merge line to run there")
+if "dir" in walk.unknown:
+    deny(f"this command {walk.unknown['dir']}, so the gate can't tell which checkout the merge runs in: run "
+         f"`cd <checkout> && {match.group(0).strip()}` on its own", WHERE)
+
 # A merge named with -R from outside any checkout, as `cd /tmp && gh pr merge 12 -R o/r`, is
 # checked in the session's own checkout when that's a clone of the same repo: the checks need
 # only its git objects and verdict store. The clone is matched to the repo below.
@@ -287,9 +259,6 @@ session = payload.get("cwd") or os.getcwd()
 borrowed = bool(repo) and cwd != session and not checkout(cwd) and checkout(session)
 if borrowed:
     cwd = session
-# A merge the gate can't place in its checkout gets pointed at the locator.
-WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
-         "checkout of the repo, prints the checkout to merge from and the merge line to run there")
 
 def github_stack(n):
     """The open PRs `gh stack merge n` merges, read from GitHub's stack of PR n, bottom
