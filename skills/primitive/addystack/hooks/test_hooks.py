@@ -3659,6 +3659,299 @@ class ReadyGate(unittest.TestCase):
         self.assertEqual(self.output("gh pr ready 12"), {})
 
 
+FAKE_PUSH_GH = r"""#!/usr/bin/env python3
+import json, os, sys
+s = json.load(open(os.environ["FAKE_GH"]))
+a = sys.argv[1:]
+open(os.environ["FAKE_GH"] + ".calls", "a").write(" ".join(a) + "\n")
+if s.get("broken"):
+    sys.exit("gh: network down")
+if a[:2] == ["stack", "view"]:
+    print(json.dumps(s["stack"]))
+elif a[:2] == ["pr", "view"]:
+    pr = s["prs"].get(a[2].rstrip("/").rsplit("/", 1)[-1])
+    print(json.dumps(pr)) if pr else sys.exit("no pull requests found")
+elif a[:2] == ["pr", "list"]:
+    head = a[a.index("--head") + 1]
+    print(json.dumps([pr for pr in s["prs"].values() if pr["headRefName"] == head and pr["state"] == "OPEN"]))
+else:
+    sys.exit(1)
+"""
+
+
+class PushGate(unittest.TestCase):
+    """push-gate.py, replaying the two pushes that dismissed a teammate's approvals of
+    a work repo's #6119 on Nov 24, 2026, with gh faked and a clone whose
+    origin URL is GitHub's, rewritten to a local bare repo."""
+    HOOK = "push-gate.py"
+    URL = "https://github.com/acme/app.git"
+    BRANCH = "effect-native/client-allowlists"
+    # The worker's command at 11:54:06 (transcript 43a48f1d, line 1554), its checkout replaced.
+    WORKER = ("cd {repo}; gh pr view 6119 --json reviews,reviewDecision -q '\"reviews=\\(.reviews|length) "
+              "decision=\\(.reviewDecision)\"'; gh stack push 2>&1 | tail -1; sleep 5; "
+              "git ls-remote --heads origin effect-native/client-allowlists")
+    # The coordinator's command at 12:48:23 (transcript 21e564b0, line 39337), its checkout replaced.
+    COORDINATOR = ("gh pr view 6119 --json reviews --jq '[.reviews[]|select(.state==\"APPROVED\")|.author.login]'; "
+                   "cd {repo} && git status --short | head -3; git log --oneline -1; "
+                   "gh stack push 2>&1 | grep -vE '\\x1b|lefthook' | tail -2; "
+                   "git ls-remote origin effect-native/client-allowlists")
+    # The card the coordinator's "a" at 12:48:16 picked (line 39326), cut down.
+    CARD = ("🟡 **The client-allowlists row is fixed. #6119 still waits on your go.**\n\n---\n\n**Next**\n\n"
+            "- **`a` → push the cleanup, post the reply, re-request the teammate on #6119** · *recommended*\n"
+            "- `b` → no: push the cleanup only\n\n")
+    CARD_OPTIONS = [{"key": "a", "class": "stop:post", "text": "push the cleanup, post the reply, re-request the teammate on #6119"},
+                    {"key": "b", "class": "stop:push", "text": "no: push the cleanup only"}]
+    APPROVED = {"author": {"login": "teammate"}, "state": "APPROVED", "submittedAt": "2026-11-24T11:25:12Z"}
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        bin_dir = os.path.join(self.dir, "bin")
+        os.makedirs(bin_dir)
+        pathlib.Path(bin_dir, "gh").write_text(FAKE_PUSH_GH)
+        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
+        outside_t3 = {k: v for k, v in os.environ.items() if k not in ("T3CODE_CLI_PATH", "GIT_DIR", "GIT_INDEX_FILE")}
+        self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=os.path.join(self.dir, "scenario.json"),
+                        T3_STATE_DB="/nonexistent", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
+                        GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+        origin, self.repo = os.path.join(self.dir, "origin"), os.path.join(self.dir, "repo")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", origin], check=True)
+        subprocess.run(["git", "init", "-q", "-b", "main", self.repo], check=True)
+        self.git("remote", "add", "origin", self.URL)
+        self.git("config", f"url.{origin}.insteadOf", self.URL)
+        self.commit("base")
+        self.git("push", "-q", "origin", "main")
+        self.git("checkout", "-q", "-b", self.BRANCH)
+        self.remote_head = self.commit("restack")  # 280183972f, the teammate's approved head
+        self.git("push", "-q", "-u", "origin", self.BRANCH)
+        self.local = self.commit("fix")  # ebf5e776c6, not pushed yet
+        self.scenario()
+
+    def git(self, *args, cwd=None):
+        return subprocess.run(["git", *args], cwd=cwd or self.repo, env=self.env, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, message):
+        pathlib.Path(self.repo, "f").write_text(message + "\n")
+        self.git("add", ".")
+        self.git("commit", "-qm", message)
+        return self.git("rev-parse", "HEAD")
+
+    def pull(self, n, branch, head, reviews=()):
+        return {"number": n, "url": f"https://github.com/acme/app/pull/{n}", "state": "OPEN",
+                "headRefName": branch, "headRefOid": head, "isCrossRepository": False, "reviews": list(reviews)}
+
+    def scenario(self, reviews=(APPROVED,), head=None, needs_rebase=False, n=6119, branch=BRANCH, **extra):
+        """PR n on branch, its head on GitHub at head (the pushed commit) with reviews, and
+        the checkout's stack of that one branch."""
+        pr = self.pull(n, branch, head or self.remote_head, reviews)
+        stack = {"trunk": "main", "currentBranch": branch, "branches": [
+            {"name": branch, "head": self.git("rev-parse", branch), "isMerged": False, "isQueued": False,
+             "needsRebase": needs_rebase, "pr": {"number": n, "url": pr["url"], "state": "OPEN"}}]}
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({"stack": stack, "prs": {str(n): pr}, **extra}))
+
+    def reason(self, command, said=(), **event):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command.format(repo=self.repo)},
+                   "cwd": event.pop("cwd", self.repo), **event}
+        if said:
+            payload["transcript_path"] = os.path.join(self.dir, f"{event.get('session_id', 'session')}.jsonl")
+            with open(payload["transcript_path"], "w") as transcript:
+                for entry in said:  # a typed prompt, or an entry as it is, such as a reply
+                    transcript.write(json.dumps(claude_said(entry) if isinstance(entry, str) else entry) + "\n")
+        out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env=self.env,
+                             capture_output=True, text=True, check=True).stdout
+        return json.loads(out)["hookSpecificOutput"]["permissionDecisionReason"] if out else None
+
+    def offer(self, *options, text=CARD):
+        return claude_wrote(text + block({"state": "stop", "needs": [{"id": 15, "kind": "review", "name": "push #6119"}],
+                                          "options": [{**option, "key": key} for key, option in zip("abc", options)]}))
+
+    def dismisses(self, reason, approved="2026-11-24 11:25"):
+        self.assertIsNotNone(reason)
+        self.assertIn(f"pushing `{self.BRANCH}` moves #6119 from {self.remote_head[:10]} to {self.local[:10]}, which "
+                      f"dismisses teammate's approval (submitted {approved} UTC)", reason)
+        self.assertIn('ask the user first with a `stop:push` option that names #6119 and the dismissal, such as '
+                      '"push #6119 (dismisses teammate\'s approval)"', reason)
+
+    def test_replays_the_workers_push_from_a_delegated_child(self):
+        # 11:54:06: the brief said "no approvals"; the push dismissed the teammate's 11:25 approval.
+        brief = ("Mode: planning autonomous, trust merge-on-go\nWorker of: effect-native (coordinator ◆ effect-native).\n\n"
+                 "Run address-review on #6119's two unresolved threads.")
+        with tempfile.TemporaryDirectory() as folder:
+            self.env["T3_STATE_DB"] = ReplyShapeContext.state_db(self, folder, ReplyShapeContext.CHILD, brief)
+            for said in [(brief,), ("push #6119 (dismisses teammate's approval)",)]:  # a child never has a go
+                with self.subTest(said=said):
+                    reason = self.reason(self.WORKER, said=said, session_id=ReplyShapeContext.SESSION, cwd=self.dir)
+                    self.dismisses(reason)
+                    self.assertNotIn("picks", reason)
+
+    def test_replays_the_coordinators_push_on_a_stop_post_pick(self):
+        # 12:48:23: the reviews check and the push ran as one command, after a pick of a
+        # stop:post option whose Cost row said the push dismissed nothing more.
+        reviews = [{**self.APPROVED, "state": "DISMISSED"},
+                   {"author": {"login": "coderabbitai"}, "state": "COMMENTED", "submittedAt": "2026-11-24T12:05:25Z"},
+                   {**self.APPROVED, "submittedAt": "2026-11-24T12:12:39Z"}]
+        self.scenario(reviews=reviews)
+        reason = self.reason(self.COORDINATOR, said=("fix it", self.offer(*self.CARD_OPTIONS), "a"), cwd=self.dir)
+        self.dismisses(reason, approved="2026-11-24 12:12")
+        self.assertIn('the user\'s "a" picks "push the cleanup, post the reply, re-request the teammate on #6119", a '
+                      "stop:post option of your reply before it, and only a stop:push option allows a push that "
+                      "dismisses an approval", reason)
+        # Its b, a stop:push option that doesn't say the push dismisses an approval.
+        reason = self.reason(self.COORDINATOR, said=("fix it", self.offer(*self.CARD_OPTIONS), "b"), cwd=self.dir)
+        self.assertIn('picks "no: push the cleanup only", a stop:push option of your reply before it, which doesn\'t '
+                      "say the push dismisses an approval", reason)
+
+    def test_allows_a_push_the_users_go_names_the_dismissal_of(self):
+        # #6091's restack, the go the brief names, and the go the deny message suggests.
+        self.git("branch", "-m", self.BRANCH, "effect-native/action-messages")
+        self.git("config", "branch.effect-native/action-messages.merge", "refs/heads/effect-native/action-messages")
+        self.scenario(n=6091, branch="effect-native/action-messages")
+        restack = {"class": "stop:push", "text": "restack #6091 onto develop, push (dismisses the teammate's approval)"}
+        for said in [("fix it", self.offer(restack, text="Restack?\n\n"), "a"),
+                     ("fix it", self.offer({"class": "routine", "text": "verify"}, restack, text="Restack?\n\n"), " B. "),
+                     ("push #6091 (dismisses teammate's approval)",),
+                     ("ok, restack and push #6091, dismissing the teammate's approval",)]:
+            with self.subTest(said=said[-1]):
+                self.assertIsNone(self.reason("gh stack push", said=said))
+                self.assertIsNone(self.reason("git push --force-with-lease", said=said))
+        for said, why in [
+            (("fix it", self.offer({**restack, "class": "decision"}, text="Restack?\n\n"), "a"), "a decision option"),
+            (("fix it", self.offer({**restack, "text": "restack #6091 onto develop and push"}, text="Restack?\n\n"), "a"),
+             "doesn't say the push dismisses"),
+            (("fix it", self.offer({**restack, "text": "push #6092 (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
+             "doesn't name #6091"),
+            (("fix it", self.offer({**restack, "text": "push it (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
+             "doesn't name #6091"),
+            (("fix it", self.offer(restack, text="Restack?\n\n"), "hold on", claude_wrote("Holding."), "a"), "picks nothing"),
+            (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
+            (("don't push #6091, it would dismiss the teammate's approval",), None),
+            (("push #6091 if it dismisses nothing",), None), (("push it, dismissing the teammate's approval",), "doesn't name #6091"),
+        ]:
+            with self.subTest(said=said[-1]):
+                reason = self.reason("gh stack push", said=said)
+                self.assertIn("which dismisses teammate's approval", reason)
+                if why:
+                    self.assertIn(why, reason)
+        with tempfile.TemporaryDirectory() as folder:  # in T3, a database it can't read gives no go
+            self.env["T3CODE_CLI_PATH"] = "/t3"
+            self.assertIsNotNone(self.reason("gh stack push", said=("push #6091 (dismisses teammate's approval)",)))
+
+    def test_passes_a_push_that_dismisses_nothing(self):
+        # Unchanged: the branch's tip is the PR's head.
+        self.scenario(head=self.local)
+        self.assertIsNone(self.reason("gh stack push"))
+        self.assertIsNone(self.reason("git push origin HEAD"))
+        # No live approval: none, only comments, a change request after it, or already dismissed.
+        for reviews in [(), [{**self.APPROVED, "state": "COMMENTED"}],
+                        [self.APPROVED, {**self.APPROVED, "state": "CHANGES_REQUESTED", "submittedAt": "2026-11-24T11:30:00Z"}],
+                        [{**self.APPROVED, "state": "DISMISSED"}],
+                        [{**self.APPROVED, "state": "PENDING", "submittedAt": None}]]:
+            with self.subTest(reviews=reviews):
+                self.scenario(reviews=reviews)
+                self.assertIsNone(self.reason("gh stack push"))
+                self.assertIsNone(self.reason("git push"))
+        # Another reviewer's comment after the approval leaves it live.
+        self.scenario(reviews=[self.APPROVED, {"author": {"login": "teammate"}, "state": "COMMENTED",
+                                                "submittedAt": "2026-11-24T13:02:09Z"}])
+        self.dismisses(self.reason("gh stack push"))
+        # No PR: a new branch, a stack branch without one, a tag, and a remote off GitHub.
+        self.scenario()
+        self.git("checkout", "-q", "-b", "effect-native/next")
+        self.assertIsNone(self.reason("git push -u origin effect-native/next"))
+        stack = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        del stack["stack"]["branches"][0]["pr"]
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(stack))
+        self.assertIsNone(self.reason("gh stack push"))
+        self.scenario()
+        self.assertIsNone(self.reason(f"git push origin refs/tags/v1 {self.BRANCH}:refs/tags/v2"))
+        self.git("remote", "add", "mirror", "ssh://mirror.example/~/repo.git")
+        self.assertIsNone(self.reason(f"git push mirror {self.BRANCH}"))
+        self.git("checkout", "-q", self.BRANCH)
+        self.git("config", f"branch.{self.BRANCH}.pushRemote", "mirror")  # a bare push goes there
+        self.assertIsNone(self.reason("git push"))
+        self.dismisses(self.reason("git push origin"))
+        self.git("config", "--unset", f"branch.{self.BRANCH}.pushRemote")
+        # Not a push: quoted, a heredoc, printed, or help.
+        for command in ["echo 'git push'", "git commit -m \"then gh stack push\"", "cat <<EOF\ngit push\nEOF",
+                        "echo git push", "gh stack push --help", "git push --dry-run", "git stash push -m x",
+                        "grep -n 'stack sync' notes.md"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command))
+
+    def test_reads_each_way_a_command_pushes_the_branch(self):
+        self.git("checkout", "-q", "main")
+        elsewhere = os.path.join(self.dir, "elsewhere")
+        os.makedirs(elsewhere)
+        for command in [f"git push origin {self.BRANCH}", f"git push -f origin {self.BRANCH}",
+                        f"git push origin +{self.BRANCH}", f"git push origin 'HEAD~0' {self.local}:refs/heads/{self.BRANCH}",
+                        f"git push origin {self.BRANCH}:{self.BRANCH} 2>&1 | tail -3", "git push --all origin",
+                        f"cd {{repo}} && git push origin {self.BRANCH}", f"git -C {{repo}} push origin {self.BRANCH}",
+                        f"FOO=1 time git push origin {self.BRANCH}", f"if git push origin {self.BRANCH}; then echo ok; fi",
+                        "gh stack submit --auto", "gh stack push --remote origin", "(cd {repo} && gh stack push)"]:
+            with self.subTest(command=command):
+                cwd = self.repo if "{repo}" not in command else elsewhere
+                self.dismisses(self.reason(command, cwd=cwd))
+        self.git("checkout", "-q", self.BRANCH)
+        self.dismisses(self.reason("git push"))
+        self.dismisses(self.reason("git push -u origin HEAD"))
+
+    def test_a_sync_counts_a_branch_it_rebases(self):
+        self.scenario(head=self.local)
+        self.assertIsNone(self.reason("gh stack sync"))  # the trunk hasn't moved: nothing to push
+        # The trunk moved on the remote, so sync rebases the branch onto it and pushes.
+        writer = os.path.join(self.dir, "writer")
+        subprocess.run(["git", "clone", "-q", os.path.join(self.dir, "origin"), writer], check=True, env=self.env)
+        pathlib.Path(writer, "g").write_text("develop\n")
+        self.git("add", ".", cwd=writer)
+        self.git("commit", "-qm", "develop moved", cwd=writer)
+        self.git("push", "-q", "origin", "main", cwd=writer)
+        reason = self.reason("gh stack sync")
+        self.assertIn(f"moves #6119 from {self.local[:10]} to a rebased tip, which dismisses teammate's approval", reason)
+        self.assertIsNone(self.reason("gh stack push"))  # push doesn't rebase
+        self.scenario(head=self.local, needs_rebase=True)
+        self.assertIn("to a rebased tip", self.reason("gh stack push && gh stack sync"))
+
+    def test_fails_closed(self):
+        self.scenario(broken=True)
+        self.assertIn("couldn't check what this push would move (`gh stack view --json` failed: gh: network down)",
+                      self.reason("gh stack push"))
+        self.assertIn("gh: network down", self.reason("git push"))
+        self.scenario()
+        for command, why in [("d=$(pwd); cd $d && gh stack push", "`cd`s where only the shell knows"),
+                             ("git push origin \"$BRANCH\"", "can't tell which branch"),
+                             ("git push origin --delete old", "deletes branches"),
+                             ("cd /nonexistent && git push", "No such file or directory")]:
+            with self.subTest(command=command):
+                self.assertIn(why, self.reason(command))
+
+    def dry_run(self, command, said=(), cwd=None):
+        args = [str(HOOKS / self.HOOK), "--dry-run", command]
+        if said:
+            transcript = pathlib.Path(self.dir, "dry-run.jsonl")
+            transcript.write_text("".join(json.dumps(claude_said(text)) + "\n" for text in said))
+            args += ["--transcript", str(transcript)]
+        env = {k: v for k, v in self.env.items() if k not in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID")}
+        result = subprocess.run(args, cwd=cwd or self.repo, env=env, capture_output=True, text=True)
+        return result.returncode, result.stdout
+
+    def test_dry_run_says_what_the_hook_would(self):
+        where = os.path.realpath(self.repo)
+        status, out = self.dry_run("gh stack push")
+        self.assertEqual(status, 1)
+        self.assertTrue(out.startswith(f"{self.BRANCH}: #6119, {self.remote_head[:10]} → {self.local[:10]} (from {where})\n"
+                                       "go: no, from no transcript; pass --transcript\n- pushing"), out)
+        self.assertTrue(out.endswith("would deny\n"))
+        self.assertEqual(self.dry_run("gh stack push", said=("push #6119 (dismisses teammate's approval)",)),
+                         (0, f"{self.BRANCH}: #6119, {self.remote_head[:10]} → {self.local[:10]} (from {where})\n"
+                             f"go: yes, from {self.dir}/dry-run.jsonl\nwould pass: the user's latest prompt names each dismissal\n"))
+        self.scenario(head=self.local)
+        self.assertEqual(self.dry_run("gh stack push"), (0, f"{self.BRANCH}: #6119, unchanged (from {where})\n"
+                                                            "would pass: no PR this push moves has a live approval\n"))
+        self.assertEqual(self.dry_run("gh pr view 6119"), (0, "would pass: no `gh stack push`, `submit`, or `sync`, or "
+                                                              "`git push`, outside quotes for the gate to check\n"))
+
+
 class VerdictStamp(unittest.TestCase):
     HOOK = "verdict-stamp.py"
 
