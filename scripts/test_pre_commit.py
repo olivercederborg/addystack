@@ -108,7 +108,7 @@ class DaggerOrHost(unittest.TestCase):
             (self.bin / "dagger").write_text(FAKE_DAGGER)
             (self.bin / "dagger").chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-        untracked = extra.pop("UNTRACKED", ())
+        untracked, refs = extra.pop("UNTRACKED", ()), extra.pop("REFS", 1)
         env.update(PATH=f"{self.bin}:/usr/bin:/bin", DAGGER_LOG=str(self.log), DAGGER_ENGINE=str(engine),
                    DAGGER_CHECK=str(check), DAGGER_MODULE=str(module), DAGGER_LIST=listed,
                    HOST_RAN=str(self.ran), **extra)
@@ -121,7 +121,8 @@ class DaggerOrHost(unittest.TestCase):
                         "--no-verify", "-m", "push"], cwd=self.repo, env=env, check=True)
         tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True, text=True).stdout
         run = subprocess.run([str(self.repo / ".githooks" / "pre-push"), "origin", "url"], cwd=self.repo, env=env,
-                             input=f"refs/heads/main {tip.strip()} refs/heads/main {'0' * 40}\n",
+                             input="".join(f"refs/heads/b{n} {tip.strip()} refs/heads/b{n} {'0' * 40}\n"
+                                           for n in range(refs)),
                              capture_output=True, text=True)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return run, calls
@@ -194,6 +195,20 @@ class DaggerOrHost(unittest.TestCase):
         self.assertIn("helper", run.stderr)
         worktrees = subprocess.run(["git", "worktree", "list"], cwd=self.repo, capture_output=True, text=True).stdout
         self.assertEqual(len(worktrees.splitlines()), 1)  # the scratch worktree is gone
+
+    def test_checks_each_distinct_tip_once(self):
+        # Review of #103, round 2: two refs at one tip check it once.
+        (self.bin / "dagger").write_text(FAKE_DAGGER)
+        (self.bin / "dagger").chmod(0o755)
+        run, calls = self.push(REFS=2)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(calls, [LIST, RUN])
+
+    def test_a_tip_from_before_suites_sh_uses_this_checkouts(self):
+        # Review of #103, round 2: a pushed tip from before this hook has no .githooks/suites.sh.
+        run, _ = self.push(dagger=False, UNTRACKED=[".githooks/suites.sh"])
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
 
     def test_without_dagger_the_host_suites_run(self):
         run, _ = self.push(dagger=False)

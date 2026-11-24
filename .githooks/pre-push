@@ -21,6 +21,10 @@ while read -r _ local _ remote; do
     if [ "$from" = "$zero" ] || ! git cat-file -e "$from^{commit}" 2> /dev/null; then
       from=$(git merge-base "$local" refs/remotes/origin/HEAD 2> /dev/null) || from=$(git hash-object -t tree /dev/null)
     fi
+    # One check per distinct tip; its froms join with a space, so any of them counts.
+    for at in "${!tips[@]}"; do
+      if [ "${tips[$at]}" = "$local" ]; then froms[$at]="${froms[$at]} $from"; continue 2; fi
+    done
     tips+=("$local") froms+=("$from")
   fi
 done
@@ -111,30 +115,32 @@ elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
 fi
 }
 
-# Each tip's own committed tree: this checkout when it's clean at the tip, untracked files
-# included, so Dagger and the host suites read exactly what the push sends, and otherwise a
-# scratch worktree of the tip, removed when the check ends or is interrupted. Each runs in
-# its own subshell under set -e, so a failing step fails the push, and with the tip's own
-# helpers, so an edit in progress to them can't change what the push is checked by.
+# Each tip in a scratch worktree of its committed tree, so Dagger and the host suites read
+# exactly what the push sends, never a file only this checkout has (untracked, ignored, or
+# hidden by status settings); it's removed when the check ends or is interrupted. Each runs
+# in its own subshell under set -e, so a failing step fails the push, with the tip's own
+# helpers, so an edit in progress can't change what the push is checked by, or this
+# checkout's for a tip from before they existed.
 for at in "${!tips[@]}"; do
   tip=${tips[$at]} from=${froms[$at]}
   (
-    if [ "$tip" = "$(git -C "$checkout" rev-parse HEAD)" ] && [ -z "$(git -C "$checkout" status --porcelain)" ]; then
-      root=$checkout
-    else
-      scratch=$(mktemp -d)
-      root=$scratch/kit
-      trap 'git -C "$checkout" worktree remove --force "$root" 2> /dev/null; rm -rf "$scratch"' EXIT
-      trap 'exit 130' INT TERM
-      git -C "$checkout" worktree add -q --detach "$root" "$tip"
-    fi
-    . "$root/.githooks/suites.sh"
+    scratch=$(mktemp -d)
+    root=$scratch/kit
+    trap 'git -C "$checkout" worktree remove --force "$root" 2> /dev/null; rm -rf "$scratch"' EXIT
+    trap 'exit 130' INT TERM
+    git -C "$checkout" worktree add -q --detach "$root" "$tip"
+    helpers=$root
+    [ -f "$root/.githooks/suites.sh" ] || helpers=$checkout
+    . "$helpers/.githooks/suites.sh"
     # The hook tests run on the host (macOS-only ones, or all on a fallback) only when the
     # push changes their inputs, as pre-commit reads them from the index; a detector that
     # errors counts as a change.
-    detected=0
-    "$root/scripts/hook-inputs-staged.sh" "$from" "$tip" || detected=$?
-    case $detected in 0) hooks_staged=true ;; 1) hooks_staged=false ;; *) hooks_staged=true ;; esac
+    hooks_staged=false
+    for base in $from; do
+      detected=0
+      (cd "$root" && "$helpers/scripts/hook-inputs-staged.sh" "$base" "$tip") || detected=$?
+      [ "$detected" = 1 ] || hooks_staged=true
+    done
     check_tree
   )
 done
