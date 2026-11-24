@@ -1259,8 +1259,10 @@ if a[:2] == ["pr", "view"]:
     print(s["pr"])
 elif a[:2] == ["stack", "view"]:
     print(json.dumps(s["stack"])) if "stack_error" not in s else sys.exit(s["stack_error"])
-elif a[:2] == ["repo", "view"] and "nameWithOwner" in a:
-    print(s.get("clone", "o/r"))  # the repo of the checkout gh runs in
+elif a[:2] == ["repo", "view"] and "url" in a:  # a named repo's URL, or the checkout's
+    named = a[2] if len(a) > 2 and not a[2].startswith("-") else None
+    print(("https://" + named if named.count("/") == 2 else "https://github.com/" + named) if named
+          else s.get("clone", "https://github.com/o/r"))
 elif a[:2] == ["repo", "view"]:
     print("o r")
 elif a[:2] == ["api", "graphql"]:
@@ -1380,9 +1382,11 @@ class MergeGate(unittest.TestCase):
         self.scenario()
         self.verify(12)
         for command in [f"cd {self.repo}; gh pr merge 12 --squash", f"cd {self.repo}&& gh pr merge 12",
-                        f"cd {self.repo}|| true; gh pr merge 12"]:
+                        f"cd {self.repo}|| true; gh pr merge 12", f"cd {self.dir}; cd repo; gh pr merge 12"]:
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command, cwd=self.dir))
+        # Review of #102: each cd counts, in order, so `cd <other>; cd .` stays in <other>.
+        self.assertIn("couldn't check the merge", self.reason(f"cd {self.dir}; cd .; gh pr merge 12 --squash"))
 
     def test_reads_githubs_stack_when_no_local_stack_holds_the_pr(self):
         # Nov 11, 16, 19, and 20, 2026: `gh stack merge N` from a checkout on no branch, or on
@@ -1426,10 +1430,13 @@ class MergeGate(unittest.TestCase):
         self.addCleanup(shutil.rmtree, outside)
         self.assertIsNone(self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
         self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 --squash"))  # no -R
-        self.scenario(clone="x/y")
+        self.scenario(clone="https://github.com/x/y")
         self.assertIn("this merge runs outside a checkout of o/r, so the gate can't read its verdicts: run it from "
                       "one, as `cd <checkout of o/r> && gh pr merge 12 -R o/r --squash`",
                       self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
+        self.scenario()  # review of #102: o/r on another host isn't this clone's o/r
+        self.assertIn("this merge runs outside a checkout of o/r",
+                      self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
         self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 -R o/r", cwd=outside))
 
     def test_denies_a_red_or_running_default_branch(self):

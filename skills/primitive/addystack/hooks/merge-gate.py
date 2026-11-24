@@ -78,10 +78,10 @@ if not match:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-# A cd path ends where its word does: `cd dir; gh pr merge` goes to dir, not `dir;`.
-cds = re.findall(r"\bcd\s+([^\s;&|()<>]+)", code[:match.start()])
-if cds:
-    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(cds[-1])))
+# Each cd before the merge, in order, from where the last one left the shell; a cd path
+# ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`.
+for path in re.findall(r"\bcd\s+([^\s;&|()<>]+)", code[:match.start()]):
+    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
 # checkout's stack, with no flag that can name another repo. Any other shell, such as a
@@ -294,11 +294,11 @@ try:
 
     owner, name = run("gh", "repo", "view", *([repo] if repo else []), "--json", "owner,name",
                       "--jq", '"\\(.owner.login) \\(.name)"').split()
-    if borrowed:
-        clone = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd=cwd,
-                               capture_output=True, text=True, timeout=40,
-                               env={k: v for k, v in os.environ.items() if k != "GH_REPO"}).stdout.strip()
-        if clone.lower() != f"{owner}/{name}".lower():
+    if borrowed:  # the same repo on the same host: -R can name one on another host
+        url = lambda *named: subprocess.run(["gh", "repo", "view", *named, "--json", "url", "--jq", ".url"], cwd=cwd,
+                                            capture_output=True, text=True, timeout=40,
+                                            env={k: v for k, v in os.environ.items() if k != "GH_REPO"}).stdout.strip()
+        if not url() or url().lower() != url(repo).lower():
             deny(f"this merge runs outside a checkout of {owner}/{name}, so the gate can't read its verdicts: run "
                  f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
