@@ -2810,8 +2810,10 @@ class Verdicts(unittest.TestCase):
         branch = self.git("symbolic-ref", "--short", "HEAD").strip()
         self.record(verdict="not-verified", findings=["1 · the iOS run needs a device"])
         self.assertEqual(self.known(branch, self.base, self.head), "not verified until it runs: 1 · the iOS run needs a device")
-        self.commit_change("c\n")  # a later commit doesn't run it either
-        self.assertIn("needs a device", self.known(branch, self.base, self.git("rev-parse", "HEAD").strip()))
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "-m", "reworded")
+        self.assertIn("needs a device", self.known(branch, self.base, self.git("rev-parse", "HEAD").strip()))  # same diff
+        head = self.commit_change("c\n")  # a fix since changes the diff: its re-check reads the delta
+        self.assertIsNone(self.known(branch, self.base, head))
 
     def test_last_knows_a_fix_marked_finding_without_a_commit(self):
         branch = self.git("symbolic-ref", "--short", "HEAD").strip()
