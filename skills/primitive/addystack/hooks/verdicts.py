@@ -396,14 +396,12 @@ def _left_out_mutants(cwd: Path, head: str, passed: list[str]) -> list:
 
 def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     """Why a re-check of `base...head` after `receipt` can only repeat it, or "" when it
-    can find something new: a Not verified waits on the real run it names; a Done stands
-    while the diff is the one it checked, on any base, though a new base can still break
-    it, so the reason names the checks and trial merge to rerun; and a Not done waits on
-    a commit for each finding it marked fix while the diff and its merge base are the
-    ones it checked, since a restack onto a parent can bring the fix in. A diff that
+    can find something new. While the diff and its merge base are the ones it checked, a
+    Not verified waits on the real run it names, and a Not done on a commit for each
+    finding it marked fix, since a restack onto a parent can bring the fix in. A Done
+    stands across a rebase `_rebased` shows changed nothing it read, though a new base can
+    still break it, so the reason names the checks and trial merge to rerun. A diff that
     won't read gives "", so the re-check runs."""
-    if receipt.verdict == "not-verified":
-        return "not verified until it runs: " + "; ".join(receipt.findings)
     fixes = [text for text in receipt.findings if re.search(r"→ fix\b", text)]
     if receipt.verdict == "not-done" and not fixes:
         return ""
@@ -415,7 +413,11 @@ def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
                 and _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed)))
     except VerdictError:
         return ""
-    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes) if same else ""
+    if not same:  # a changed diff gets its re-check, which still owes any run
+        return ""
+    if receipt.verdict == "not-verified":
+        return "not verified until it runs: " + "; ".join(receipt.findings)
+    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes)
 
 
 def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
@@ -443,9 +445,10 @@ def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
     paths = [path for path in _git(cwd, "diff", "--name-only", "-z", "--no-renames", f"{base}...{head}").split("\0") if path]
     if not paths or _git(cwd, "diff", "--name-only", "--no-renames", *forks, "--", *paths).strip():
         return False
-    pairs = re.findall(r"^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+) ([=!<>]) (?:\d+|-+):",
+    pairs = re.findall(r"^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+) ([=!<>])\s+(?:\d+|-+):",  # numbers pad to one width
                        _git(cwd, "range-diff", "--no-color", *ranges), flags=re.M)
-    if not pairs or set(pairs) != {"="}:
+    counts = {int(_git(cwd, "rev-list", "--count", commits)) for commits in ranges}
+    if set(pairs) != {"="} or counts != {len(pairs)}:  # a pair it didn't parse may be one that changed
         return False
     if any(line.startswith("-\t-\t") for line in _git(cwd, "diff", "--numstat", f"{base}...{head}").splitlines()):
         return False
