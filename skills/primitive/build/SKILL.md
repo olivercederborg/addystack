@@ -135,8 +135,8 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
   cases, any deviation, a confirmation that Not in scope was left alone, and
   review-loop's blockers, fixed or dropped.
 
-Recommend verify-work, then a push and a draft PR. Push or submit per **Approval**: when
-the user says so, or has granted autonomy.
+Recommend verify-work, then a push and a draft PR; with autonomy, run them instead. Push
+or submit per **Approval**: when the user says so, or has granted autonomy.
 
 **Done when:** every decision in the plan is implemented, all checks pass, the behavior
 was run, review-loop is settled, nothing outside the plan was built, and
