@@ -376,7 +376,7 @@ class PreCommit(unittest.TestCase):
         return run, sorted(folder for folder, ran in self.ran.items() if ran.exists())
 
     def test_runs_the_touched_skills_suite_and_never_dagger(self):
-        run, ran = self.commit("skills/primitive/one/SKILL.md")
+        run, ran = self.commit("skills/primitive/one/assets/a.json")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])  # the workshop's always run
         self.assertFalse(self.log.exists())
@@ -385,14 +385,22 @@ class PreCommit(unittest.TestCase):
         # verify-work on #103: shared/'s, scripts/', and the hook suites run one test after
         # another on the host, slower than Dagger at commit today, so only pre-push runs them.
         run, ran = self.commit("shared/views.md", "scripts/check-x.py", ".githooks/pre-push",
-                               "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.md")
+                               "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.json")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(ran, ["maintainer", "skills/orchestrator/two/scripts"])
 
     def test_a_docs_only_commit_runs_no_kit_suite(self):
-        run, ran = self.commit("README.md", "CHANGELOG.md")
+        # A skill's Markdown outside scripts/ keeps Dagger's cached result, so it runs no
+        # suite here either; a shared/views.md edit copies into 15 skills' references/.
+        run, ran = self.commit("README.md", "CHANGELOG.md", "skills/primitive/one/SKILL.md",
+                               "skills/orchestrator/two/references/views.md")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(ran, ["maintainer"])
+
+    def test_markdown_in_a_skills_scripts_runs_its_suite(self):
+        run, ran = self.commit("skills/primitive/one/scripts/fixture.md")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])
 
     def test_a_failing_touched_suite_blocks_the_commit(self):
         self.write("skills/primitive/one/scripts/test_fail.py",

@@ -59,9 +59,14 @@ touched=()
 while IFS= read -r -d '' path; do
   case $path in
     skills/preferences/* | skills/preset/*) continue ;;  # their suites run below on every commit
-    skills/*/*/*) folder=${path#skills/}; folder="skills/${folder%%/*}/$(cut -d/ -f2 <<< "$folder")/scripts" ;;
+    skills/*/*/scripts/*) ;;
+    # Markdown outside scripts/, which Dagger's skill checks leave out too (skill_source in
+    # .dagger/src/skills/main.py), so a SKILL.md or reference edit runs no suite until push.
+    skills/*/*/*.md) continue ;;
+    skills/*/*/*) ;;
     *) continue ;;
   esac
+  folder=${path#skills/}; folder="skills/${folder%%/*}/$(cut -d/ -f2 <<< "$folder")/scripts"
   [[ " ${touched[*]-} " == *" $root/$folder "* ]] || touched+=("$root/$folder")
 done < <(printf '%s\0' "${staged[@]-}")
 run_suites "${touched[@]-}"
