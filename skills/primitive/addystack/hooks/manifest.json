@@ -4,6 +4,7 @@
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60, "onFailure": "block"},
     {"id": "verdict-stamp", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/verdict-stamp.py", "timeout": 10, "onFailure": "block"},
     {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60, "onFailure": "block"},
+    {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60, "onFailure": "block"},
     {"id": "child-fast-mode-off", "tags": ["workflow"], "event": "PreToolUse", "matcher": "mcp__t3-code__delegate_task|mcp__t3-code__create_threads|mcp__t3-code__t3_thread_launch", "command": "{{kit}}/hooks/child-fast-mode-off.py", "timeout": 10},
     {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
@@ -15,6 +16,7 @@
     {"id": "reply-rules", "tags": ["replies"], "requires": "replies.rules", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py --rules", "timeout": 10},
     {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60},
-    {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60}
+    {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60},
+    {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60}
   ]
 }

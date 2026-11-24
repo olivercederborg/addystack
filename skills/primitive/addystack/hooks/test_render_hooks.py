@@ -117,7 +117,7 @@ class Render(unittest.TestCase):
         hooks = render_hooks.render("codex", "darwin")
         names = {event: [pathlib.PurePath(c.split()[0]).name for c in commands({event: groups})]
                  for event, groups in hooks.items()}
-        self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py"])
+        self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py", "push-gate.py"])
         self.assertEqual([len(groups) for groups in hooks.values()], [1, 1])
 
     def cli(self, *args):
