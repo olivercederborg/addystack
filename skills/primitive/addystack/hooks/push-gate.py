@@ -57,6 +57,9 @@ command = (payload.get("tool_input") or {}).get("command", "")
 cwd = payload.get("cwd") or os.getcwd()
 
 
+NO_PUSH = "no `gh stack push`, `submit`, or `sync`, or `git push`, outside quotes for the gate to check"
+
+
 def passes(why):
     if DRY_RUN:
         print(f"would pass: {why}")
@@ -64,7 +67,7 @@ def passes(why):
 
 
 if not re.search(r"\bpush\b|\bsubmit\b|\bsync\b", command):  # most commands: no parse, no gh
-    passes("no `gh stack push`, `submit`, or `sync`, or `git push`, outside quotes for the gate to check")
+    passes(NO_PUSH)
 
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
 # quoted single word ('feat/x') is an argument, so it keeps its value, unless it starts with
@@ -113,7 +116,7 @@ for piece in re.split(r"&&|\|\||[;|&\n()`]", code):
         if words[at:at + 1] == ["push"] and not {"-h", "--help", "-n", "--dry-run"} & set(words[at + 1:]):
             pushes.append(("git", words[at + 1:], where))
 if not pushes:
-    passes("no `gh stack push`, `submit`, or `sync`, or `git push`, outside quotes for the gate to check")
+    passes(NO_PUSH)
 
 
 def deny(*reasons):
@@ -284,8 +287,9 @@ try:
                 said = ("no open PR" if pr is None else f"#{pr['number']}, " + (
                     "unchanged" if not changed else f"{pr['headRefOid'][:10]} → {local[:10] if local else 'a rebased tip'}"))
                 print(f"{branch}: {said} (from {where})")
-            if changed and approvals(pr):
-                live[pr["number"]] = (pr, branch, local, approvals(pr))
+            approved = approvals(pr) if changed else []
+            if approved:
+                live[pr["number"]] = (pr, branch, local, approved)
 except Exception as error:
     deny(f"couldn't check what this push would move ({error})")
 if not live:
@@ -363,8 +367,8 @@ for n, (pr, branch, local, found) in sorted(live.items()):
     reasons.append(f"pushing `{branch}` moves #{n} from {moves}, which dismisses {who}")
 reasons.extend([note] if note else [])
 refs = " and ".join(f"#{n}" for n in sorted(live))
-names = " and ".join(sorted({login for *_, found in live.values() for login, _ in found}))
+approvers = " and ".join(sorted({login for *_, found in live.values() for login, _ in found}))
 reasons.append(f"ask the user first with a `stop:push` option that names {refs} and the dismissal, such as "
-               f'"push {refs} (dismisses {names}\'s approval)", or have them type that request; '
+               f'"push {refs} (dismisses {approvers}\'s approval)", or have them type that request; '
                "a delegated child reports the push back to its owner instead")
 deny(*reasons)

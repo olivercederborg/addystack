@@ -113,7 +113,7 @@ def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last
     of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
     go is a literal go (merge_go.py), held to the PRs it names when it names one with its
-    repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (answered,
+    repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (user_turn.answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
     and no PR of numbers in another repo (merge_go.names).
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
