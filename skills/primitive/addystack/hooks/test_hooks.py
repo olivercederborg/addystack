@@ -3160,6 +3160,28 @@ class Verdicts(unittest.TestCase):
         self.assertRegex(self.git("range-diff", f"{self.base}..{self.head}", f"{moved}..{head}"), r"^1: +\w+ = 1:")
         self.assertIsNone(self.known("work", moved, head))
 
+    def test_a_done_gets_a_recheck_when_a_line_moves_between_its_commits(self):
+        # verify-work on #99: the same whole diff, commit count, and messages, with line x
+        # moved from commit b into commit a, which range-diff pairs as ! on both rows.
+        def commits(*steps):
+            self.git("reset", "-q", "--hard", self.base)
+            for message, files in steps:
+                for path, text in files.items():
+                    pathlib.Path(self.repo, path).write_text(text)
+                self.git("add", "-A")
+                self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        g, h = "".join(f"g{n}\n" for n in range(20)), "".join(f"h{n}\n" for n in range(20))
+        self.git("checkout", "-q", "-b", "work")
+        self.head = commits(("a", {"g": g}), ("b", {"h": h, "g": g + "x\n"}))
+        self.record(branch="work")
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
+        moved = commits(("a", {"g": g + "x\n"}), ("b", {"h": h}))
+        self.assertEqual(verdicts.diff(pathlib.Path(self.repo), self.base, moved),
+                         verdicts.diff(pathlib.Path(self.repo), self.base, self.head))
+        self.assertRegex(self.git("range-diff", f"{self.base}..{self.head}", f"{self.base}..{moved}"), r"(?m)^1: +\w+ ! 1:")
+        self.assertIsNone(self.known("work", self.base, moved))
+
     def commit_change(self, text):
         pathlib.Path(self.repo, "f").write_text(text)
         self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", text)
