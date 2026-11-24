@@ -3032,7 +3032,9 @@ class ReadyGate(unittest.TestCase):
                  "for n in 12 13; do gh pr view $n --json number,isDraft --jq '.number'; done",
                  "for p in 12 13; do gh pr ready $p --repo o/r && gh pr edit $p --repo o/r --add-reviewer x; done",
                  "for n in 12 13\ndo\n  gh pr ready ${n}\ndone",
-                 "for r in o/r; do for n in 12 13; do gh pr ready $n -R $r; done; done"]
+                 "for r in o/r; do for n in 12 13; do gh pr ready $n -R $r; done; done",
+                 'for n in 12 13; do gh pr ready "$n"; done',  # review of #102: a quoted "$n"
+                 "for n in 99; do for n in 12 13; do gh pr ready $n; done; done"]  # the inner n wins
         for command in loops:
             with self.subTest(command=command):
                 self.assertEqual(self.denial(command), f"Ready gate: #13 has no review-loop result for its diff at head "
@@ -3044,7 +3046,12 @@ class ReadyGate(unittest.TestCase):
         # A list only the shell knows still denies, naming the command that passes.
         for command in ["for n in $(gh pr list --json number -q '.[].number'); do gh pr ready $n; done",
                         "for n; do gh pr ready $n; done", "for n in 12 13; do :; done; gh pr ready $n",
-                        "for n in 12 $M; do gh pr ready $n; done", "gh pr ready $PR"]:
+                        "for n in 12 $M; do gh pr ready $n; done", "gh pr ready $PR",
+                        # Review of #102: a loop name set again, a variable left after expanding,
+                        # and a word the shell unescapes.
+                        "for n in 12; do n=13; gh pr ready $n; done", "for n in 12; do read n; gh pr ready $n; done",
+                        "for n in 1; do for p in $V; do gh pr ready $n$p; done; done",
+                        "for n in \\13; do gh pr ready $n; done", "for n in 12; do ((n++)); gh pr ready $n; done"]:
             with self.subTest(command=command):
                 self.assertIn("reads a shell variable the gate can't expand: write each PR out, as "
                               "`gh pr ready 12 && gh pr ready 13`", self.denial(command))

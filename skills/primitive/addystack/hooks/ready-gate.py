@@ -38,7 +38,8 @@ command = (payload.get("tool_input") or {}).get("command", "")
 # quoted single word ("12", 'feat/x') is an argument, so it keeps its value, unless it starts
 # with #, which would then read as a comment.
 code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S)
-code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*)\"", lambda m: m.group(1) or m.group(2) or "''", code)
+code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
+              lambda m: m.group(1) or m.group(2) or "''", code)  # a quoted "$n" stays a variable
 code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 # Nor are comments: a # that starts a word, so not after an escaped space.
@@ -187,8 +188,18 @@ for at in range(0, len(pieces), 2):
         depth, cases = depth + (words[lead] in OPENS), cases + (words[lead] == "case")
         lead += 1
     if lead and words[lead - 1] == "for" and lead < len(words):
+        name = words[lead]
         listed = words[lead + 2:] if words[lead + 1:lead + 2] == ["in"] else None  # bare `for n` reads "$@"
-        loops.append((words[lead], None if listed is None or any(map(unreadable, listed)) else listed, depth))
+        # A word the shell rewrites (an escape, a quote) isn't the value, and a name the command
+        # sets anywhere but a for header (n=13, read n, ((n++))) may not hold it when the ready runs.
+        if listed is not None and any(unreadable(word) or re.search(r"[\\'\"`]", word) for word in listed):
+            listed = None
+        n = re.escape(name)
+        if re.search(rf"(?<![\w$\-]){n}(?:\[[^\]]*\])?\+?=|(?<![\w$]){n}(?:\+\+|--)|(?:\+\+|--){n}\b|\$\{{{n}:?="
+                     rf"|\b(?:read|let|local|declare|typeset|export|unset|getopts|mapfile|readarray)\b[^;&|\n]*"
+                     rf"(?<![\w$\-]){n}\b", code):
+            listed = None
+        loops.append((name, listed, depth))
     depth, cases = depth - bool(words[:1] and words[0] in CLOSES), cases - (words[:1] == ["esac"])
     loops = [loop for loop in loops if loop[2] <= depth]
     command = words[lead] if lead < len(words) else None
@@ -263,12 +274,15 @@ for at in range(0, len(pieces), 2):
                     reasons.append(f"this command {said}, so the gate can't tell which repo the ready reads: "
                                    "name it with `-R <owner>/<repo>`")
             # A literal loop's ready runs once per word, as `for n in 12 13; do gh pr ready $n; done`.
-            runs = [args]
-            for name, listed, _ in loops:
+            runs, bound = [args], set()
+            for name, listed, _ in reversed(loops):  # the innermost loop's binding of a name wins
+                if name in bound:
+                    continue
+                bound.add(name)
                 here = re.compile(rf"\${name}\b|\${{{name}}}")
                 if listed and any(here.search(arg) for arg in args):
-                    runs = [[here.sub(word, arg) for arg in one] for one in runs for word in listed]
-            if kind == "ready" and any("$" in arg for arg in options(args)[1]) and runs == [args]:
+                    runs = [[here.sub(lambda _, word=word: word, arg) for arg in one] for one in runs for word in listed]
+            if kind == "ready" and any("$" in arg for one in runs for arg in one):
                 reasons.append(f"its `gh pr ready {' '.join(options(args)[1])}` reads a shell variable the gate "
                                "can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
             readies += [(kind, one, cwd, value, moved, reasons) for one in runs]
