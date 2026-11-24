@@ -79,9 +79,29 @@ if not match:
     sys.exit(0)
 
 # Each cd before the merge, in order, from where the last one left the shell; a cd path
-# ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`.
-for path in re.findall(r"\bcd\s+([^\s;&|()<>]+)", code[:match.start()]):
-    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(path)))
+# ends where its word does, so `cd dir; gh pr merge` goes to dir, not `dir;`. A cd that may
+# not run in this shell (in a subshell, pipeline, or block, or after `||`) leaves the
+# checkout unknown.
+uncertain, depth, tick = False, 0, False
+pieces = re.split(r"(&&|\|\||[;|&\n()`])", code[:match.start()])
+for at in range(0, len(pieces), 2):
+    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ""
+    depth += {"(": 1, ")": -1, "`": -1 if tick else 1}.get(before, 0)
+    tick ^= before == "`"
+    words = pieces[at].split()
+    while words and words[0] in ("if", "then", "else", "elif", "while", "until", "for", "do", "case", "select", "{",
+                                 "!", "time", "builtin", "command"):
+        depth += words.pop(0) in ("if", "while", "until", "for", "case", "select", "{")
+    depth -= bool(words[:1] and words[0] in ("fi", "done", "esac", "}"))
+    if words[:1] in (["cd"], ["pushd"], ["popd"]):
+        if words[0] == "popd" or len(words) != 2 or words[1].startswith(("-", "+")):
+            uncertain = True  # a cd with options, to home, or by the dir stack
+            continue
+        target = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1])))
+        if depth or "|" in (before, after) or before == "||" or after == "&":
+            uncertain = uncertain or target != cwd  # it may not run, which matters only if it moves
+        else:
+            cwd = target
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
 # checkout's stack, with no flag that can name another repo. Any other shell, such as a
@@ -104,6 +124,9 @@ def deny(*reasons):
     }}))
     sys.exit(0)
 
+if uncertain:
+    deny(f"this command runs `cd` inside a subshell, pipeline, or block, or after `||`, so the gate can't tell "
+         f"which checkout the merge runs in: run `cd <checkout> && {match.group(0).strip()}` on its own")
 # The checks below read one merge, so a second would merge on the first one's go and verdict.
 if len(merges) > 1:
     deny(f"this command runs {len(merges)} merges and the gate checks one: run each merge as its own command")
@@ -232,8 +255,8 @@ repo_args = ["-R", repo] if repo else []
 
 def checkout(path):
     try:
-        return subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True,
-                              timeout=20).returncode == 0
+        return subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True,
+                              timeout=20).stdout.strip() == "true"  # a bare repo prints false
     except (OSError, subprocess.SubprocessError):
         return False
 

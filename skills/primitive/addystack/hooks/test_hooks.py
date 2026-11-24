@@ -1382,11 +1382,20 @@ class MergeGate(unittest.TestCase):
         self.scenario()
         self.verify(12)
         for command in [f"cd {self.repo}; gh pr merge 12 --squash", f"cd {self.repo}&& gh pr merge 12",
-                        f"cd {self.repo}|| true; gh pr merge 12", f"cd {self.dir}; cd repo; gh pr merge 12"]:
+                        f"cd {self.dir}; cd repo; gh pr merge 12", f"cd {self.repo} && git status | head -3 && gh pr merge 12",
+                        f"cd {self.repo} || exit 1; gh pr merge 12", "cd repo; (cd .) && gh pr merge 12"]:
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command, cwd=self.dir))
-        # Review of #102: each cd counts, in order, so `cd <other>; cd .` stays in <other>.
+        # Review of #102: each cd counts, in order, so `cd <other>; cd .` stays in <other>,
+        # and one that may not run in this shell, if it moves, leaves the checkout unknown.
         self.assertIn("couldn't check the merge", self.reason(f"cd {self.dir}; cd .; gh pr merge 12 --squash"))
+        for command in ["(cd child); cd .. && gh pr merge 12 --squash", f"false || cd {self.dir}; gh pr merge 12",
+                        f"if true; then cd {self.dir}; fi; gh pr merge 12", f"cd -P {self.repo} && gh pr merge 12",
+                        f"true | cd {self.dir}; gh pr merge 12", "popd && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIn("this command runs `cd` inside a subshell, pipeline, or block, or after `||`, so the gate "
+                              "can't tell which checkout the merge runs in: run `cd <checkout> && gh pr merge 12",
+                              self.reason(command))
 
     def test_reads_githubs_stack_when_no_local_stack_holds_the_pr(self):
         # Nov 11, 16, 19, and 20, 2026: `gh stack merge N` from a checkout on no branch, or on
@@ -1438,6 +1447,9 @@ class MergeGate(unittest.TestCase):
         self.assertIn("this merge runs outside a checkout of o/r",
                       self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
         self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 -R o/r", cwd=outside))
+        bare = os.path.join(outside, "bare.git")  # review of #102: git calls a bare repo no work tree
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        self.assertIsNone(self.reason(f"cd {bare} && gh pr merge 12 -R o/r --squash"))
 
     def test_denies_a_red_or_running_default_branch(self):
         self.verify(12)
@@ -3043,6 +3055,7 @@ class ReadyGate(unittest.TestCase):
         for command in loops:
             with self.subTest(command=command):
                 self.assertEqual(self.output(command), {})
+        self.assertIn("couldn't check", self.denial("for n in 12; do gh pr ready '$n'; done"))  # the branch named $n
         # A list only the shell knows still denies, naming the command that passes.
         for command in ["for n in $(gh pr list --json number -q '.[].number'); do gh pr ready $n; done",
                         "for n; do gh pr ready $n; done", "for n in 12 13; do :; done; gh pr ready $n",
@@ -3051,7 +3064,11 @@ class ReadyGate(unittest.TestCase):
                         # and a word the shell unescapes.
                         "for n in 12; do n=13; gh pr ready $n; done", "for n in 12; do read n; gh pr ready $n; done",
                         "for n in 1; do for p in $V; do gh pr ready $n$p; done; done",
-                        "for n in \\13; do gh pr ready $n; done", "for n in 12; do ((n++)); gh pr ready $n; done"]:
+                        "for n in \\13; do gh pr ready $n; done", "for n in 12; do ((n++)); gh pr ready $n; done",
+                        # Round 2: a write the round-1 check missed, an inner loop that rebinds
+                        # n and ends, and a single-quoted '$n', which the shell passes as is.
+                        'for n in 12; do printf -v n %s 13; gh pr ready "$n"; done',
+                        'for n in 12; do for n in 13; do :; done; gh pr ready "$n"; done']:
             with self.subTest(command=command):
                 self.assertIn("reads a shell variable the gate can't expand: write each PR out, as "
                               "`gh pr ready 12 && gh pr ready 13`", self.denial(command))
@@ -3065,6 +3082,9 @@ class ReadyGate(unittest.TestCase):
         self.assertIn(f"#12 has no review-loop result for its diff at head {self.head[:12]}", self.denial(command))
         self.review(self.main, self.head, "--rounds", "1")
         self.assertEqual(self.output(command), {})
+        bare = os.path.join(outside, "bare.git")  # review of #102: git calls a bare repo no work tree
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        self.assertEqual(self.output(f"cd {bare} && gh pr ready 12 --repo o/r"), {})
         other = os.path.join(self.dir, "other")  # a session in a clone of another repo
         subprocess.run(["git", "init", "-q", other], check=True)
         subprocess.run(["git", "-C", other, "remote", "add", "origin", "https://example.com/x/y.git"], check=True)

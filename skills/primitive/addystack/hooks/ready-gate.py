@@ -38,7 +38,7 @@ command = (payload.get("tool_input") or {}).get("command", "")
 # quoted single word ("12", 'feat/x') is an argument, so it keeps its value, unless it starts
 # with #, which would then read as a comment.
 code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S)
-code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
+code = re.sub(r"'((?!#)[^'\s;&|<>$]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
               lambda m: m.group(1) or m.group(2) or "''", code)  # a quoted "$n" stays a variable
 code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
@@ -194,12 +194,14 @@ for at in range(0, len(pieces), 2):
         # sets anywhere but a for header (n=13, read n, ((n++))) may not hold it when the ready runs.
         if listed is not None and any(unreadable(word) or re.search(r"[\\'\"`]", word) for word in listed):
             listed = None
-        n = re.escape(name)
-        if re.search(rf"(?<![\w$\-]){n}(?:\[[^\]]*\])?\+?=|(?<![\w$]){n}(?:\+\+|--)|(?:\+\+|--){n}\b|\$\{{{n}:?="
-                     rf"|\b(?:read|let|local|declare|typeset|export|unset|getopts|mapfile|readarray)\b[^;&|\n]*"
-                     rf"(?<![\w$\-]){n}\b", code):
-            listed = None
-        loops.append((name, listed, depth))
+        loops.append([name, listed, depth, at])
+    # A word that is a loop's name (read n, printf -v n, an inner for n) or sets it (n=13,
+    # n+=1, n++, ${n:=13}) may change it before a ready in that loop, which then can't read it.
+    for loop in loops:
+        n = re.escape(loop[0])
+        if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))
+               and not (at == loop[3] and word == loop[0] and words.index(word) == lead) for word in words):
+            loop[1] = None
     depth, cases = depth - bool(words[:1] and words[0] in CLOSES), cases - (words[:1] == ["esac"])
     loops = [loop for loop in loops if loop[2] <= depth]
     command = words[lead] if lead < len(words) else None
@@ -275,7 +277,7 @@ for at in range(0, len(pieces), 2):
                                    "name it with `-R <owner>/<repo>`")
             # A literal loop's ready runs once per word, as `for n in 12 13; do gh pr ready $n; done`.
             runs, bound = [args], set()
-            for name, listed, _ in reversed(loops):  # the innermost loop's binding of a name wins
+            for name, listed, *_ in reversed(loops):  # the innermost loop's binding of a name wins
                 if name in bound:
                     continue
                 bound.add(name)
@@ -355,8 +357,8 @@ def targets(kind, args, cwd):
         # pr ready 12 -R o/r`, is checked in the session's own checkout when that's a clone of
         # the PR's repo: the gate needs only its git objects and verdict store.
         session = payload.get("cwd") or os.getcwd()
-        inside = lambda path: subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path,
-                                             capture_output=True).returncode == 0
+        inside = lambda path: subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True,
+                                             text=True).stdout.strip() == "true"  # a bare repo prints false
         named = bool(repo or os.environ.get("GH_REPO"))
         if named and not inside(cwd) and cwd != session and inside(session) and same_repo(origin(session), home):
             cwd = session
