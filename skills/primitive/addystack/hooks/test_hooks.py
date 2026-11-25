@@ -371,6 +371,199 @@ class ChildFastModeOff(unittest.TestCase):
                                    text=True, check=True, env=self.env)
 
 
+FAKE_WATCH_GH = r"""#!/usr/bin/env python3
+import json, os, sys
+s = json.load(open(os.environ["FAKE_GH"]))
+a = sys.argv[1:]
+open(os.environ["FAKE_GH"] + ".calls", "a").write(" ".join(a) + "\n")
+if s.get("broken"):
+    sys.exit("gh: network down")
+if a[:2] == ["pr", "view"]:
+    print(json.dumps(s["pr"]))
+elif a[:2] == ["api", "user"]:
+    print(s["me"])
+else:
+    sys.exit(1)
+"""
+
+
+class UnwatchGate(unittest.TestCase):
+    """unwatch-gate.py, replaying the unwatch of a work repo's #6226 at hand-back on
+    Nov 25, 2026, while two review requests were pending, with gh faked."""
+    HOOK = "unwatch-gate.py"
+    URL = "https://github.com/acme/app/pull/6226"
+    # The call as the agent made it (transcript acdfd830), the repo replaced.
+    CALL = {"url": URL}
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir)
+        bin_dir = os.path.join(self.dir, "bin")
+        os.makedirs(bin_dir)
+        pathlib.Path(bin_dir, "gh").write_text(FAKE_WATCH_GH)
+        os.chmod(os.path.join(bin_dir, "gh"), 0o755)
+        outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
+        self.gh = os.path.join(self.dir, "scenario.json")
+        self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=self.gh,
+                        T3_STATE_DB="/nonexistent")
+        self.scenario()
+
+    def scenario(self, state="OPEN", draft=False, author="author", **extra):
+        pathlib.Path(self.gh).write_text(json.dumps({"me": "author", **extra, "pr": {
+            "number": 6226, "url": self.URL, "state": state, "isDraft": draft, "author": {"login": author}}}))
+
+    def reason(self, tool_input=CALL, said=("a",), env=None):
+        """The deny reason for the call after the transcript said, or None when it passes."""
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            transcript.write("".join(json.dumps(claude_said(entry) if isinstance(entry, str) else entry) + "\n"
+                                     for entry in said))
+            transcript.flush()
+            payload = {"tool_name": "mcp__t3-code__unwatch_pull_request", "tool_input": tool_input,
+                       "transcript_path": transcript.name, "session_id": "s"}
+            out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env={**self.env, **(env or {})},
+                                 capture_output=True, text=True, check=True).stdout
+        if not out:
+            return None
+        decision = json.loads(out)["hookSpecificOutput"]
+        self.assertEqual(decision["permissionDecision"], "deny")
+        return decision["permissionDecisionReason"]
+
+    def offer(self, text):
+        return claude_wrote("🟡 **Stop watching #6226?**\n\n" + block({"state": "stop", "needs": [], "options": [
+            {"key": "a", "class": "routine", "text": text}]}))
+
+    def test_the_hand_back_unwatch_of_an_open_ready_pr_is_denied(self):
+        reason = self.reason()
+        self.assertIn("#6226 is open and ready for review", reason)
+        # T3 can't show a watch's mode, so the denial asks for the re-watch whatever it is.
+        self.assertIn('call `watch_pull_request` with `until: "checks"` before ending the turn', reason)
+        self.assertNotIn("only when it watches until merged", reason)
+
+    def test_a_pr_that_merged_closed_or_is_a_draft_passes(self):
+        for state, draft in (("MERGED", False), ("CLOSED", False), ("OPEN", True)):
+            with self.subTest(state=state, draft=draft):
+                self.scenario(state=state, draft=draft)
+                self.assertIsNone(self.reason())
+
+    def test_another_authors_pr_passes(self):
+        self.scenario(author="teammate")
+        self.assertIsNone(self.reason())
+
+    def test_a_typed_request_to_stop_watching_passes(self):
+        for prompt in ("stop watching it", "unwatch #6226", "ok, unwatch https://github.com/acme/app/pull/6226",
+                       "no need to watch it anymore", "don't babysit it", "please stop watching #6226 and #6215",
+                       "unwatch https://github.com/Acme/App/pull/6226", "unwatch PR #6226",
+                       "can you stop watching #6226?", "could you please unwatch PRs #6226 and #6215"):
+            with self.subTest(prompt=prompt):
+                self.assertIsNone(self.reason(said=(prompt,)))
+
+    def test_a_refusal_or_another_request_is_denied(self):
+        for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
+                       # A question or complaint about the hand-back unwatch, which the go once read as a request.
+                       "why did you unwatch #6226?", "is it safe to unwatch it", "should you stop watching it?",
+                       "you unwatch PRs too early, never do that", "unwatch it once it merges", "unwatch it?",
+                       "can you stop watching #6215?",
+                       # A request for another PR.
+                       "don’t unwatch it", "the unwatch on #6226 was a bug", "re-check the unwatch-gate fix",
+                       "stop watching #6215", "unwatch 6215", "unwatch " + "x" * 200,
+                       # The same number in another repo.
+                       "unwatch https://github.com/other/repo/pull/6226",
+                       "stop watching https://github.com/acme/web/pull/6226",
+                       "unwatch https://github.com/pull/6226", "unwatch HTTPS://github.com/other/repo/pull/6226"):
+            with self.subTest(prompt=prompt):
+                self.assertIsNotNone(self.reason(said=(prompt,)))
+
+    def test_a_key_passes_only_when_its_option_asks_to_stop_watching(self):
+        self.assertIsNone(self.reason(said=("fix it", self.offer("stop watching #6226"), "a")))
+        self.assertIsNotNone(self.reason(said=("fix it", self.offer("hand the thread back"), "a")))
+        self.assertIsNotNone(self.reason(said=("fix it", self.offer("stop watching #6226"), "b")))
+
+    def test_number_and_repository_name_the_pr(self):
+        self.assertIsNotNone(self.reason({"number": 6226, "repository": "acme/app"}))
+        self.assertIn("#6226 is open", self.reason({"url": "HTTPS://github.com/acme/app/pull/6226"}))
+        calls = pathlib.Path(self.gh + ".calls").read_text()
+        self.assertIn("pr view 6226 -R github.com/acme/app", calls)
+
+    def test_it_fails_closed(self):
+        self.assertIn("names no PR", self.reason({}))
+        self.assertIn("names no PR", self.reason({"number": 6226}))
+        self.scenario(broken=True)
+        self.assertIn("couldn't read the PR's state (gh: network down)", self.reason())
+
+    def test_a_delegated_child_passes(self):
+        db = state_db(self.dir, "thread:delegated-task:abc", "Mode: planning autonomous, trust draft\n\nFix it.")
+        self.assertIsNone(self.reason(env={"T3_STATE_DB": db}))
+        self.assertFalse(os.path.exists(self.gh + ".calls"))
+
+    def test_dry_run_prints_the_verdict(self):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl") as transcript:
+            transcript.write(json.dumps(claude_said("a")) + "\n")
+            transcript.flush()
+            run = subprocess.run([sys.executable, str(HOOKS / self.HOOK), "--dry-run", self.URL, "--transcript",
+                                  transcript.name], env=self.env, capture_output=True, text=True)
+        self.assertEqual(run.returncode, 1)
+        self.assertTrue(run.stdout.endswith("would deny\n"), run.stdout)
+
+
+class WatchReminder(unittest.TestCase):
+    """watch-reminder.py, replaying the review request on a work repo's #6215 on Nov 25,
+    2026, after which the agent ended its turn with no watch."""
+    HOOK = "watch-reminder.py"
+    ENV = {"T3_STATE_DB": "/nonexistent"}
+
+    def remind(self, tool, tool_input, env=None):
+        return run_hook(self.HOOK, {"tool_name": tool, "tool_input": tool_input, "session_id": "s"},
+                        env={**self.ENV, **(env or {})})
+
+    def test_marking_ready_or_requesting_reviews_reminds(self):
+        for tool, tool_input in (
+                ("mcp__t3-code__pull_request_update", {"number": 6215, "requestReviewers": ["first-reviewer", "second-reviewer"]}),
+                ("mcp__t3-code__pull_request_update", {"ready": True}),
+                ("mcp__t3-code__pull_request_create", {"title": "t", "body": "b"}),
+                ("Bash", {"command": "gh pr ready 6215"}),
+                ("Bash", {"command": "cd ~/app && gh pr edit 6215 --add-reviewer first-reviewer,second-reviewer"}),
+                ("Bash", {"command": "gh pr create --title t --body b"}),
+                ("Bash", {"command": "gh pr create --fill --draft=false"}),
+                ("Bash", {"command": "gh stack submit --open"}),
+                # T3 ends a watch when its PR closes, so reopening one starts the wait again.
+                ("mcp__t3-code__pull_request_update", {"number": 6092, "state": "open"}),
+                ("Bash", {"command": "gh pr reopen 6092"})):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                reminder = self.remind(tool, tool_input)
+                self.assertIn('`until: "checks"`', reminder)
+                # The call alone can't tell a draft, another author's PR, or a stack's several PRs.
+                self.assertIn("each one that is open, ready (not a draft), and the user's", reminder)
+
+    def test_other_calls_add_nothing(self):
+        for tool, tool_input in (
+                ("mcp__t3-code__pull_request_update", {"ready": False}),
+                ("mcp__t3-code__pull_request_update", {"title": "t"}),
+                ("mcp__t3-code__pull_request_update", {"state": "closed"}),
+                ("Bash", {"command": "gh pr close 6092"}),
+                ("mcp__t3-code__pull_request_create", {"title": "t", "body": "b", "draft": True}),
+                ("Bash", {"command": "gh pr ready 6215 --undo"}),
+                ("Bash", {"command": "gh pr create --draft --title t"}),
+                ("Bash", {"command": "gh pr create -d --title t"}),
+                ("Bash", {"command": "gh pr edit 6215 --title t; echo --add-reviewer"}),
+                ("Bash", {"command": "gh stack submit"}),
+                ("Bash", {"command": 1}),
+                ("Read", {"file_path": "/tmp/x"})):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertEqual(self.remind(tool, tool_input), "")
+
+    def test_a_delegated_child_gets_no_reminder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db = state_db(folder, "thread:delegated-task:abc", "Fix it.")
+            self.assertEqual(self.remind("Bash", {"command": "gh pr ready 6215"}, env={"T3_STATE_DB": db}), "")
+
+    def test_input_it_doesnt_expect_adds_nothing(self):
+        for payload in ("not json", "[]", json.dumps({"tool_name": "Bash", "tool_input": []})):
+            with self.subTest(payload=payload):
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=payload, capture_output=True, text=True,
+                                     env={**os.environ, **self.ENV})
+                self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+
 class CompileClean(unittest.TestCase):
     def test_every_hook_compiles_without_warnings(self):
         # A SyntaxWarning prints on every tool call today, and the escape it warns about

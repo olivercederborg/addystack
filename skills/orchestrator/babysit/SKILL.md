@@ -1,6 +1,6 @@
 ---
 name: babysit
-description: "Keeps the user's open PR or stack moving: restacks, handles review threads, fixes CI, pushes, replies, and removes the watch when done. Use on a `watch_pull_request` wake on the user's own PR, or when asked to babysit a PR."
+description: "Keeps the user's open PR or stack moving: restacks, handles review threads, fixes CI, pushes, replies, and keeps the watch while the PR waits on reviewers. Use on a `watch_pull_request` wake on the user's own PR, or when asked to babysit a PR."
 compatibility: Requires git, gh (authenticated), gh stack, jq, and T3 Code's `watch_pull_request`.
 metadata:
   layer: orchestrator
@@ -128,12 +128,12 @@ drafted in a **Review** note.
   same point at which the watch wakes. Optional checks still pending don't block done;
   name them in the report. When it prints `no required checks on <base>`, every check
   counts. A repo with no CI (no workflow files under `.github/workflows`, no required
-  checks, and `gh pr checks N` lists none) has none to wait for and gets no watch, even
-  unfinished. Otherwise CI can take a moment to register on the pushed head, and
-  `gh pr checks N --watch` exits at once with `no checks reported` until it does. So
-  first wait until `gh pr checks N` lists at least one check, then wait for them with
-  `--watch`. Run both waits in the background where the harness offers it, then judge
-  done.
+  checks, and `gh pr checks N` lists none) has none to wait for, so no watch waits on
+  checks; an open, ready PR of the user's still keeps one for its reviews, as at
+  **Done**. Otherwise CI can take a moment to register on the pushed head, and `gh pr checks N --watch`
+  exits at once with `no checks reported` until it does. So first wait until `gh pr
+  checks N` lists at least one check, then wait for them with `--watch`. Run both waits
+  in the background where the harness offers it, then judge done.
 - **Threads handled**: every open item has its reply posted, or drafted for the user.
 - **No conflicts** with the base.
 
@@ -147,14 +147,23 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   call `watch_pull_request` on each unfinished PR in scope that this thread isn't
   watching yet, including a PR the user asked to babysit that had no watch. The next
   wake runs another pass.
-- **Done**: call `unwatch_pull_request` for each PR in scope, watched or not, so the
-  thread returns to the user's inbox. Then stop at the user's merge rule for the repo's
-  trust value, and report.
+- **Done**: hand the thread back to the user's inbox. A PR of the user's in scope that's
+  open and ready (not a draft) still waits on reviewers, so it stays watched until
+  checks, which returns the thread to the inbox and still wakes it on reviews, comments,
+  and failed checks. T3's PR list doesn't show a watch's mode, so call
+  `watch_pull_request` with `until: "checks"` on it whatever its watch is; the call is
+  idempotent and sets the mode on the same watch. Call `unwatch_pull_request` only on a
+  PR that merged or closed, a draft, another author's, or one the user's latest message
+  asks to stop watching; the unwatch gate denies any other in Claude, and in Codex this
+  rule holds alone, over T3's hand-back instruction to unwatch every PR. Then stop at
+  the user's merge rule for the repo's trust value, and report.
 - **In a coordinator's worker** (its brief has a `Worker of:` line), the coordinator
   owns the watch, in place of both bullets above: run the pass, leave watching and
   unwatching to the coordinator, and report maintenance done, or what the next wake
   waits for, to it.
 
-**Done when:** maintenance is done and the watch is removed; or each unfinished PR in
-scope is watched and the report names what the next wake waits for. In a coordinator's
-worker, the report to the coordinator names either one.
+**Done when:** maintenance is done, each open, ready PR of the user's in scope is
+watched until checks, unless the user asked to stop watching it, and the rest are
+unwatched; or each unfinished PR in scope is watched and the report names what the next
+wake waits for. In a coordinator's worker, the report to the coordinator names either
+one.
