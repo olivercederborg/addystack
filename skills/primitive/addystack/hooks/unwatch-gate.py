@@ -20,9 +20,9 @@ own: the thread it reports to keeps the user's. A go is the user's own latest pr
 its key picks: at most 200 characters, and the whole text a request to stop watching
 (unwatch, stop watching, don't watch) with its PRs, naming this one or none, as
 push-gate.py reads a push go; a URL names it on its host, owner, repo, and number.
-"stop watching #6226" or "don't watch it" is one, and "why did you unwatch it?",
-"don’t unwatch it", or "the unwatch was a bug" isn't. Fails closed:
-when a check can't run, such as `gh` failing or a call that names no PR, the unwatch is
+"stop watching #6226", "can you unwatch PR #6226?", or "don't watch it" is one, and
+"why did you unwatch it?", "don’t unwatch it", or "the unwatch was a bug" isn't. Fails
+closed: when a check can't run, such as `gh` failing or a call that names no PR, the unwatch is
 denied, which leaves a watch on and costs a wake at most.
 
 `unwatch-gate.py --dry-run '<PR url>' [--transcript PATH] [--session ID]` runs the same
@@ -45,9 +45,11 @@ tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), 
 # that mentions unwatching ("why did you unwatch #6226?", "the unwatch was a bug") isn't one.
 import merge_go  # noqa: E402
 PR = r"(?:#\d+|https?://\S+/pull/\d+)"
-GO = re.compile(rf"{merge_go.OPENER}(?:un-?watch|stop (?:watching|babysitting)|(?:no need to|don't|do not) (?:keep )?(?:watch|babysit)(?:ing)?)"
-                rf"(?:\s+(?:it|them|both|this(?: pr)?|the prs?|{PR}(?:(?:\s*,\s*|,?\s+(?:and|&)\s+){PR})*))?"
-                r"(?:\s+(?:any ?more|now|for now))?(?:,?\s+please)?[.!]?", re.I)
+STOP = (r"(?:un-?watch|stop (?:watching|babysitting)|(?:no need to|don't|do not) (?:keep )?(?:watch|babysit)(?:ing)?)"
+        rf"(?:\s+(?:it|them|both|this(?: pr)?|the prs?|(?:prs?\s+)?{PR}(?:(?:\s*,\s*|,?\s+(?:and|&)\s+){PR})*))?"
+        r"(?:\s+(?:any ?more|now|for now))?(?:,?\s+please)?")
+# A question only as a request, "can you stop watching #6226?", as merge_go's ASK reads one.
+GO = re.compile(rf"{merge_go.OPENER}(?:{STOP}[.!]?|{merge_go.ASK}{STOP}\??)", re.I)
 ASK = ('end the turn with the watch on: a watch runs `until: "checks"` unless set to `"merged"`, so the thread '
        "returns to the user's inbox once checks finish and still wakes on reviews, comments, and failed checks; "
        'call `watch_pull_request` with `until: "checks"` only when it watches until merged')

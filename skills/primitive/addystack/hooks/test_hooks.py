@@ -450,7 +450,8 @@ class UnwatchGate(unittest.TestCase):
     def test_a_typed_request_to_stop_watching_passes(self):
         for prompt in ("stop watching it", "unwatch #6226", "ok, unwatch https://github.com/acme/app/pull/6226",
                        "no need to watch it anymore", "don't babysit it", "please stop watching #6226 and #6215",
-                       "unwatch https://github.com/Acme/App/pull/6226"):
+                       "unwatch https://github.com/Acme/App/pull/6226", "unwatch PR #6226",
+                       "can you stop watching #6226?", "could you please unwatch PRs #6226 and #6215"):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.reason(said=(prompt,)))
 
@@ -458,7 +459,8 @@ class UnwatchGate(unittest.TestCase):
         for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
                        # A question or complaint about the hand-back unwatch, which the go once read as a request.
                        "why did you unwatch #6226?", "is it safe to unwatch it", "should you stop watching it?",
-                       "you unwatch PRs too early, never do that", "unwatch it once it merges",
+                       "you unwatch PRs too early, never do that", "unwatch it once it merges", "unwatch it?",
+                       "can you stop watching #6215?",
                        # A request for another PR.
                        "don’t unwatch it", "the unwatch on #6226 was a bug", "re-check the unwatch-gate fix",
                        "stop watching #6215", "unwatch 6215", "unwatch " + "x" * 200,
