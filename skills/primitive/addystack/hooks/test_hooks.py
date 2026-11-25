@@ -488,6 +488,56 @@ class UnwatchGate(unittest.TestCase):
         self.assertTrue(run.stdout.endswith("would deny\n"), run.stdout)
 
 
+class WatchReminder(unittest.TestCase):
+    """watch-reminder.py, replaying the review request on a work repo's #6215 on Nov 25,
+    2026, after which the agent ended its turn with no watch."""
+    HOOK = "watch-reminder.py"
+    ENV = {"T3_STATE_DB": "/nonexistent"}
+
+    def remind(self, tool, tool_input, env=None):
+        return run_hook(self.HOOK, {"tool_name": tool, "tool_input": tool_input, "session_id": "s"},
+                        env={**self.ENV, **(env or {})})
+
+    def test_marking_ready_or_requesting_reviews_reminds(self):
+        for tool, tool_input in (
+                ("mcp__t3-code__pull_request_update", {"number": 6215, "requestReviewers": ["first-reviewer", "second-reviewer"]}),
+                ("mcp__t3-code__pull_request_update", {"ready": True}),
+                ("mcp__t3-code__pull_request_create", {"title": "t", "body": "b"}),
+                ("Bash", {"command": "gh pr ready 6215"}),
+                ("Bash", {"command": "cd ~/app && gh pr edit 6215 --add-reviewer first-reviewer,second-reviewer"}),
+                ("Bash", {"command": "gh pr create --title t --body b"}),
+                ("Bash", {"command": "gh stack submit --open"})):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertIn('`until: "checks"`', self.remind(tool, tool_input))
+
+    def test_other_calls_add_nothing(self):
+        for tool, tool_input in (
+                ("mcp__t3-code__pull_request_update", {"ready": False}),
+                ("mcp__t3-code__pull_request_update", {"title": "t"}),
+                ("mcp__t3-code__pull_request_create", {"title": "t", "body": "b", "draft": True}),
+                ("Bash", {"command": "gh pr ready 6215 --undo"}),
+                ("Bash", {"command": "gh pr create --draft --title t"}),
+                ("Bash", {"command": "gh pr create -d --title t"}),
+                ("Bash", {"command": "gh pr edit 6215 --title t; echo --add-reviewer"}),
+                ("Bash", {"command": "gh stack submit"}),
+                ("Bash", {"command": 1}),
+                ("Read", {"file_path": "/tmp/x"})):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertEqual(self.remind(tool, tool_input), "")
+
+    def test_a_delegated_child_gets_no_reminder(self):
+        with tempfile.TemporaryDirectory() as folder:
+            db = state_db(folder, "thread:delegated-task:abc", "Fix it.")
+            self.assertEqual(self.remind("Bash", {"command": "gh pr ready 6215"}, env={"T3_STATE_DB": db}), "")
+
+    def test_input_it_doesnt_expect_adds_nothing(self):
+        for payload in ("not json", "[]", json.dumps({"tool_name": "Bash", "tool_input": []})):
+            with self.subTest(payload=payload):
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=payload, capture_output=True, text=True,
+                                     env={**os.environ, **self.ENV})
+                self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+
 class CompileClean(unittest.TestCase):
     def test_every_hook_compiles_without_warnings(self):
         # A SyntaxWarning prints on every tool call today, and the escape it warns about
