@@ -883,7 +883,9 @@ class CleanestAskImplementation(CleanestAskCase):
         for cls in ("routine", "stop:post", "stop:prod", "stop:credential"):
             with self.subTest(cls=cls):
                 self.assertEqual(self.stop((self.ASK, self.card(classes=(cls, "decision")))), [])
-        for reply in (self.card(kinds=("do",)), self.card("done"), self.card("running"), "No turn block here."):
+        # A stop with a need and no options, as on 4 Mac cards that week.
+        for reply in (self.card(classes=()), self.card(kinds=("do",)), self.card("done"), self.card("running"),
+                      "No turn block here."):
             with self.subTest(reply=reply):
                 self.assertEqual(self.stop((self.ASK, reply)), [])
         self.assertEqual(self.log(), [])

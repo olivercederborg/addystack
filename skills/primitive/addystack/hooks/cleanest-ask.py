@@ -214,8 +214,8 @@ def decide(payload, scope):
         raise Skip(f"the reply is {turn.state}")
     if not any(need.kind in ("review", "decide") for need in turn.needs):
         raise Skip("no review or decide need")
-    if scope == IMPLEMENTATION and turn.recommended.cls not in IMPLEMENTATION_CLASSES:
-        raise Skip(f"option a is {turn.recommended.cls}")
+    if scope == IMPLEMENTATION and (turn.recommended is None or turn.recommended.cls not in IMPLEMENTATION_CLASSES):
+        raise Skip(f"option a is {turn.recommended.cls}" if turn.recommended else "no option a")
     session = payload.get("session_id")
     thread = scoped_thread(session, scope)
     try:
