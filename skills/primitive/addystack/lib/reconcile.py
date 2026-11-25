@@ -97,8 +97,10 @@ def run(resolved: Resolved) -> List[Change]:
     for change in changes:
         if change.kind == "agent" and not change.left:
             _link(change.target, agent_source())
+        elif change.kind == "command" and not change.left and change.source:
+            _link(change.target, change.source)
         elif change.kind == "command" and not change.left:
-            _link(change.target, change.source) if change.source else os.unlink(change.target)
+            os.unlink(change.target)
     return changes
 
 
