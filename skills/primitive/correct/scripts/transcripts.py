@@ -363,6 +363,7 @@ def final_reply(path):
     text = "\n".join(part for part in reversed(parts) if part)
     return text if text.strip() else None
 
+
 def prompts(path, strict=False):
     """Each prompt in the transcript at path, oldest first, as exchanges() reads it."""
     return [exchange.prompt for exchange in exchanges(path, strict)]
