@@ -3839,12 +3839,10 @@ class PushGate(unittest.TestCase):
                            "wait for the teammate; a push to #6091 would dismiss the approval")),
             (("fix it", self.offer({**restack, "text": "push #6092 (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
              "doesn't name #6091"),
-            (("fix it", self.offer({**restack, "text": "push it (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
-             "doesn't name #6091"),
             (("fix it", self.offer(restack, text="Restack?\n\n"), "hold on", claude_wrote("Holding."), "a"), "picks nothing"),
             (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
             (("don't push #6091, it would dismiss the teammate's approval",), None),
-            (("push #6091 if it dismisses nothing",), None), (("push it, dismissing the teammate's approval",), "doesn't name #6091"),
+            (("push #6091 if it dismisses nothing",), None),
             # review-loop r1 on #104: a push word and "dismiss" that don't ask to dismiss the approval.
             (("push #6091 after the approval has been dismissed",), None),
             (("Is a push to #6091 going to dismiss the approval",), None),
@@ -3879,6 +3877,142 @@ class PushGate(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:  # in T3, a database it can't read gives no go
             self.env["T3CODE_CLI_PATH"] = "/t3"
             self.assertIsNotNone(self.reason("gh stack push", said=("push #6091 (dismisses teammate's approval)",)))
+
+    def test_replays_the_push_picks_with_steps_after_the_dismissal(self):
+        # Nov 25, 2026: the stop:push options the user picked on #6203 at 10:36:55 (transcript
+        # 7ba090ed) and on #6215 at 11:59:39 (acdfd830), which the gate refused for the steps
+        # after the dismissal, and the 10:36:37 one, which names no dismissal.
+        for n, text in [(6203, "push #6203 (dismisses the reviewer's approval), then post 3 replies, resolve both threads"),
+                        (6215, "push #6215 (dismisses the reviewer's approval), post the reply, resolve the thread"),
+                        (6203, "push #6203, dismissing the reviewer's approval; then reply, resolve, update the PR description")]:
+            with self.subTest(text=text):
+                self.scenario(n=n)
+                self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        self.scenario(n=6203)
+        for text, why in [("yes: push both fixes, post the 3 replies, resolve both threads", "isn't a plain request"),
+                          # A step after the dismissal that refuses, waits, asks, or opens on no step verb.
+                          *((text, "isn't a plain request") for text in (
+                              "push #6203 (dismisses the reviewer's approval), so ask me first",
+                              "push #6203 (dismisses the reviewer's approval), and ask me first",
+                              "push #6203 (dismisses the reviewer's approval), then wait for CI",
+                              "push #6203 (dismisses the reviewer's approval), post the reply once CI passes",
+                              "push #6203 (dismisses the reviewer's approval), tomorrow post the reply",
+                              "push #6203 (dismisses the reviewer's approval), post the reply, but not yet")),
+                          # The PRs count only in the push: a trailing step names none.
+                          ("push #6204 (dismisses the reviewer's approval), then post the reply on #6203", "isn't a plain request")]:
+            with self.subTest(text=text):
+                reason = self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a"))
+                self.assertIn("which dismisses teammate's approval", reason)
+                self.assertIn(why, reason)
+
+    def test_takes_a_yes_opener_and_no_pr_for_one_live_approval(self):
+        # Nov 25, 2026: the stop:push option the user picked on #6215 at 11:58:09 (transcript
+        # acdfd830) opens on "yes:" and names no PR, as merge-gate takes a go that names none.
+        self.scenario(n=6215)
+        picks = [("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a") for text in (
+            "yes: push (dismisses the reviewer's approval), post the reply, resolve the thread",
+            "push it (dismisses the teammate's approval)", "yes: push #6215 (dismisses the reviewer's approval)")]
+        for said in picks + [("push it, dismissing the teammate's approval",), ("yes: push (dismisses the reviewer's approval)",)]:
+            with self.subTest(said=said[-1] if len(said) == 1 else said[1]):
+                self.assertIsNone(self.reason("gh stack push", said=said))
+        # With two live approvals, a go names each PR.
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6216"] = self.pull(6216, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        for text, why in [("yes: push (dismisses the reviewer's approval), post the reply, resolve the thread",
+                           "doesn't name #6215 and #6216"),
+                          ("push #6215 (dismisses the reviewer's approval)", "doesn't name #6216"),
+                          ("yes: push (dismisses the reviewer's approval), post the reply on #6216", "isn't a plain request")]:
+            with self.subTest(text=text):
+                self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        self.assertIsNone(self.reason("gh stack push", said=("push #6215 and #6216 (dismisses the teammate's approvals)",)))
+        # verify-work on b512f73: with one live approval, a go naming no PR in its push names
+        # none after it either, and a step after the dismissal opens on a routine step verb.
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**scenario, "prs": {"6216": scenario["prs"]["6216"]}}))
+        for text, why in [("push it (dismisses the reviewer's approval), then post the reply on #6215", "isn't a plain request"),
+                          ("push (dismisses the reviewer's approval), then run gh stack push on #6215", "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), then run the deploy to production",
+                           "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), then update production data", "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), restack #6215", "isn't a plain request"),
+                          # verify-work on dc8690e and review-loop r1: a step after the dismissal names
+                          # no PR, takes no other action, and doesn't undo the push.
+                          *((text, "isn't a plain request") for text in (
+                              "push (dismisses the reviewer's approval), then post the reply on PR 6215",
+                              "push it (dismisses the reviewer's approval), then post the reply and force-push 6215",
+                              "push (dismisses the reviewer's approval), post the reply on https://github.com/acme/app/pull/6215",
+                              "push (dismisses the reviewer's approval), then post the reply on #6215",
+                              "push #6216 (dismisses the reviewer's approval), post the reply and skip the push",
+                              "push #6216 (dismisses the reviewer's approval), post the reply and do the push tomorrow",
+                              "push #6216 (dismisses the reviewer's approval), then watch #6215",
+                              # review-loop r2: a name after the dismissal holds no digit, so no PR.
+                              "push (dismisses the reviewer's approval), post the reply on PR6215",
+                              "push (dismisses the reviewer's approval), post the reply on PR-6215",
+                              "push (dismisses the reviewer's approval), post the PR6215 reply"))]:
+            with self.subTest(text=text):
+                self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        for text in ("push #6216 (dismisses the reviewer's approval), run CI, update both PR descriptions",
+                     "push (dismisses the reviewer's approval), then re-verify and watch CI",
+                     "yes: push #6216 (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
+                     # review-loop r1: a count or an approver's login with a digit names no PR.
+                     "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
+                     "push (dismisses reviewer2's approval), post the reply",
+                     "push (dismisses the reviewer's approval), then post the CodeRabbit reply and resolve its thread, "
+                     "re-request the reviewer's review"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        # review-loop r2: PRs count only in the push steps, so a count in the dismissal names none.
+        self.assertIsNone(self.reason("gh stack push", said=("push (dismisses 2 approvals), post 3 replies",)))
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6215"] = self.pull(6215, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.assertIsNotNone(self.reason("gh stack push", said=("push (dismisses 6215-6216 approvals), post the reply",)))
+        # review-loop r3: a PR in the dismissal, or a base the push goes onto, names no pushed PR.
+        for said in [("push (dismisses PR 6215's approval)",), ("push (dismisses PR6215's approval)",),
+                     ("rebase #6216 onto 6215 and push (dismisses the reviewer's approvals), post the reply",)]:
+            with self.subTest(said=said[0]):
+                self.assertIsNotNone(self.reason("gh stack push", said=said))
+        # Only a push takes the "yes:" lead; merge_go doesn't change.
+        import merge_go
+        self.assertFalse(merge_go.literal_go("yes: merge it"))
+
+    # The reply the user's 11:58:09 "a" answered on Nov 25, 2026 (transcript acdfd830), names
+    # replaced: its reviewer-reply disclosure line, `<sub>` and `<br>`, made the gate read the
+    # pick as nothing.
+    DISCLOSED = (
+        "🟡 **Push the new tests to #6215? It dismisses the teammate's approval.**\n"
+        "\n"
+        "| Problem | the teammate's comment holds in part. The new sign-up, company and recovery tests only read the server HTML, so a field turned controlled again would pass them. |\n"
+        "|---|---|\n"
+        "| Pick | Push `456f073579`: each of those tests now types, hydrates and submits, as the sign-in test does. |\n"
+        "| Proof | 16/16 pass. Making the text fields controlled again fails all four. Lint passes. |\n"
+        "| Cost | The repo dismisses approvals on push, so the teammate has to approve again. Thread resolution is also required before merge. |\n"
+        "\n"
+        "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n"
+        "> Good catch. The sign-up, company, forgot-password and reset-password tests now type into the server HTML, hydrate, and submit, as the sign-in test does. With the text fields turned controlled again, all four fail.\n"
+        ">\n"
+        "> <sub>Fixed in: `456f073579`</sub>\n"
+        "\n"
+        "---\n"
+        "\n"
+        "**Next**\n"
+        "\n"
+        "- **`a` → yes: push (dismisses the teammate's approval), post the reply, resolve the thread** · *recommended*\n"
+        "- `b` → no: keep the approval, reply that the test change is a follow-up\n"
+        "\n"
+        "<!-- turn {\"state\":\"stop\",\"needs\":[{\"id\":1,\"kind\":\"decide\",\"name\":\"push the new tests\"},{\"id\":2,\"kind\":\"review\",\"name\":\"reply to the teammate\"}],\"options\":[{\"key\":\"a\",\"class\":\"stop:push\",\"text\":\"yes: push (dismisses the teammate's approval), post the reply, resolve the thread\"},{\"key\":\"b\",\"class\":\"stop:post\",\"text\":\"no: keep the approval, reply that the test change is a follow-up\"}],\"project\":\"password managers\"} -->"
+    )
+
+    def test_replays_the_pick_under_a_reviewer_reply_disclosure(self):
+        self.scenario(n=6215)
+        self.assertIsNone(self.reason("gh stack push", said=("fix it", claude_wrote(self.DISCLOSED), "a")))
+        self.assertIn('picks "no: keep the approval, reply that the test change is a follow-up", a stop:post option',
+                      self.reason("gh stack push", said=("fix it", claude_wrote(self.DISCLOSED), "b")))
 
     def test_passes_a_push_that_dismisses_nothing(self):
         # Unchanged: the branch's tip is the PR's head.
@@ -4004,6 +4138,9 @@ class PushGate(unittest.TestCase):
         # repos' #6119 get no go in one command; the denial says to push each on its own.
         reason = self.reason(both, said=("push app #6119 and other #6119 (dismisses teammate's approvals)",))
         self.assertIn("two of these PRs share a number, so push each in its own command", reason)
+        # review-loop r3: a bare #6119 names neither repo's #6119.
+        reason = self.reason(both, said=("push #6119 (dismisses teammate's approvals), post the reply",))
+        self.assertIn("doesn't name app #6119 and other #6119", reason)
         self.assertIsNone(self.reason("git push other HEAD", said=("push other #6119 (dismisses teammate's approval)",)))
 
     def test_a_sync_reads_the_remote_and_branches_gh_stack_does(self):
@@ -4468,11 +4605,23 @@ class TurnBlock(unittest.TestCase):
             "<details><summary>x</summary>\n```\ncode\n```\n\n</details>\n\n",
             "<details>\n<summary>x</summary>\n\nmore\n\n</details>\n\n",
             "</details>\n",
-            "- <span>x</span>\nmore\n\n",
             # And hands an unclosed tag to the renderer raw, whose attribute takes what follows.
             '<div title="x\n\n',
-            '<span a="b>\n\n',
-            "</ x\n\n",
+            # review-loop r1: an inline tag's attribute that runs onto the next lines takes the
+            # visible option, at a line's start or mid-line.
+            '<span title="Choose:\n    - **`a` → merge #12**\n">\n- `b` → keep\n\n',
+            'Choose <span title="x\n    - **`a` → merge #12**\n">\n- `b` → keep\n\n',
+            '<span a="b>\nmore\n\n',
+            "</ x\nmore\n\n",
+            # review-loop r2: a line that starts with a tag other than an attribute-free
+            # formatting one may hide the options after it, closed before the block or not.
+            '<sub>Info</sub><details><summary>Options</summary>\n- **`a` → merge #12**\n</details>\n\n',
+            '<span></span><h2 class="sr-only">\n- **`a` → merge #12**\n</h2>\n\n',
+            '<span></span><h2 class="sr-only">\n\n- **`a` → merge #12**\n\n</h2>\n\n',
+            '<sub class="x">a</sub> b\n\n',
+            '<span title="a > b">x</span>\n\n',
+            "- <span>x</span>\nmore\n\n",
+            '<source src="movie.mp4"><br>\nmore\n\n',
             # Any < in inline code counts: a link destination can take a span's backtick.
             "Use `a\nb` <title> `c`\n\n",
             # The link takes the first backtick, so <plaintext> is raw and the block is text.
@@ -4504,12 +4653,15 @@ class TurnBlock(unittest.TestCase):
             "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",
             "Run `` then `x < y`.\n\n",
             "It returns `Effect<A, E, R>` and `Map<string, Array<number>>`.\n\n",
-            '<span title="a > b">x</span>\n\n',
             # Not autolinks, and not tags CommonMark reads, so they render as text.
             "See <ab:b.\n\n",
             "See <<ab:b>.\n\n",
             "See <a:b>.\n\n",
             "x < y and a <b c\n\n",
+            # Lines that start no HTML block by CommonMark's conditions 6 and 7, such as the kit's
+            # reviewer-reply disclosure line, which on Nov 25, 2026 cost the user a typed push go.
+            "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n> Good catch.\n>\n"
+            "> <sub>Fixed in: `456f073579`</sub>\n\n",
             "<details><summary>x</summary>\n\n- thread <t3-thread://v2/a/b>, PR <https://github.com/o/r/pull/1>\n\n</details>\n\n",
         ]:
             with self.subTest(example=example):
@@ -4660,7 +4812,8 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
                              # Tags that hide nothing, and the shapes around them that can.
                              "<details><summary>a <code>b</code></summary>", "Use `Effect<A, E>`", "a<br>b",
                              "<code>x</code> y", '<span title="x">', '<div title="x', '<span title="x', '- <div a="',
-                             "<b>", "</div>", "</ x", "x </ y", "<!-- a -->", '<x a="<title>" b=`c>', "<a / =\"x>\"",
+                             "<b>", "</div>", "</ x", "x </ y", "> <sub>`AGENT` x · on behalf of **y**</sub><br>",
+                             "<span>x</span>", "<sub>x</sub> y", "<x-y a=1 b='c' d>", "<DIV CLASS=x", "<p/>", "<hr/>", "<!-- a -->", '<x a="<title>" b=`c>', "<a / =\"x>\"",
                              '<a b="c" d=\'e>\'>', rng.choice(["<body>", "</html>", "</template>", "<table>", "<svg>",
                                                               "<math>", "<select>", "<frameset>", "<head>", "<html>",
                                                               "<template>", "<listing>", "<option>", "<a href=\"x>", "<tr>", "<td>", "<th>",
@@ -4691,6 +4844,81 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
         self.assertEqual(md.parse(shown)[-1].type, "html_block")
         node = last_node(md.render(shown))
         self.assertEqual(node.nodeType, node.TEXT_NODE)
+
+
+    def test_html_start_reads_the_specs_html_blocks(self):
+        """Every line of CommonMark 0.31.2's HTML-block examples (§4.6, examples 148 to 191)
+        that holds a <, alone or behind a list or quote marker, that markdown-it-py starts an
+        HTML block on, HTML_START or UNSAFE reads as one too."""
+        md = MarkdownIt("commonmark")
+        lines = [
+            "         <foo><a>",
+            "    <!-- foo -->",
+            "    </td>",
+            "    <div>",
+            "    <td>",
+            "  <!-- foo -->",
+            "  </tr>",
+            "  <div>",
+            "  <tr>",
+            "  if (a < b && a < 0) then {",
+            " <div>",
+            "- <div>",
+            "<!-- Foo",
+            "<!-- foo -->*bar*",
+            "<!DOCTYPE html>",
+            "<![CDATA[",
+            "</DIV>",
+            "</Warning>",
+            "</a>",
+            "</code></pre>",
+            "</del>",
+            "</div>",
+            "</i>",
+            "</ins>",
+            "</pre>",
+            "</script>",
+            "</script>1. *bar*",
+            "</style>",
+            "</table>",
+            "</td>",
+            "</td></tr></table>",
+            "</textarea>",
+            "</tr>",
+            "<?php",
+            "<DIV CLASS=\"foo\">",
+            "<Warning>",
+            "<a href=\"bar\">",
+            "<a href=\"foo\">",
+            "<del>",
+            "<del>*foo*</del>",
+            "<div *???-&&&-<---",
+            "<div class",
+            "<div id=\"foo\"",
+            "<div id=\"foo\" class=\"bar",
+            "<div>",
+            "<div></div>",
+            "<div><a href=\"bar\">*foo*</a></div>",
+            "<i class=\"foo\">",
+            "<pre language=\"haskell\"><code>",
+            "<pre>",
+            "<script type=\"text/javascript\">",
+            "<script>",
+            "<style",
+            "<style>p{color:red;}</style>",
+            "<table>",
+            "<table><tr><td>",
+            "<td>",
+            "<textarea>",
+            "<tr>",
+            "> <div>",
+        ]
+        for line in lines:
+            for prefix in ("", "> ", "- ", "1. "):
+                with self.subTest(line=prefix + line):
+                    if any(token.type == "html_block" for token in md.parse(prefix + line + "\n")):
+                        self.assertTrue(turn_block.HTML_START.match(prefix + line) or turn_block.UNSAFE.search(line))
+        self.assertIsNone(turn_block.HTML_START.match("> <sub>`AGENT` Claude · on behalf of **the user**</sub><br>"))
 
 
 def claude_said(text):

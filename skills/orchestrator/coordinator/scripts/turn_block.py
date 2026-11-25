@@ -38,12 +38,14 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   `<template>`'s content. A `<details>` fold still open at the block shows the options
   above it collapsed, and inside a `<select>`, `<object>`, `<applet>`, `<marquee>`, `<svg>`,
   or `<math>` the parser may ignore the `</details>` that closes it.
-- A line that starts with HTML, past list and quote markers, and isn't followed by a blank
-  line: its HTML block runs to the next blank line, so the lines after it are raw HTML, not
-  fences or a block of their own. An autolink (`<t3-thread://…>`) starts no HTML block.
-- Such a line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
-  `<div title="x`: the HTML block hands it to the renderer raw, and what follows becomes
-  the tag's attribute.
+- A line that starts an HTML block, past list and quote markers, with no blank line after
+  it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
+  A block tag such as `<div` starts one, as does a whole tag alone on its line (CommonMark
+  0.31.2 §4.6). Any other line starting with a tag holds only attribute-free formatting
+  tags (PLAIN), such as `<sub>…</sub><br>`.
+- A line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
+  `<div title="x`, when it starts an HTML block or a line follows it: what follows
+  becomes the tag's attribute.
 Other tags, such as `<code>` in a fold's summary or `Option<T>` in inline code, are safe:
 CommonMark reads inline HTML only as a whole tag, which ends where HTML's tokenizer ends it.
 Known limit: an unsafe tag in a code span that does hold it, such as `<table>`, refuses
@@ -79,10 +81,24 @@ UNSAFE = re.compile(r"<(?:[!?]|(?:script|style|textarea|title|xmp|iframe|noembed
 OPENS_FOLD = re.compile(r"<details(?=[\t\f />]|$)", re.I)
 # A line that starts a `<details>` HTML block: raw HTML to its end, with no code spans in it.
 FOLD_LINE = re.compile(r" {0,3}</?details(?=[\t\f />]|$)", re.I)
-# A line that may start an HTML block: a <, past list and quote markers, that doesn't open a
-# URI autolink (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
-HTML_START = re.compile(r"[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*<"
-                        r"(?![A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>)[A-Za-z/]")
+# A line that starts an HTML block, past list and quote markers, by CommonMark 0.31.2 §4.6's
+# start condition 6, a block tag name (micromark's htmlBlockNames) then whitespace, the
+# line's end, > or />, or 7, one whole open or closing tag
+# with only whitespace after it. Whitespace is any \s, as markdown-it-py reads it, wider
+# than micromark's spaces and tabs. UNSAFE holds conditions 1 to 5.
+BLOCK_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|"
+               "div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|"
+               "li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|"
+               "tbody|td|tfoot|th|thead|title|tr|track|ul")
+ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^"'=<>`\x00-\x20]+|'[^']*'|"[^"]*"))?"""
+HTML_START = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?:/?(?:{BLOCK_NAMES})(?=\s|/?>|$)"
+                        rf"|(?:[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*\s*/?|/[A-Za-z][A-Za-z0-9-]*\s*)>\s*$)", re.I)
+# A line that starts with a tag, past list and quote markers, but not with a URI autolink
+# (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
+AUTOLINK = r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>"
+LEADS = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?!{AUTOLINK[1:]})[A-Za-z/]")
+# Inline tags that format text and hide none of it, such as the reviewer-reply disclosure's.
+PLAIN = re.compile(r"</?(?:sub|sup|br|wbr|b|i|em|strong|code|kbd|s|del|ins|mark|small)\s*/?>", re.I)
 TAG = re.compile(r"</?[A-Za-z]")
 SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")
@@ -179,9 +195,26 @@ def scan(lines):
     for at in range(top):
         line = lines[at]
         after = lines[at + 1] if at + 1 < len(lines) else ""
-        if not marks[at] and (UNSAFE.search(line) or HTML_START.match(line) and (after.strip(" \t") or not closed(line))):
+        starts, follows = HTML_START.match(line), after.strip(" \t")
+        # A tag left open at the line's end runs on, as an HTML block's raw HTML or as an
+        # inline tag whose attribute takes the paragraph's next line, and a line that starts
+        # with a tag other than PLAIN ones may hide what follows, as `<h2 class="sr-only">`.
+        if not marks[at] and (UNSAFE.search(line) or starts and follows or not closed(line) and (starts or follows)
+                              or LEADS.match(line) and not starts and not plain(line)):
             sure = False
     return marks, sure
+
+
+def plain(line):
+    """Whether each tag on line, past autolinks, is a PLAIN one with no attributes."""
+    at = 0
+    while (at := line.find("<", at)) >= 0:
+        link, tag = re.compile(AUTOLINK).match(line, at), TAG.match(line, at)
+        found = None if link or not tag else PLAIN.match(line, at)
+        if tag and not link and not found:
+            return False
+        at = (link or found).end() if link or found else at + 1
+    return True
 
 
 def tags(line):

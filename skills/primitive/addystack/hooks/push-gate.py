@@ -7,17 +7,15 @@ local tip differs from the PR's head, or a sync would rebase it: an unchanged br
 dismisses nothing. A reviewer's latest review is the last that isn't COMMENTED or
 pending, so an approval already dismissed, or followed by a change request, isn't live.
 The router lists "a push that would dismiss someone's approval" as a Stop, and the prose
-rule failed twice on Nov 24, 2026, both on a work repo's #6119: a delegated worker's
-`gh stack push` dismissed a teammate's 11:25 approval because its brief said "no
-approvals", and the coordinator ran `gh pr view 6119 --json reviews …; … gh stack push`
-as one command, so the check printed the 12:12 re-approval only after the push ran and
-dismissed it.
+rule failed twice on Nov 24, 2026, on a work repo's #6119; PushGate in test_hooks.py
+replays both.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
 option, in the reply it answers, or a typed request, either one at most 200 characters, a
 request whose whole text is a push verb (push, force-push, restack, rebase, sync, or
-submit) with its object, each PR (#N), and last the dismissal set off by "(", a comma, or
-"and" ("push #6119 (dismisses the … approval)"), with no refusal, condition, question, or
+submit) with its object and each PR (#N), or none for a lone approval, then the dismissal
+set off by "(", a comma, or "and" ("yes: push #6119 (dismisses the … approval)"), then only
+routine steps such as "post the reply" (AFTER), with no refusal, condition, question, or
 modal in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval", or
 "push #6091 once the approval is dismissed" isn't one. A pick of any other class, such as
 the coordinator's `stop:post` "push the cleanup, post the reply, re-request <reviewer> on
@@ -358,10 +356,23 @@ if not live:
 import merge_go
 STEP = (rf"(?:force-?push|push|restack|re-stack|rebase|sync|submit)(?:\s+(?:it|them|both|the (?:stack|branch)|{merge_go.REFS}))?"
         r"(?:\s+(?:onto|on top of)\s+`?[\w./-]+`?)?")
-WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:[\w.@-]+(?:'s)?,?\s+(?:and\s+)?){0,5}"
+# Whose approval: logins and words, a login may hold a digit (reviewer2) but no word is a PR
+# (PR 6215, pr6215, #6215), and a count is at most two digits ("2 approvals").
+WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:(?:(?!pr\W?\d)[A-Za-z@][\w.@-]*|\d{1,2})(?:'s)?,?\s+(?:and\s+)?){0,5}"
 DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
              rf"|(?:,\s*(?:it\s+|which\s+)?|,?\s+and\s+)dismiss(?:es|ing)?\s+{WHOSE}approvals?)")
-GO = re.compile(rf"{merge_go.OPENER}{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL}[.!]?", re.I)
+# Routine steps may follow the dismissal, each a verb and what it acts on, ending on a reply,
+# thread, comment, review, CI, or description, never a PR: "push #6203 (dismisses the
+# teammate's approval), then post 3 replies, resolve both threads", but not "…, post the reply
+# and skip the push", or "…, post the reply on #6216".
+NOUN = r"(?:repl(?:y|ies)|threads?|comments?|reviews?|ci|checks?|descriptions?)"
+NAME = r"[A-Za-z@.'_-]+"  # no digit, so no PR
+AFTER_STEP = (rf"(?:(?:post|reply|answer|resolve|comment|re-?request|re-?verify|verify|watch|re-?run|run|update)"
+              rf"(?:(?:\s+(?:the|both|all|its|their|this|that))?(?:\s+\d{{1,2}})?(?:\s+{NAME}){{0,2}}?\s+{NOUN})?"
+              rf"(?:\s+(?:on|to|in|for)\s+{NAME}(?:\s+{NOUN})?)?|re-?request\s+{NAME}(?:\s+review)?)")
+AFTER = rf"(?:\s*[,;]\s*(?:then\s+)?|,?\s+and\s+(?:then\s+)?){AFTER_STEP}"
+GO = re.compile(rf"(?:yes:\s*)?{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*){DISMISSAL}(?:{AFTER})*[.!]?",
+                re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
 REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
@@ -371,9 +382,11 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|neve
 
 
 def literal_go(text):
-    """Whether text is a short typed request to push that says it dismisses an approval."""
+    """The push steps of text, before its dismissal, when text is a short typed request to
+    push that says it dismisses an approval, else None."""
     text = text.strip().replace("’", "'")
-    return len(text) <= 200 and bool(GO.fullmatch(text)) and not REFUSAL.search(text)
+    found = len(text) <= 200 and not REFUSAL.search(text) and GO.fullmatch(text)
+    return found.group("push") if found else None
 
 
 def slug(pr):
@@ -387,13 +400,18 @@ def label(pr):
     return f"{slug(pr)[1]} #{pr['number']}" if len({slug(each) for each, *_ in live.values()}) > 1 else f"#{pr['number']}"
 
 
-def unnamed(text):
-    """The PRs of live that text doesn't name, as "#N" words: merge_go.names, held to a
-    text that names a PR, so "push it" names none."""
-    read, _ = merge_go.spans(text)
+def unnamed(pushed):
+    """The PRs of live that a go's push steps, pushed, don't name, as "#N" words:
+    merge_go.names. A push that names no PR, such as "push it", names the one PR with a
+    live approval, as merge-gate.py takes a go that names none, but not two. The steps
+    after it (AFTER), the dismissal (WHOSE), and a base it goes onto name no PR."""
+    pushed = re.sub(r"\s+(?:onto|on top of)\s+\S+", "", pushed)  # a base isn't pushed
+    read, _ = merge_go.spans(pushed)
     numbers = sorted({pr["number"] for pr, *_ in live.values()})
+    shared = [pr["number"] for pr, *_ in live.values()]  # a bare "#42" can't tell two repos' #42 apart
     missing = [label(pr) for pr, *_ in live.values()
-               if not read or not merge_go.names(text, pr["number"], *slug(pr), numbers)]
+               if not read and len(live) > 1 or not merge_go.names(pushed, pr["number"], *slug(pr), numbers)
+               or shared.count(pr["number"]) > 1 and not merge_go.REPO_NAMED.search(pushed)]
     return " and ".join(missing)
 
 
@@ -408,8 +426,9 @@ def user_go():
             return False, None
         prompt = found[-1].prompt if found else ""
         said = f'the user\'s "{prompt.strip()}"'
-        if literal_go(prompt):
-            missing = unnamed(prompt)
+        pushed = literal_go(prompt)
+        if pushed:
+            missing = unnamed(pushed)
             return (True, None) if not missing else (False, f"{said} doesn't name {missing}")
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
@@ -421,9 +440,10 @@ def user_go():
         picks = f'{said} picks "{option.text}", a {option.cls} option of your reply before it'
         if option.cls != "stop:push":
             return False, f"{picks}, and only a stop:push option allows a push that dismisses an approval"
-        if not literal_go(option.text):  # as a typed go: a push, the dismissal, and no refusal or condition
+        pushed = literal_go(option.text)  # as a typed go: a push, the dismissal, and no refusal or condition
+        if not pushed:
             return False, f"{picks}, which isn't a plain request to push that says it dismisses an approval"
-        missing = unnamed(option.text)
+        missing = unnamed(pushed)
         return (True, None) if not missing else (False, f"{picks}, which doesn't name {missing}")
     except Exception:
         return False, None
