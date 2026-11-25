@@ -577,11 +577,17 @@ def card(state="stop", kinds=("review",), classes=("stop:post", "routine")):
     return f"Here's the review.\n\n<!-- turn {json.dumps(block)} -->"
 
 
-class CleanestAsk(unittest.TestCase):
+# The option classes the implementation scope fires on: cleanest-ask.py IMPLEMENTATION_CLASSES.
+IMPLEMENTATION_CLASSES = ("decision", "stop:merge", "stop:push")
+
+
+class CleanestAskCase(unittest.TestCase):
     """cleanest-ask.py, on review-teammate-pr's card on a work repo's #6215 on Nov 25, 2026,
     after which the user typed "is this the cleanest, best and most idiomatic long-term
     solution?", as they did in 50 of 85 review threads they typed in that week."""
     HOOK = "cleanest-ask.py"
+    ARGS = ()
+    TITLE = "◎ #6215 · first-reviewer"
     THREAD = "mcp:launch:review6215"
     SESSION = "5f0c6a40-9d1e-4b1a-8c3e-2a7d9e0b6215"
     ASK = "Review https://github.com/acme/app/pull/6215"
@@ -604,11 +610,14 @@ class CleanestAsk(unittest.TestCase):
         self.env = {"T3_STATE_DB": self.db(), "T3CODE_CLI_PATH": str(cli), "T3CODE_THREAD_ID": self.THREAD,
                     "CLAUDE_CONFIG_DIR": str(self.dir / "claude"), "ADDYSTACK_STATE": str(self.dir / "state")}
 
-    def db(self, thread=THREAD, title="◎ #6215 · first-reviewer", first=ASK, first_by="user", agent_sent=(), lineage=None):
+    def db(self, thread=None, title=None, first=None, first_by="user", agent_sent=(), lineage=None):
         """T3's state database: thread owns SESSION, with this title, lineage, and first
         message, and each text in agent_sent sent into it by an agent."""
+        thread, title, first = thread or self.THREAD, title or self.TITLE, first or self.ASK
         key = repr((thread, title, first, first_by, agent_sent, lineage))
         path = self.dir / f"state-{hashlib.sha1(key.encode()).hexdigest()[:8]}.sqlite"
+        if path.exists():  # this test built it already
+            return str(path)
         with contextlib.closing(sqlite3.connect(path)) as db, db:
             db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, provider_thread_id text, payload_json text)")
             db.execute("create table orchestration_v2_projection_threads (thread_id text, title text, payload_json text)")
@@ -636,14 +645,21 @@ class CleanestAsk(unittest.TestCase):
         path.write_text("".join(json.dumps(line) + "\n" for line in lines))
         return str(path)
 
-    def stop(self, *turns, env=None, reply=None):
-        """Runs the hook at the end of the last turn; returns the CLI calls it made."""
+    def stop(self, *turns, env=None, reply=None, args=None):
+        """Runs the hook, once for each of args' argument lists (one run of ARGS by default),
+        at the end of the last turn; returns the CLI calls they made."""
         payload = {"hook_event_name": "Stop", "session_id": self.SESSION, "transcript_path": self.transcript(*turns),
                    "stop_hook_active": False, "last_assistant_message": reply or turns[-1][1]}
-        out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True, text=True,
-                             env={**os.environ, **self.env, **(env or {})})
-        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
+        for args in ((self.ARGS,) if args is None else args):
+            out = subprocess.run([str(HOOKS / self.HOOK), *args], input=json.dumps(payload), capture_output=True,
+                                 text=True, env={**os.environ, **self.env, **(env or {})})
+            self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
         return self.sent.read_text().splitlines() if self.sent.exists() else []
+
+    def fresh(self):
+        """Forgets every send and log row, for the next subtest."""
+        self.sent.unlink(missing_ok=True)
+        (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
 
     def set_run(self, run, status):
         """Gives T3's run for the hook's nth send this status, as T3 does once it starts or cancels it."""
@@ -661,13 +677,18 @@ class CleanestAsk(unittest.TestCase):
             latest[row.get("send") or at] = row
         return list(latest.values())
 
+
+class CleanestAsk(CleanestAskCase):
+    """The review scope, the `cleanest-ask` id."""
+
     def test_sends_once_on_a_card_that_stops_on_a_review_or_decide_need(self):
         for kinds in (("review",), ("decide",), ("do", "decide")):
             with self.subTest(kinds=kinds):
                 self.sent.unlink(missing_ok=True)
                 (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
                 self.assertEqual(self.stop((self.ASK, card(kinds=kinds))), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
-                self.assertEqual([(row["thread"], row["sent"]) for row in self.log()], [(self.THREAD, True)])
+                self.assertEqual([(row["thread"], row["sent"], row["scope"]) for row in self.log()],
+                                 [(self.THREAD, True, "review")])
 
     def test_sends_once_per_run(self):
         first = (self.ASK, card())
@@ -831,6 +852,126 @@ class CleanestAsk(unittest.TestCase):
                 selected = [entry.id for entry in hookset.select(config.resolve(user), "claude", "linux")]
                 self.assertEqual("cleanest-ask" in selected, on)
                 self.assertNotIn("cleanest-ask", [entry.id for entry in hookset.select(config.resolve(user), "codex", "linux")])
+
+
+class CleanestAskImplementation(CleanestAskCase):
+    """The implementation scope, the `cleanest-ask-impl` id: a coordinator thread's card on
+    Nov 24, 2026, after which the user typed "is this the cleanest, best and most idiomatic
+    long-term solution?", as they did on 47 of 1,168 stop cards in implementation and
+    coordinator threads that week."""
+    ARGS = ("--scope", "implementation")
+    THREAD = "mcp:launch:coord-effect"
+    TITLE = "◆ effect-native"
+    ASK = "Build the token store as its own client, then push a draft"
+    RESULT = "Delegated task node:delegated-task:w1 (token store) [completed]:\nPushed #6110."
+    SENT = "thread|send|--json|mcp:launch:coord-effect|/cleanest|"
+
+    def card(self, state="stop", kinds=("decide",), classes=("decision", "decision")):
+        return card(state, kinds, classes)
+
+    def test_sends_where_option_a_decides_merges_or_pushes(self):
+        for cls in IMPLEMENTATION_CLASSES:
+            with self.subTest(cls=cls):
+                self.fresh()
+                self.assertEqual(self.stop((self.ASK, self.card(classes=(cls, "decision")))), [self.SENT])
+                self.assertEqual([(row["thread"], row["sent"], row["scope"]) for row in self.log()],
+                                 [(self.THREAD, True, "implementation")])
+
+    def test_skips_a_card_whose_option_a_is_routine_a_post_or_another_stop(self):
+        for cls in ("routine", "stop:post", "stop:prod", "stop:credential"):
+            with self.subTest(cls=cls):
+                self.assertEqual(self.stop((self.ASK, self.card(classes=(cls, "decision")))), [])
+        for reply in (self.card(kinds=("do",)), self.card("done"), self.card("running"), "No turn block here."):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.stop((self.ASK, reply)), [])
+        self.assertEqual(self.log(), [])
+
+    def test_a_prompt_the_user_types_starts_a_new_run(self):
+        first = (self.ASK, self.card())
+        self.assertEqual(len(self.stop(first)), 1)
+        # A worker's result in the same run doesn't ask again, delivered or not.
+        self.assertEqual(len(self.stop(first, (self.RESULT, self.card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        self.set_run("run-1", "completed")
+        answered = [first, (self.COMMAND, self.card())]
+        self.assertEqual(len(self.stop(*answered)), 1)
+        self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest")
+        # The user's pick starts the next run, though no reply ended `done`.
+        self.assertEqual(len(self.stop(*answered, ("a", self.card()))), 2)
+        # Their own ask holds the run they typed it in, and their next prompt starts another.
+        asked = [*answered, ("a", self.card()), ("is this really necessary for the long term?", self.card())]
+        self.set_run("run-2", "completed")
+        self.assertEqual(len(self.stop(*asked)), 2)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        self.assertEqual(len(self.stop(*asked, ("ok, build it", self.card()))), 3)
+
+    def test_sends_on_the_card_after_a_workers_result_in_a_run_the_user_started(self):
+        # 18 of the 47 asked-on cards that week came right after a worker or child reported back.
+        env = {"T3_STATE_DB": self.db(agent_sent=(self.RESULT,))}
+        self.assertEqual(self.stop((self.ASK, self.card("running")), (self.RESULT, self.card()), env=env), [self.SENT])
+
+    def test_skips_a_run_no_prompt_the_user_typed_started(self):
+        tick = '<coordinator-tick project="effect-v4">\n- r12 due\n</coordinator-tick>'
+        scheduled = "Daily develop sync for the effect-v4 project."
+        env = {"T3_STATE_DB": self.db(first=scheduled, first_by="agent", agent_sent=(tick, self.RESULT))}
+        for turns in ([(scheduled, self.card("running")), (self.RESULT, self.card())],
+                      # The user's run ended `done`; a tick then started a worker.
+                      [(self.ASK, self.card("done")), (tick, self.card("running")), (self.RESULT, self.card())]):
+            with self.subTest(turns=turns):
+                self.assertEqual(self.stop(*turns, env=env), [])
+                self.assertEqual(self.log()[-1]["reason"], "no prompt the user typed started this run")
+
+    def test_skips_wakes_ticks_and_other_agents_messages(self):
+        wake = "Update on pull request #6110: a new review from CasperEngl."
+        tick = '<coordinator-tick project="effect-v4">\n- r12 due\n</coordinator-tick>'
+        report = "From the Platform lane (thread x): the fix is pushed."
+        env = {"T3_STATE_DB": self.db(agent_sent=(wake, tick, report))}
+        for prompt in (wake, tick, report):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.stop((self.ASK, self.card()), (prompt, self.card()), env=env), [])
+                self.assertEqual(self.log()[-1]["reason"],
+                                 "the latest prompt isn't the user's: a wake, a tick, or another agent's message")
+
+    def test_skips_review_threads_children_workers_and_workflow_steps(self):
+        worker = "Act as the implementation sub-agent.\n\nWorker of: t3-thread://v2/env/5ba1b6b8\nBuild it."
+        for name, env in (("review thread", {"T3_STATE_DB": self.db(title="◎ #6215 · first-reviewer")}),
+                          ("delegated child", {"T3_STATE_DB": self.db("thread:delegated-task:abc"),
+                                               "T3CODE_THREAD_ID": "thread:delegated-task:abc"}),
+                          ("coordinator's worker", {"T3_STATE_DB": self.db(first=worker, first_by="agent")}),
+                          ("workflow step", {"T3_STATE_DB": self.db("workflow:fefcbdb4", first_by="system",
+                                                                    lineage={"workflowStep": True}),
+                                             "T3CODE_THREAD_ID": "workflow:fefcbdb4"})):
+            with self.subTest(name):
+                self.assertEqual(self.stop((self.ASK, self.card()), env=env), [])
+        self.assertEqual(self.log(), [])
+
+    def test_both_ids_on_send_once_and_the_review_scope_keeps_its_rules(self):
+        both = ((), self.ARGS)
+        for title, thread_scope in (("◎ #6215 · first-reviewer", "review"), (self.TITLE, "implementation")):
+            with self.subTest(title=title):
+                self.fresh()
+                env = {"T3_STATE_DB": self.db(title=title)}
+                self.assertEqual(self.stop((self.ASK, self.card()), env=env, args=both), [self.SENT])
+                self.assertEqual([row["scope"] for row in self.log() if row["sent"]], [thread_scope])
+                # A second Stop in the same run: neither id sends again.
+                self.assertEqual(len(self.stop((self.ASK, self.card()), ("tighten it", self.card()), env=env,
+                                               args=both if thread_scope == "review" else ((),))), 1)
+        # In a review thread a typed prompt doesn't start a new run, and a post card still asks.
+        self.fresh()
+        env = {"T3_STATE_DB": self.db(title="◎ #6215 · first-reviewer")}
+        self.assertEqual(len(self.stop((self.ASK, self.card(classes=("stop:post",))), env=env, args=both)), 1)
+        self.set_run("run-1", "completed")
+        self.assertEqual(len(self.stop((self.ASK, self.card()), (self.COMMAND, self.card()), ("a", self.card()),
+                                       env=env, args=both)), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+
+    def test_dry_run_takes_the_scope(self):
+        run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), *self.ARGS, "--dry-run", "--transcript",
+                                             self.transcript(*turns), "--session", self.SESSION],
+                                            capture_output=True, text=True, env={**os.environ, **self.env}).stdout
+        self.assertEqual(run((self.ASK, self.card())), f"would send /cleanest to {self.THREAD}\n")
+        self.assertEqual(run((self.ASK, self.card(classes=("routine",)))), "skip: option a is routine\n")
+        self.assertFalse(self.sent.exists())
 
 
 class CompileClean(unittest.TestCase):
