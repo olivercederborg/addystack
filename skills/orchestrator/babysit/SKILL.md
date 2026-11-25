@@ -129,8 +129,8 @@ drafted in a **Review** note.
   name them in the report. When it prints `no required checks on <base>`, every check
   counts. A repo with no CI (no workflow files under `.github/workflows`, no required
   checks, and `gh pr checks N` lists none) has none to wait for, so no watch waits on
-  checks; an open, ready PR still keeps one for its reviews, as at **Done**. Otherwise
-  CI can take a moment to register on the pushed head, and `gh pr checks N --watch`
+  checks; an open, ready PR of the user's still keeps one for its reviews, as at
+  **Done**. Otherwise CI can take a moment to register on the pushed head, and `gh pr checks N --watch`
   exits at once with `no checks reported` until it does. So first wait until `gh pr
   checks N` lists at least one check, then wait for them with `--watch`. Run both waits
   in the background where the harness offers it, then judge done.
