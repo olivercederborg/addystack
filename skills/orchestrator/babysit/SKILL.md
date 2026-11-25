@@ -129,11 +129,11 @@ drafted in a **Review** note.
   name them in the report. When it prints `no required checks on <base>`, every check
   counts. A repo with no CI (no workflow files under `.github/workflows`, no required
   checks, and `gh pr checks N` lists none) has none to wait for, so no watch waits on
-  checks; an open, ready PR still keeps one for its reviews, as at **Done**. Otherwise CI can take a moment to register on the pushed head, and
-  `gh pr checks N --watch` exits at once with `no checks reported` until it does. So
-  first wait until `gh pr checks N` lists at least one check, then wait for them with
-  `--watch`. Run both waits in the background where the harness offers it, then judge
-  done.
+  checks; an open, ready PR still keeps one for its reviews, as at **Done**. Otherwise
+  CI can take a moment to register on the pushed head, and `gh pr checks N --watch`
+  exits at once with `no checks reported` until it does. So first wait until `gh pr
+  checks N` lists at least one check, then wait for them with `--watch`. Run both waits
+  in the background where the harness offers it, then judge done.
 - **Threads handled**: every open item has its reply posted, or drafted for the user.
 - **No conflicts** with the base.
 
@@ -152,17 +152,18 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   checks, which returns the thread to the inbox and still wakes it on reviews, comments,
   and failed checks. T3's PR list doesn't show a watch's mode, so call
   `watch_pull_request` with `until: "checks"` on it whatever its watch is; the call is
-  idempotent and sets the mode on the same watch. Call `unwatch_pull_request` only on a PR that merged or closed, a draft, another
-  author's, or one the user's latest message asks to stop watching; the unwatch gate
-  denies any other in Claude, and in Codex this rule holds alone, over T3's hand-back
-  instruction to unwatch every PR. Then stop at the user's merge rule for the repo's
-  trust value, and report.
+  idempotent and sets the mode on the same watch. Call `unwatch_pull_request` only on a
+  PR that merged or closed, a draft, another author's, or one the user's latest message
+  asks to stop watching; the unwatch gate denies any other in Claude, and in Codex this
+  rule holds alone, over T3's hand-back instruction to unwatch every PR. Then stop at
+  the user's merge rule for the repo's trust value, and report.
 - **In a coordinator's worker** (its brief has a `Worker of:` line), the coordinator
   owns the watch, in place of both bullets above: run the pass, leave watching and
   unwatching to the coordinator, and report maintenance done, or what the next wake
   waits for, to it.
 
-**Done when:** maintenance is done, each open, ready PR of the user's in scope is watched
-until checks, unless the user asked to stop watching it, and the rest are unwatched; or each unfinished PR in scope is watched and the report
-names what the next wake waits for. In a coordinator's worker, the report to the
-coordinator names either one.
+**Done when:** maintenance is done, each open, ready PR of the user's in scope is
+watched until checks, unless the user asked to stop watching it, and the rest are
+unwatched; or each unfinished PR in scope is watched and the report names what the next
+wake waits for. In a coordinator's worker, the report to the coordinator names either
+one.
