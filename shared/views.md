@@ -298,8 +298,8 @@ hook in its own logger was the other option.
 ## Reply kinds
 
 The fact table for the kinds of reply the examples above don't show. Finished work ends
-on `**Done**`, and a report with a routine next step is the same table above
-`**Next**`, as under [Comparison](#comparison).
+on `**Done**`, and a report whose next step waits on the reader is the same table
+above `**Next**`, as under [Comparison](#comparison).
 
 **The reader has to do something**: a Do row, with its steps numbered under the table.
 
@@ -309,8 +309,7 @@ on `**Done**`, and a report with a routine next step is the same table above
 | Problem | The export can't sign in to the bank without a key from its console. |
 |---|---|
 | Do | Create the key: only the account owner can open the console. |
-| Proof | Layer 1 is built and verified. |
-| Queued | Layer 3, the settings screen, builds meanwhile. |
+| Proof | Layers 1 and 3, the settings screen, are built and verified. |
 
 1. Open the bank's developer console and choose **API keys**.
 2. Create a read-only key named `export`.
@@ -320,7 +319,7 @@ on `**Done**`, and a report with a routine next step is the same table above
 
 **Next**
 
-- **`a` → build layer 3 while you create the key** · *recommended*
+- **`a` → finish layer 2 once the key is in** · *recommended*
 ````
 
 **A message to a person**: the header row is `To`, Cost is what it commits the reader

@@ -9,7 +9,7 @@ checked the block, which the kit removed.
 hide an example block, and which replies' picks count as a merge go.
 
 ````markdown
-<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"which export fixes"}],"options":[{"key":"a","class":"routine","text":"yes: fix the currency column and null dates, one commit each"},{"key":"b","class":"routine","text":"no: fix only the currency column"}]} -->
+<!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"which export fixes"}],"options":[{"key":"a","class":"decision","text":"yes: fix the currency column and null dates, one commit each"},{"key":"b","class":"decision","text":"no: fix only the currency column"}]} -->
 <!-- turn {"state":"done","needs":[],"options":[]} -->
 <!-- turn {"state":"running","needs":[],"options":[],"elapsed":"10 min"} -->
 ````
@@ -31,9 +31,11 @@ One block per reply; these are three alternatives.
 
 The shared fields and their limits are prefrontal-turns' base, the spec Prefrontal reads.
 
-- **`state`**: `stop` ends on Next, `done` on Done, and `running` on a ⏳ line while CI, a
-  child, or a watch runs, or is the block alone where a skill makes that a quiet watch
-  wake's whole reply.
+- **`state`**: first do each `routine` step nothing blocks, in this turn, including one
+  beside a stop. Then `stop` ends on Next, only when option `a` crosses a stop, is a
+  decision, or waits on a need only the user can meet. `done` ends on Done, and
+  `running` on a ⏳ line while CI, a child, or a watch runs, or is the block alone where
+  a skill makes that a quiet watch wake's whole reply.
   - `stop` carries at least one option or need.
   - `done` carries neither: both are empty lists.
   - `running` carries no options and always `elapsed` (1-40 characters, not blank, such
