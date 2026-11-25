@@ -1259,9 +1259,16 @@ if a[:2] == ["pr", "view"]:
     print(s["pr"])
 elif a[:2] == ["stack", "view"]:
     print(json.dumps(s["stack"])) if "stack_error" not in s else sys.exit(s["stack_error"])
+elif a[:2] == ["repo", "view"] and "url" in a:  # a named repo's URL, or the checkout's
+    named = a[2] if len(a) > 2 and not a[2].startswith("-") else None
+    print(("https://" + named if named.count("/") == 2 else "https://github.com/" + named) if named
+          else s.get("clone", "https://github.com/o/r"))
 elif a[:2] == ["repo", "view"]:
     print("o r")
 elif a[:2] == ["api", "graphql"]:
+    host = a[a.index("--hostname") + 1] if "--hostname" in a else "github.com"
+    if host != s.get("host", "github.com"):
+        sys.exit(f"gh: {host} isn't the repo's host")
     print(json.dumps({"data": {"repository": s["repository"]}}))
 else:
     sys.exit(1)
@@ -1372,6 +1379,101 @@ class MergeGate(unittest.TestCase):
                         "gh stack merge 13", "cd . && gh pr merge 12 -R o/r"]:
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command))
+
+    def test_reads_a_cd_path_that_ends_at_a_semicolon(self):
+        # Nov 16 and 23, 2026: `cd <worktree>; gh stack merge …` was read as the path `<worktree>;`.
+        self.scenario()
+        self.verify(12)
+        for command in [f"cd {self.repo}; gh pr merge 12 --squash", f"cd {self.repo}&& gh pr merge 12",
+                        f"cd {self.dir}; cd repo; gh pr merge 12", f"cd {self.repo} && git status | head -3 && gh pr merge 12",
+                        f"cd {self.repo} || exit 1; gh pr merge 12", "cd repo; (cd .) && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command, cwd=self.dir))
+        # Review of #102: each cd counts, in order, so `cd <other>; cd .` stays in <other>,
+        # and one that may not run in this shell, if it moves, leaves the checkout unknown.
+        # verify-work on #102: the merge reads its cds as ready-gate does (shell_dirs.Walk), so
+        # cd -P, an assignment before cd, and builtin cd and command cd move the shell too.
+        self.assertIsNone(self.reason(f"cd -P {self.repo} && gh pr merge 12", cwd=self.dir))
+        for command in [f"cd {self.dir}; cd .; gh pr merge 12 --squash", f"X=1 cd {self.dir} && gh pr merge 12",
+                        f"noglob cd {self.dir} && gh pr merge 12",
+                        f"builtin cd {self.dir} && gh pr merge 12", f"command cd {self.dir} && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIn("couldn't check the merge", self.reason(command))
+        for command in ["(cd child); cd .. && gh pr merge 12 --squash", f"false || cd {self.dir}; gh pr merge 12",
+                        f"if true; then cd {self.dir}; fi; gh pr merge 12",
+                        f"true | cd {self.dir}; gh pr merge 12", "popd && gh pr merge 12",
+                        # Round 3: a cd in a && chain the merge isn't in, or in a case arm.
+                        f"false && cd {self.dir}; cd . && gh pr merge 12",
+                        f"case x in y) cd {self.dir} ;; esac; gh pr merge 12", f"\\cd {self.dir} && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIn("so the gate can't tell which checkout the merge runs in: run `cd <checkout> && "
+                              "gh pr merge 12", self.reason(command))
+        # verify-work on #102, round 2: eval or source runs code that may cd, and a cd that
+        # may not run, though it doesn't move, may still set the directory `cd -` returns to.
+        for command in [f"eval cd {self.dir} && gh pr merge 12", ". ./env.sh && gh pr merge 12",
+                        f"cd {self.dir}; false || cd {self.dir}; cd - && gh pr merge 12"]:
+            with self.subTest(command=command):
+                self.assertIn("so the gate can't tell which checkout the merge runs in", self.reason(command))
+        self.assertIn("runs `.`, whose code it can't read", self.reason(". ./env.sh && gh pr merge 12"))
+        # zsh's AUTO_CD enters a directory named as a command, as ready-gate.py reads it.
+        self.assertIn("which zsh's AUTO_CD enters", self.reason("repo && gh pr merge 12", cwd=self.dir))
+
+    def test_reads_githubs_stack_when_no_local_stack_holds_the_pr(self):
+        # Nov 11, 16, 19, and 20, 2026: `gh stack merge N` from a checkout on no branch, or on
+        # a branch in no local stack, was denied as "couldn't check", though gh stack merges
+        # GitHub's stack of N from there.
+        def scenario(error, entries, alone=()):
+            self.scenario(prs={n: "SUCCESS" for n in (12, 13)}, stack_error=error)
+            data = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+            data["repository"]["stackOf"] = {"stack": {"entries": {"nodes": [
+                {"position": at, "pullRequest": {"number": n, "state": state}} for at, (n, state) in entries]}}
+                if entries else None}
+            for n in alone:
+                data["repository"][f"p{n}"]["stack"] = None
+            pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(data))
+        self.verify(12)
+        self.verify(13)
+        for error in ['\u2717 current branch "feat/x" is not part of a stack',
+                      "\u2717 failed to get current branch: git: not on any branch"]:
+            with self.subTest(error=error):
+                scenario(error, [(2, (13, "OPEN")), (1, (12, "OPEN")), (0, (11, "MERGED"))])
+                self.assertIsNone(self.reason("gh stack merge 13 --yes --squash"))
+                scenario(error, [(1, (12, "OPEN")), (2, (13, "OPEN"))])
+                self.assertIsNone(self.reason("gh stack merge 12"))  # only the PRs up to 12
+                self.assertIn("couldn't check the merge", self.reason("gh stack merge --yes"))  # no PR to read
+                scenario(error, None, alone=[12])
+                self.assertIn("#12 is in no stack on GitHub, so `gh stack merge` can't merge it: use `gh pr merge 12`",
+                              self.reason("gh stack merge 12 --yes --squash"))
+                scenario(error, [(1, (14, "OPEN"))])  # a stack that doesn't hold the PR fails closed
+                self.assertIn("couldn't check the merge", self.reason("gh stack merge 12"))
+        pathlib.Path(self.repo, ".git", "verify-work", "verdicts.tsv").unlink()
+        self.verify(13)  # each PR of GitHub's stack still needs its own Done
+        scenario('\u2717 current branch "feat/x" is not part of a stack', [(1, (12, "OPEN")), (2, (13, "OPEN"))])
+        self.assertIn("#12 has no Done verdict", self.reason("gh stack merge 13"))
+
+    def test_checks_a_merge_run_outside_a_checkout_in_the_sessions_clone(self):
+        # Nov 23, 2026: `cd /tmp && … gh pr merge 6136 -R o/r --squash` was denied as "not a git
+        # repository", though the session's own checkout is a clone of o/r.
+        self.scenario()
+        self.verify(12)
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside)
+        self.assertIsNone(self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
+        self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 --squash"))  # no -R
+        self.scenario(clone="https://github.com/x/y")
+        self.assertIn("this merge runs outside a checkout of o/r, so the gate can't read its verdicts: run it from "
+                      "one, as `cd <checkout of o/r> && gh pr merge 12 -R o/r --squash`",
+                      self.reason(f"cd {outside} && gh pr merge 12 -R o/r --squash"))
+        self.scenario()  # review of #102: o/r on another host isn't this clone's o/r
+        self.assertIn("this merge runs outside a checkout of o/r",
+                      self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
+        self.scenario(clone="https://ghe.example/o/r", host="ghe.example")  # a clone of it: its queries go there
+        self.assertIsNone(self.reason(f"cd {outside} && gh pr merge 12 -R ghe.example/o/r --squash"))
+        self.assertIn("couldn't check the merge", self.reason(f"cd {outside} && gh pr merge 12 -R o/r", cwd=outside))
+        bare = os.path.join(outside, "bare.git")  # review of #102: git calls a bare repo no work tree
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        self.scenario()
+        self.assertIsNone(self.reason(f"cd {bare} && gh pr merge 12 -R o/r --squash"))
 
     def test_denies_a_red_or_running_default_branch(self):
         self.verify(12)
@@ -2186,11 +2288,11 @@ class MergeGate(unittest.TestCase):
         reason = self.reason("gh stack merge 122 --yes --squash 2>&1 | tail -8")
         self.assertIn("belongs to multiple stacks", reason)
         self.assertIn(f"`{STACK_SH} where #122`", reason)
-        # no-such-file, 3 denials: a `cd` into a variable the gate can't expand.
+        # no-such-file, 3 denials: a `cd` into a variable the gate can't expand, now denied before any fetch.
         self.scenario(prs={188: "SUCCESS"})
         reason = self.reason("d=$(ls -d ~/.t3/worktrees/skills/t3-1ef29bd5); cd $d && gh pr ready 188 && "
                              "gh stack merge 188 --yes --merge 2>&1 | tail -5")
-        self.assertIn(f"No such file or directory: '{self.repo}/$d'", reason)
+        self.assertIn("runs `cd $d`, whose directory it can't read", reason)
         self.assertIn(f"`{STACK_SH} where #188`", reason)
         # fetch-failed, 4 denials: `gh pr merge -R` run outside any checkout.
         self.scenario(prs={139: "SUCCESS"})
@@ -2941,14 +3043,86 @@ class ReadyGate(unittest.TestCase):
         return subprocess.run([sys.executable, str(HOOKS / "verdicts.py"), "review", base, head, *result],
                               cwd=self.repo, env=self.env, capture_output=True, text=True)
 
-    def output(self, command):
-        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": self.repo}
+    def output(self, command, cwd=None):
+        payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd or self.repo}
         out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), env=self.env,
                              capture_output=True, text=True, check=True).stdout
         return json.loads(out) if out else {}
 
-    def denial(self, command):
-        return self.output(command).get("hookSpecificOutput", {}).get("permissionDecisionReason")
+    def denial(self, command, cwd=None):
+        return self.output(command, cwd).get("hookSpecificOutput", {}).get("permissionDecisionReason")
+
+    def test_a_literal_loop_marks_each_of_its_prs_ready(self):
+        # 10 denials Nov 10-23, 2026: `for n in 6118 6080 6081; do gh pr ready $n; done` was
+        # read as `gh pr view $n` and denied as "couldn't check".
+        self.publish(12, self.main, self.head)
+        self.git("checkout", "-q", "-b", "second", self.main)
+        second = self.commit({"k": "2\n"}, "second")
+        twelve = json.loads(pathlib.Path(self.scenario_path).read_text())["prs"]["12"]
+        self.publish(13, self.main, second)
+        scenario = json.loads(pathlib.Path(self.scenario_path).read_text())
+        scenario["prs"]["12"] = twelve
+        pathlib.Path(self.scenario_path).write_text(json.dumps(scenario))
+        self.review(self.main, self.head, "--rounds", "1")
+        loops = [f"cd {self.repo}; for n in 12 13; do gh pr ready $n 2>&1 | tail -1; done; "
+                 "for n in 12 13; do gh pr view $n --json number,isDraft --jq '.number'; done",
+                 "for p in 12 13; do gh pr ready $p --repo o/r && gh pr edit $p --repo o/r --add-reviewer x; done",
+                 "for n in 12 13\ndo\n  gh pr ready ${n}\ndone",
+                 "for r in o/r; do for n in 12 13; do gh pr ready $n -R $r; done; done",
+                 'for n in 12 13; do gh pr ready "$n"; done',  # review of #102: a quoted "$n"
+                 "for n in 99; do for n in 12 13; do gh pr ready $n; done; done"]  # the inner n wins
+        for command in loops:
+            with self.subTest(command=command):
+                self.assertEqual(self.denial(command), f"Ready gate: #13 has no review-loop result for its diff at head "
+                                 f"{second[:12]} (base {self.main[:12]}). " + self.denial("gh pr ready 13").split(". ", 1)[1])
+        self.review(self.main, second, "--rounds", "1")
+        for command in loops:
+            with self.subTest(command=command):
+                self.assertEqual(self.output(command), {})
+        # A list only the shell knows still denies, naming the command that passes.
+        for command in ["for n in $(gh pr list --json number -q '.[].number'); do gh pr ready $n; done",
+                        "for n; do gh pr ready $n; done", "for n in 12 13; do :; done; gh pr ready $n",
+                        "for n in 12 $M; do gh pr ready $n; done", "gh pr ready $PR",
+                        # Review of #102: a loop name set again, a variable left after expanding,
+                        # and a word the shell unescapes.
+                        "for n in 12; do n=13; gh pr ready $n; done", "for n in 12; do read n; gh pr ready $n; done",
+                        "for n in 1; do for p in $V; do gh pr ready $n$p; done; done",
+                        "for n in \\13; do gh pr ready $n; done", "for n in 12; do ((n++)); gh pr ready $n; done",
+                        # Round 2: a write the round-1 check missed, an inner loop that rebinds
+                        # n and ends, and a single-quoted '$n', which the shell passes as is.
+                        'for n in 12; do printf -v n %s 13; gh pr ready "$n"; done',
+                        'for n in 12; do for n in 13; do :; done; gh pr ready "$n"; done',
+                        # Round 3: a write in quoted text, code the gate can't see into, and a
+                        # single-quoted '$n', which gh reads as the branch named $n.
+                        'for n in 12; do let "n = 13"; gh pr ready "$n"; done',
+                        'for n in 12; do eval "$X"; gh pr ready $n; done', "for n in 12; do gh pr ready '$n'; done",
+                        # verify-work on #102: a function defined before the loop that rewrites n.
+                        "f(){ n=13; }; for n in 12; do f; gh pr ready $n; done",
+                        "trap 'n=13' DEBUG; for n in 12; do gh pr ready $n; done"]:
+            with self.subTest(command=command):
+                self.assertIn("reads a shell variable or quoted text the gate can't expand: write each PR out, as "
+                              "`gh pr ready 12 && gh pr ready 13`", self.denial(command))
+
+    def test_checks_a_ready_run_outside_a_checkout_in_the_sessions_clone(self):
+        # Nov 18, 2026: `cd ~ && … gh pr ready 5568 --repo o/r` was denied as "not a git
+        # repository", though the session's own checkout is a clone of o/r.
+        outside = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outside)
+        command = f"cd {outside} && gh pr view 12 --repo o/r && gh pr ready 12 --repo o/r"
+        self.assertIn(f"#12 has no review-loop result for its diff at head {self.head[:12]}", self.denial(command))
+        self.review(self.main, self.head, "--rounds", "1")
+        self.assertEqual(self.output(command), {})
+        bare = os.path.join(outside, "bare.git")  # review of #102: git calls a bare repo no work tree
+        subprocess.run(["git", "init", "-q", "--bare", bare], check=True)
+        self.assertEqual(self.output(f"cd {bare} && gh pr ready 12 --repo o/r"), {})
+        other = os.path.join(self.dir, "other")  # a session in a clone of another repo
+        subprocess.run(["git", "init", "-q", other], check=True)
+        subprocess.run(["git", "-C", other, "remote", "add", "origin", "https://example.com/x/y.git"], check=True)
+        for cwd in (other, outside):
+            with self.subTest(cwd=cwd):
+                self.assertIn(f"isn't a checkout of {os.path.join(self.dir, 'origin')}, so its verdicts can't be read: "
+                              f"run it from one, as `cd <checkout of {os.path.join(self.dir, 'origin')}> && gh pr ready 12`",
+                              self.denial(command, cwd))
 
     def test_no_result_blocks_and_names_the_head_and_the_recorder(self):
         reason = self.denial("gh pr ready 12")
@@ -3085,7 +3259,10 @@ class ReadyGate(unittest.TestCase):
                         "popd && gh pr ready 12", "cd - && gh pr ready 12", f"cd {outer} {outer} && gh pr ready 12",
                         f"CDPATH={self.dir}; cd outer && gh pr ready 12", "cd ~+ && gh pr ready 12",
                         "cd +1 && gh pr ready 12", "cd -2 && gh pr ready 12", f"{outer} && gh pr ready 12",
-                        f"HOME={outer}; cd && gh pr ready 12", f"export HOME={outer}; cd ~/x && gh pr ready 12"]:
+                        f"HOME={outer}; cd && gh pr ready 12", f"export HOME={outer}; cd ~/x && gh pr ready 12",
+                        # verify-work on #102: an escaped cd, as merge-gate.py reads it through shell_dirs.
+                        f"\\cd {outer} && gh pr ready 12",
+                        f"cd {outer}; false || cd {outer}; cd - && gh pr ready 12"]:
             with self.subTest(command=command):
                 self.assertIn("can't tell which checkout", self.denial(command))
         for command in ["GH_REPO=$R gh pr ready 12", "true && export GH_REPO=o/upstream; gh pr ready 12",

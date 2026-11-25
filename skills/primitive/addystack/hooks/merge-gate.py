@@ -39,6 +39,8 @@ checks from the current directory and prints the PRs it resolves, then each reas
 that would merge."""
 import contextlib, glob, json, os, re, subprocess, sys
 
+from shell_dirs import Walk
+
 DRY_RUN = sys.argv[1:2] == ["--dry-run"]
 # Where the deny reasons send an agent that merged from the wrong checkout.
 STACK_SH = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "scripts",
@@ -78,9 +80,14 @@ if not match:
         print("would pass: no `gh pr merge` or `gh stack merge` outside quotes for the gate to check")
     sys.exit(0)
 
-cds = re.findall(r"\bcd\s+(\S+)", code[:match.start()])
-if cds:
-    cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(cds[-1])))
+# Where the merge runs, read as ready-gate.py reads it (shell_dirs.Walk): a cd that may not run
+# before the merge, or whose directory the gate can't read, leaves the checkout unknown, and
+# the gate denies, naming the command that passes. A command substitution, as in
+# `d=$(ls -d …); cd $d`, runs in its own shell and moves nothing.
+walk = Walk(re.sub(r"\$\([^()`]*\)", "''", code[:match.start()]), cwd)
+for _ in walk:
+    pass
+cwd = walk.cwd
 # The merge lines gate's no-go merge trusts, as `stack.sh where` prints them: the whole command
 # is at most one cd, an optional `gh pr ready N`, and one merge of a PR by number, or of this
 # checkout's stack, with no flag that can name another repo. Any other shell, such as a
@@ -228,9 +235,45 @@ for i, arg in enumerate(args):
         positional.append(arg)
 target = positional[0] if positional else None
 repo_args = ["-R", repo] if repo else []
+# gh api reads GH_HOST, not -R, so a repo named on another host sends its host to every query.
+HOST = ["--hostname", repo.split("/")[0]] if repo and repo.count("/") == 2 else []
+
+def checkout(path):
+    try:
+        return subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True, text=True,
+                              timeout=20).stdout.strip() == "true"  # a bare repo prints false
+    except (OSError, subprocess.SubprocessError):
+        return False
+
 # A merge the gate can't place in its checkout gets pointed at the locator.
 WHERE = (f"`{STACK_SH} where {'#' + target if target and target.isdigit() else '<branch|#PR>'}`, run in a "
          "checkout of the repo, prints the checkout to merge from and the merge line to run there")
+if "dir" in walk.unknown:
+    deny(f"this command {walk.unknown['dir']}, so the gate can't tell which checkout the merge runs in: run "
+         f"`cd <checkout> && {match.group(0).strip()}` on its own", WHERE)
+
+# A merge named with -R from outside any checkout, as `cd /tmp && gh pr merge 12 -R o/r`, is
+# checked in the session's own checkout when that's a clone of the same repo: the checks need
+# only its git objects and verdict store. The clone is matched to the repo below.
+session = payload.get("cwd") or os.getcwd()
+borrowed = bool(repo) and cwd != session and not checkout(cwd) and checkout(session)
+if borrowed:
+    cwd = session
+
+def github_stack(n):
+    """The open PRs `gh stack merge n` merges, read from GitHub's stack of PR n, bottom
+    first up to n, or [n] when n is in no stack, for a checkout gh stack places in none."""
+    owner, name = run("gh", "repo", "view", *([repo] if repo else []), "--json", "owner,name",
+                      "--jq", '"\\(.owner.login) \\(.name)"').split()
+    query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
+             f"stackOf: pullRequest(number: {n}) {{ stack {{ entries(first: 100) {{ nodes {{ position "
+             "pullRequest { number state } } } } } } }")
+    stack = json.loads(run("gh", "api", "graphql", *HOST, "-f", f"query={query}"))["data"]["repository"]["stackOf"]["stack"]
+    if not stack:
+        return [n]
+    entries = [entry["pullRequest"] for entry in sorted(stack["entries"]["nodes"], key=lambda entry: entry["position"])]
+    below = entries[:[entry["number"] for entry in entries].index(n) + 1]  # a ValueError fails closed
+    return [entry["number"] for entry in below if entry["state"] == "OPEN"]
 
 numbers = None
 try:
@@ -238,10 +281,20 @@ try:
         numbers = [int(run("gh", "pr", "view", *([target] if target else []), *repo_args,
                            "--json", "number", "--jq", ".number"))]
     else:
-        stack = json.loads(run("gh", "stack", "view", "--json"))
-        numbers = [b["pr"]["number"] for b in stack["branches"]
-                   if b.get("pr") and not b.get("isMerged") and b["pr"].get("state") == "OPEN"]
-        if target:
+        try:
+            stack = json.loads(run("gh", "stack", "view", "--json"))
+        except RuntimeError as error:
+            # `gh stack merge N` merges GitHub's stack of N from any checkout of the repo,
+            # even one on no branch or on a branch in no local stack.
+            if not (target and target.isdigit() and re.search(r"not part of a stack|not on any branch", str(error))):
+                raise
+            stack = None
+        if stack is None:
+            numbers = github_stack(int(target))
+        else:
+            numbers = [b["pr"]["number"] for b in stack["branches"]
+                       if b.get("pr") and not b.get("isMerged") and b["pr"].get("state") == "OPEN"]
+        if target and stack is not None:
             if not target.isdigit() or int(target) not in numbers:
                 deny(f"can't tell which PRs `gh stack merge {target}` merges from this checkout's "
                      f"stack (open PRs: {numbers}); pass one of those PR numbers", WHERE)
@@ -253,6 +306,14 @@ try:
 
     owner, name = run("gh", "repo", "view", *([repo] if repo else []), "--json", "owner,name",
                       "--jq", '"\\(.owner.login) \\(.name)"').split()
+    if borrowed:  # the same repo on the same host: -R can name one on another host
+        url = lambda *named: subprocess.run(["gh", "repo", "view", *named, "--json", "url", "--jq", ".url"], cwd=cwd,
+                                            capture_output=True, text=True, timeout=40,
+                                            env={k: v for k, v in os.environ.items() if k != "GH_REPO"}).stdout.strip()
+        clone = url()
+        if not clone or clone.lower() != url(repo).lower():
+            deny(f"this merge runs outside a checkout of {owner}/{name}, so the gate can't read its verdicts: run "
+                 f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
                    "potentialMergeCommit { oid } stack { number } "
                    "commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } }"
@@ -260,7 +321,7 @@ try:
     query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
              "defaultBranchRef { name target { ... on Commit { oid statusCheckRollup { state } } } } "
              f"{prs} }} }}")
-    data = json.loads(run("gh", "api", "graphql", "-f", f"query={query}"))["data"]["repository"]
+    data = json.loads(run("gh", "api", "graphql", *HOST, "-f", f"query={query}"))["data"]["repository"]
 
     import resolved, verdicts  # here, so a broken module blocks only merges
     # An unresolved policy can still read gate, when every rule is gate, so it never counts.

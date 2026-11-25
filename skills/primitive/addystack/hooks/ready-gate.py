@@ -24,7 +24,9 @@ heredoc, a create or submit aimed at a repo other than `origin` (`-R`, `GH_REPO`
 through `workdir`, and a hook timeout, which Codex lets through. `gh stack submit` without
 `--auto` in a terminal opens an editor whose new PRs default to ready; agents run it
 without a terminal, which opens drafts."""
-import json, os, re, shutil, signal, subprocess, sys
+import json, os, re, signal, subprocess, sys
+
+from shell_dirs import ASSIGNMENT, LEADS, Walk, unreadable
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 RECORD = os.path.join(HERE, "verdicts.py").replace(os.path.expanduser("~"), "~", 1)
@@ -38,7 +40,8 @@ command = (payload.get("tool_input") or {}).get("command", "")
 # quoted single word ("12", 'feat/x') is an argument, so it keeps its value, unless it starts
 # with #, which would then read as a comment.
 code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S)
-code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*)\"", lambda m: m.group(1) or m.group(2) or "''", code)
+code = re.sub(r"'((?!#)[^'\s;&|<>$]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
+              lambda m: m.group(1) or m.group(2) or "''", code)  # a quoted "$n" stays a variable
 code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 # Nor are comments: a # that starts a word, so not after an escaped space.
@@ -52,7 +55,6 @@ WORDS = {("pr", "ready"): "ready", ("pr", "create"): "create", ("pr", "new"): "c
 # Commands that print or search their arguments, so a gh among them is text, not a command.
 TEXT = {"echo", "printf", "print", ":", "true", "false", "test", "[", "[[", "grep", "egrep", "fgrep", "rg", "ag",
         "man", "which", "type", "whatis", "apropos"}
-ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 
 
 # The options that take a value, which is never a flag, in the commands the gate reads: gh pr
@@ -111,93 +113,47 @@ def switch(args, *names):
     return value.lower() not in ("false", "f", "0")
 
 
-# Shell words that lead a command. A block opens at the first set and closes at CLOSES, and a
-# cd or GH_REPO inside one may not run.
-OPENS, CLOSES = {"if", "while", "until", "for", "select", "case", "{"}, {"fi", "done", "esac", "}"}
-LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command"}  # builtin cd is cd
-
-
-def unreadable(word):
-    """Whether a path or value holds what only the shell can expand: a variable, a glob, or a
-    quoted string with spaces, which reads as ''."""
-    return word == "''" or bool(re.search(r"[$*?\[{]", word))
-
-
-CDPATH = bool(os.environ.get("CDPATH") or re.search(r"(?<![\w$])CDPATH=", code))  # set in the session or command
-HOME_SET = bool(re.search(r"(?<![\w$])HOME=", code))  # a cd home or to ~ then goes where the command says
-
-
-def resolve(command, args, cwd, previous, pushed):
-    """Where cd, pushd, or popd leaves the shell, or None when the gate can't read it. cd
-    -P resolves symlinks first, as `..` then leaves the link's target."""
-    physical = False
-    while command == "cd" and args[:1] and re.fullmatch(r"-[LPe@]+", args[0]):
-        for letter in args.pop(0)[1:]:
-            physical = {"L": False, "P": True}.get(letter, physical)
-    if command == "cd" and args == ["-"]:
-        return previous
-    if command == "popd":
-        return pushed.pop() if pushed and not args else None
-    path = args[0] if args else "~"
-    # A dir-stack entry (+1, -2), a ~ form other than a home (~+, ~-), or a name CDPATH may
-    # find elsewhere is where only the shell knows.
-    if (len(args) > 1 or (command == "pushd" and not args) or unreadable(path) or path[:1] in "+-"
-            or path.startswith("~") and (HOME_SET or os.path.expanduser(path) == path)
-            or CDPATH and not re.match(r"(?:/|~|\.\.?(?:/|$))", path)):
-        return None
-    if command == "pushd":
-        pushed.append(cwd)
-    target = os.path.join(cwd, os.path.expanduser(path))
-    return os.path.realpath(target) if physical else os.path.normpath(target)
-
-
-def unsure(key, said):
-    """Whether a cd or GH_REPO in the current command may not run before what follows, noting
-    why in unknown; one that runs only while an && chain holds goes to pending."""
-    if depth or ors or "|" in (before, after) or after == "&":
-        unknown.setdefault(key, f"{said} inside a subshell, pipeline, or block, or after `||`")
-        return True
-    if before == "&&":
-        pending[key] = f"{said} only if the command before it succeeds"
-    return False
-
-
-# Where the shell is and which repo GH_REPO names as it runs each command; unknown says why the
-# gate can't tell from there on, and pending holds what an && chain set, which stands only
-# while the chain does.
-cwd, previous, pushed = payload.get("cwd") or os.getcwd(), None, []
+# Where the shell is (shell_dirs.Walk, as merge-gate.py reads it too) and which repo GH_REPO
+# names as it runs each command; the walk's unknown says why the gate can't tell from there on.
+walk = Walk(code, payload.get("cwd") or os.getcwd())
 repo, exported = os.environ.get("GH_REPO") or None, "GH_REPO" in os.environ  # the shell's, from this session's
 allexport = False
-unknown, pending, depth, cases, tick, ors, moved, readies = {}, {}, 0, 0, False, False, False, []
+moved, readies = False, []
+loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
+QUOTED = re.findall(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", command)
+OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", "local", "readarray", "mapfile", "getopts"}
+# A function, trap, or alias the command defines runs code the gate doesn't follow to its
+# call, so no loop name in such a command is one the gate can read.
+DEFINES = bool(re.search(r"\b[A-Za-z_][\w-]*\s*\(\s*\)|\b(?:function|trap|alias)\s", code))
 if re.search(r"\$\{GH_REPO:?=", command):  # an expansion that assigns, even inside quotes
-    unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
-pieces = re.split(r"(&&|\|\||[;|&\n()`])", code)  # `$(…)` and backticks run their command
-for at in range(0, len(pieces), 2):
-    before, after = pieces[at - 1] if at else "", pieces[at + 1] if at + 1 < len(pieces) else ""
-    if before in (";", "\n", "&", "||"):
-        unknown, pending = {**pending, **unknown}, {}
-        ors = before == "||"
-    # Inside a case block, a pattern's ) closes no subshell; the block itself keeps depth up.
-    depth += {"(": 0 if cases else 1, ")": 0 if cases else -1, "`": -1 if tick else 1}.get(before, 0)
-    tick ^= before == "`"
-    words = pieces[at].split()
-    lead = 0
-    while lead < len(words) and (words[lead] in LEADS or ASSIGNMENT.match(words[lead])):
-        depth, cases = depth + (words[lead] in OPENS), cases + (words[lead] == "case")
-        lead += 1
-    depth, cases = depth - bool(words[:1] and words[0] in CLOSES), cases - (words[:1] == ["esac"])
+    walk.unknown["repo"] = "assigns GH_REPO in a `${GH_REPO:=…}` expansion"
+pieces, unsure = walk.pieces, walk.unsure
+for at, words, lead in walk:
+    depth, cwd, unknown = walk.depth, walk.cwd, walk.unknown
+    if lead and words[lead - 1] == "for" and lead < len(words):
+        name = words[lead]
+        listed = words[lead + 2:] if words[lead + 1:lead + 2] == ["in"] else None  # bare `for n` reads "$@"
+        # A word the shell rewrites (an escape, a quote) isn't the value, and a name the command
+        # sets anywhere but a for header (n=13, read n, ((n++))) may not hold it when the ready runs.
+        if listed is not None and any(unreadable(word) or re.search(r"[\\'\"`]", word) for word in listed):
+            listed = None
+        loops.append([name, listed, depth, at])
+    # A word that is a loop's name (read n, printf -v n, an inner for n) or sets it (n=13,
+    # n+=1, n++, ${n:=13}) may change it before a ready in that loop, which then can't read it,
+    # as may code the gate can't see into: quoted text naming it (let "n = 13"), or eval,
+    # source, or a builtin that writes a variable by name, run inside the loop.
+    for loop in loops:
+        n = re.escape(loop[0])
+        if DEFINES or words[lead:lead + 1] and words[lead] in OPAQUE or any(re.search(rf"(?<![\w$.{{/-]){n}(?!\w)", re.sub(rf"\$\{{?{n}\}}?", "", quoted))
+                         for quoted in QUOTED):
+            loop[1] = None
+        if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))
+               and not (at == loop[3] and word == loop[0] and words.index(word) == lead) for word in words):
+            loop[1] = None
+    loops = [loop for loop in loops if loop[2] <= depth]
     command = words[lead] if lead < len(words) else None
     if command in TEXT:
         continue
-    if command and command not in ("cd", "pushd", "popd") and not shutil.which(command) and os.path.isdir(
-            os.path.join(cwd, os.path.expanduser(command))):
-        unknown.setdefault("dir", f"names the directory `{command}`, which zsh's AUTO_CD enters")
-    if command in ("cd", "pushd", "popd") and not unsure("dir", f"runs `{command}`"):
-        target = resolve(command, words[lead + 1:], cwd, previous, pushed)
-        if target is None:
-            unknown.setdefault("dir", f"runs `{' '.join(words[lead:])}`, whose directory it can't read")
-        else:
-            previous, cwd = cwd, target
     # gh sees GH_REPO only once it's exported: by export, declare -x, set -a, or the session.
     # Any other way a command touches GH_REPO (export -n, typeset +x, env -u) it doesn't follow.
     shell_options = [word for word in (words[lead + 1:] if command in ("export", "declare", "typeset", "unset") else [])
@@ -257,7 +213,19 @@ for at in range(0, len(pieces), 2):
                 if said:
                     reasons.append(f"this command {said}, so the gate can't tell which repo the ready reads: "
                                    "name it with `-R <owner>/<repo>`")
-            readies.append((kind, args, cwd, value, moved, reasons))
+            # A literal loop's ready runs once per word, as `for n in 12 13; do gh pr ready $n; done`.
+            runs, bound = [args], set()
+            for name, listed, *_ in reversed(loops):  # the innermost loop's binding of a name wins
+                if name in bound:
+                    continue
+                bound.add(name)
+                here = re.compile(rf"\${name}\b|\${{{name}}}")
+                if listed and any(here.search(arg) for arg in args):
+                    runs = [[here.sub(lambda _, word=word: word, arg) for arg in one] for one in runs for word in listed]
+            if kind == "ready" and any("$" in arg or arg == "''" for one in runs for arg in options(one)[1]):
+                reasons.append(f"its `gh pr ready {' '.join(options(args)[1])}` reads a shell variable or quoted "
+                               "text the gate can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
+            readies += [(kind, one, cwd, value, moved, reasons) for one in runs]
     # A create, even a draft or a dry run, may push its branch first, so it moves a later ready's head.
     moved = moved or bool(MOVES.search(pieces[at])) or "gh" in words and names in (["pr", "create"], ["pr", "new"])
 if not readies:
@@ -308,8 +276,14 @@ def same_repo(one, other):
     return place(one) == place(other)
 
 
+def origin(cwd):
+    """The checkout's origin URL, or "" outside a checkout or without one."""
+    return subprocess.run(["git", "remote", "get-url", "origin"], cwd=cwd, capture_output=True, text=True).stdout
+
+
 def targets(kind, args, cwd):
-    """(label, base, head) for each PR the command marks ready, as refs or SHAs."""
+    """The checkout to check in, and (label, base, head) for each PR the command marks ready,
+    as refs or SHAs."""
     repo = flag(args, "-R", "--repo")
     if kind == "ready":
         positional = options(args)[1]
@@ -317,10 +291,23 @@ def targets(kind, args, cwd):
                             "--json", "number,url,baseRefName,baseRefOid,headRefOid"))
         # A PR another repo holds (-R, GH_REPO, its URL, or gh's pick in a fork's clone) is fetched from it.
         home = re.sub(r"/pull/\d+/?$", "", pr["url"])
-        origin = subprocess.run(["git", "remote", "get-url", "origin"], cwd=cwd, capture_output=True, text=True).stdout
-        source = "origin" if origin.strip() and same_repo(origin, home) else home + ".git"
+        # A ready that names its repo (-R, GH_REPO) and runs outside any checkout, as `cd ~ && gh
+        # pr ready 12 -R o/r`, is checked in the session's own checkout when that's a clone of
+        # the PR's repo: the gate needs only its git objects and verdict store.
+        session = payload.get("cwd") or os.getcwd()
+        inside = lambda path: subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=path, capture_output=True,
+                                             text=True).stdout.strip() == "true"  # a bare repo prints false
+        named = bool(repo or os.environ.get("GH_REPO"))
+        here = inside(cwd)
+        if named and not here and cwd != session and inside(session) and same_repo(origin(session), home):
+            cwd = session
+        elif named and not here:
+            raise RuntimeError(f"`{cwd}` isn't a checkout of {home}, so its verdicts can't be read: run it from one, "
+                               f"as `cd <checkout of {home}> && gh pr ready {pr['number']}`")
+        remote = origin(cwd)
+        source = "origin" if remote.strip() and same_repo(remote, home) else home + ".git"
         run(cwd, "git", "fetch", "--quiet", "--no-tags", source, pr["baseRefName"], f"pull/{pr['number']}/head")
-        return [(f"#{pr['number']}", pr["baseRefOid"], pr["headRefOid"])]
+        return cwd, [(f"#{pr['number']}", pr["baseRefOid"], pr["headRefOid"])]
     if kind == "create":
         # gh's own picks: --head names a pushed branch it won't push; the base is --base,
         # then the branch's gh-merge-base config, then the default branch.
@@ -334,8 +321,8 @@ def targets(kind, args, cwd):
         refs = [base] + ([branch] if named else [])
         run(cwd, "git", "fetch", "--quiet", "--no-tags", "origin",
             *(f"+refs/heads/{ref}:refs/remotes/origin/{ref}" for ref in refs))
-        return [(f"the new PR from {branch}", f"refs/remotes/origin/{base}",
-                 f"refs/remotes/origin/{branch}" if named else branch)]
+        return cwd, [(f"the new PR from {branch}", f"refs/remotes/origin/{base}",
+                      f"refs/remotes/origin/{branch}" if named else branch)]
     remote = flag(args, "--remote") or "origin"
     stack = json.loads(run(cwd, "gh", "stack", "view", "--json"))
     trunk = stack["trunk"]
@@ -347,7 +334,7 @@ def targets(kind, args, cwd):
         pr = branch.get("pr") or {}
         found.append((f"#{pr['number']}" if pr.get("number") else branch["name"], parent, branch["name"]))
         parent = branch["name"]
-    return found
+    return cwd, found
 
 
 missing, skips = [], []
@@ -359,7 +346,8 @@ try:
         # The gate's gh calls see the GH_REPO this ready's gh would; -R in args still wins.
         os.environ.pop("GH_REPO", None)
         os.environ.update({"GH_REPO": repo} if repo else {})
-        for label, base, head in targets(kind, args, cwd):
+        cwd, found = targets(kind, args, cwd)
+        for label, base, head in found:
             base, head = (run(cwd, "git", "rev-parse", "--verify", f"{ref}^{{commit}}") for ref in (base, head))
             review = verdicts.find_review(cwd, verdicts.diff(cwd, base, head))
             if not review:
