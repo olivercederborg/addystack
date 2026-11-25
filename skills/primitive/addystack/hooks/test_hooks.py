@@ -3971,8 +3971,12 @@ class PushGate(unittest.TestCase):
         scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
         scenario["prs"]["6215"] = self.pull(6215, self.BRANCH, self.remote_head, [self.APPROVED])
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
-        self.assertIn("doesn't name #6216 and #6215",
-                      self.reason("gh stack push", said=("push (dismisses 6215-6216 approvals), post the reply",)))
+        self.assertIsNotNone(self.reason("gh stack push", said=("push (dismisses 6215-6216 approvals), post the reply",)))
+        # review-loop r3: a PR in the dismissal, or a base the push goes onto, names no pushed PR.
+        for said in [("push (dismisses PR 6215's approval)",), ("push (dismisses PR6215's approval)",),
+                     ("rebase #6216 onto 6215 and push (dismisses the reviewer's approvals), post the reply",)]:
+            with self.subTest(said=said[0]):
+                self.assertIsNotNone(self.reason("gh stack push", said=said))
         # Only a push takes the "yes:" lead; merge_go doesn't change.
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))
@@ -4134,6 +4138,9 @@ class PushGate(unittest.TestCase):
         # repos' #6119 get no go in one command; the denial says to push each on its own.
         reason = self.reason(both, said=("push app #6119 and other #6119 (dismisses teammate's approvals)",))
         self.assertIn("two of these PRs share a number, so push each in its own command", reason)
+        # review-loop r3: a bare #6119 names neither repo's #6119.
+        reason = self.reason(both, said=("push #6119 (dismisses teammate's approvals), post the reply",))
+        self.assertIn("doesn't name app #6119 and other #6119", reason)
         self.assertIsNone(self.reason("git push other HEAD", said=("push other #6119 (dismisses teammate's approval)",)))
 
     def test_a_sync_reads_the_remote_and_branches_gh_stack_does(self):
