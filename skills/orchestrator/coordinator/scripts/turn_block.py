@@ -40,8 +40,8 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   or `<math>` the parser may ignore the `</details>` that closes it.
 - A line that starts an HTML block, past list and quote markers, with no blank line after
   it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
-  A block tag, such as `<div` or `</details`, starts one, and so does a whole tag alone on
-  its line (CommonMark 0.31.2 §4.6); `> <sub>…</sub><br>` and an autolink don't.
+  A block tag such as `<div` starts one, as does a whole tag alone on its line (CommonMark
+  0.31.2 §4.6), but not `<sub>…</sub><br>` or an autolink.
 - Such a line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
   `<div title="x`: the HTML block hands it to the renderer raw, and what follows becomes
   the tag's attribute.
