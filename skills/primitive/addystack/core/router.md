@@ -23,7 +23,7 @@ none.
 - **Skill or agent-doc edit** (a SKILL.md, AGENTS.md, CLAUDE.md) →
   writing-for-agents → plan → autopilot
 - **Comments on {{user}}'s PR** (review comments, bot findings) → address-review
-- **Teammate's PR** (review their PR) → review-teammate-pr
+- **Teammate's PR** (review their PR) → review-code
 - **Done check** ("is it done?", "anything left?") → verify-work
 - **Second opinion** (review this, cross-check) → review-loop
 - **Blast radius** ("what could break?") → blast-radius
