@@ -154,8 +154,9 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   `until: "checks"` only when this thread doesn't watch it yet or set `until: "merged"`.
   Call `unwatch_pull_request` only on a PR that merged or closed, a draft, another
   author's, or one the user's latest message asks to stop watching; the unwatch gate
-  denies any other. Then stop at the user's merge rule for the repo's trust value, and
-  report.
+  denies any other in Claude, and in Codex this rule holds alone, over T3's hand-back
+  instruction to unwatch every PR. Then stop at the user's merge rule for the repo's
+  trust value, and report.
 - **In a coordinator's worker** (its brief has a `Worker of:` line), the coordinator
   owns the watch, in place of both bullets above: run the pass, leave watching and
   unwatching to the coordinator, and report maintenance done, or what the next wake
