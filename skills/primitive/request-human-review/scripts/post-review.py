@@ -39,10 +39,21 @@ PASSED = ('pass', 'skipping')
 FAILED = ('fail', 'cancel')
 
 
+def _error(output: str) -> str:
+    """A failed command's error for a review's body: without the hint block gh prints after
+    some commands, such as `gh pr view`'s about `gh event listen`, whose indented lines follow it."""
+    lines, hint = [], False
+    for line in output.splitlines():
+        hint = line.startswith('hint:') or (hint and line.startswith(' '))
+        if not hint and line.strip():
+            lines.append(line)
+    return '\n'.join(lines)[-400:]
+
+
 def github(*arguments) -> str:
     result = subprocess.run([str(GITHUB), *map(str, arguments)], capture_output=True, text=True, timeout=600)
     if result.returncode:
-        raise ValueError(f'github.sh {arguments[0]} failed: {(result.stderr or result.stdout).strip()[-400:]}')
+        raise ValueError(f'github.sh {arguments[0]} failed: {_error(result.stderr or result.stdout)}')
     return result.stdout
 
 
@@ -50,7 +61,7 @@ def pr(number: int) -> dict:
     result = subprocess.run(['gh', 'pr', 'view', str(number), '--json', 'body,headRefOid'], capture_output=True,
                             text=True, timeout=120)
     if result.returncode:
-        raise ValueError(f'gh pr view {number} failed: {result.stderr.strip()[-400:]}')
+        raise ValueError(f'gh pr view {number} failed: {_error(result.stderr)}')
     return json.loads(result.stdout)
 
 

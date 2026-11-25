@@ -191,6 +191,13 @@ class Post(unittest.TestCase):
         self.assertEqual(outcome['outcome'], 'not-approved')
         self.assertIn('Resource not accessible by integration', outcome['checks'][0])
 
+    def test_an_error_leaves_out_ghs_hint_block(self):
+        hinted = ('hint: if you need to wait for this pull request to be reviewed, use this instead of polling:\n'
+                  '    gh event listen --resource https://github.com/o/r/pull/7\n'
+                  '  - It prints the first event as a JSON line on stdout and exits.\n'
+                  'GraphQL: Resource not accessible by integration (repository.pullRequest.commits)\n')
+        self.assertEqual(post_review._error(hinted), 'GraphQL: Resource not accessible by integration (repository.pullRequest.commits)')
+
     def test_a_moved_head_posts_nothing(self):
         self.assertEqual(self.post(Fake(), head=NEWER), {'outcome': 'superseded', 'head': NEWER})
         for heads, wait in (([NEWER], 600), ([NEWER], 0)):
