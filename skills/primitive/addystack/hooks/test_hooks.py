@@ -3947,7 +3947,11 @@ class PushGate(unittest.TestCase):
                               "push (dismisses the reviewer's approval), then post the reply on #6215",
                               "push #6216 (dismisses the reviewer's approval), post the reply and skip the push",
                               "push #6216 (dismisses the reviewer's approval), post the reply and do the push tomorrow",
-                              "push #6216 (dismisses the reviewer's approval), then watch #6215"))]:
+                              "push #6216 (dismisses the reviewer's approval), then watch #6215",
+                              # review-loop r2: a name after the dismissal holds no digit, so no PR.
+                              "push (dismisses the reviewer's approval), post the reply on PR6215",
+                              "push (dismisses the reviewer's approval), post the reply on PR-6215",
+                              "push (dismisses the reviewer's approval), post the PR6215 reply"))]:
             with self.subTest(text=text):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
@@ -3962,6 +3966,13 @@ class PushGate(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        # review-loop r2: PRs count only in the push steps, so a count in the dismissal names none.
+        self.assertIsNone(self.reason("gh stack push", said=("push (dismisses 2 approvals), post 3 replies",)))
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6215"] = self.pull(6215, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.assertIn("doesn't name #6216 and #6215",
+                      self.reason("gh stack push", said=("push (dismisses 6215-6216 approvals), post the reply",)))
         # Only a push takes the "yes:" lead; merge_go doesn't change.
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))

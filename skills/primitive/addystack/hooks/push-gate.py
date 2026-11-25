@@ -364,12 +364,12 @@ DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
 # teammate's approval), then post 3 replies, resolve both threads", but not "…, post the reply
 # and skip the push", or "…, post the reply on #6216".
 NOUN = r"(?:repl(?:y|ies)|threads?|comments?|reviews?|ci|checks?|descriptions?)"
-NAME = r"(?![#\d])[\w@.'-]+"
+NAME = r"[A-Za-z@.'_-]+"  # no digit, so no PR
 AFTER_STEP = (rf"(?:(?:post|reply|answer|resolve|comment|re-?request|re-?verify|verify|watch|re-?run|run|update)"
               rf"(?:(?:\s+(?:the|both|all|its|their|this|that))?(?:\s+\d{{1,2}})?(?:\s+{NAME}){{0,2}}?\s+{NOUN})?"
               rf"(?:\s+(?:on|to|in|for)\s+{NAME}(?:\s+{NOUN})?)?|re-?request\s+{NAME}(?:\s+review)?)")
 AFTER = rf"(?:\s*[,;]\s*(?:then\s+)?|,?\s+and\s+(?:then\s+)?){AFTER_STEP}"
-GO = re.compile(rf"(?:yes:\s*)?{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL})(?:{AFTER})*[.!]?",
+GO = re.compile(rf"(?:yes:\s*)?{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*){DISMISSAL}(?:{AFTER})*[.!]?",
                 re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
@@ -380,8 +380,8 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|neve
 
 
 def literal_go(text):
-    """The push of text, up to its dismissal, when text is a short typed request to push
-    that says it dismisses an approval, else None."""
+    """The push steps of text, before its dismissal, when text is a short typed request to
+    push that says it dismisses an approval, else None."""
     text = text.strip().replace("’", "'")
     found = len(text) <= 200 and not REFUSAL.search(text) and GO.fullmatch(text)
     return found.group("push") if found else None
@@ -399,7 +399,7 @@ def label(pr):
 
 
 def unnamed(pushed):
-    """The PRs of live that a go's push, pushed, doesn't name, as "#N" words:
+    """The PRs of live that a go's push steps, pushed, don't name, as "#N" words:
     merge_go.names. A push that names no PR, such as "push it", names the one PR with a
     live approval, as merge-gate.py takes a go that names none, but not two. The steps
     after it (AFTER) can't name a PR."""
