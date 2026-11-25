@@ -76,6 +76,8 @@ class Unnamed(unittest.TestCase):
         self.assertEqual(ids("[addystack#12, Fix the gate](u) then #12 and dotfiles#12"), ["dotfiles#12"])
         self.assertEqual(ids("[#12, Fix the gate](u) then dotfiles#12"), ["dotfiles#12"])
         self.assertEqual(ids("[acme/app#7, Fix the gate](u) then app#7 and #7"), [])
+        self.assertEqual(ids("[acme/app#7, Fix the gate](u) and other/app#7"), ["other/app#7"])
+        self.assertEqual(ids("[app#7, Fix the gate](u) and acme/app#7"), [])
 
     def test_each_id_once_in_first_cited_order(self):
         self.assertEqual(named_links.unnamed("#2 then\nDEV-1 and #2\nOPS-3, the #5800/#5808 stack"),

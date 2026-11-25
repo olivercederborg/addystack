@@ -46,13 +46,14 @@ def blank(match):
 
 
 def key(match):
-    """What an id names: ("issue", "DEV", 3127), ("pull", "dotfiles", 12), or
-    ("pull", "", 12) for a bare #12. None for a standard such as UTF-8."""
+    """What an id names: ("issue", "DEV", 3127), ("pull", "acme/app", 7),
+    ("pull", "dotfiles", 12), or ("pull", "", 12) for a bare #12. None for a standard such
+    as UTF-8."""
     if match.group("team"):
         team = match.group("team")
         return None if team in STANDARDS else ("issue", team, int(match.group("issue")))
     if match.group("repo"):
-        return ("pull", match.group("repo").rsplit("/", 1)[-1].lower(), int(match.group("pull")))
+        return ("pull", match.group("repo").lower(), int(match.group("pull")))
     return ("pull", "", int(match.group("number")))
 
 
@@ -64,12 +65,22 @@ def names(link_text):
     return {found for found in map(key, ID.finditer(link_text)) if found}
 
 
+def same_repo(repo, other):
+    """True when two repo names can name one repo: the same name, and the same owner
+    unless one leaves it out, so acme/app and app match but acme/app and other/app don't."""
+    owner, _, name = repo.rpartition("/")
+    other_owner, _, other_name = other.rpartition("/")
+    return name == other_name and (not owner or not other_owner or owner == other_owner)
+
+
 def covered(cited, named):
-    """True when a named id covers this one: the same id, or, for a bare #12, any repo's
-    #12. A named #12 doesn't cover dotfiles#12, which may be another repo's."""
+    """True when a named id covers this one: the same id; for a bare #12, any repo's #12;
+    for app#12, a named app#12 under any owner, or the same owner's. A named #12 doesn't
+    cover dotfiles#12, which may be another repo's."""
     kind, repo, number = cited
-    return cited in named or (kind == "pull" and not repo and any(
-        other[0] == "pull" and other[2] == number for other in named))
+    return cited in named or (kind == "pull" and any(
+        other[0] == "pull" and other[2] == number and (not repo or other[1] and same_repo(repo, other[1]))
+        for other in named))
 
 
 def fenced(lines):
