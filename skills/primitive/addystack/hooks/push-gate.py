@@ -365,7 +365,7 @@ DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
 # (dismisses the teammate's approval), then post 3 replies, resolve both threads".
 AFTER = (r"(?:\s*[,;]\s*(?:then\s+)?|,?\s+and\s+(?:then\s+)?)(?:post|reply|answer|resolve|re-?request|restack|"
          r"re-?verify|verify|re-?run|run|watch|update|comment|dispatch|file|link)\b[^,;]*")
-GO = re.compile(rf"{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL})(?:{AFTER})*[.!]?",
+GO = re.compile(rf"(?:yes:\s*)?{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL})(?:{AFTER})*[.!]?",
                 re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
@@ -396,11 +396,12 @@ def label(pr):
 
 def unnamed(text):
     """The PRs of live that text, a go's push, doesn't name, as "#N" words: merge_go.names,
-    held to a text that names a PR, so "push it" names none."""
+    so a text that names no PR, such as "push it", names the one PR with a live approval,
+    as merge-gate.py takes a go that names none, but not two."""
     read, _ = merge_go.spans(text)
     numbers = sorted({pr["number"] for pr, *_ in live.values()})
     missing = [label(pr) for pr, *_ in live.values()
-               if not read or not merge_go.names(text, pr["number"], *slug(pr), numbers)]
+               if not read and len(live) > 1 or not merge_go.names(text, pr["number"], *slug(pr), numbers)]
     return " and ".join(missing)
 
 

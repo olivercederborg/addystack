@@ -3839,12 +3839,10 @@ class PushGate(unittest.TestCase):
                            "wait for the teammate; a push to #6091 would dismiss the approval")),
             (("fix it", self.offer({**restack, "text": "push #6092 (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
              "doesn't name #6091"),
-            (("fix it", self.offer({**restack, "text": "push it (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
-             "doesn't name #6091"),
             (("fix it", self.offer(restack, text="Restack?\n\n"), "hold on", claude_wrote("Holding."), "a"), "picks nothing"),
             (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
             (("don't push #6091, it would dismiss the teammate's approval",), None),
-            (("push #6091 if it dismisses nothing",), None), (("push it, dismissing the teammate's approval",), "doesn't name #6091"),
+            (("push #6091 if it dismisses nothing",), None),
             # review-loop r1 on #104: a push word and "dismiss" that don't ask to dismiss the approval.
             (("push #6091 after the approval has been dismissed",), None),
             (("Is a push to #6091 going to dismiss the approval",), None),
@@ -3908,6 +3906,32 @@ class PushGate(unittest.TestCase):
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a"))
                 self.assertIn("which dismisses teammate's approval", reason)
                 self.assertIn(why, reason)
+
+    def test_takes_a_yes_opener_and_no_pr_for_one_live_approval(self):
+        # Nov 25, 2026: the stop:push option the user picked on #6215 at 11:58:09 (transcript
+        # acdfd830) opens on "yes:" and names no PR, as merge-gate takes a go that names none.
+        self.scenario(n=6215)
+        picks = [("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a") for text in (
+            "yes: push (dismisses Johan's approval), post the reply, resolve the thread",
+            "push it (dismisses the teammate's approval)", "yes: push #6215 (dismisses Johan's approval)")]
+        for said in picks + [("push it, dismissing the teammate's approval",), ("yes: push (dismisses Johan's approval)",)]:
+            with self.subTest(said=said[-1] if len(said) == 1 else said[1]):
+                self.assertIsNone(self.reason("gh stack push", said=said))
+        # With two live approvals, a go names each PR.
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6216"] = self.pull(6216, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        for text, why in [("yes: push (dismisses Johan's approval), post the reply, resolve the thread",
+                           "doesn't name #6215 and #6216"),
+                          ("push #6215 (dismisses Johan's approval)", "doesn't name #6216"),
+                          ("yes: push (dismisses Johan's approval), post the reply on #6216", "doesn't name #6215 and #6216")]:
+            with self.subTest(text=text):
+                self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        self.assertIsNone(self.reason("gh stack push", said=("push #6215 and #6216 (dismisses the teammate's approvals)",)))
+        # Only a push takes the "yes:" lead; merge_go doesn't change.
+        import merge_go
+        self.assertFalse(merge_go.literal_go("yes: merge it"))
 
     def test_passes_a_push_that_dismisses_nothing(self):
         # Unchanged: the branch's tip is the PR's head.
