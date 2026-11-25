@@ -19,9 +19,10 @@ COMMENT = re.compile(r"<!--.*?-->", re.S)
 # A fence line: after any indent, quote markers, and list markers, three or more backticks
 # or tildes, as in a fence nested in a list item ("- ```text").
 FENCE = re.compile(r"^(?:\s*(?:>|[-*+]\s|\d+[.)]\s))*\s*(`{3,}|~{3,})")
-# [text](destination "title"), allowing one level of parentheses in the destination.
+# [text](destination "title"), allowing one level of parentheses in the destination, or
+# a reference link, [text][label].
 LINK = re.compile(r"\[([^\[\]\n]*)\](\(\s*(?:<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*)"
-                  r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\s*\))")
+                  r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\s*\)|\[[^\[\]\n]*\])")
 URL = re.compile(r"<?\b(?:https?|ftp)://[^\s<>`]*>?|\bwww\.[^\s<>`]+")
 # DEV-3127; owner/repo#12 or repo#12, a repo name of one character too; #12, before any
 # punctuation, as in "#13; then". A number with a leading zero, as in #000, is a hex
@@ -32,6 +33,8 @@ ID = re.compile(r"(?<![\w-])(?P<team>[A-Z]{2,6})-(?P<issue>[1-9]\d*)(?![\w-])"
                 r"#(?P<pull>[1-9]\d*)(?![\w-])"
                 r"|(?<![\w&#:])#(?P<number>[1-9]\d*)(?![\w-])")
 WORD = re.compile(r"[^\W\d_]{2,}")
+# Words that say what an id is, not what it does: "[PR #9](…)" names nothing.
+GENERIC = {"pr", "pull", "request", "issue", "ticket", "link", "see", "here", "this", "the"}
 
 
 class Cited(NamedTuple):
@@ -58,9 +61,9 @@ def key(match):
 
 
 def names(link_text):
-    """The ids a link's text names: each id in it, when it also holds at least two words
-    of two or more letters."""
-    if len(WORD.findall(ID.sub(" ", link_text))) < 2:
+    """The ids a link's text names: each id in it, when it also holds a word of two or
+    more letters that says what it is about, as in "[#12, Login](…)"."""
+    if not any(word.lower() not in GENERIC for word in WORD.findall(ID.sub(" ", link_text))):
         return set()
     return {found for found in map(key, ID.finditer(link_text)) if found}
 

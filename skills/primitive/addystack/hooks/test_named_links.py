@@ -58,6 +58,11 @@ class Unnamed(unittest.TestCase):
         self.assertEqual(ids("[DEV-4024](https://linear.app/x) and [PR #9](https://github.com/a/b/pull/9)"),
                          ["DEV-4024", "#9"])
 
+    def test_a_one_word_name_and_a_reference_link_name(self):
+        self.assertEqual(ids("[#12, Login](https://github.com/acme/app/pull/12) and #12"), [])
+        self.assertEqual(ids("[#12, Fix login][pr] and #12\n\n[pr]: https://github.com/acme/app/pull/12"), [])
+        self.assertEqual(ids("[See the issue DEV-5](https://linear.app/x)"), ["DEV-5"])
+
     def test_code_comments_and_the_turn_block_are_not_prose(self):
         reply = ("Run `gh pr merge 124` for `DEV-1`.\n\n```\nDEV-2 #3\n```\n\n````md\n#4\n````\n"
                  "<!-- a note on #5 -->\n" + block({"state": "stop", "needs": [], "options": [
