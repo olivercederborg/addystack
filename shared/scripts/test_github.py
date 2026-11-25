@@ -99,7 +99,7 @@ class Anchors(unittest.TestCase):
         (tmp / "files.jsonl").write_text(json.dumps({"filename": "a.ts", "patch": getattr(self, "patch", PATCH)}) + "\n")
         (tmp / "drafts.json").write_text(json.dumps(list(drafts)))
         (tmp / "body.md").write_text("Why?")
-        args = [str(tmp / "drafts.json") if arg == "DRAFTS" else arg for arg in args]
+        args = [{"DRAFTS": str(tmp / "drafts.json"), "BODY": str(tmp / "body.md")}.get(arg, arg) for arg in args]
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True,
                               env={**os.environ, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}",
                                    "FILES": str(tmp / "files.jsonl"), "HEAD_SHA": head, "DRY_RUN": "1"})
@@ -147,6 +147,61 @@ class Anchors(unittest.TestCase):
         result = self.run_script("approve", "7", "abc", "DRAFTS",
                                  drafts=[{"path": "a.ts", "line": 9, "body_file": "body.md"}])
         self.assertEqual((result.returncode, result.stdout), (1, "a.ts:9-9 RIGHT\toutside the diff at line 9\n"))
+
+    def test_approve_carries_a_body_without_inline_comments(self):
+        result = self.run_script("approve", "7", "abc", "", "BODY")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1]),
+                         {"commit_id": "abc", "event": "APPROVE", "comments": [], "body": "Why?"})
+
+    def test_a_review_requests_changes_with_its_comments_and_a_body(self):
+        result = self.run_script("review", "7", "abc", "DRAFTS", "REQUEST_CHANGES", "BODY",
+                                 drafts=[{"path": "a.ts", "line": 3, "body_file": "body.md"}])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("submit it with event=REQUEST_CHANGES and the body in ", result.stdout)
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["comments"],
+                         [{"path": "a.ts", "line": 3, "side": "RIGHT", "body": "Why?"}])
+
+    def test_a_review_never_approves_and_needs_a_body_with_its_event(self):
+        for args in (("APPROVE", "BODY"), ("REQUEST_CHANGES",)):
+            with self.subTest(args):
+                result = self.run_script("review", "7", "abc", "DRAFTS", *args)
+                self.assertEqual(result.returncode, 2)
+
+    def test_dismiss_sends_the_message_file(self):
+        result = self.run_script("dismiss", "7", "42", "BODY")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("api --method PUT repos/o/r/pulls/7/reviews/42/dismissals -f event=DISMISS -F message=@", result.stdout)
+
+
+REVIEWED_GH = r"""#!/usr/bin/env python3
+import sys
+a = " ".join(sys.argv[1:])
+if a.startswith("repo view"):
+    print("o/r")
+elif a.startswith("api graphql") and "viewer" in a:
+    print("frankie[bot]")
+elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"frankie[bot]"' in a and '"PENDING"' in a:
+    print('{"id":1,"state":"CHANGES_REQUESTED","commit_id":"abc"}')
+    print('{"id":2,"state":"APPROVED","commit_id":"def"}')
+else:
+    sys.exit(f"unexpected: gh {a}")
+"""
+
+
+class Reviewed(unittest.TestCase):
+    def test_the_viewers_latest_submitted_review(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(tmp)])
+        (tmp / "bin").mkdir()
+        (tmp / "bin" / "gh").write_text(REVIEWED_GH)
+        (tmp / "bin" / "gh").chmod(0o755)
+        env = {**os.environ, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}"}
+        viewer = subprocess.run([str(SCRIPT), "viewer"], capture_output=True, text=True, env=env)
+        self.assertEqual((viewer.returncode, viewer.stdout), (0, "frankie[bot]\n"), viewer.stderr)
+        reviewed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env=env)
+        self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
+                         (0, {"id": 2, "state": "APPROVED", "commit_id": "def"}), reviewed.stderr)
 
 
 BRANCH_GH = r"""#!/usr/bin/env python3
