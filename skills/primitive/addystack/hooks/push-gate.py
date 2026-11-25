@@ -15,12 +15,14 @@ dismissed it.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
 option, in the reply it answers, or a typed request, either one at most 200 characters, a
-request that opens with push, restack, sync, or submit, names each PR (#N), and says the
-push dismisses an approval ("dismisses the … approval"), with no refusal, condition, or
-question in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval",
-or "push #6091 once the approval is dismissed" isn't one. A pick of any other class, such as the coordinator's `stop:post` "push the cleanup, post the reply,
-re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child, or, in T3, a
-state database it can't read or a session no T3 thread owns.
+request whose whole text is a push verb (push, force-push, restack, rebase, sync, or
+submit) with its object, each PR (#N), and last the dismissal set off by "(", a comma, or
+"and" ("push #6119 (dismisses the … approval)"), with no refusal, condition, question, or
+modal in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval", or
+"push #6091 once the approval is dismissed" isn't one. A pick of any other class, such as
+the coordinator's `stop:post` "push the cleanup, post the reply, re-request <reviewer> on
+#6119", gives no go, nor does a T3 delegated child, or, in T3, a state database it can't
+read or a session no T3 thread owns.
 
 The gate reads pushes outside quotes and heredocs, at the start of a command after `cd`,
 `&&`, `;`, a pipe, or a subshell, and follows `git -C <path>` and each cd, pushd, and popd
@@ -36,8 +38,8 @@ isn't in it. For git push, they are the branches `git push --dry-run --porcelain
 would update or delete, so push.default, refspecs, and `--all` read as git reads them, to
 the GitHub repo of each push URL (`pushurl`, else `url`); a remote whose configured URLs
 don't name github.com, such as another machine, moves no PR, and a push git refuses for
-its refspec moves nothing; one it rejects now still counts, since a fetch, pull, or rebase
-earlier in the command can make git take it. Each branch's PRs are every open one GitHub lists with it as
+its refspec, or rejects as it stands, moves nothing, unless a fetch, pull, or rebase earlier
+in the command can make git take it. Each branch's PRs are every open one GitHub lists with it as
 the head, on its repo or a repo that repo forks, keyed by URL, so two repos' #N stay
 apart. No `stack.sh` subcommand pushes, so it reads none.
 
@@ -107,6 +109,8 @@ walk = Walk(re.sub(r"\$\([^()`]*\)", lambda m: m.group(0) if PUSHY.search(m.grou
 # stack earlier changes which branches the push reads, so the gate can't tell them.
 SWITCHES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:checkout|switch)\b"
                       r"|\bgh\s+(?:pr\s+(?:checkout|co)|stack\s+(?:checkout|switch|up|down|top|bottom|add|init))\b")
+# A fetch moves no branch, but it updates what a push's lease, or git's fast-forward check, compares with.
+FETCHES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+fetch\b")
 pushes, earlier, switched = [], False, None  # (kind, args, checkout, why it can't tell the checkout or None, earlier)
 for piece, words, lead in walk:
     words = words[lead:]
@@ -131,7 +135,7 @@ for piece, words, lead in walk:
     pushes += [found] if found else []
     # A push moves no local branch, so of the pushes only a sync's rebase counts for those after it.
     text = walk.pieces[piece]
-    earlier = earlier or bool(BRANCH_MOVES.search(text)) and not (found and found[0] != "sync")
+    earlier = earlier or bool(BRANCH_MOVES.search(text) or FETCHES.search(text)) and not (found and found[0] != "sync")
     switch = SWITCHES.search(text)
     switched = switched or switch and f"runs `{switch.group(0)}` before it pushes, which changes the branches the push reads"
 if not pushes:
@@ -279,11 +283,10 @@ def git_targets(argv, where, earlier):
             return [], repos
         raise RuntimeError(f"`git push --dry-run` failed: {err[:200]}")
     found = []
-    # Each line is "<flag>\t<from>:<to>\t<summary>": = is up to date, so it moves nothing unless an
-    # earlier command moves the branch. ! is rejected now, but a fetch, pull, or rebase earlier in
-    # the command can make git take it, so it counts.
+    # Each line is "<flag>\t<from>:<to>\t<summary>": = is up to date and ! rejected, so neither moves,
+    # unless a fetch or branch move earlier in the command changes what git compares.
     for flag, source, destination in re.findall(r"^([ +*!=-])\t([^\t]*):([^\t]+)\t", out, re.M):
-        if flag == "=" and not earlier or not destination.startswith("refs/heads/"):
+        if flag in "=!" and not earlier or not destination.startswith("refs/heads/"):
             continue  # a tag or another namespace moves no PR
         branch = destination[len("refs/heads/"):]
         found.append((branch, None, "a deletion") if flag == "-" else (branch, tip(where, source), None))
@@ -347,17 +350,18 @@ except Exception as error:
 if not live:
     passes("no PR this push moves has a live approval")
 
-# A request opens with its verb, after at most a word of assent: "push #6119 (…)", "ok, restack
-# and push #6091, …", never a statement such as "pushing #6119 dismisses the approval".
-PUSH_WORD = re.compile(r"^\W*(?:(?:ok|okay|yes|yep|sure|go ahead|please|then|so)\b\W*)*"
-                       r"(?:force-?push|push|restack|re-stack|rebase|sync|submit)\b", re.I)
-# The push dismissing an approval, said as the request does: "dismisses the teammate's approval",
-# not "the approval has been dismissed" or "dismiss the notification".
-DISMISS = re.compile(r"\bdismiss\w*\s+(?:\S+\s+){0,6}?approv", re.I)
-# A typed request with any of these may refuse, wait, or ask, so it's no go: a question
-# opens with its verb or asks word even without its ?.
-REFUSAL = re.compile(r"\?|\b(?:\w+n't|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
-                     r"wait|hold|stop|after|once|when|whenever|before|whether|later)\b|^\W*(?:is|are|was|were|will|"
+# A go's whole shape, as the denial suggests it: words of assent, a push verb with its object
+# (not "push to #N", which describes one), and last the dismissal set off by "(", a comma, or
+# "and": "push #6119 (dismisses the teammate's approval)", "go ahead and push #6119, it
+# dismisses …", never "pushing #6119 dismisses the approval" or a warning after it.
+GO = re.compile(r"^\W*(?:(?:ok|okay|yes|yep|sure|go ahead(?: and)?|please|then|so|lets|let's|and)\b[\s,.:!-]*)*"
+                r"(?:force-?push|push|restack|re-stack|rebase|sync|submit)\b(?!\s+(?:to|on|of|for|at|in|into|onto)\b)"
+                r".*(?:\(\s*|,\s*(?:it\s+|which\s+)?|\band\s+)dismiss\w*\s+(?:\S+\s+){0,6}?approv\w*\)?[\s.!]*$",
+                re.I | re.S)
+# A request with any of these may refuse, wait, ask, or only describe what the push would do,
+# so it's no go: a question opens with its verb or asks word even without its ?.
+REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
+                     r"wait|hold|stop|after|once|when|whenever|before|whether|later|will|would|could|might|shall)\b|^\W*(?:is|are|was|were|will|"
                      r"would|could|can|should|shall|does|do|did|has|have|had|may|might|must|why|what|how|where|"
                      r"which|who)\b", re.I)
 
@@ -365,8 +369,7 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|dont|wont|cant|shouldnt|do not|never|not|n
 def literal_go(text):
     """Whether text is a short typed request to push that says it dismisses an approval."""
     text = text.strip().replace("’", "'")
-    return (len(text) <= 200 and bool(PUSH_WORD.match(text)) and bool(DISMISS.search(text))
-            and not REFUSAL.search(text))
+    return len(text) <= 200 and bool(GO.match(text)) and not REFUSAL.search(text)
 
 
 def slug(pr):

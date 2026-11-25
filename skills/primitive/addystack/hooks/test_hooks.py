@@ -3821,7 +3821,9 @@ class PushGate(unittest.TestCase):
         for said in [("fix it", self.offer(restack, text="Restack?\n\n"), "a"),
                      ("fix it", self.offer({"class": "routine", "text": "verify"}, restack, text="Restack?\n\n"), " B. "),
                      ("push #6091 (dismisses teammate's approval)",),
-                     ("ok, restack and push #6091, dismissing the teammate's approval",)]:
+                     ("ok, restack and push #6091, dismissing the teammate's approval",),
+                     ("go ahead and push #6091, it dismisses the teammate's approval",),
+                     ("lets push #6091 and dismiss the teammate's approval",)]:
             with self.subTest(said=said[-1]):
                 self.assertIsNone(self.reason("gh stack push", said=said))
                 self.assertIsNone(self.reason("git push --force-with-lease", said=said))
@@ -3850,6 +3852,15 @@ class PushGate(unittest.TestCase):
             # review-loop r3: a statement about the push isn't a request for it.
             (("pushing #6091 dismisses the teammate's approval",), None),
             (("FYI the push to #6091 dismisses the teammate's approval",), None),
+            # review-loop r3 (Claude): a warning that opens with a push word.
+            *(((text,), None) for text in (
+                "push to #6091 will dismiss the teammate's approval, so ask me first",
+                "push to #6091 would dismiss the teammate's approval",
+                "sync on #6091 dismisses the approval, careful",
+                "push #6091 would dismiss the approval, so ping me first",
+                "push #6091 dismisses the teammate's approval. ask me first",
+                "push #6091 dismisses the teammate's approval; I'll decide tomorrow",
+                "push #6091 (dismisses the teammate's approval), so ask me first")),
             (("fix it", self.offer({**restack, "text": "push #6091 once the teammate dismisses their approval"},
                                    text="Restack?\n\n"), "a"), "isn't a plain request to push"),
         ]:
@@ -4026,15 +4037,16 @@ class PushGate(unittest.TestCase):
         self.assertIn(f"moves #6119 from {self.local[:10]} to a rebased tip", self.reason("gh stack sync"))
         self.assertIsNone(self.reason("gh stack push"))
 
-    def test_counts_a_push_git_rejects_now(self):
+    def test_counts_a_push_git_rejects_now_after_a_fetch(self):
         # review-loop r3: a push git rejects as it stands (behind its remote, or a stale lease)
-        # can pass once a pull, fetch, or rebase earlier in the command runs, so it counts.
+        # can pass once a pull, fetch, or rebase earlier in the command runs, so then it counts.
         self.git("reset", "-q", "--hard", "HEAD~2")  # behind the PR's head
-        self.assertIn(f"moves #6119 from {self.remote_head[:10]} to {self.git('rev-parse', 'HEAD')[:10]}",
-                      self.reason("git push origin HEAD"))
-        self.assertIn("to a tip an earlier command in this one makes", self.reason("git pull --rebase && git push origin HEAD"))
+        self.assertIsNone(self.reason("git push origin HEAD"))  # git rejects it, so it dismisses nothing
+        for command in ["git pull --rebase && git push origin HEAD", "git fetch origin && git push --force-with-lease"]:
+            with self.subTest(command=command):
+                self.assertIn("to a tip an earlier command in this one makes", self.reason(command))
         self.scenario(reviews=())
-        self.assertIsNone(self.reason("git push origin HEAD"))
+        self.assertIsNone(self.reason("git fetch && git push origin HEAD"))
 
     def test_counts_a_branch_an_earlier_command_moves(self):
         # review-loop r1 on #104: the gate reads the tips before the shell runs, so a commit
