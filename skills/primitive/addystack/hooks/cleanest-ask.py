@@ -30,11 +30,12 @@ text matches no go, so the gates that read the user's latest prompt grant nothin
 
 It sends with `t3 thread send <thread> /cleanest` (T3CODE_CLI_PATH), which queues it as
 the thread's next turn. It never blocks the reply and prints nothing: on any doubt or
-error it doesn't send. Once a card stops on a review or decide need in a review thread, it
+error it doesn't send; a send it records before running the CLI, so one whose answer is
+lost still counts, and then holds the thread's later runs too. Once a card stops on a review or decide need in a review thread, it
 appends its decision, a send or a skip with its reason, to cleanest-ask.jsonl in the state folder (ADDYSTACK_STATE), which the
 trial reads. `cleanest-ask.py --dry-run [--transcript PATH] [--session ID]` prints the
 decision for this session's last reply and sends nothing."""
-import contextlib, json, os, pathlib, re, sqlite3, subprocess, sys, time
+import contextlib, json, os, pathlib, re, sqlite3, subprocess, sys, time, uuid
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import t3_child, transcripts, turn_block, user_turn  # noqa: E402
@@ -92,20 +93,22 @@ def review_thread(session):
 
 
 def sends(thread):
-    """The log's sends to thread, oldest first."""
+    """The log's sends to thread, oldest first: each send's last row, by its id, that still
+    says it was sent. A send is recorded before the CLI runs, so one whose outcome is unknown,
+    such as a timeout, counts as sent."""
     try:
         lines = LOG.read_text().splitlines()
     except FileNotFoundError:
         return []
-    rows = []
-    for line in lines:
+    latest = {}
+    for at, line in enumerate(lines):
         try:
             row = json.loads(line)
         except ValueError:
             continue
-        if isinstance(row, dict) and row.get("sent") is True and row.get("thread") == thread:
-            rows.append(row)
-    return rows
+        if isinstance(row, dict) and row.get("thread") == thread:
+            latest[row.get("send") or at] = row
+    return [row for row in latest.values() if row.get("sent") is True]
 
 
 def queued(run):
@@ -209,12 +212,14 @@ def run_id(output):
 
 
 def log(row):
+    """Appends row to the log; False when it can't."""
     try:
         LOG.parent.mkdir(parents=True, exist_ok=True)
         with open(LOG, "a") as file:
             file.write(json.dumps({"time": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **row}) + "\n")
     except OSError:
-        pass
+        return False
+    return True
 
 
 def last_reply(path):
@@ -244,11 +249,20 @@ def main():
     try:
         payload = json.load(sys.stdin)
         thread, prompts = decide(payload)
-        sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", "--json", thread, COMMAND],
-                              capture_output=True, text=True, timeout=20)
+        send = {"session": payload.get("session_id"), "thread": thread, "send": uuid.uuid4().hex, "prompts": prompts}
+        # Recorded first, so a send whose answer is lost still counts; none without a record.
+        if not log({**send, "sent": True, "run": None}):
+            return
+        try:
+            sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", "--json", thread, COMMAND],
+                                  capture_output=True, text=True, timeout=20)
+        except subprocess.TimeoutExpired:
+            log({**send, "sent": True, "run": None, "reason": "t3 thread send timed out; counted as sent"})
+            return
         if sent.returncode:
-            raise Skip(f"t3 thread send failed: {(sent.stderr or sent.stdout).strip()[:300]}", thread)
-        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "prompts": prompts, "run": run_id(sent.stdout)})
+            log({**send, "sent": False, "reason": f"t3 thread send failed: {(sent.stderr or sent.stdout).strip()[:300]}"})
+            return
+        log({**send, "sent": True, "run": run_id(sent.stdout)})
     except Skip as skip:
         if skip.thread:
             log({"session": payload.get("session_id"), "thread": skip.thread, "sent": False, "reason": str(skip)})

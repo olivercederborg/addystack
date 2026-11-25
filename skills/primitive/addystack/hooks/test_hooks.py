@@ -650,9 +650,16 @@ class CleanestAsk(unittest.TestCase):
         with contextlib.closing(sqlite3.connect(self.env["T3_STATE_DB"])) as db, db:
             db.execute("insert into orchestration_v2_projection_runs values (?, 'p1', ?)", (run, status))
 
-    def log(self):
+    def log(self, raw=False):
+        """The decision log, each send as its last row, as the hook reads it, or every row when raw."""
         path = self.dir / "state/cleanest-ask.jsonl"
-        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        if raw:
+            return rows
+        latest = {}
+        for at, row in enumerate(rows):
+            latest[row.get("send") or at] = row
+        return list(latest.values())
 
     def test_sends_once_on_a_card_that_stops_on_a_review_or_decide_need(self):
         for kinds in (("review",), ("decide",), ("do", "decide")):
@@ -788,6 +795,19 @@ class CleanestAsk(unittest.TestCase):
                 out = subprocess.run([str(HOOKS / self.HOOK)], input=payload, capture_output=True, text=True,
                                      env={**os.environ, **self.env})
                 self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+    def test_a_send_whose_answer_is_lost_still_counts(self):
+        # T3 queues the message, then the CLI times out before it answers.
+        (self.dir / "t3").write_text(f'#!/bin/sh\necho accepted >> {self.sent}\nexec sleep 30\n')
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        self.assertEqual(self.log()[-1]["reason"], "t3 thread send timed out; counted as sent")
+        self.assertEqual(len(self.stop(first, ("tighten comment 2", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        # With no record of a send, none goes out.
+        (self.dir / "state/cleanest-ask.jsonl").unlink()
+        (self.dir / "state/cleanest-ask.jsonl").mkdir()
+        self.assertEqual(len(self.stop(first)), 1)
 
     def test_dry_run_prints_the_decision_and_sends_nothing(self):
         run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), "--dry-run", "--transcript", self.transcript(*turns),
