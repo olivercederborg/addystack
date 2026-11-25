@@ -448,12 +448,18 @@ class UnwatchGate(unittest.TestCase):
         self.assertIsNone(self.reason())
 
     def test_a_typed_request_to_stop_watching_passes(self):
-        for prompt in ("stop watching it", "unwatch #6226", "no need to watch it anymore", "don't babysit it"):
+        for prompt in ("stop watching it", "unwatch #6226", "ok, unwatch https://github.com/acme/app/pull/6226",
+                       "no need to watch it anymore", "don't babysit it", "please stop watching #6226 and #6215"):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.reason(said=(prompt,)))
 
     def test_a_refusal_or_another_request_is_denied(self):
-        for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review"):
+        for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
+                       # A question or complaint about the hand-back unwatch, which the go once read as a request.
+                       "why did you unwatch #6226?", "is it safe to unwatch it", "should you stop watching it?",
+                       "you unwatch PRs too early, never do that", "unwatch it once it merges",
+                       # A request for another PR.
+                       "stop watching #6215", "unwatch " + "x" * 200):
             with self.subTest(prompt=prompt):
                 self.assertIsNotNone(self.reason(said=(prompt,)))
 
@@ -506,6 +512,7 @@ class WatchReminder(unittest.TestCase):
                 ("Bash", {"command": "gh pr ready 6215"}),
                 ("Bash", {"command": "cd ~/app && gh pr edit 6215 --add-reviewer first-reviewer,second-reviewer"}),
                 ("Bash", {"command": "gh pr create --title t --body b"}),
+                ("Bash", {"command": "gh pr create --fill --draft=false"}),
                 ("Bash", {"command": "gh stack submit --open"})):
             with self.subTest(tool=tool, tool_input=tool_input):
                 self.assertIn('`until: "checks"`', self.remind(tool, tool_input))

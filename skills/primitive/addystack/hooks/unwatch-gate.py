@@ -17,7 +17,10 @@ flag, and author from `gh pr view`; the user is `gh api user`. A merged or close
 draft, or another author's PR passes, as does a T3 delegated child, whose watches are its
 own: the thread it reports to keeps the user's. A go is the user's own latest prompt
 (user_turn.py) that asks to stop watching or unwatch, typed or as the text of the option
-its key picks, with no refusal such as "don't unwatch" or "keep watching". Fails closed:
+its key picks, at most 200 characters, naming this PR or no PR, with no refusal,
+condition, or question outside the request, as push-gate.py reads a push go: "stop
+watching #6226" or "don't watch it" is one, and "why did you unwatch it?", "don't unwatch
+it", or "unwatch it once it merges" isn't. Fails closed:
 when a check can't run, such as `gh` failing or a call that names no PR, the unwatch is
 denied, which leaves a watch on and costs a wake at most.
 
@@ -36,9 +39,15 @@ else:
     payload = json.load(sys.stdin)
 tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), dict) else {}
 
-# A request to stop watching, and the refusals that read like one.
+# A request to stop watching.
 STOP = re.compile(r"\bun-?watch\b|\bstop (?:watching|babysitting)\b|\b(?:no need to|don'?t|do not) (?:keep )?(?:watch|babysit)", re.I)
-REFUSAL = re.compile(r"\b(?:no need to|don'?t|do not|never|without) (?:un-?watch|stop (?:watching|babysitting))|\bkeep (?:watching|the watch|it watched)", re.I)
+# Outside that request, a word that may refuse, wait, or ask, as push-gate.py's REFUSAL reads
+# a push go: "don't unwatch it", "unwatch it once it merges", "why did you unwatch it?", "you
+# unwatch too early, never do that". A question opens with its verb or asks word even without its ?.
+DOUBT = re.compile(r"\?|\b(?:\w+n't|dont|wont|cant|shouldnt|do not|never|not|without|avoid|unless|if|until|"
+                   r"wait|hold|keep|after|once|when|whenever|before|whether|later|too|will|would|could|might|shall)\b"
+                   r"|^\W*(?:is|are|was|were|will|would|could|can|should|shall|does|do|did|has|have|had|may|might|must|"
+                   r"why|what|how|where|which|who|you)\b", re.I)
 ASK = ('end the turn with the watch on: a watch runs `until: "checks"` unless set to `"merged"`, so the thread '
        "returns to the user's inbox once checks finish and still wakes on reviews, comments, and failed checks; "
        'call `watch_pull_request` with `until: "checks"` only when it watches until merged')
@@ -81,24 +90,28 @@ def target():
     return None
 
 
-def asks_to_stop(text):
-    return isinstance(text, str) and bool(STOP.search(text)) and not REFUSAL.search(text)
+def asks_to_stop(text, number):
+    """Whether text is a short plain request to stop watching that names PR number or no PR."""
+    if not isinstance(text, str) or len(text.strip()) > 200 or not (found := STOP.search(text)):
+        return False
+    named = {int(n) for n in re.findall(r"(?:#|/pull/)(\d+)", text)}
+    return (not named or number in named) and not DOUBT.search(text[:found.start()] + " " + text[found.end():])
 
 
-def user_go():
-    """Whether the user's latest prompt, typed or a key's picked option, asks to stop watching."""
+def user_go(number):
+    """Whether the user's latest prompt, typed or a key's picked option, asks to stop watching PR number."""
     try:
         import turn_block, user_turn
         found = user_turn.exchanges(payload)
         if not found:
             return False
         prompt = found[-1].prompt
-        if asks_to_stop(prompt):
+        if asks_to_stop(prompt, number):
             return True
         if not turn_block.PICK.fullmatch(prompt or ""):
             return False
         option = turn_block.picked(user_turn.answered(found), prompt)
-        return option is not None and asks_to_stop(option.text)
+        return option is not None and asks_to_stop(option.text, number)
     except Exception:
         return False
 
@@ -122,7 +135,7 @@ if pr.get("isDraft"):
     passes(f"#{pr['number']} is a draft, which waits on no reviewer")
 if (pr.get("author") or {}).get("login") != me:
     passes(f"#{pr['number']} is {(pr.get('author') or {}).get('login')}'s, not {me}'s")
-if user_go():
+if user_go(pr['number']):
     passes("the user's latest prompt asks to stop watching")
 deny(f"#{pr['number']} is open and ready for review, so its watch stays on until it merges or closes",
      f"to hand the thread back while it waits, {ASK}",
