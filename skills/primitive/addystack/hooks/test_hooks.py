@@ -843,15 +843,17 @@ class CleanestAsk(CleanestAskCase):
         if str(HOOKS.parent / "lib") not in sys.path:
             sys.path.append(str(HOOKS.parent / "lib"))
         import config, hookset
-        for hooks, on in (({"preset": "recommended"}, False), ({"preset": "all"}, False),
-                          ({"preset": "all", "enable": ["cleanest-ask"]}, True),
-                          ({"preset": "recommended", "enable": ["cleanest-ask"]}, True)):
-            with self.subTest(hooks=hooks):
-                user = self.dir / "addystack.jsonc"
-                user.write_text(json.dumps({"hooks": hooks}))
-                selected = [entry.id for entry in hookset.select(config.resolve(user), "claude", "linux")]
-                self.assertEqual("cleanest-ask" in selected, on)
-                self.assertNotIn("cleanest-ask", [entry.id for entry in hookset.select(config.resolve(user), "codex", "linux")])
+        for hook in ("cleanest-ask", "cleanest-ask-impl"):
+            for hooks, on in (({"preset": "recommended"}, False), ({"preset": "all"}, False),
+                              ({"preset": "all", "enable": [hook]}, True),
+                              ({"preset": "recommended", "enable": [hook]}, True)):
+                with self.subTest(hook=hook, hooks=hooks):
+                    user = self.dir / "addystack.jsonc"
+                    user.write_text(json.dumps({"hooks": hooks}))
+                    selected = [entry.id for entry in hookset.select(config.resolve(user), "claude", "linux")]
+                    self.assertEqual(hook in selected, on)
+                    self.assertEqual(len(set(selected) & {"cleanest-ask", "cleanest-ask-impl"}), int(on))
+                    self.assertNotIn(hook, [entry.id for entry in hookset.select(config.resolve(user), "codex", "linux")])
 
 
 class CleanestAskImplementation(CleanestAskCase):
