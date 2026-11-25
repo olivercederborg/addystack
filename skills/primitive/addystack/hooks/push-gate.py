@@ -13,7 +13,7 @@ replays both.
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
 option, in the reply it answers, or a typed request, either one at most 200 characters, a
 request whose whole text is a push verb (push, force-push, restack, rebase, sync, or
-submit) with its object and each PR (#N), or for a lone approval no #N anywhere, then the
+submit) with its object and each PR (#N), or for a lone approval no number anywhere, then the
 dismissal set off by "(", a comma, or "and" ("yes: push #6119 (dismisses the … approval)"),
 then only steps that open on a step verb (AFTER), with no refusal, condition, question, or
 modal in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval", or
@@ -394,13 +394,14 @@ def label(pr):
 
 def unnamed(text, pushed):
     """The PRs of live that the go text doesn't name in its push, pushed, as "#N" words:
-    merge_go.names. A go with no #N anywhere, such as "push it, post the 3 replies", names
+    merge_go.names. A go with no number anywhere, such as "push it, post the reply", names
     the one PR with a live approval, as merge-gate.py takes a go that names none, but not
-    two; a bare count after the push is a count, not a PR."""
+    two: a number after the push, as in "post the reply on PR 6216" or "the 3 replies",
+    may name another PR, and no word list tells a count from one."""
     read, _ = merge_go.spans(pushed)
     numbers = sorted({pr["number"] for pr, *_ in live.values()})
     missing = [label(pr) for pr, *_ in live.values()
-               if not read and (re.search(r"#\d", text) or len(live) > 1)
+               if not read and (re.search(r"\d", text) or len(live) > 1)
                or not merge_go.names(pushed, pr["number"], *slug(pr), numbers)]
     return " and ".join(missing)
 

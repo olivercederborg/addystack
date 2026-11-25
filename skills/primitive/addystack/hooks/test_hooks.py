@@ -3937,15 +3937,20 @@ class PushGate(unittest.TestCase):
                           ("push #6216 (dismisses the reviewer's approval), then run the deploy to production",
                            "isn't a plain request"),
                           ("push #6216 (dismisses the reviewer's approval), then update production data", "isn't a plain request"),
-                          ("push #6216 (dismisses the reviewer's approval), restack #6215", "isn't a plain request")]:
+                          ("push #6216 (dismisses the reviewer's approval), restack #6215", "isn't a plain request"),
+                          # verify-work on dc8690e: a number after a push that names no PR may name
+                          # another PR, and no word list tells a count from one, so any number refuses.
+                          *((text, "doesn't name #6216") for text in (
+                              "push (dismisses the reviewer's approval), then post the reply on PR 6215",
+                              "push it (dismisses the reviewer's approval), then post the reply and force-push 6215",
+                              "push (dismisses the reviewer's approval), post the reply on https://github.com/acme/app/pull/6215",
+                              "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads"))]:
             with self.subTest(text=text):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
         for text in ("push #6216 (dismisses the reviewer's approval), run CI, update both PR descriptions",
                      "push (dismisses the reviewer's approval), then re-verify and watch CI",
-                     # verify-work on 78e8c49: a count after the push names no PR.
-                     "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
-                     "push it (dismisses the reviewer's approval), then update 2 PR descriptions"):
+                     "yes: push #6216 (dismisses the reviewer's approval), post the 3 replies, resolve both threads"):
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
