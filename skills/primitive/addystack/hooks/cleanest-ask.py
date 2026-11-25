@@ -117,7 +117,8 @@ def latest_raw(path):
 
 def check_run(found, path, thread, session):
     """The session's /cleanest prompts so far; raises Skip unless the latest prompt is the
-    user's or a child's result and this run hasn't asked yet."""
+    user's or a notice that a child or background task finished (CONTINUES), and this run
+    hasn't asked yet."""
     latest = found[-1].prompt
     if not latest and not latest_raw(path).startswith(CONTINUES):
         raise Skip("the latest prompt isn't the user's: a wake, a tick, or another agent's message", thread)
