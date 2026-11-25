@@ -465,7 +465,7 @@ class UnwatchGate(unittest.TestCase):
                        # The same number in another repo.
                        "unwatch https://github.com/other/repo/pull/6226",
                        "stop watching https://github.com/acme/web/pull/6226",
-                       "unwatch https://github.com/pull/6226"):
+                       "unwatch https://github.com/pull/6226", "unwatch HTTPS://github.com/other/repo/pull/6226"):
             with self.subTest(prompt=prompt):
                 self.assertIsNotNone(self.reason(said=(prompt,)))
 

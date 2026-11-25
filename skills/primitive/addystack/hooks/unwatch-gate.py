@@ -90,12 +90,12 @@ def target():
     return None
 
 
-LINK = re.compile(r"https?://\S+?/pull/\d+")
+LINK = re.compile(r"https?://\S+?/pull/\d+", re.I)
 
 
 def url_key(url):
     """(host, owner, repo, number) of a PR URL, in lower case, or None."""
-    found = isinstance(url, str) and re.fullmatch(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)", url)
+    found = isinstance(url, str) and re.fullmatch(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)", url, re.I)
     return (*(part.lower() for part in found.groups()[:3]), int(found.group(4))) if found else None
 
 
