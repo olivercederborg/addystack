@@ -125,6 +125,7 @@ class FinalReply(unittest.TestCase):
     def test_a_cut_or_unparsable_last_line_and_a_missing_file(self):
         self.assertEqual(self.final(claude_transcript("Done."), raw_tail='{"type": "assist'), "Done.")
         self.assertIsNone(transcripts.final_reply("/nonexistent/transcript.jsonl"))
+        self.assertIsNone(transcripts.final_reply(None))  # Codex sends null when it has no transcript
 
     def test_a_reply_far_from_the_end_is_read_across_blocks_and_one_past_the_limit_is_not(self):
         filler = {"type": "progress", "data": "x" * 1000}

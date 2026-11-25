@@ -357,7 +357,7 @@ def final_reply(path):
                 return reply_text(entry)
             if prompt_text(entry):
                 return None
-    except (OSError, UnicodeDecodeError):
+    except (OSError, TypeError, UnicodeDecodeError):
         return None
     text = "\n".join(part for part in reversed(parts) if part)
     return text if text.strip() else None
