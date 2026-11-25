@@ -521,7 +521,10 @@ class WatchReminder(unittest.TestCase):
                 ("Bash", {"command": "cd ~/app && gh pr edit 6215 --add-reviewer first-reviewer,second-reviewer"}),
                 ("Bash", {"command": "gh pr create --title t --body b"}),
                 ("Bash", {"command": "gh pr create --fill --draft=false"}),
-                ("Bash", {"command": "gh stack submit --open"})):
+                ("Bash", {"command": "gh stack submit --open"}),
+                # T3 ends a watch when its PR closes, so reopening one starts the wait again.
+                ("mcp__t3-code__pull_request_update", {"number": 6092, "state": "open"}),
+                ("Bash", {"command": "gh pr reopen 6092"})):
             with self.subTest(tool=tool, tool_input=tool_input):
                 reminder = self.remind(tool, tool_input)
                 self.assertIn('`until: "checks"`', reminder)
@@ -532,6 +535,8 @@ class WatchReminder(unittest.TestCase):
         for tool, tool_input in (
                 ("mcp__t3-code__pull_request_update", {"ready": False}),
                 ("mcp__t3-code__pull_request_update", {"title": "t"}),
+                ("mcp__t3-code__pull_request_update", {"state": "closed"}),
+                ("Bash", {"command": "gh pr close 6092"}),
                 ("mcp__t3-code__pull_request_create", {"title": "t", "body": "b", "draft": True}),
                 ("Bash", {"command": "gh pr ready 6215 --undo"}),
                 ("Bash", {"command": "gh pr create --draft --title t"}),
