@@ -16,8 +16,10 @@ It sends only when all of these hold:
   such as review-loop's reviewer, or a background task finished (CONTINUES); not a
   PR-watch wake, a coordinator tick, another agent's message, or a `/cleanest`;
 - the run hasn't asked yet: no prompt since the last reply whose turn block is `done` is a
-  `/cleanest` or the user's own quality-bar ask (ASKED), and no `/cleanest` this hook sent
-  in this session is still waiting in T3's queue;
+  `/cleanest` or the user's own quality-bar ask (ASKED), and this hook sent none this run,
+  delivered or cancelled;
+- no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
+  `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
 - `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
   commands/cleanest.md, which `addystack install` links while this hook is enabled.
 
@@ -39,9 +41,12 @@ import t3_child, transcripts, turn_block, user_turn  # noqa: E402
 
 COMMAND = "/cleanest"
 REVIEW_TITLE = re.compile(r"◎ #\d")
-# The user's own quality-bar question, as R183 counted asks but asked: "cleanest", or one of
-# its other terms in a question. The run already has its answer.
-ASKED = re.compile(r"cleanest|\b(?:idiomatic|long[- ]term|best[- ]practices?)\b[^?\n]*\?", re.I)
+# The user's own quality-bar ask: it matches 129 of the 131 messages R183's broader count found
+# (Nov 18-25, 2026), and not the 2 audit requests, nor "long-term" naming a feature. The run
+# already has its answer.
+ASKED = re.compile(r"cleanest|idiomatic|best[- ]practices?\b|\b(?:best|better|right)\b[^?.\n]{0,40}\blong[- ]?term"
+                   r"|\blong[- ]?term\b[^?.\n]{0,20}\b(?:solution|approach|direction|fix|shape|structure|architecture"
+                   r"|implementation)\b|necessary for the long[- ]?term", re.I)
 # The command the kit ships, which install links into Claude Code's commands/.
 KIT_COMMAND = pathlib.Path(__file__).resolve().parent.parent / "commands" / "cleanest.md"
 # How T3 starts the notice that a delegated child finished, and Claude Code its notice that a
@@ -86,25 +91,30 @@ def review_thread(session):
     return thread
 
 
-def queued(found, thread, session, asked):
-    """Whether a /cleanest this hook sent to thread in session this run hasn't arrived yet:
-    the log records how many prompts and /cleanest prompts the session held when it sent,
-    no /cleanest came since, and no reply since ended the run. One the user cancelled stays
-    pending until the run ends."""
+def sends(thread):
+    """The log's sends to thread, oldest first."""
     try:
         lines = LOG.read_text().splitlines()
     except FileNotFoundError:
-        return False
+        return []
+    rows = []
     for line in lines:
         try:
             row = json.loads(line)
         except ValueError:
             continue
-        if (isinstance(row, dict) and row.get("sent") is True and (row.get("thread"), row.get("session")) == (thread, session)
-                and isinstance(row.get("asked"), int) and row["asked"] >= asked
-                and isinstance(row.get("prompts"), int) and not ended(found[row["prompts"]:])):
-            return True
-    return False
+        if isinstance(row, dict) and row.get("sent") is True and row.get("thread") == thread:
+            rows.append(row)
+    return rows
+
+
+def queued(run):
+    """Whether T3's run for a send is still queued; a run T3 doesn't know counts as queued."""
+    if not isinstance(run, str):
+        return True
+    with contextlib.closing(t3_child.connect()) as db:
+        status = db.execute("select status from orchestration_v2_projection_runs where run_id = ?", (run,)).fetchone()
+    return status is None or status[0] == "queued"
 
 
 def ended(exchanges):
@@ -133,9 +143,8 @@ def latest_raw(path):
 
 
 def check_run(found, path, thread, session):
-    """The session's /cleanest prompts so far; raises Skip unless the latest prompt is the
-    user's or a notice that a child or background task finished (CONTINUES), and this run
-    hasn't asked yet."""
+    """Raises Skip unless the latest prompt is the user's or a notice that a child or
+    background task finished (CONTINUES), this run hasn't asked, and nothing sent is queued."""
     latest = found[-1].prompt
     if not latest and not latest_raw(path).startswith(CONTINUES):
         raise Skip("the latest prompt isn't the user's: a wake, a tick, or another agent's message", thread)
@@ -146,15 +155,21 @@ def check_run(found, path, thread, session):
             raise Skip("this run already asked", thread)
         if ended([exchange]):
             break
-    asked = sum(own_command(exchange.prompt) for exchange in found)
-    if queued(found, thread, session, asked):
-        raise Skip(f"a {COMMAND} this hook sent is still queued", thread)
-    return asked
+    earlier = sends(thread)
+    # A send this run made, delivered or cancelled: the session held `prompts` prompts then,
+    # and no reply since has ended the run.
+    if any(row.get("session") == session and isinstance(row.get("prompts"), int)
+           and not ended(found[row["prompts"]:]) for row in earlier):
+        raise Skip("this run already asked", thread)
+    try:
+        if any(queued(row.get("run")) for row in earlier):
+            raise Skip(f"a {COMMAND} this hook sent is still queued", thread)
+    except sqlite3.Error as error:
+        raise Skip(f"can't read T3's state database ({error})", thread) from None
 
 
 def decide(payload):
-    """The thread to send /cleanest to, and its session's /cleanest prompts and prompts so
-    far; raises Skip."""
+    """The thread to send /cleanest to, and how many prompts the session holds; raises Skip."""
     try:
         turn = turn_block.parse(payload.get("last_assistant_message") or "")
     except turn_block.Malformed as error:
@@ -171,8 +186,7 @@ def decide(payload):
         raise Skip(f"can't tell who sent the latest prompt ({error})", thread) from None
     if not found:
         raise Skip("can't tell who sent the latest prompt", thread)
-    asked = check_run(found, payload.get("transcript_path"), thread, session)
-    prompts = len(found)
+    check_run(found, payload.get("transcript_path"), thread, session)
     home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.expanduser("~/.claude")
     try:
         installed = pathlib.Path(home, "commands", "cleanest.md").read_bytes() == KIT_COMMAND.read_bytes()
@@ -182,7 +196,16 @@ def decide(payload):
         raise Skip(f"commands/cleanest.md in {home} isn't the kit's {COMMAND}", thread)
     if not os.environ.get("T3CODE_CLI_PATH"):
         raise Skip("no T3 CLI (T3CODE_CLI_PATH)", thread)
-    return thread, asked, prompts
+    return thread, len(found)
+
+
+def run_id(output):
+    """The run id in `t3 thread send --json`'s output, or None."""
+    try:
+        run = json.loads(output).get("runId")
+    except (ValueError, AttributeError):
+        return None
+    return run if isinstance(run, str) else None
 
 
 def log(row):
@@ -220,12 +243,12 @@ def main():
     payload = {}
     try:
         payload = json.load(sys.stdin)
-        thread, asked, prompts = decide(payload)
-        sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", thread, COMMAND],
+        thread, prompts = decide(payload)
+        sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", "--json", thread, COMMAND],
                               capture_output=True, text=True, timeout=20)
         if sent.returncode:
             raise Skip(f"t3 thread send failed: {(sent.stderr or sent.stdout).strip()[:300]}", thread)
-        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "asked": asked, "prompts": prompts})
+        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "prompts": prompts, "run": run_id(sent.stdout)})
     except Skip as skip:
         if skip.thread:
             log({"session": payload.get("session_id"), "thread": skip.thread, "sent": False, "reason": str(skip)})

@@ -596,7 +596,8 @@ class CleanestAsk(unittest.TestCase):
         self.sent = self.dir / "sent.txt"
         cli = self.dir / "t3"
         cli.write_text(f'#!/bin/sh\nprintf "%s|" "$@" >> {self.sent}; echo >> {self.sent}\n'
-                       'if [ -n "$T3_FAIL" ]; then echo "thread busy" >&2; exit 1; fi\necho Queued.\n')
+                       'if [ -n "$T3_FAIL" ]; then echo "thread busy" >&2; exit 1; fi\n'
+                       f'echo "{{\\"runId\\": \\"run-$(wc -l < {self.sent} | tr -d \' \')\\", \\"delivery\\": \\"queued\\"}}"\n')
         cli.chmod(0o755)
         (self.dir / "claude/commands").mkdir(parents=True)
         shutil.copy(HOOKS.parent / "commands/cleanest.md", self.dir / "claude/commands/cleanest.md")
@@ -612,7 +613,7 @@ class CleanestAsk(unittest.TestCase):
             db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, provider_thread_id text, payload_json text)")
             db.execute("create table orchestration_v2_projection_threads (thread_id text, title text, payload_json text)")
             db.execute("create table orchestration_v2_projection_messages (thread_id text, role text, payload_json text, created_at text, run_id text)")
-            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text, status text)")
             db.execute("insert into orchestration_v2_projection_provider_threads values (?, 'p1', ?)",
                        (thread, json.dumps({"nativeThreadRef": {"nativeId": self.SESSION}})))
             db.execute("insert into orchestration_v2_projection_threads values (?, ?, ?)",
@@ -644,6 +645,11 @@ class CleanestAsk(unittest.TestCase):
         self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
         return self.sent.read_text().splitlines() if self.sent.exists() else []
 
+    def set_run(self, run, status):
+        """Gives T3's run for the hook's nth send this status, as T3 does once it starts or cancels it."""
+        with contextlib.closing(sqlite3.connect(self.env["T3_STATE_DB"])) as db, db:
+            db.execute("insert into orchestration_v2_projection_runs values (?, 'p1', ?)", (run, status))
+
     def log(self):
         path = self.dir / "state/cleanest-ask.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
@@ -653,7 +659,7 @@ class CleanestAsk(unittest.TestCase):
             with self.subTest(kinds=kinds):
                 self.sent.unlink(missing_ok=True)
                 (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
-                self.assertEqual(self.stop((self.ASK, card(kinds=kinds))), [f"thread|send|{self.THREAD}|/cleanest|"])
+                self.assertEqual(self.stop((self.ASK, card(kinds=kinds))), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
                 self.assertEqual([(row["thread"], row["sent"]) for row in self.log()], [(self.THREAD, True)])
 
     def test_sends_once_per_run(self):
@@ -661,8 +667,9 @@ class CleanestAsk(unittest.TestCase):
         self.assertEqual(len(self.stop(first)), 1)
         # Another stop before the queued /cleanest arrives, such as a prompt the user queued first.
         self.assertEqual(len(self.stop(first, ("tighten comment 2", card()))), 1)
-        self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
         # Its own turn, then the user's pick and the next card in the same run.
+        self.set_run("run-1", "completed")
         answered = [first, (self.COMMAND, card()), ("a", card())]
         self.assertEqual(len(self.stop(*answered[:2])), 1)
         self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest")
@@ -678,7 +685,7 @@ class CleanestAsk(unittest.TestCase):
         env = {"T3_STATE_DB": self.db(first="Review #6215 with the review-teammate-pr skill.", first_by="agent",
                                       agent_sent=(result,))}
         self.assertEqual(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")), (result, card()),
-                                   env=env), [f"thread|send|{self.THREAD}|/cleanest|"])
+                                   env=env), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
         # A background task's notice after the result, as in #6047 on Nov 19, 2026, continues the run too.
         self.sent.unlink()
         (self.dir / "state/cleanest-ask.jsonl").unlink()
@@ -690,18 +697,33 @@ class CleanestAsk(unittest.TestCase):
         earlier = [(self.ASK, card()), (self.COMMAND, card()), ("b", card("done")), ("re-review it", card())]
         self.assertEqual(len(self.stop(*earlier)), 1)
         self.assertEqual(len(self.stop(*earlier, ("tighten comment 2", card()))), 1)
-        self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
 
     def test_a_cancelled_send_holds_only_until_the_run_ends(self):
         first = (self.ASK, card())
         self.assertEqual(len(self.stop(first)), 1)
         # The user cancelled the queued /cleanest: no second one this run, but the next run asks.
         self.assertEqual(len(self.stop(first, ("a", card()))), 1)
+        self.set_run("run-1", "cancelled")
         self.assertEqual(len(self.stop(first, ("a", card()), ("b", card("done")), ("re-review it", card()))), 2)
 
+    def test_a_send_still_queued_holds_the_next_run(self):
+        # Prompts the user queued first can end a run and start another before /cleanest arrives.
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        self.assertEqual(len(self.stop(first, ("post it", card("done")), ("now review #6216", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
+        self.assertEqual(self.log()[0]["run"], "run-1")
+
     def test_review_words_that_ask_nothing_dont_count_as_an_ask(self):
-        self.assertEqual(len(self.stop(("Review PR #6215; it changes the long-term archive.", card()))), 1)
-        for asked in ("Is it the most idiomatic and best-practice long-term implementation?", "make it the cleanest"):
+        for prompt in ("Review PR #6215; it changes the long-term archive.",
+                       "Review PR #6215: will the long-term archive preserve deletions?"):
+            with self.subTest(prompt=prompt):
+                self.sent.unlink(missing_ok=True)
+                (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
+                self.assertEqual(len(self.stop((prompt, card()))), 1)
+        for asked in ("Is it the most idiomatic and best-practice long-term implementation?", "make it the cleanest",
+                      "whats the best long-term solution?", "is this really necessary for the long term?"):
             with self.subTest(asked=asked):
                 self.sent.unlink(missing_ok=True)
                 (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
@@ -753,7 +775,7 @@ class CleanestAsk(unittest.TestCase):
         self.assertEqual(self.log(), [])
 
     def test_stays_silent_when_it_cant_send(self):
-        self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|{self.THREAD}|/cleanest|"])
+        self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
         self.assertEqual(self.log()[-1]["reason"], "t3 thread send failed: thread busy")
         (self.dir / "claude/commands/cleanest.md").write_text("my own command\n")
         self.assertEqual(len(self.stop((self.ASK, card()))), 1)
