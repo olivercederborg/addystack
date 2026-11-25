@@ -14,12 +14,13 @@ as one command, so the check printed the 12:12 re-approval only after the push r
 dismissed it.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
-option, in the reply it answers, or a short typed request, either one a request to push,
-restack, sync, or submit that names each PR (#N) and says the push dismisses an approval
-("dismiss"), with no refusal, condition, or question in it, so "no: push the cleanup
-only" or "don't push #6091 yet, it would dismiss …" isn't one. A pick of any other class, such as the coordinator's `stop:post` "push the cleanup,
-post the reply, re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child,
-or, in T3, a state database it can't read or a session no T3 thread owns.
+option, in the reply it answers, or a typed request, either one at most 200 characters and
+a request to push, restack, sync, or submit that names each PR (#N) and says the push
+dismisses an approval ("dismiss"), with no refusal, condition, or question in it, so "no:
+push the cleanup only" or "don't push #6091 yet, it would dismiss …" isn't one. A pick of
+any other class, such as the coordinator's `stop:post` "push the cleanup, post the reply,
+re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child, or, in T3, a
+state database it can't read or a session no T3 thread owns.
 
 The gate reads pushes outside quotes and heredocs, at the start of a command after `cd`,
 `&&`, `;`, a pipe, or a subshell, and follows `cd <path>` and `git -C <path>`. For gh
