@@ -258,10 +258,12 @@ def _update_skills() -> int:
     was_core, now_core = set(skill_layer.core(before)), set(skill_layer.core(release))
     # A skill that became core: one the user removed while it was core stays removed, and a
     # name the lock already holds, from any repo, isn't replaced.
-    # A renamed skill takes its old name's place: added only where the old one is installed.
+    # A renamed skill takes its old name's place: added only where the kit's old one is
+    # installed, not where the user removed it or holds a skill of that name from elsewhere.
     earlier = {new: old for old, new in skill_layer.RENAMED.items()}
+    from_kit = set(skills_cli.from_source(lock, source))
     added = [name for name in skill_layer.core(release) if name not in was_core and name not in lock
-             and not (earlier.get(name) in was_core and earlier.get(name) not in lock)]
+             and not (earlier.get(name) in was_core and earlier.get(name) not in from_kit)]
     # A skill that was core and is gone or optional now, installed from the kit's repo: an
     # optional one the user chose, or one of theirs from another repo, stays.
     dropped = [name for name in skills_cli.from_source(lock, source)
