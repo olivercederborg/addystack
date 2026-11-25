@@ -3847,6 +3847,9 @@ class PushGate(unittest.TestCase):
             (("push #6091 after the approval has been dismissed",), None),
             (("Is a push to #6091 going to dismiss the approval",), None),
             (("push #6091 and dismiss the notification",), None),
+            # review-loop r3: a statement about the push isn't a request for it.
+            (("pushing #6091 dismisses the teammate's approval",), None),
+            (("FYI the push to #6091 dismisses the teammate's approval",), None),
             (("fix it", self.offer({**restack, "text": "push #6091 once the teammate dismisses their approval"},
                                    text="Restack?\n\n"), "a"), "isn't a plain request to push"),
         ]:
@@ -4022,6 +4025,16 @@ class PushGate(unittest.TestCase):
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
         self.assertIn(f"moves #6119 from {self.local[:10]} to a rebased tip", self.reason("gh stack sync"))
         self.assertIsNone(self.reason("gh stack push"))
+
+    def test_counts_a_push_git_rejects_now(self):
+        # review-loop r3: a push git rejects as it stands (behind its remote, or a stale lease)
+        # can pass once a pull, fetch, or rebase earlier in the command runs, so it counts.
+        self.git("reset", "-q", "--hard", "HEAD~2")  # behind the PR's head
+        self.assertIn(f"moves #6119 from {self.remote_head[:10]} to {self.git('rev-parse', 'HEAD')[:10]}",
+                      self.reason("git push origin HEAD"))
+        self.assertIn("to a tip an earlier command in this one makes", self.reason("git pull --rebase && git push origin HEAD"))
+        self.scenario(reviews=())
+        self.assertIsNone(self.reason("git push origin HEAD"))
 
     def test_counts_a_branch_an_earlier_command_moves(self):
         # review-loop r1 on #104: the gate reads the tips before the shell runs, so a commit

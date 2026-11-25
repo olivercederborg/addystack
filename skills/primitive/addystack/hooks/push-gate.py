@@ -14,12 +14,11 @@ as one command, so the check printed the 12:12 re-approval only after the push r
 dismissed it.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
-option, in the reply it answers, or a typed request, either one at most 200 characters and
-a request to push, restack, sync, or submit that names each PR (#N) and says the push
-dismisses an approval ("dismisses the … approval"), with no refusal, condition, or
-question in it, so "no: push the cleanup only", "don't push #6091 yet, it would dismiss
-…", or "push #6091 once the approval is dismissed" isn't one. A pick of
-any other class, such as the coordinator's `stop:post` "push the cleanup, post the reply,
+option, in the reply it answers, or a typed request, either one at most 200 characters, a
+request that opens with push, restack, sync, or submit, names each PR (#N), and says the
+push dismisses an approval ("dismisses the … approval"), with no refusal, condition, or
+question in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval",
+or "push #6091 once the approval is dismissed" isn't one. A pick of any other class, such as the coordinator's `stop:post` "push the cleanup, post the reply,
 re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child, or, in T3, a
 state database it can't read or a session no T3 thread owns.
 
@@ -37,7 +36,8 @@ isn't in it. For git push, they are the branches `git push --dry-run --porcelain
 would update or delete, so push.default, refspecs, and `--all` read as git reads them, to
 the GitHub repo of each push URL (`pushurl`, else `url`); a remote whose configured URLs
 don't name github.com, such as another machine, moves no PR, and a push git refuses for
-its refspec moves nothing. Each branch's PRs are every open one GitHub lists with it as
+its refspec moves nothing; one it rejects now still counts, since a fetch, pull, or rebase
+earlier in the command can make git take it. Each branch's PRs are every open one GitHub lists with it as
 the head, on its repo or a repo that repo forks, keyed by URL, so two repos' #N stay
 apart. No `stack.sh` subcommand pushes, so it reads none.
 
@@ -279,9 +279,11 @@ def git_targets(argv, where, earlier):
             return [], repos
         raise RuntimeError(f"`git push --dry-run` failed: {err[:200]}")
     found = []
-    # Each line is "<flag>\t<from>:<to>\t<summary>": = is up to date and ! rejected, so neither moves.
+    # Each line is "<flag>\t<from>:<to>\t<summary>": = is up to date, so it moves nothing unless an
+    # earlier command moves the branch. ! is rejected now, but a fetch, pull, or rebase earlier in
+    # the command can make git take it, so it counts.
     for flag, source, destination in re.findall(r"^([ +*!=-])\t([^\t]*):([^\t]+)\t", out, re.M):
-        if flag == "!" or flag == "=" and not earlier or not destination.startswith("refs/heads/"):
+        if flag == "=" and not earlier or not destination.startswith("refs/heads/"):
             continue  # a tag or another namespace moves no PR
         branch = destination[len("refs/heads/"):]
         found.append((branch, None, "a deletion") if flag == "-" else (branch, tip(where, source), None))
@@ -345,7 +347,10 @@ except Exception as error:
 if not live:
     passes("no PR this push moves has a live approval")
 
-PUSH_WORD = re.compile(r"\b(?:force-?push|push|restack|re-stack|rebase|sync|submit)", re.I)
+# A request opens with its verb, after at most a word of assent: "push #6119 (…)", "ok, restack
+# and push #6091, …", never a statement such as "pushing #6119 dismisses the approval".
+PUSH_WORD = re.compile(r"^\W*(?:(?:ok|okay|yes|yep|sure|go ahead|please|then|so)\b\W*)*"
+                       r"(?:force-?push|push|restack|re-stack|rebase|sync|submit)\b", re.I)
 # The push dismissing an approval, said as the request does: "dismisses the teammate's approval",
 # not "the approval has been dismissed" or "dismiss the notification".
 DISMISS = re.compile(r"\bdismiss\w*\s+(?:\S+\s+){0,6}?approv", re.I)
@@ -360,7 +365,7 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|dont|wont|cant|shouldnt|do not|never|not|n
 def literal_go(text):
     """Whether text is a short typed request to push that says it dismisses an approval."""
     text = text.strip().replace("’", "'")
-    return (len(text) <= 200 and bool(PUSH_WORD.search(text)) and bool(DISMISS.search(text))
+    return (len(text) <= 200 and bool(PUSH_WORD.match(text)) and bool(DISMISS.search(text))
             and not REFUSAL.search(text))
 
 
