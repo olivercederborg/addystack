@@ -38,10 +38,11 @@ spec as the sign of the narrower intent.
 is the go to post. Steps 1, 2, 4, and 6 run as written, except: a step that needs the
 user (their plan, the rename, a provider that isn't signed in) is skipped, and the
 review's body says so; step 6 diffs from `github.sh reviewed N`'s `commit_id` when it's
-an ancestor of the head, else the whole PR; drafts use the disclosure's short form. Step
-3 keeps each finding's recommended call and drops one grounding can't reproduce. In
-place of step 5 and its watch, follow `request-human-review`, which takes the findings,
-writes `REVIEW.json` beside its `GATES.json`, and decides and posts.
+an ancestor of the head, else the whole PR; the review's body and drafts use the
+disclosure's short form without a name, since nobody is in the loop. Step 3 keeps each
+finding's recommended call and drops one grounding can't reproduce. In place of step 5
+and its watch, follow `request-human-review`, which takes the findings, writes
+`REVIEW.json` beside its `GATES.json`, and decides and posts.
 
 ## 1. Load the PR
 
