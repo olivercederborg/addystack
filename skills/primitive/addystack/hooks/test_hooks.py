@@ -3833,6 +3833,12 @@ class PushGate(unittest.TestCase):
             (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
             (("don't push #6091, it would dismiss the teammate's approval",), None),
             (("push #6091 if it dismisses nothing",), None), (("push it, dismissing the teammate's approval",), "doesn't name #6091"),
+            # review-loop r1 on #104: a push word and "dismiss" that don't ask to dismiss the approval.
+            (("push #6091 after the approval has been dismissed",), None),
+            (("Is a push to #6091 going to dismiss the approval",), None),
+            (("push #6091 and dismiss the notification",), None),
+            (("fix it", self.offer({**restack, "text": "push #6091 once the teammate dismisses their approval"},
+                                   text="Restack?\n\n"), "a"), "isn't a plain request to push"),
         ]:
             with self.subTest(said=said[-1]):
                 reason = self.reason("gh stack push", said=said)

@@ -16,8 +16,9 @@ dismissed it.
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
 option, in the reply it answers, or a typed request, either one at most 200 characters and
 a request to push, restack, sync, or submit that names each PR (#N) and says the push
-dismisses an approval ("dismiss"), with no refusal, condition, or question in it, so "no:
-push the cleanup only" or "don't push #6091 yet, it would dismiss …" isn't one. A pick of
+dismisses an approval ("dismisses the … approval"), with no refusal, condition, or
+question in it, so "no: push the cleanup only", "don't push #6091 yet, it would dismiss
+…", or "push #6091 once the approval is dismissed" isn't one. A pick of
 any other class, such as the coordinator's `stop:post` "push the cleanup, post the reply,
 re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child, or, in T3, a
 state database it can't read or a session no T3 thread owns.
@@ -295,10 +296,15 @@ if not live:
     passes("no PR this push moves has a live approval")
 
 PUSH_WORD = re.compile(r"\b(?:force-?push|push|restack|re-stack|rebase|sync|submit)", re.I)
-DISMISS = re.compile(r"\bdismiss", re.I)
-# A typed request with any of these may refuse, wait, or ask, so it's no go.
+# The push dismissing an approval, said as the request does: "dismisses the teammate's approval",
+# not "the approval has been dismissed" or "dismiss the notification".
+DISMISS = re.compile(r"\bdismiss\w*\s+(?:\S+\s+){0,6}?approv", re.I)
+# A typed request with any of these may refuse, wait, or ask, so it's no go: a question
+# opens with its verb or asks word even without its ?.
 REFUSAL = re.compile(r"\?|\b(?:\w+n't|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
-                     r"wait|hold|stop)\b", re.I)
+                     r"wait|hold|stop|after|once|when|whenever|before|whether|later)\b|^\W*(?:is|are|was|were|will|"
+                     r"would|could|can|should|shall|does|do|did|has|have|had|may|might|must|why|what|how|where|"
+                     r"which|who)\b", re.I)
 
 
 def literal_go(text):
