@@ -29,12 +29,6 @@ import t3_child  # noqa: E402
 LIMIT = 10_000
 
 
-def skips_rules(session_id):
-    """True for a T3 delegated child whose brief doesn't opt in. Any doubt reads as False."""
-    brief = t3_child.delegated_brief(session_id)
-    return brief is not None and not t3_child.rules_on(brief)
-
-
 def skill_path():
     """Where reply-shape's SKILL.md loads from: REPLY_SHAPE_SKILL, else Claude Code's
     skill folder (config.claude_home())."""
@@ -89,7 +83,7 @@ def main(argv):
         session_id = json.loads(sys.stdin.read()).get("session_id")
     except (ValueError, AttributeError):
         session_id = None
-    if skips_rules(session_id):
+    if t3_child.skips_rules(session_id):
         return
     name, path = picked
     try:
