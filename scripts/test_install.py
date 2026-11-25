@@ -351,6 +351,14 @@ class Command(Home):
         self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
         self.assertFalse(os.path.lexists(self.link))
 
+    def test_removes_a_link_to_the_kit_copy_from_before_the_checkout_moved(self):
+        self.write(self.state / "resolved.json", json.dumps({"kit": "/previous/addystack"}))
+        self.link.parent.mkdir(parents=True)
+        self.link.symlink_to("/previous/addystack/commands/cleanest.md")
+        self.enable(False)
+        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
+        self.assertFalse(os.path.lexists(self.link))
+
     def test_leaves_a_users_own_file_and_link(self):
         self.write(self.link, "my own command\n")
         self.enable()

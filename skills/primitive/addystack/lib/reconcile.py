@@ -36,7 +36,8 @@ entry: a link is always install's to replace and anything else never is.
 
 Commands: a hook in COMMANDS sends a Claude Code command, so while hookset selects it for
 Claude Code, install links that command in Claude's commands/ folder to the kit's copy, as
-it links the agent, and once it's no longer selected, removes a link to the kit's copy.
+it links the agent, and once it's no longer selected, removes a link to the kit's copy, or to
+the copy in the kit path the last build recorded, when the checkout has moved.
 """
 from __future__ import annotations
 
@@ -132,8 +133,9 @@ def _commands(resolved: Resolved) -> List[Change]:
     for hook, name in COMMANDS.items():
         link, source = config.claude_home() / "commands" / name, Path(resolved["kit"]) / "commands" / name
         earlier = os.readlink(link) if link.is_symlink() else None
+        ours = {str(source), *(os.path.join(os.path.expanduser(kit), "commands", name) for kit in _moved_kits(resolved))}
         if hook not in selected:
-            if earlier == str(source):
+            if earlier in ours:
                 changes.append(Change("command", link, f"removes it: {hook} is off"))
         elif earlier is None and os.path.lexists(link):
             changes.append(Change("command", link, f"a file addystack didn't link, left as is; {hook} needs it to "
