@@ -360,7 +360,7 @@ STEP = (rf"(?:force-?push|push|restack|re-stack|rebase|sync|submit)(?:\s+(?:it|t
         r"(?:\s+(?:onto|on top of)\s+`?[\w./-]+`?)?")
 WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:[\w.@-]+(?:'s)?,?\s+(?:and\s+)?){0,5}"
 DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
-             rf"|,?\s+(?:and\s+)?(?:it\s+|which\s+)?dismiss(?:es|ing)?\s+{WHOSE}approvals?)")
+             rf"|(?:,\s*(?:it\s+|which\s+)?|,?\s+and\s+)dismiss(?:es|ing)?\s+{WHOSE}approvals?)")
 GO = re.compile(rf"{merge_go.OPENER}{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL}[.!]?", re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
@@ -390,7 +390,6 @@ def label(pr):
 def unnamed(text):
     """The PRs of live that text doesn't name, as "#N" words: merge_go.names, held to a
     text that names a PR, so "push it" names none."""
-    import merge_go
     read, _ = merge_go.spans(text)
     numbers = sorted({pr["number"] for pr, *_ in live.values()})
     missing = [label(pr) for pr, *_ in live.values()
