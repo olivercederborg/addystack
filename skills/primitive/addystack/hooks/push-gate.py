@@ -7,18 +7,15 @@ local tip differs from the PR's head, or a sync would rebase it: an unchanged br
 dismisses nothing. A reviewer's latest review is the last that isn't COMMENTED or
 pending, so an approval already dismissed, or followed by a change request, isn't live.
 The router lists "a push that would dismiss someone's approval" as a Stop, and the prose
-rule failed twice on Nov 24, 2026, both on a work repo's #6119: a delegated worker's
-`gh stack push` dismissed a teammate's 11:25 approval because its brief said "no
-approvals", and the coordinator ran `gh pr view 6119 --json reviews …; … gh stack push`
-as one command, so the check printed the 12:12 re-approval only after the push ran and
-dismissed it.
+rule failed twice on Nov 24, 2026, on a work repo's #6119; PushGate in test_hooks.py
+replays both.
 
 Only the user's latest prompt allows such a push (user_turn.py): a pick of a `stop:push`
 option, in the reply it answers, or a typed request, either one at most 200 characters, a
 request whose whole text is a push verb (push, force-push, restack, rebase, sync, or
-submit) with its object, each PR (#N), and last the dismissal set off by "(", a comma, or
-"and" ("push #6119 (dismisses the … approval)"), with no refusal, condition, question, or
-modal in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval", or
+submit) with its object and each PR (#N), or none when one PR has an approval, then the
+dismissal set off by "(", a comma, or "and" ("yes: push #6119 (dismisses the … approval)"),
+then only routine steps (AFTER), with no refusal, condition, question, or modal in it, so "no: push the cleanup only", "pushing #6091 dismisses the approval", or
 "push #6091 once the approval is dismissed" isn't one. A pick of any other class, such as
 the coordinator's `stop:post` "push the cleanup, post the reply, re-request <reviewer> on
 #6119", gives no go, nor does a T3 delegated child, or, in T3, a state database it can't
