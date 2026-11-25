@@ -679,6 +679,12 @@ class CleanestAsk(unittest.TestCase):
                                       agent_sent=(result,))}
         self.assertEqual(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")), (result, card()),
                                    env=env), [f"thread|send|{self.THREAD}|/cleanest|"])
+        # A background task's notice after the result, as in #6047 on Nov 19, 2026, continues the run too.
+        self.sent.unlink()
+        (self.dir / "state/cleanest-ask.jsonl").unlink()
+        task = "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"
+        self.assertEqual(len(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")),
+                                       (result, card("running")), (task, card()), env=env)), 1)
 
     def test_a_cleanest_the_user_typed_earlier_doesnt_hide_a_queued_send(self):
         earlier = [(self.ASK, card()), (self.COMMAND, card()), ("b", card("done")), ("re-review it", card())]

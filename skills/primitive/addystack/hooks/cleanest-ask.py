@@ -12,8 +12,8 @@ It sends only when all of these hold:
 - the thread is a review thread: its title starts `◎ #<number>`, which review-teammate-pr
   sets first, and which post-in-the-matrix's review_thread.py and the trial's baseline
   count by;
-- the latest prompt is the user's own (user_turn.py), or T3's notice that a delegated child,
-  such as review-loop's reviewer, finished, which review-teammate-pr's card follows; not a
+- the latest prompt is the user's own (user_turn.py), or a notice that a delegated child,
+  such as review-loop's reviewer, or a background task finished (CONTINUES); not a
   PR-watch wake, a coordinator tick, another agent's message, or a `/cleanest`;
 - the run hasn't asked yet: no prompt since the last reply whose turn block is `done` is a
   `/cleanest` or the user's own quality-bar ask (ASKED), and no `/cleanest` this hook sent
@@ -41,8 +41,9 @@ COMMAND = "/cleanest"
 REVIEW_TITLE = re.compile(r"◎ #\d")
 # The user's own quality-bar ask, as R183 counted it: the run already has its answer.
 ASKED = re.compile(r"cleanest|idiomatic|long[- ]term|best practice", re.I)
-# How T3 starts the notice that a delegated child finished.
-CHILD_RESULT = "Delegated task node:"
+# How T3 starts the notice that a delegated child finished, and Claude Code its notice that a
+# background task did: work the run started reporting back, so the card after it continues the run.
+CONTINUES = ("Delegated task node:", "<task-notification>")
 LOG = pathlib.Path(os.environ.get("ADDYSTACK_STATE", "~/.local/state/addystack")).expanduser() / "cleanest-ask.jsonl"
 
 
@@ -118,7 +119,7 @@ def check_run(found, path, thread, session):
     """The session's /cleanest prompts so far; raises Skip unless the latest prompt is the
     user's or a child's result and this run hasn't asked yet."""
     latest = found[-1].prompt
-    if not latest and not latest_raw(path).startswith(CHILD_RESULT):
+    if not latest and not latest_raw(path).startswith(CONTINUES):
         raise Skip("the latest prompt isn't the user's: a wake, a tick, or another agent's message", thread)
     if own_command(latest):
         raise Skip(f"the latest prompt is {COMMAND}", thread)
