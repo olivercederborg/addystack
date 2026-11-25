@@ -459,7 +459,8 @@ class UnwatchGate(unittest.TestCase):
                        "why did you unwatch #6226?", "is it safe to unwatch it", "should you stop watching it?",
                        "you unwatch PRs too early, never do that", "unwatch it once it merges",
                        # A request for another PR.
-                       "stop watching #6215", "unwatch " + "x" * 200):
+                       "don’t unwatch it", "the unwatch on #6226 was a bug", "re-check the unwatch-gate fix",
+                       "stop watching #6215", "unwatch 6215", "unwatch " + "x" * 200):
             with self.subTest(prompt=prompt):
                 self.assertIsNotNone(self.reason(said=(prompt,)))
 
