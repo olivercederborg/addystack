@@ -37,9 +37,10 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   `<template>`'s content. A `<details>` fold still open at the block shows the options
   above it collapsed, and inside a `<select>`, `<object>`, `<applet>`, `<marquee>`, `<svg>`,
   or `<math>` the parser may ignore the `</details>` that closes it.
-- A line that starts with HTML, past list and quote markers, and isn't followed by a blank
-  line: its HTML block runs to the next blank line, so the lines after it are raw HTML, not
-  fences or a block of their own. An autolink (`<t3-thread://…>`) starts no HTML block.
+- A line that starts an HTML block, past list and quote markers, with no blank line after
+  it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
+  A block tag, such as `<div` or `</details`, starts one, and so does a whole tag alone on
+  its line (CommonMark 0.31.2 §4.6); `> <sub>…</sub><br>` and an autolink don't.
 - Such a line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
   `<div title="x`: the HTML block hands it to the renderer raw, and what follows becomes
   the tag's attribute.
@@ -78,10 +79,18 @@ UNSAFE = re.compile(r"<(?:[!?]|(?:script|style|textarea|title|xmp|iframe|noembed
 OPENS_FOLD = re.compile(r"<details(?=[\t\f />]|$)", re.I)
 # A line that starts a `<details>` HTML block: raw HTML to its end, with no code spans in it.
 FOLD_LINE = re.compile(r" {0,3}</?details(?=[\t\f />]|$)", re.I)
-# A line that may start an HTML block: a <, past list and quote markers, that doesn't open a
-# URI autolink (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
-HTML_START = re.compile(r"[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*<"
-                        r"(?![A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>)[A-Za-z/]")
+# A line that starts an HTML block, past list and quote markers, by CommonMark 0.31.2 §4.6's
+# start condition 6, a block tag name (micromark's htmlBlockNames, and `source`, which 0.31
+# dropped) then whitespace, the line's end, > or />, or 7, one whole open or closing tag
+# with only whitespace after it. Whitespace is any \s, as markdown-it-py reads it, wider
+# than micromark's spaces and tabs. UNSAFE holds conditions 1 to 5.
+BLOCK_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|"
+               "div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|"
+               "li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|"
+               "tbody|td|tfoot|th|thead|title|tr|track|ul")
+ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^"'=<>`\x00-\x20]+|'[^']*'|"[^"]*"))?"""
+HTML_START = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?:/?(?:{BLOCK_NAMES})(?=\s|/?>|$)"
+                        rf"|(?:[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*\s*/?|/[A-Za-z][A-Za-z0-9-]*\s*)>\s*$)", re.I)
 TAG = re.compile(r"</?[A-Za-z]")
 SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")

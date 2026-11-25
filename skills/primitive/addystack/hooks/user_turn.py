@@ -71,5 +71,5 @@ def letter_miss(reply, key):
     if all(option.key != key for option in turn.options):
         return f"your reply before it offers no option {key}"
     return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML that can hide it, "
-            "such as an open <title>, a comment, or a line starting with a tag and no blank line after it, "
+            "such as an open <title>, a comment, or a line that starts an HTML block and has no blank line after it, "
             "or a fence line it can't place")

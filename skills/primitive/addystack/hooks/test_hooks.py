@@ -3933,6 +3933,39 @@ class PushGate(unittest.TestCase):
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))
 
+    # The reply the user's 11:58:09 "a" answered on Nov 25, 2026 (transcript acdfd830), names
+    # replaced: its reviewer-reply disclosure line, `<sub>` and `<br>`, made the gate read the
+    # pick as nothing.
+    DISCLOSED = (
+        "🟡 **Push the new tests to #6215? It dismisses the teammate's approval.**\n"
+        "\n"
+        "| Problem | the teammate's comment holds in part. The new sign-up, company and recovery tests only read the server HTML, so a field turned controlled again would pass them. |\n"
+        "|---|---|\n"
+        "| Pick | Push `456f073579`: each of those tests now types, hydrates and submits, as the sign-in test does. |\n"
+        "| Proof | 16/16 pass. Making the text fields controlled again fails all four. Lint passes. |\n"
+        "| Cost | The repo dismisses approvals on push, so the teammate has to approve again. Thread resolution is also required before merge. |\n"
+        "\n"
+        "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n"
+        "> Good catch. The sign-up, company, forgot-password and reset-password tests now type into the server HTML, hydrate, and submit, as the sign-in test does. With the text fields turned controlled again, all four fail.\n"
+        ">\n"
+        "> <sub>Fixed in: `456f073579`</sub>\n"
+        "\n"
+        "---\n"
+        "\n"
+        "**Next**\n"
+        "\n"
+        "- **`a` → yes: push (dismisses the teammate's approval), post the reply, resolve the thread** · *recommended*\n"
+        "- `b` → no: keep the approval, reply that the test change is a follow-up\n"
+        "\n"
+        "<!-- turn {\"state\":\"stop\",\"needs\":[{\"id\":1,\"kind\":\"decide\",\"name\":\"push the new tests\"},{\"id\":2,\"kind\":\"review\",\"name\":\"reply to the teammate\"}],\"options\":[{\"key\":\"a\",\"class\":\"stop:push\",\"text\":\"yes: push (dismisses the teammate's approval), post the reply, resolve the thread\"},{\"key\":\"b\",\"class\":\"stop:post\",\"text\":\"no: keep the approval, reply that the test change is a follow-up\"}],\"project\":\"password managers\"} -->"
+    )
+
+    def test_replays_the_pick_under_a_reviewer_reply_disclosure(self):
+        self.scenario(n=6215)
+        self.assertIsNone(self.reason("gh stack push", said=("fix it", claude_wrote(self.DISCLOSED), "a")))
+        self.assertIn('picks "no: keep the approval, reply that the test change is a follow-up", a stop:post option',
+                      self.reason("gh stack push", said=("fix it", claude_wrote(self.DISCLOSED), "b")))
+
     def test_passes_a_push_that_dismisses_nothing(self):
         # Unchanged: the branch's tip is the PR's head.
         self.scenario(head=self.local)
@@ -4521,11 +4554,8 @@ class TurnBlock(unittest.TestCase):
             "<details><summary>x</summary>\n```\ncode\n```\n\n</details>\n\n",
             "<details>\n<summary>x</summary>\n\nmore\n\n</details>\n\n",
             "</details>\n",
-            "- <span>x</span>\nmore\n\n",
             # And hands an unclosed tag to the renderer raw, whose attribute takes what follows.
             '<div title="x\n\n',
-            '<span a="b>\n\n',
-            "</ x\n\n",
             # Any < in inline code counts: a link destination can take a span's backtick.
             "Use `a\nb` <title> `c`\n\n",
             # The link takes the first backtick, so <plaintext> is raw and the block is text.
@@ -4563,6 +4593,13 @@ class TurnBlock(unittest.TestCase):
             "See <<ab:b>.\n\n",
             "See <a:b>.\n\n",
             "x < y and a <b c\n\n",
+            # Lines that start no HTML block by CommonMark's conditions 6 and 7, such as the kit's
+            # reviewer-reply disclosure line, which on Nov 25, 2026 cost the user a typed push go.
+            "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n> Good catch.\n>\n"
+            "> <sub>Fixed in: `456f073579`</sub>\n\n",
+            "- <span>x</span>\nmore\n\n",
+            '<span a="b>\nmore\n\n',
+            "</ x\nmore\n\n",
             "<details><summary>x</summary>\n\n- thread <t3-thread://v2/a/b>, PR <https://github.com/o/r/pull/1>\n\n</details>\n\n",
         ]:
             with self.subTest(example=example):
@@ -4713,7 +4750,8 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
                              # Tags that hide nothing, and the shapes around them that can.
                              "<details><summary>a <code>b</code></summary>", "Use `Effect<A, E>`", "a<br>b",
                              "<code>x</code> y", '<span title="x">', '<div title="x', '<span title="x', '- <div a="',
-                             "<b>", "</div>", "</ x", "x </ y", "<!-- a -->", '<x a="<title>" b=`c>', "<a / =\"x>\"",
+                             "<b>", "</div>", "</ x", "x </ y", "> <sub>`AGENT` x · on behalf of **y**</sub><br>",
+                             "<span>x</span>", "<sub>x</sub> y", "<x-y a=1 b='c' d>", "<DIV CLASS=x", "<p/>", "<hr/>", "<!-- a -->", '<x a="<title>" b=`c>', "<a / =\"x>\"",
                              '<a b="c" d=\'e>\'>', rng.choice(["<body>", "</html>", "</template>", "<table>", "<svg>",
                                                               "<math>", "<select>", "<frameset>", "<head>", "<html>",
                                                               "<template>", "<listing>", "<option>", "<a href=\"x>", "<tr>", "<td>", "<th>",
@@ -4744,6 +4782,81 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
         self.assertEqual(md.parse(shown)[-1].type, "html_block")
         node = last_node(md.render(shown))
         self.assertEqual(node.nodeType, node.TEXT_NODE)
+
+
+    def test_html_start_reads_the_specs_html_blocks(self):
+        """Every line of CommonMark 0.31.2's HTML-block examples (§4.6, examples 148 to 191)
+        that holds a <, alone or behind a list or quote marker, that markdown-it-py starts an
+        HTML block on, HTML_START or UNSAFE reads as one too."""
+        md = MarkdownIt("commonmark")
+        lines = [
+            "         <foo><a>",
+            "    <!-- foo -->",
+            "    </td>",
+            "    <div>",
+            "    <td>",
+            "  <!-- foo -->",
+            "  </tr>",
+            "  <div>",
+            "  <tr>",
+            "  if (a < b && a < 0) then {",
+            " <div>",
+            "- <div>",
+            "<!-- Foo",
+            "<!-- foo -->*bar*",
+            "<!DOCTYPE html>",
+            "<![CDATA[",
+            "</DIV>",
+            "</Warning>",
+            "</a>",
+            "</code></pre>",
+            "</del>",
+            "</div>",
+            "</i>",
+            "</ins>",
+            "</pre>",
+            "</script>",
+            "</script>1. *bar*",
+            "</style>",
+            "</table>",
+            "</td>",
+            "</td></tr></table>",
+            "</textarea>",
+            "</tr>",
+            "<?php",
+            "<DIV CLASS=\"foo\">",
+            "<Warning>",
+            "<a href=\"bar\">",
+            "<a href=\"foo\">",
+            "<del>",
+            "<del>*foo*</del>",
+            "<div *???-&&&-<---",
+            "<div class",
+            "<div id=\"foo\"",
+            "<div id=\"foo\" class=\"bar",
+            "<div>",
+            "<div></div>",
+            "<div><a href=\"bar\">*foo*</a></div>",
+            "<i class=\"foo\">",
+            "<pre language=\"haskell\"><code>",
+            "<pre>",
+            "<script type=\"text/javascript\">",
+            "<script>",
+            "<style",
+            "<style>p{color:red;}</style>",
+            "<table>",
+            "<table><tr><td>",
+            "<td>",
+            "<textarea>",
+            "<tr>",
+            "> <div>",
+        ]
+        for line in lines:
+            for prefix in ("", "> ", "- ", "1. "):
+                with self.subTest(line=prefix + line):
+                    if any(token.type == "html_block" for token in md.parse(prefix + line + "\n")):
+                        self.assertTrue(turn_block.HTML_START.match(prefix + line) or turn_block.UNSAFE.search(line))
+        self.assertIsNone(turn_block.HTML_START.match("> <sub>`AGENT` Claude · on behalf of **the user**</sub><br>"))
 
 
 def claude_said(text):
