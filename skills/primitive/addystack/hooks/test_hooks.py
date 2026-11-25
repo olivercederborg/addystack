@@ -920,10 +920,7 @@ class CleanestAskImplementation(CleanestAskCase):
         env = {"T3_STATE_DB": self.db(first=scheduled, first_by="agent", agent_sent=(tick, self.RESULT))}
         for turns in ([(scheduled, self.card("running")), (self.RESULT, self.card())],
                       # The user's run ended `done`; a tick then started a worker.
-                      [(self.ASK, self.card("done")), (tick, self.card("running")), (self.RESULT, self.card())],
-                      # The user's run stopped without `done`; a tick then started a worker.
-                      [(self.ASK, self.card(classes=("stop:post",))), (tick, self.card("running")),
-                       (self.RESULT, self.card())]):
+                      [(self.ASK, self.card("done")), (tick, self.card("running")), (self.RESULT, self.card())]):
             with self.subTest(turns=turns):
                 self.assertEqual(self.stop(*turns, env=env), [])
                 self.assertEqual(self.log()[-1]["reason"], "no prompt the user typed started this run")
@@ -5561,21 +5558,12 @@ class Exchanges(unittest.TestCase):
     TOOL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]}}
     RESULT = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
 
-    def read(self, *lines, strict=False, name="transcript", raw=False):
-        """The transcript's exchanges, each without its raw text unless raw."""
+    def read(self, *lines, strict=False, name="transcript"):
         with tempfile.TemporaryDirectory() as folder:
             path = os.path.join(folder, f"{name}.jsonl")
             with open(path, "w") as transcript:
                 transcript.writelines((line if isinstance(line, str) else json.dumps(line)) + "\n" for line in lines)
-            found = transcripts.exchanges(path, strict)
-            return found if raw else [exchange._replace(raw="") for exchange in found]
-
-    def test_keeps_each_prompts_raw_text_past_t3s_sender_note(self):
-        note = '[T3 Code: the agent in T3 thread "coord" sent this message, not the user.]\n\nShip it.'
-        result = "Delegated task node:delegated-task:w1 (fix) [completed]:\nPushed."
-        self.assertEqual([exchange.raw for exchange in self.read(claude_said(note), claude_said(result), claude_said("a"),
-                                                                 raw=True)],
-                         ["Ship it.", result, "a"])
+            return transcripts.exchanges(path, strict)
 
     def test_pairs_each_claude_prompt_with_the_turn_before(self):
         thinking = {"type": "thinking", "thinking": "hm"}

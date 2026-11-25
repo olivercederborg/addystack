@@ -27,8 +27,7 @@ It sends only when all of these hold:
   ask (ASKED), and this hook sent none in it, delivered or cancelled. A run is the turns
   since the last reply whose turn block is `done`; in the implementation scope it also
   starts at the user's last typed prompt that isn't an ask, and needs one: a run an agent's
-  message started, such as a tick's or a scheduled task's, doesn't ask, even when the user
-  typed in the thread before it;
+  prompt started, such as a scheduled task's, doesn't ask;
 - no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
   `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
 - `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
@@ -188,10 +187,7 @@ def check_run(found, path, thread, session, scope):
         if asks(exchange.prompt):
             raise Skip("this run already asked", thread)
         typed = typed or bool(exchange.prompt)
-        # In the implementation scope, an agent's message, such as a tick or a scheduled task,
-        # starts work of its own, so the notices after it don't continue the user's run.
-        if ended([exchange], scope) or (scope == IMPLEMENTATION and exchange.agent
-                                         and not exchange.raw.startswith(CONTINUES)):
+        if ended([exchange], scope):
             break
     if scope == IMPLEMENTATION and not typed:
         raise Skip("no prompt the user typed started this run", thread)
