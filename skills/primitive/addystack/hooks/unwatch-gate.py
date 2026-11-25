@@ -51,9 +51,12 @@ STOP = (r"(?:un-?watch|stop (?:watching|babysitting)|(?:no need to|don't|do not)
         r"(?:\s+(?:any ?more|now|for now))?(?:,?\s+please)?")
 # A question only as a request, "can you stop watching #6226?", as merge_go's ASK reads one.
 GO = re.compile(rf"{merge_go.OPENER}(?:{STOP}[.!]?|{merge_go.ASK}{STOP}\??)", re.I)
-ASK = ('end the turn with the watch on: a watch runs `until: "checks"` unless set to `"merged"`, so the thread '
-       "returns to the user's inbox once checks finish and still wakes on reviews, comments, and failed checks; "
-       'call `watch_pull_request` with `until: "checks"` only when it watches until merged')
+# T3 can't show a watch's mode (list_thread_pull_requests gives `watching` alone), and the call
+# is idempotent: `until` is passed straight into the watch command and sets the mode on the same
+# link (T3 Code Nightly's server dist, server-K96PYmwj.mjs:100004, 106329, 106336, 106804).
+ASK = ('call `watch_pull_request` with `until: "checks"` before ending the turn, whatever its watch is set to, '
+       "and end the turn with the watch on: the thread returns to the user's inbox once checks finish and "
+       "still wakes on reviews, comments, and failed checks")
 
 
 def passes(why):

@@ -435,7 +435,9 @@ class UnwatchGate(unittest.TestCase):
     def test_the_hand_back_unwatch_of_an_open_ready_pr_is_denied(self):
         reason = self.reason()
         self.assertIn("#6226 is open and ready for review", reason)
-        self.assertIn('`until: "checks"`', reason)
+        # T3 can't show a watch's mode, so the denial asks for the re-watch whatever it is.
+        self.assertIn('call `watch_pull_request` with `until: "checks"` before ending the turn', reason)
+        self.assertNotIn("only when it watches until merged", reason)
 
     def test_a_pr_that_merged_closed_or_is_a_draft_passes(self):
         for state, draft in (("MERGED", False), ("CLOSED", False), ("OPEN", True)):

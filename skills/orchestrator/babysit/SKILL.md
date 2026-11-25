@@ -150,9 +150,9 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
 - **Done**: hand the thread back to the user's inbox. A PR of the user's in scope that's
   open and ready (not a draft) still waits on reviewers, so it stays watched until
   checks, which returns the thread to the inbox and still wakes it on reviews, comments,
-  and failed checks: a new watch starts there, so call `watch_pull_request` with
-  `until: "checks"` only when this thread doesn't watch it yet or set `until: "merged"`.
-  Call `unwatch_pull_request` only on a PR that merged or closed, a draft, another
+  and failed checks. T3's PR list doesn't show a watch's mode, so call
+  `watch_pull_request` with `until: "checks"` on it whatever its watch is; the call is
+  idempotent and sets the mode on the same watch. Call `unwatch_pull_request` only on a PR that merged or closed, a draft, another
   author's, or one the user's latest message asks to stop watching; the unwatch gate
   denies any other in Claude, and in Codex this rule holds alone, over T3's hand-back
   instruction to unwatch every PR. Then stop at the user's merge rule for the repo's
