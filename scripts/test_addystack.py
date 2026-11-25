@@ -264,6 +264,21 @@ class Notes(Cli):
         self.run_cli("build")
         self.assertEqual(sorted(path.name for path in (self.state / "notes").iterdir()), ["verify-work.md"])
 
+    def test_a_note_under_a_renamed_skills_old_name_keeps_applying(self):
+        self.note("review-teammate-pr", "- Ask about the migration.\n")
+        self.run_cli("build")
+        built = self.state / "notes" / "review-code.md"
+        self.assertIn("- Ask about the migration.", built.read_text())
+        self.assertFalse((self.state / "notes" / "review-teammate-pr.md").exists())
+        self.assertEqual(self.run_cli("doctor").returncode, 0)
+        # Beside a note under the new name, the old one is named for the user to fold in.
+        self.note("review-code", "- Check the tests.\n")
+        self.run_cli("build")
+        self.assertIn("- Check the tests.", built.read_text())
+        result = self.run_cli("doctor")
+        self.assertEqual(result.returncode, 1, result.stdout)
+        self.assertIn("review-teammate-pr.md is for review-teammate-pr, which is review-code now", result.stdout)
+
     def test_doctor_passes_with_a_built_note(self):
         self.run_cli("build")
         result = self.run_cli("doctor")
