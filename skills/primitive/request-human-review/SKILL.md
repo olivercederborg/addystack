@@ -63,9 +63,10 @@ findings, with `holds` set by the review's rule.
 
 ## 3. Act
 
-**Unattended reviewer** (review-code's unattended mode, signed in as an App): the review
-wrote `REVIEW.json` beside `GATES.json`, in the shape `scripts/post-review.py` documents.
-Run it in the background, since it waits for pending required checks:
+**Unattended reviewer** (review-code's unattended mode, signed in as an App): write
+`REVIEW.json` beside `GATES.json`, in the shape `scripts/post-review.py` documents, with
+the review's findings and step 2's, and the review's summary as its body. Run it in the
+background, since it waits for pending required checks:
 
 ```sh
 scripts/post-review.py <PR> REVIEW.json --wait 2700

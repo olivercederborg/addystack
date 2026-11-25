@@ -27,7 +27,7 @@
 # instead of sending it.
 set -euo pipefail
 
-usage() { grep -v '^# Copy of ' "$0" | sed -n '2,26p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { grep -v '^# Copy of ' "$0" | sed -n '2,27p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
 repo() { gh repo view --json owner,name --jq '.owner.login + "/" + .name'; }
 send() {
   if [ "${DRY_RUN:-}" = 1 ]; then printf 'DRY_RUN:'; printf ' %q' "$@"; echo; else "$@"; fi
