@@ -41,7 +41,8 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
 - A line that starts an HTML block, past list and quote markers, with no blank line after
   it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
   A block tag such as `<div` starts one, as does a whole tag alone on its line (CommonMark
-  0.31.2 §4.6), but not `<sub>…</sub><br>` or an autolink.
+  0.31.2 §4.6), but not `<sub>…</sub><br>` or an autolink. Any other line that starts
+  with a tag holds only attribute-free formatting tags (PLAIN).
 - A line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
   `<div title="x`, when it starts an HTML block or a line follows it: what follows
   becomes the tag's attribute.
@@ -92,6 +93,12 @@ BLOCK_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|cent
 ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^"'=<>`\x00-\x20]+|'[^']*'|"[^"]*"))?"""
 HTML_START = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?:/?(?:{BLOCK_NAMES})(?=\s|/?>|$)"
                         rf"|(?:[A-Za-z][A-Za-z0-9-]*(?:{ATTRIBUTE})*\s*/?|/[A-Za-z][A-Za-z0-9-]*\s*)>\s*$)", re.I)
+# A line that starts with a tag, past list and quote markers, but not with a URI autolink
+# (CommonMark 0.31.2 §6.5, without a backtick, so it can't pair with a code span).
+AUTOLINK = r"<[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20<>`\x7f]*>"
+LEADS = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?!{AUTOLINK[1:]})[A-Za-z/]")
+# Inline tags that format text and hide none of it, such as the reviewer-reply disclosure's.
+PLAIN = re.compile(r"</?(?:sub|sup|br|wbr|b|i|em|strong|code|kbd|s|del|ins|mark|small)\s*/?>", re.I)
 TAG = re.compile(r"</?[A-Za-z]")
 SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")
@@ -190,10 +197,24 @@ def scan(lines):
         after = lines[at + 1] if at + 1 < len(lines) else ""
         starts, follows = HTML_START.match(line), after.strip(" \t")
         # A tag left open at the line's end runs on, as an HTML block's raw HTML or as an
-        # inline tag whose attribute takes the paragraph's next line.
-        if not marks[at] and (UNSAFE.search(line) or starts and follows or not closed(line) and (starts or follows)):
+        # inline tag whose attribute takes the paragraph's next line, and a line that starts
+        # with a tag other than PLAIN ones may hide what follows, as `<h2 class="sr-only">`.
+        if not marks[at] and (UNSAFE.search(line) or starts and follows or not closed(line) and (starts or follows)
+                              or LEADS.match(line) and not starts and not plain(line)):
             sure = False
     return marks, sure
+
+
+def plain(line):
+    """Whether each tag on line, past autolinks, is a PLAIN one with no attributes."""
+    at = 0
+    while (at := line.find("<", at)) >= 0:
+        link, tag = re.compile(AUTOLINK).match(line, at), TAG.match(line, at)
+        found = None if link or not tag else PLAIN.match(line, at)
+        if tag and not link and not found:
+            return False
+        at = (link or found).end() if link or found else at + 1
+    return True
 
 
 def tags(line):

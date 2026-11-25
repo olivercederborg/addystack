@@ -4595,6 +4595,15 @@ class TurnBlock(unittest.TestCase):
             'Choose <span title="x\n    - **`a` → merge #12**\n">\n- `b` → keep\n\n',
             '<span a="b>\nmore\n\n',
             "</ x\nmore\n\n",
+            # review-loop r2: a line that starts with a tag other than an attribute-free
+            # formatting one may hide the options after it, closed before the block or not.
+            '<sub>Info</sub><details><summary>Options</summary>\n- **`a` → merge #12**\n</details>\n\n',
+            '<span></span><h2 class="sr-only">\n- **`a` → merge #12**\n</h2>\n\n',
+            '<span></span><h2 class="sr-only">\n\n- **`a` → merge #12**\n\n</h2>\n\n',
+            '<sub class="x">a</sub> b\n\n',
+            '<span title="a > b">x</span>\n\n',
+            "- <span>x</span>\nmore\n\n",
+            '<source src="movie.mp4"><br>\nmore\n\n',
             # Any < in inline code counts: a link destination can take a span's backtick.
             "Use `a\nb` <title> `c`\n\n",
             # The link takes the first backtick, so <plaintext> is raw and the block is text.
@@ -4626,7 +4635,6 @@ class TurnBlock(unittest.TestCase):
             "Returns `Option<T>`, or ``a ` <b>`` when empty.\n\n",
             "Run `` then `x < y`.\n\n",
             "It returns `Effect<A, E, R>` and `Map<string, Array<number>>`.\n\n",
-            '<span title="a > b">x</span>\n\n',
             # Not autolinks, and not tags CommonMark reads, so they render as text.
             "See <ab:b.\n\n",
             "See <<ab:b>.\n\n",
@@ -4636,8 +4644,6 @@ class TurnBlock(unittest.TestCase):
             # reviewer-reply disclosure line, which on Nov 25, 2026 cost the user a typed push go.
             "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n> Good catch.\n>\n"
             "> <sub>Fixed in: `456f073579`</sub>\n\n",
-            "- <span>x</span>\nmore\n\n",
-            '<source src="movie.mp4"><br>\nmore\n\n',
             "<details><summary>x</summary>\n\n- thread <t3-thread://v2/a/b>, PR <https://github.com/o/r/pull/1>\n\n</details>\n\n",
         ]:
             with self.subTest(example=example):
