@@ -108,7 +108,7 @@ class Post(unittest.TestCase):
         question = {'call': 'question', 'holds': False, 'title': 'is the column nullable?'}
         outcome = self.post(fake, question)
         self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['D1']))
-        dismissal, (command, arguments, files) = fake.writes
+        (command, arguments, files), dismissal = fake.writes
         self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
         self.assertIn('**Needs a human.**', files['body.md'])
         self.assertIn('- **D1** · architectural or interface decision: Add a totals column', files['body.md'])
@@ -129,6 +129,21 @@ class Post(unittest.TestCase):
         with patch.object(denied, 'github', refuse), self.assertRaisesRegex(ValueError, 'HTTP 403'):
             self.post(denied)
         self.assertEqual(denied.writes, [])
+
+    def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
+        self.gate('interface')
+        failing = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})
+        def refuse(command, *arguments):
+            if command == 'review':
+                raise ValueError('github.sh review failed: HTTP 422')
+            return Fake.github(failing, command, *arguments)
+        with patch.object(failing, 'github', refuse), self.assertRaisesRegex(ValueError, 'HTTP 422'):
+            self.post(failing)
+        self.assertEqual(failing.writes, [], 'the request for changes still blocks the merge')
+        # The App's review is read before the head, so a push during that read stops the run.
+        racing = Fake(heads=[NEWER], active={'id': 42, 'state': 'APPROVED', 'commit_id': NEWER})
+        self.assertEqual(self.post(racing)['outcome'], 'superseded')
+        self.assertEqual(racing.writes, [])
 
     def test_pending_checks_are_waited_on_then_approved(self):
         answers = iter(['ci\tpending\nrequired: not all passed\n', 'ci\tpass\nrequired: all passed\n'])

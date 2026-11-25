@@ -82,9 +82,11 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 | `superseded` | the head moved | nothing: the push starts its own review |
 
 It reads the head and the required checks last, right before posting, posts only as an
-App, and resolves its own threads once it approves. Before any other outcome but a new
-request for changes, it withdraws its own approval or request for changes that still
-counts, so a gate never leaves an approval in place. End with its Outcome line.
+App, and resolves its own threads once it approves. For any other outcome but a new
+request for changes, it withdraws its own review that still counts: an approval before
+posting, so a gate never leaves one in place, and a request for changes after, so a failed
+post never lifts the block. It needs the App to be allowed to dismiss its own reviews. End
+with its Outcome line.
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a

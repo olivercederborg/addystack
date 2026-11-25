@@ -116,9 +116,11 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     holds = any(finding['holds'] for finding in findings)
     deadline = now() + wait_seconds
     while True:
-        # The head and the checks are read last, right before the write: a push since starts
-        # its own review, and a held finding or a gate never reads the checks, since they
-        # can't approve.
+        # The App's review that still counts, then the head and the checks, read last, right
+        # before the write: a push since starts its own review, and a held finding or a gate
+        # never reads the checks, since they can't approve.
+        earlier = github('reviewed', number).strip()
+        active = json.loads(earlier)['active'] if earlier else None
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
@@ -134,40 +136,44 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     outcome = {'head': head}
     with tempfile.TemporaryDirectory(dir=folder) as scratch:
         scratch = Path(scratch)
-        if action == 'approve':
-            # No inline comments: an open thread would hold the merge until someone resolves it.
-            body += _notes(findings, 'Notes that don\'t hold the approval', folder)
-            outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
-            outcome['outcome'] = 'approved'
-            for thread in map(json.loads, filter(None, github('threads', number).splitlines())):
-                if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer):
-                    github('resolve', thread['id'])
-        else:
-            # The App's approval or request for changes that still counts goes first, so a
-            # human gate never leaves an approval in place, and a fixed request never blocks
-            # the merge. A failed dismissal stops here, and a retry finds it again.
-            earlier = github('reviewed', number).strip()
-            active = json.loads(earlier)['active'] if earlier else None
-            if action != 'request-changes' and active:
-                github('dismiss', number, active['id'], _write(
-                    scratch, 'dismissal.md', f'Superseded at {head[:7]}: this review no longer holds; see the newer one.'))
-            drafts = [finding['draft'] for finding in findings if finding.get('draft')]
-            body += _notes([finding for finding in findings if not finding.get('draft')], 'Findings', folder)
-            if gates.gated(verdict):
-                body += '\n' + gates.section(verdict)
-                outcome['gated'] = [decision['id'] or decision['decision'] for decision in gates.gated(verdict)]
-            if action == 'not-approved':
-                body += '\n**Not approved:** these required checks did not pass on this head:\n\n' + \
-                        '\n'.join(f'- {line}' for line in checks) + '\n'
-                outcome['checks'] = checks
-            # Drafts name their body files relative to REVIEW.json's folder, so they sit there too.
-            drafts_path = _write(folder, f'{scratch.name}-drafts.json', json.dumps(drafts))
-            event = 'REQUEST_CHANGES' if action == 'request-changes' else 'COMMENT'
-            outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
-            outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
-                                  'not-approved': 'not-approved'}[action]
-        for leftover in folder.glob(f'{scratch.name}-*.json'):
-            leftover.unlink()
+        try:
+            if action == 'approve':
+                # No inline comments: an open thread would hold the merge until someone resolves it.
+                body += _notes(findings, 'Notes that don\'t hold the approval', folder)
+                outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
+                outcome['outcome'] = 'approved'
+                for thread in map(json.loads, filter(None, github('threads', number).splitlines())):
+                    if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer):
+                        github('resolve', thread['id'])
+            else:
+                # The App's earlier review that still counts: an approval is withdrawn before
+                # anything posts, so a gate never leaves one in place; a request for changes only
+                # once its replacement posted, so a failed post never lifts the block. Either
+                # dismissal that fails stops the run, and a retry finds the review again.
+                withdraw = active if action != 'request-changes' else None
+                notice = f'Superseded at {head[:7]}: this review no longer holds; see the newer one.'
+                if withdraw and withdraw['state'] == 'APPROVED':
+                    github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
+                drafts = [finding['draft'] for finding in findings if finding.get('draft')]
+                body += _notes([finding for finding in findings if not finding.get('draft')], 'Findings', folder)
+                if gates.gated(verdict):
+                    body += '\n' + gates.section(verdict)
+                    outcome['gated'] = [decision['id'] or decision['decision'] for decision in gates.gated(verdict)]
+                if action == 'not-approved':
+                    body += '\n**Not approved:** these required checks did not pass on this head:\n\n' + \
+                            '\n'.join(f'- {line}' for line in checks) + '\n'
+                    outcome['checks'] = checks
+                # Drafts name their body files relative to REVIEW.json's folder, so they sit there too.
+                drafts_path = _write(folder, f'{scratch.name}-drafts.json', json.dumps(drafts))
+                event = 'REQUEST_CHANGES' if action == 'request-changes' else 'COMMENT'
+                outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
+                outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
+                                      'not-approved': 'not-approved'}[action]
+                if withdraw and withdraw['state'] == 'CHANGES_REQUESTED':
+                    github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
+        finally:
+            for leftover in folder.glob(f'{scratch.name}-*.json'):
+                leftover.unlink()
     return outcome
 
 
