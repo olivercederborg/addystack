@@ -1,12 +1,14 @@
-"""Tests for .githooks/pre-commit: it runs the test suites as dagger check when Dagger
-reaches an engine, blocks the commit when a check fails, when the module doesn't load, or
+"""Tests for .githooks/pre-push: it runs the test suites as dagger check when Dagger
+reaches an engine, blocks the push when a check fails, when the module doesn't load, or
 when a pattern matches no check, and runs them on the host when dagger or its engine is
-missing; and its macos_only list names every hook test that skips off macOS, since only
-that list runs on the Mac."""
+missing; its macos_only list names every hook test that skips off macOS, since only that
+list runs on the Mac; and for .githooks/pre-commit: it runs only the touched folders'
+suites on the host, and never Dagger."""
 import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
-HOOK = KIT / ".githooks" / "pre-commit"
+HOOK = KIT / ".githooks" / "pre-push"
+PRE_COMMIT = KIT / ".githooks" / "pre-commit"
 # Whether /bin/bash is older than 4, as macOS ships it.
 BASH_3 = os.path.exists("/bin/bash") and int(subprocess.run(
     ["/bin/bash", "--norc", "--noprofile", "-c", "echo ${BASH_VERSINFO[0]}"], capture_output=True, text=True,
@@ -71,7 +73,8 @@ class DaggerOrHost(unittest.TestCase):
         self.addCleanup(self.folder.cleanup)
         self.repo = pathlib.Path(self.folder.name, "repo")
         (self.repo / ".githooks").mkdir(parents=True)
-        shutil.copy(HOOK, self.repo / ".githooks" / "pre-commit")
+        for hook in (HOOK, PRE_COMMIT, KIT / ".githooks" / "suites.sh"):
+            shutil.copy(hook, self.repo / ".githooks" / hook.name)
         lints = ["check-frontmatter.sh", "check-skill-size.sh", "check-layers.py", "check-neutral.py", "check-links.py", "sync-format.sh",
                  "sync-notes.py", "sync-skill-list.py", "sync-copies.py", "check_examples.py",
                  "check-reply-budget.py"]
@@ -89,7 +92,7 @@ class DaggerOrHost(unittest.TestCase):
         subprocess.run(["git", "add", "scripts/sync-copies.py"], cwd=self.repo, check=True)
         self.bin = pathlib.Path(self.folder.name, "bin")
         self.bin.mkdir()
-        for tool in ("python3", "git", "bash", "uname"):
+        for tool in ("python3", "git", "bash", "uname", "cut", "mktemp"):
             (self.bin / tool).symlink_to(shutil.which(tool))
         self.log = pathlib.Path(self.folder.name, "dagger.log")
 
@@ -99,41 +102,64 @@ class DaggerOrHost(unittest.TestCase):
         path.write_text(f"#!/bin/sh\n{body}\n")
         path.chmod(0o755)
 
-    def commit(self, engine=0, check=0, module=0, listed="skills:my-inbox-tests skills:suites-listed",
+    def push(self, engine=0, check=0, module=0, listed="skills:my-inbox-tests skills:suites-listed",
                dagger=True, **extra):
         if dagger:
             (self.bin / "dagger").write_text(FAKE_DAGGER)
             (self.bin / "dagger").chmod(0o755)
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        untracked, refs = extra.pop("UNTRACKED", ()), extra.pop("REFS", 1)
+        # OLD_TIP pushes a commit from before .githooks/suites.sh, made under this checkout's
+        # HEAD; REMOTE is the remote's tip the push names; PREPARE runs after the commits.
+        old_tip, remote, prepare = extra.pop("OLD_TIP", False), extra.pop("REMOTE", "0" * 40), extra.pop("PREPARE", None)
         env.update(PATH=f"{self.bin}:/usr/bin:/bin", DAGGER_LOG=str(self.log), DAGGER_ENGINE=str(engine),
                    DAGGER_CHECK=str(check), DAGGER_MODULE=str(module), DAGGER_LIST=listed,
                    HOST_RAN=str(self.ran), **extra)
-        run = subprocess.run([str(self.repo / ".githooks" / "pre-commit")], cwd=self.repo, env=env,
+        # The push sends HEAD, committed with whatever the test changed, so the hook checks
+        # this checkout; a push from a dirty one checks a scratch worktree of the tip.
+        commit = ["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "--no-verify"]
+        subprocess.run(["git", "add", "-A"], cwd=self.repo, env=env, check=True)
+        if old_tip:
+            subprocess.run(["git", "rm", "-q", "--cached", ".githooks/suites.sh"], cwd=self.repo, env=env, check=True)
+            subprocess.run([*commit, "-m", "old"], cwd=self.repo, env=env, check=True)
+            old_tip = subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True,
+                                     text=True).stdout
+            subprocess.run(["git", "add", "-A"], cwd=self.repo, env=env, check=True)
+        for path in untracked:  # left out of the push, as a file not committed yet
+            subprocess.run(["git", "rm", "-q", "--cached", path], cwd=self.repo, env=env, check=True)
+        subprocess.run([*commit, "-m", "push"], cwd=self.repo, env=env, check=True)
+        tip = old_tip or subprocess.run(["git", "rev-parse", "HEAD"], cwd=self.repo, env=env, capture_output=True,
+                                        text=True).stdout
+        if prepare:
+            prepare()
+        run = subprocess.run([str(self.repo / ".githooks" / "pre-push"), "origin", "url"], cwd=self.repo, env=env,
+                             input="".join(f"refs/heads/b{n} {tip.strip()} refs/heads/b{n} {remote}\n"
+                                           for n in range(refs)),
                              capture_output=True, text=True)
         calls = self.log.read_text().splitlines() if self.log.exists() else []
         return run, calls
 
     def test_a_reachable_engine_runs_the_checks_and_skips_the_host_suites(self):
-        run, calls = self.commit()
+        run, calls = self.push()
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(calls, [LIST, RUN])
         self.assertFalse(self.ran.exists())
 
     def test_a_failed_check_blocks_the_commit(self):
-        run, calls = self.commit(check=1)
+        run, calls = self.push(check=1)
         self.assertEqual(run.returncode, 1)
         self.assertIn("a Dagger check failed", run.stderr)
         self.assertFalse(self.ran.exists())
 
     def test_without_an_engine_the_host_suites_run(self):
-        run, calls = self.commit(engine=1)
+        run, calls = self.push(engine=1)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("Dagger can't reach its engine", run.stdout)
         self.assertEqual(calls, [LIST, "core version"])
         self.assertTrue(self.ran.exists())
 
     def test_an_engine_that_doesnt_answer_runs_the_host_suites(self):
-        run, calls = self.commit(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT="2")
+        run, calls = self.push(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT="2")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("Dagger's engine didn't answer in 2s", run.stdout)
         self.assertEqual(calls, [LIST])
@@ -143,13 +169,13 @@ class DaggerOrHost(unittest.TestCase):
         # `3m` made the wait's `[ -ge ]` fail on every poll, so a hung engine never timed out.
         for wait in ["3m", "1.5", "-1"]:
             with self.subTest(wait=wait):
-                run, calls = self.commit(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT=wait)
+                run, calls = self.push(DAGGER_HANG="1", PRE_COMMIT_DAGGER_WAIT=wait)
                 self.assertEqual(run.returncode, 1)
                 self.assertIn(f"PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '{wait}'", run.stderr)
                 self.assertEqual(calls, [])
 
     def test_a_module_that_doesnt_load_blocks_the_commit(self):
-        run, calls = self.commit(module=1)
+        run, calls = self.push(module=1)
         self.assertEqual(run.returncode, 1)
         self.assertIn("the Dagger module didn't load", run.stderr)
         self.assertEqual(calls, [LIST, "core version"])
@@ -157,33 +183,90 @@ class DaggerOrHost(unittest.TestCase):
 
     def test_patterns_no_check_matches_block_the_commit(self):
         # dagger check runs nothing for them and exits 0, as after renaming the module.
-        run, calls = self.commit(listed="")
+        run, calls = self.push(listed="")
         self.assertEqual(run.returncode, 1)
         self.assertIn("no Dagger check matches skills:*-tests skills:suites-listed;", run.stderr)
         self.assertEqual(calls, [LIST])
 
     def test_one_pattern_matching_nothing_blocks_the_commit(self):
-        run, calls = self.commit(listed="skills:my-inbox-tests")
+        run, calls = self.push(listed="skills:my-inbox-tests")
         self.assertEqual(run.returncode, 1)
         self.assertIn("no Dagger check matches skills:suites-listed;", run.stderr)
         self.assertEqual(calls, [LIST])
 
-    def test_a_workshop_suite_runs_here_beside_the_dagger_checks(self):
-        workshop = pathlib.Path(self.folder.name, "workshop-ran")
-        (self.repo / "maintainer").mkdir()
-        (self.repo / "maintainer" / "test_workshop.py").write_text(
-            "import os, pathlib, unittest\n"
-            "class Workshop(unittest.TestCase):\n"
-            "    def test_runs(self):\n"
-            f"        pathlib.Path({str(workshop)!r}).touch()\n")
-        run, calls = self.commit()
+    def test_checks_the_committed_tip_not_the_checkouts_other_files(self):
+        # A suite that passes only on an untracked file in this checkout must
+        # fail the push, since the tip it sends lacks the file; and a failing host suite in
+        # the scratch worktree that check runs in must fail it too.
+        (self.repo / "scripts" / "helper.py").write_text("VALUE = 1\n")
+        (self.repo / "scripts" / "test_uses_helper.py").write_text(
+            "import unittest, helper\nclass T(unittest.TestCase):\n    def test_it(self):\n"
+            "        self.assertEqual(helper.VALUE, 1)\n")
+        run, _ = self.push(dagger=False, UNTRACKED=["scripts/helper.py"])
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("helper", run.stderr)
+        worktrees = subprocess.run(["git", "worktree", "list"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertEqual(len(worktrees.splitlines()), 1)  # the scratch worktree is gone
+
+    def test_checks_each_distinct_tip_once(self):
+        # Two refs at one tip check it once.
+        (self.bin / "dagger").write_text(FAKE_DAGGER)
+        (self.bin / "dagger").chmod(0o755)
+        run, calls = self.push(REFS=2)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(calls, [LIST, RUN])
-        self.assertTrue(workshop.exists())
+
+    def hooks_suite(self):
+        """A hook test that leaves a file behind when it runs, so a test sees the hooks suite ran."""
+        hooks = self.repo / "skills" / "primitive" / "addystack" / "hooks"
+        hooks.mkdir(parents=True)
+        ran = pathlib.Path(self.folder.name, "hooks-suite-ran")
+        (hooks / "test_hook.py").write_text("import pathlib, unittest\nclass H(unittest.TestCase):\n"
+                                            f"    def test_runs(self):\n        pathlib.Path({str(ran)!r}).touch()\n")
+        return ran
+
+    def test_a_tip_from_before_suites_sh_runs_every_suite_with_this_commits_helpers(self):
+        # A pushed tip from before this hook has no
+        # .githooks/suites.sh, and its detector lists its own inputs, so every hook input
+        # counts as changed, and the helpers come from this checkout's commit, never an edit
+        # in progress that would skip a suite.
+        hooks_ran = self.hooks_suite()
+        edit = lambda: (self.repo / ".githooks" / "suites.sh").write_text("host_suites() { :; }\n")
+        run, _ = self.push(dagger=False, OLD_TIP=True, PREPARE=edit)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(self.ran.exists())
+        self.assertTrue(hooks_ran.exists())
+
+    def test_a_tip_from_before_suites_sh_needs_a_commit_that_has_it(self):
+        run, _ = self.push(dagger=False, UNTRACKED=[".githooks/suites.sh"])
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("predates .githooks/suites.sh", run.stderr)
         self.assertFalse(self.ran.exists())
 
+    def test_a_remote_tip_this_clone_lacks_counts_every_hook_input(self):
+        # The default branch's fork point can't stand in for a remote tip this clone lacks:
+        # it could hide a hook input the push changes.
+        hooks_ran = self.hooks_suite()
+        self.script("hook-inputs-staged.sh", '[ "$1" = "$(git hash-object -t tree /dev/null)" ] && exit 0; exit 1')
+        tip = lambda: subprocess.run(["git", "update-ref", "refs/remotes/origin/HEAD", "HEAD"], cwd=self.repo, check=True)
+        run, _ = self.push(dagger=False, REMOTE="1" * 40, PREPARE=tip)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertTrue(hooks_ran.exists())
+
+    def test_a_sparse_checkout_still_checks_every_committed_suite(self):
+        # The scratch worktree ignores this checkout's sparse patterns.
+        failing = self.repo / "skills" / "primitive" / "broken" / "scripts"
+        failing.mkdir(parents=True)
+        (failing / "test_broken.py").write_text("import unittest\nclass B(unittest.TestCase):\n"
+                                                "    def test_fails(self):\n        self.fail('broken skill')\n")
+        sparse = lambda: subprocess.run(["git", "sparse-checkout", "set", "--no-cone", "/.githooks/", "/scripts/"],
+                                        cwd=self.repo, check=True, capture_output=True)
+        run, _ = self.push(dagger=False, PREPARE=sparse)
+        self.assertEqual(run.returncode, 1, run.stdout + run.stderr)
+        self.assertIn("broken skill", run.stderr)
+
     def test_without_dagger_the_host_suites_run(self):
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("dagger isn't installed", run.stdout)
         self.assertTrue(self.ran.exists())
@@ -202,7 +285,7 @@ class DaggerOrHost(unittest.TestCase):
             f"        pathlib.Path({str(skill_ran)!r}).touch()\n")
         (self.bin / "bash").unlink()
         (self.bin / "bash").symlink_to("/bin/bash")
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(skill_ran.exists())
         self.assertTrue(self.ran.exists())
@@ -211,13 +294,13 @@ class DaggerOrHost(unittest.TestCase):
         moved = pathlib.Path(self.folder.name, "re[p]o")
         self.repo.rename(moved)
         self.repo = moved
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
 
     def test_a_dangling_first_test_file_still_runs_its_folder(self):
         (self.repo / "scripts" / "test_000_broken.py").symlink_to("absent.py")
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
 
@@ -228,18 +311,102 @@ class DaggerOrHost(unittest.TestCase):
         startup.write_text(f"shopt -s nullglob\nGLOBIGNORE='{hidden}'\n")
         os.environ["BASH_ENV"] = str(startup)
         self.addCleanup(os.environ.pop, "BASH_ENV")
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertTrue(self.ran.exists())
 
     def test_no_host_suite_blocks_the_commit(self):
         (self.repo / "scripts" / "test_host.py").unlink()
-        run, _ = self.commit(dagger=False)
+        run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 1)
         self.assertIn("pre-commit: no host test suite ran", run.stderr)
         self.assertIn("skills/primitive/*/scripts", run.stderr)
         self.assertIn(" scripts;", run.stderr)
         self.assertFalse(self.ran.exists())
+
+
+class PreCommit(unittest.TestCase):
+    """The real pre-commit in a scratch repo whose lints pass: it runs the suites of the
+    folders the commit stages, on the host, and leaves Dagger to pre-push."""
+
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.addCleanup(self.folder.cleanup)
+        self.repo = pathlib.Path(self.folder.name, "repo")
+        (self.repo / ".githooks").mkdir(parents=True)
+        for hook in (PRE_COMMIT, KIT / ".githooks" / "suites.sh"):
+            shutil.copy(hook, self.repo / ".githooks" / hook.name)
+        for lint in ["check-frontmatter.sh", "check-skill-size.sh", "check-layers.py", "check-neutral.py",
+                     "check-links.py", "sync-format.sh", "sync-notes.py", "sync-skill-list.py", "sync-copies.py",
+                     "check_examples.py", "check-reply-budget.py"]:
+            self.write(f"scripts/{lint}", "#!/bin/sh\nexit 0\n").chmod(0o755)
+        self.ran = {}
+        for folder in ["scripts", "shared/scripts", "skills/primitive/one/scripts", "skills/orchestrator/two/scripts",
+                       "maintainer"]:
+            self.ran[folder] = pathlib.Path(self.folder.name, folder.replace("/", "-") + "-ran")
+            self.write(f"{folder}/test_{folder.replace('/', '_')}.py",
+                       "import pathlib, unittest\nclass T(unittest.TestCase):\n    def test_runs(self):\n"
+                       f"        pathlib.Path({str(self.ran[folder])!r}).touch()\n")
+        self.git("init", "-q")
+        self.git("add", "-A")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "base")
+        self.bin = pathlib.Path(self.folder.name, "bin")
+        self.bin.mkdir()
+        (self.bin / "dagger").write_text("#!/bin/sh\necho dagger >> \"$DAGGER_LOG\"\nexit 1\n")
+        (self.bin / "dagger").chmod(0o755)
+        self.log = pathlib.Path(self.folder.name, "dagger.log")
+
+    def write(self, name, text):
+        path = self.repo / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path
+
+    def git(self, *args):
+        subprocess.run(["git", *args], cwd=self.repo, check=True, capture_output=True)
+
+    def commit(self, *paths):
+        for name in paths:
+            self.write(name, "changed\n")
+        self.git("add", "-A")
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+        env.update(PATH=f"{self.bin}:{env['PATH']}", DAGGER_LOG=str(self.log))
+        run = subprocess.run(["git", "-c", "core.hooksPath=.githooks", "-c", "user.name=t", "-c", "user.email=t@t",
+                              "commit", "-q", "-m", "change"], cwd=self.repo, env=env, capture_output=True, text=True)
+        return run, sorted(folder for folder, ran in self.ran.items() if ran.exists())
+
+    def test_runs_the_touched_skills_suite_and_never_dagger(self):
+        run, ran = self.commit("skills/primitive/one/assets/a.json")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])  # the workshop's always run
+        self.assertFalse(self.log.exists())
+
+    def test_runs_a_touched_skills_suite_and_leaves_the_slow_ones_to_push(self):
+        # shared/'s, scripts/', and the hook suites run one test after another on the host,
+        # slower than Dagger runs them, so only pre-push runs them.
+        run, ran = self.commit("shared/views.md", "scripts/check-x.py", ".githooks/pre-push",
+                               "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.json")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(ran, ["maintainer", "skills/orchestrator/two/scripts"])
+
+    def test_a_docs_only_commit_runs_no_kit_suite(self):
+        # A skill's Markdown outside scripts/ keeps Dagger's cached result, so it runs no
+        # suite here either; a shared/views.md edit copies into 15 skills' references/.
+        run, ran = self.commit("README.md", "CHANGELOG.md", "skills/primitive/one/SKILL.md",
+                               "skills/orchestrator/two/references/views.md")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(ran, ["maintainer"])
+
+    def test_markdown_in_a_skills_scripts_runs_its_suite(self):
+        run, ran = self.commit("skills/primitive/one/scripts/fixture.md")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])
+
+    def test_a_failing_touched_suite_blocks_the_commit(self):
+        self.write("skills/primitive/one/scripts/test_fail.py",
+                   "import unittest\nclass F(unittest.TestCase):\n    def test_fails(self):\n        self.fail('x')\n")
+        run, _ = self.commit("skills/primitive/one/scripts/test_fail.py")
+        self.assertNotEqual(run.returncode, 0)
 
 
 class MacosOnly(unittest.TestCase):

@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# Runs the kit's Dagger suites once per push, on each branch tip the push
+# sends, so a failure is blocked before the branch reaches GitHub; .githooks/pre-commit
+# runs only the lints, the touched skills' suites, and the suites Dagger leaves out
+# (preferences, preset, maintainer/) on this machine. `gh stack push`
+# and `gh stack submit` run git push, which runs this hook.
+# Enable once per clone (it enables pre-commit too):
+#   git config core.hooksPath .githooks
+set -euo pipefail
+unset GLOBIGNORE
+shopt -u nullglob failglob nocaseglob dotglob
+checkout="$(git rev-parse --show-toplevel)"
+# Each local tip the push sends that the remote doesn't already have, from git's
+# "<local ref> <local sha> <remote ref> <remote sha>" lines; a deletion sends nothing.
+zero=0000000000000000000000000000000000000000
+tips=() froms=()
+while read -r _ local _ remote; do
+  if [ "$local" != "$zero" ] && [ "$local" != "$remote" ]; then
+    # What the push adds to: the remote's old tip, or, for a new branch, where it forks from
+    # the default branch. A remote tip this clone lacks, or a new branch with no default
+    # branch to fork from, gives the empty tree, so every hook input counts as changed.
+    from=$remote
+    if [ "$from" = "$zero" ]; then
+      from=$(git merge-base "$local" refs/remotes/origin/HEAD 2> /dev/null) || from=$(git hash-object -t tree /dev/null)
+    elif ! git cat-file -e "$from^{commit}" 2> /dev/null; then
+      from=$(git hash-object -t tree /dev/null)
+    fi
+    # One check per distinct tip; its froms join with a space, so any of them counts.
+    for at in "${!tips[@]}"; do
+      if [ "${tips[$at]}" = "$local" ]; then froms[$at]="${froms[$at]} $from"; continue 2; fi
+    done
+    tips+=("$local") froms+=("$from")
+  fi
+done
+[ ${#tips[@]} -gt 0 ] || exit 0
+unset $(git rev-parse --local-env-vars)
+
+# The checks for one tree: today's Dagger block, unchanged, from the kit at $root.
+check_tree() {
+# The same suites as Dagger checks (.dagger/src/skills/main.py), which re-run only the
+# suites whose files changed, in parallel; the lints above already ran. Without dagger
+# (a Linux machine without it), or an engine it can reach, the suites run here. Listing the checks first
+# reaches the engine before any runs, so a failed check always blocks the commit, and a
+# pattern no check matches blocks it too, since dagger check runs nothing for it and exits 0.
+# An engine stuck restarting (a corrupt cache can crash it on every start) makes the
+# listing hang rather than fail, so it gets PRE_COMMIT_DAGGER_WAIT seconds, then the suites
+# run here too. A cold engine and module load take about a minute.
+checks=('skills:*-tests' skills:suites-listed)
+wait_for_dagger=${PRE_COMMIT_DAGGER_WAIT:-180}
+case $wait_for_dagger in
+  *[!0-9]*)  # the wait's `[ -ge ]` needs an integer, so a value like `3m` would turn the time limit off
+    echo "pre-commit: PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '$wait_for_dagger'." >&2
+    exit 1 ;;
+esac
+within() {  # within SECONDS CMD...: CMD's stdout and status, or status 124 once SECONDS pass
+  local limit=$1 out pid status waited=0
+  shift
+  out=$(mktemp)
+  "$@" > "$out" 2> /dev/null &
+  pid=$!
+  while kill -0 "$pid" 2> /dev/null; do
+    if [ "$waited" -ge "$limit" ]; then
+      kill "$pid" 2> /dev/null
+      wait "$pid" 2> /dev/null
+      rm -f "$out"
+      return 124
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  status=0
+  wait "$pid" || status=$?
+  cat "$out"
+  rm -f "$out"
+  return "$status"
+}
+unmatched() {  # each of checks that no name in $listed matches
+  local pattern name
+  for pattern in "${checks[@]}"; do
+    while read -r name _; do [[ $name == $pattern ]] && continue 2; done <<< "$listed"
+    printf ' %s' "$pattern"
+  done
+}
+export DAGGER_NO_NAG=1
+cd "$root"
+listing=0
+if command -v dagger > /dev/null; then
+  listed=$(within "$wait_for_dagger" dagger check -l -s "${checks[@]}") || listing=$?
+fi
+if ! command -v dagger > /dev/null; then
+  echo "pre-commit: dagger isn't installed, so the test suites run here"
+  host_suites
+elif [ "$listing" = 124 ]; then
+  echo "pre-commit: Dagger's engine didn't answer in ${wait_for_dagger}s, so the test suites run here." \
+       "If \`docker ps\` shows it restarting, its cache is likely corrupt: remove the container and its volume"
+  host_suites
+elif [ "$listing" != 0 ]; then
+  if within 30 dagger core version > /dev/null; then
+    echo "pre-commit: dagger check -l failed, so the Dagger module didn't load; run it to see why" >&2
+    exit 1
+  fi
+  echo "pre-commit: Dagger can't reach its engine (is Docker running?), so the test suites run here"
+  host_suites
+elif missing=$(unmatched) && [ -n "$missing" ]; then
+  echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-push" >&2
+  exit 1
+elif ! dagger check -qq "${checks[@]}"; then
+  echo "pre-commit: a Dagger check failed. If its test can't find a file, add the file to that" \
+       "suite's inputs in .dagger/src/skills/main.py" >&2
+  exit 1
+elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
+  # The hook tests that need macOS, which Dagger's Linux containers skip.
+  # scripts/test_pre_commit.py fails when this list misses one.
+  macos_only=(test_hooks.KeychainHomeGuard test_agent_memory_guard.Signals
+              test_agent_memory_guard.CommandLine.test_exec_is_seen_although_the_process_id_stays
+              test_agent_memory_guard.CommandLine.test_cpu_time_is_in_nanoseconds
+              test_agent_memory_guard.CommandLine.test_cpu_includes_reaped_children_and_start_is_wall_clock)
+  (cd skills/primitive/addystack/hooks && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only[@]}")
+fi
+}
+
+# Each tip in a scratch worktree of its whole committed tree, so Dagger and the host suites
+# read exactly what the push sends: never a file only this checkout has (untracked, ignored,
+# or hidden by status settings), and every file a sparse checkout leaves out. It's removed
+# when the check ends or is interrupted. Each runs in its own subshell under set -e, so a
+# failing step fails the push, with committed helpers only, so an edit in progress can't
+# change what the push is checked by: the tip's own, or, for a tip from before suites.sh,
+# this checkout's commit's.
+for at in "${!tips[@]}"; do
+  tip=${tips[$at]} from=${froms[$at]}
+  (
+    scratch=$(mktemp -d)
+    root=$scratch/kit
+    trap 'git -C "$checkout" worktree remove --force "$root" 2> /dev/null; rm -rf "$scratch"' EXIT
+    trap 'exit 130' INT TERM
+    git -C "$checkout" -c core.sparseCheckout=false worktree add -q --detach "$root" "$tip"
+    if [ -f "$root/.githooks/suites.sh" ]; then
+      . "$root/.githooks/suites.sh"
+      # The hook tests run on the host (macOS-only ones, or all on a fallback) only when the
+      # push changes their inputs; a detector that errors counts as a change.
+      hooks_staged=false
+      for base in $from; do
+        detected=0
+        (cd "$root" && scripts/hook-inputs-staged.sh "$base" "$tip") || detected=$?
+        [ "$detected" = 1 ] || hooks_staged=true
+      done
+    else
+      # An older tip's detector reads no range and lists its own inputs, so every hook
+      # input counts as changed.
+      git -C "$checkout" show HEAD:.githooks/suites.sh > "$scratch/suites.sh" || {
+        echo "pre-push: $tip predates .githooks/suites.sh, and this checkout's commit has none to check it with;" \
+             "push it from a checkout of main" >&2
+        exit 1
+      }
+      . "$scratch/suites.sh"
+      hooks_staged=true
+    fi
+    check_tree
+  )
+done

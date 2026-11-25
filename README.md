@@ -79,8 +79,9 @@ Once per clone:
 git config core.hooksPath .githooks
 ```
 
-The pre-commit hook runs the lints and tests, through Dagger when it can reach an engine
-(`dagger check -l` lists them).
+The pre-commit hook runs the lints and the touched skills' tests on this machine, and
+the pre-push hook, which `gh stack push` and `submit` run, runs the kit's Dagger suites
+once per push when it can reach an engine (`dagger check -l` lists them).
 
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run

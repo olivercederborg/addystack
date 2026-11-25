@@ -6,7 +6,9 @@
 # differ from their sources or left a symlink in the kit,
 # whose built global/built/*.md file differs from its sources (in the workshop), whose
 # example replies break reply-shape's layout, whose reply-rules payload passes 8,000
-# characters, or whose skill-script or hook tests fail.
+# characters, or whose touched skills' script tests fail on this machine.
+# The kit's Dagger suites run once per push, in .githooks/pre-push; the preferences, preset,
+# and workshop suites, which Dagger leaves out, run here on every commit.
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 set -euo pipefail
@@ -39,128 +41,36 @@ fi
 if [[ -x "$root/maintainer/build-global.py" ]]; then "$root/maintainer/build-global.py" --check; fi
 "$root/scripts/check_examples.py"
 "$root/scripts/check-reply-budget.py"
-# The hook tests matter only when the commit changes a file they depend on. That check
-# reads the index, so it runs before the unset below.
-hooks_staged=false
-if "$root/scripts/hook-inputs-staged.sh"; then hooks_staged=true; fi
+# The staged paths, read from the index before the unset below.
+staged=()
+while IFS= read -r -d '' path; do staged+=("$path"); done < <(git diff --cached --name-only --no-renames -z)
 # Git runs hooks with GIT_DIR and its other repo-local variables set (always in a
 # worktree); a test that runs `git init` would then reinitialize this repo instead.
 unset $(git rev-parse --local-env-vars)
 
-# Each folder's test_*.py, on this machine, counting the suites it runs in suites_ran.
-suites_ran=0
-run_suites() {
-  local tests file
-  for tests in "$@"; do
-    # The folder stays literal, so a [ or * in its path can't glob; the first test file
-    # that exists runs the folder once, whatever nullglob or a dangling link does.
-    for file in "$tests"/test_*.py; do
-      if [ -e "$file" ]; then
-        PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -q -s "$tests" -p 'test_*.py'
-        suites_ran=$((suites_ran + 1))
-        break
-      fi
-    done
-  done
-}
+. "$root/.githooks/suites.sh"
 
-# The kit's suites, which are Dagger checks: each shipped skill's scripts/test_*.py
-# (skills/<layer>/<skill>/scripts), shared/scripts', scripts/', and the tool's
-# hooks/test_*.py when hooks_staged. Finding none blocks the commit, since a folder list
-# that matches nothing would otherwise pass it untested.
-host_suites() {
-  # Declared, then assigned: bash 3.2 does no brace expansion inside `local dirs=(…)`.
-  local dirs
-  dirs=("$root"/skills/{primitive,orchestrator,optional}/*/scripts "$root"/shared/scripts "$root"/scripts)
-  if $hooks_staged; then dirs+=("$root"/skills/primitive/addystack/hooks); fi
-  run_suites "${dirs[@]}"
-  if [ "$suites_ran" = 0 ]; then
-    echo "pre-commit: no host test suite ran, since none of these has a test_*.py:" \
-         "${dirs[*]#"$root"/}; fix host_suites' folder list in .githooks/pre-commit" >&2
-    exit 1
-  fi
-}
-
-# The same suites as Dagger checks (.dagger/src/skills/main.py), which re-run only the
-# suites whose files changed, in parallel; the lints above already ran. Without dagger
-# (a Linux machine without it), or an engine it can reach, the suites run here. Listing the checks first
-# reaches the engine before any runs, so a failed check always blocks the commit, and a
-# pattern no check matches blocks it too, since dagger check runs nothing for it and exits 0.
-# An engine stuck restarting (a corrupt cache can crash it on every start) makes the
-# listing hang rather than fail, so it gets PRE_COMMIT_DAGGER_WAIT seconds, then the suites
-# run here too. A cold engine and module load take about a minute.
-checks=('skills:*-tests' skills:suites-listed)
-wait_for_dagger=${PRE_COMMIT_DAGGER_WAIT:-180}
-case $wait_for_dagger in
-  *[!0-9]*)  # the wait's `[ -ge ]` needs an integer, so a value like `3m` would turn the time limit off
-    echo "pre-commit: PRE_COMMIT_DAGGER_WAIT is whole seconds, such as 180, not '$wait_for_dagger'." >&2
-    exit 1 ;;
-esac
-within() {  # within SECONDS CMD...: CMD's stdout and status, or status 124 once SECONDS pass
-  local limit=$1 out pid status waited=0
-  shift
-  out=$(mktemp)
-  "$@" > "$out" 2> /dev/null &
-  pid=$!
-  while kill -0 "$pid" 2> /dev/null; do
-    if [ "$waited" -ge "$limit" ]; then
-      kill "$pid" 2> /dev/null
-      wait "$pid" 2> /dev/null
-      rm -f "$out"
-      return 124
-    fi
-    sleep 1
-    waited=$((waited + 1))
-  done
-  status=0
-  wait "$pid" || status=$?
-  cat "$out"
-  rm -f "$out"
-  return "$status"
-}
-unmatched() {  # each of checks that no name in $listed matches
-  local pattern name
-  for pattern in "${checks[@]}"; do
-    while read -r name _; do [[ $name == $pattern ]] && continue 2; done <<< "$listed"
-    printf ' %s' "$pattern"
-  done
-}
-export DAGGER_NO_NAG=1
-cd "$root"
-listing=0
-if command -v dagger > /dev/null; then
-  listed=$(within "$wait_for_dagger" dagger check -l -s "${checks[@]}") || listing=$?
-fi
-if ! command -v dagger > /dev/null; then
-  echo "pre-commit: dagger isn't installed, so the test suites run here"
-  host_suites
-elif [ "$listing" = 124 ]; then
-  echo "pre-commit: Dagger's engine didn't answer in ${wait_for_dagger}s, so the test suites run here." \
-       "If \`docker ps\` shows it restarting, its cache is likely corrupt: remove the container and its volume"
-  host_suites
-elif [ "$listing" != 0 ]; then
-  if within 30 dagger core version > /dev/null; then
-    echo "pre-commit: dagger check -l failed, so the Dagger module didn't load; run it to see why" >&2
-    exit 1
-  fi
-  echo "pre-commit: Dagger can't reach its engine (is Docker running?), so the test suites run here"
-  host_suites
-elif missing=$(unmatched) && [ -n "$missing" ]; then
-  echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-commit" >&2
-  exit 1
-elif ! dagger check -qq "${checks[@]}"; then
-  echo "pre-commit: a Dagger check failed. If its test can't find a file, add the file to that" \
-       "suite's inputs in .dagger/src/skills/main.py" >&2
-  exit 1
-elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
-  # The hook tests that need macOS, which Dagger's Linux containers skip.
-  # scripts/test_pre_commit.py fails when this list misses one.
-  macos_only=(test_hooks.KeychainHomeGuard test_agent_memory_guard.Signals
-              test_agent_memory_guard.CommandLine.test_exec_is_seen_although_the_process_id_stays
-              test_agent_memory_guard.CommandLine.test_cpu_time_is_in_nanoseconds
-              test_agent_memory_guard.CommandLine.test_cpu_includes_reaped_children_and_start_is_wall_clock)
-  (cd skills/primitive/addystack/hooks && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only[@]}")
-fi
+# The host suites of the skills this commit touches, each its own scripts/, from the list
+# read before the unset above. shared/'s, scripts/', and the hook tests run one test after
+# another here, slower than Dagger runs them, so they run only at push (.githooks/pre-push),
+# in Dagger's full set, so a suite that reads files outside its folder still runs before
+# the branch reaches GitHub.
+touched=()
+while IFS= read -r -d '' path; do
+  case $path in
+    skills/preferences/* | skills/preset/*) continue ;;  # their suites run below on every commit
+    skills/*/*/scripts/*) ;;
+    # Markdown outside scripts/, which Dagger's skill checks leave out too unless SKILL_SUITES
+    # lists it (skill_source in .dagger/src/skills/main.py), so a SKILL.md or reference edit
+    # runs no suite until push.
+    skills/*/*/*.md) continue ;;
+    skills/*/*/*) ;;
+    *) continue ;;
+  esac
+  folder=${path#skills/}; folder="skills/${folder%%/*}/$(cut -d/ -f2 <<< "$folder")/scripts"
+  [[ " ${touched[*]-} " == *" $root/$folder "* ]] || touched+=("$root/$folder")
+done < <(printf '%s\0' "${staged[@]-}")
+run_suites "${touched[@]-}"
 # The suites the kit's Dagger module leaves out: the preferences and preset skills', which
 # stay out of the release, and a workshop checkout's maintainer/'s. They run here whenever
 # the checkout has them.

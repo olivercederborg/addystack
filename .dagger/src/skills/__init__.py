@@ -1,4 +1,4 @@
-"""The kit's pre-commit checks as Dagger checks, one per suite.
+"""The kit's push checks as Dagger checks, one per suite.
 
 Each check loads only its suite's files, through its `source` argument's Ignore
 patterns, so a change outside them (say, under docs/) leaves that check's cached result in
