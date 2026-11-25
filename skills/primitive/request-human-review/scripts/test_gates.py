@@ -1,0 +1,101 @@
+"""gates.py: the GATES.json shape, its coverage of the PR's Decisions table, and the rule an
+unattended reviewer follows."""
+import json
+import pathlib
+import subprocess
+import sys
+import tempfile
+import unittest
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import gates  # noqa: E402
+
+HEAD, BASE = 'a' * 40, 'b' * 40
+BODY = """## Review guide
+
+**Decisions.** D1–D2
+
+| # | Decision | Decided by | Instead of | Assumes | Code |
+|---|---|---|---|---|---|
+| D1 | Store totals in cents | 🧑 human · plan | floats | — | `db/schema.ts:12` |
+| D2 | Reuse the export query | 🤖 agent · build | a new query | — | `export.ts:4` |
+"""
+
+
+def verdict(*decisions, sensitive=()):
+    return {'pr': 7, 'base': BASE, 'head': HEAD, 'decisions': list(decisions), 'sensitive': list(sensitive)}
+
+
+def decision(id_, gate=None, code='a.ts:1'):
+    return {'id': id_, 'decision': f'{id_ or "found"} call', 'code': code, 'gate': gate,
+            'why': 'adds a column' if gate else 'follows export.ts:9'}
+
+
+class Load(unittest.TestCase):
+    def write(self, data):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / 'GATES.json'
+        path.write_text(json.dumps(data))
+        return path
+
+    def test_a_well_formed_verdict_loads(self):
+        data = verdict(decision('D1', 'interface'), decision(None), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'}])
+        self.assertEqual(gates.load(self.write(data)), data)
+
+    def test_every_shape_problem_is_named(self):
+        bad = verdict({'id': 'D1', 'decision': '', 'code': 'a.ts:1', 'gate': 'risky', 'why': 'x'},
+                      sensitive=[{'area': 'payments', 'code': 'p.ts:1'}])
+        bad['head'] = 'abc'
+        with self.assertRaises(ValueError) as raised:
+            gates.load(self.write(bad))
+        for named in ('head is not a full commit SHA', "D1: gate 'risky'", 'D1: decision is empty', "'payments'"):
+            self.assertIn(named, str(raised.exception))
+
+
+class Check(unittest.TestCase):
+    def test_every_table_row_needs_an_entry_and_the_head_must_be_current(self):
+        self.assertEqual(gates.check(verdict(decision('D1', 'interface'), decision('D2')), BODY, HEAD), [])
+        self.assertEqual(gates.check(verdict(decision('D1', 'interface'), decision(None)), BODY, BASE),
+                         [f'the verdict judged {HEAD}, but the head is {BASE}', 'D2 from the Decisions table has no entry'])
+
+    def test_a_pr_without_a_table_needs_only_what_the_diff_shows(self):
+        self.assertEqual(gates.check(verdict(), '**Decisions.** N/A', HEAD), [])
+
+
+class Decide(unittest.TestCase):
+    def test_a_held_finding_requests_changes_whatever_else_holds(self):
+        for gated in (verdict(), verdict(decision('D1', 'one-way-door'))):
+            for required in gates.REQUIRED:
+                self.assertEqual(gates.decide(gated, True, required), 'request-changes')
+
+    def test_a_gate_needs_a_human_whatever_the_checks(self):
+        for required in gates.REQUIRED:
+            self.assertEqual(gates.decide(verdict(decision('D1', 'product'), decision('D2')), False, required),
+                             'needs-human')
+
+    def test_with_no_gate_the_required_checks_on_the_head_decide(self):
+        clear = verdict(decision('D2'), sensitive=[{'area': 'auth', 'code': 'auth.ts:1'}])
+        self.assertEqual([gates.decide(clear, False, required) for required in gates.REQUIRED],
+                         ['approve', 'wait', 'not-approved'])
+
+    def test_section_names_each_gated_decision_with_its_gate_and_code(self):
+        text = gates.section(verdict(decision('D1', 'interface', 'db/schema.ts:12'), decision(None, 'pattern'), decision('D2')))
+        self.assertIn('- **D1** · architectural or interface decision: D1 call · `db/schema.ts:12` · adds a column', text)
+        self.assertIn('- **Not in the Decisions table** · new or changed pattern: found call', text)
+        self.assertNotIn('D2', text)
+
+
+class Cli(unittest.TestCase):
+    def test_decide_tells_an_author_what_an_unattended_reviewer_would_do(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / 'GATES.json'
+        path.write_text(json.dumps(verdict(decision('D1', 'interface'))))
+        script = pathlib.Path(gates.__file__)
+        result = subprocess.run([sys.executable, str(script), 'decide', str(path)], capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (0, 'needs a human: D1\n'))
+
+
+if __name__ == '__main__':
+    unittest.main()

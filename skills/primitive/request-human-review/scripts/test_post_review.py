@@ -1,0 +1,146 @@
+"""post-review.py against a fake github.sh and PR: one outcome per review, never on a moved
+head, an approval only with nothing held, no gate and the required checks passed, and a
+standing request for changes dismissed once nothing holds the approval."""
+import importlib.util
+from importlib.machinery import SourceFileLoader
+import json
+import pathlib
+import tempfile
+import unittest
+from unittest.mock import patch
+
+HERE = pathlib.Path(__file__).resolve().parent
+loader = SourceFileLoader('post_review', str(HERE / 'post-review.py'))
+post_review = importlib.util.module_from_spec(importlib.util.spec_from_loader('post_review', loader))
+loader.exec_module(post_review)
+
+HEAD, NEWER, BASE = 'a' * 40, 'c' * 40, 'b' * 40
+BODY = '| D1 | Add a totals column | 🤖 agent · build | — | — | `db/schema.ts:12` |\n'
+
+
+class Fake:
+    """github.sh and the PR as GitHub would answer them, recording every write."""
+
+    def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='frankie[bot]',
+                 standing=None, threads=()):
+        self.required, self.heads, self.viewer, self.standing = required, list(heads), viewer, standing
+        self.threads = list(threads)
+        self.writes = []
+
+    def github(self, command, *arguments):
+        if command == 'viewer':
+            return self.viewer + '\n'
+        if command == 'head':
+            return (self.heads.pop(0) if self.heads else HEAD) + '\n'
+        if command == 'required':
+            return self.required() if callable(self.required) else self.required
+        if command == 'reviewed':
+            return json.dumps(self.standing) + '\n' if self.standing else ''
+        if command == 'threads':
+            return ''.join(json.dumps(thread) + '\n' for thread in self.threads)
+        files = {}
+        for argument in arguments:
+            path = pathlib.Path(str(argument))
+            if path.suffix in ('.md', '.json') and path.exists():
+                files[path.name] = path.read_text()
+        self.writes.append((command, [str(argument) for argument in arguments], files))
+        return f'https://github.com/o/r/pull/7#{command}\n'
+
+
+class Post(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = pathlib.Path(folder.name)
+        (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column.\n')
+        (self.folder / 'note.md').write_text('Nit: name it total_cents.')
+        self.gate(None)
+
+    def gate(self, gate):
+        (self.folder / 'GATES.json').write_text(json.dumps({
+            'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [],
+            'decisions': [{'id': 'D1', 'decision': 'Add a totals column', 'code': 'db/schema.ts:12', 'gate': gate,
+                           'why': 'a schema change' if gate else 'follows db/schema.ts:4'}]}))
+
+    def post(self, fake, *findings, head=HEAD, wait=0):
+        (self.folder / 'REVIEW.json').write_text(json.dumps({'pr': 7, 'head': HEAD, 'gates': 'GATES.json',
+                                                              'body': 'BODY.md', 'findings': list(findings)}))
+        clock = iter(range(0, 10_000, 60))
+        with patch.object(post_review, 'github', fake.github), \
+                patch.object(post_review, 'pr', lambda number: {'body': BODY, 'headRefOid': head}):
+            outcome = post_review.post(7, self.folder / 'REVIEW.json', wait, now=lambda: next(clock), sleep=lambda s: None)
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ['BODY.md', 'GATES.json', 'REVIEW.json', 'note.md'],
+                         'post leaves no scratch files beside REVIEW.json')
+        return outcome
+
+    def test_a_clear_pr_with_passed_checks_is_approved_with_notes_in_the_body_and_no_inline_comments(self):
+        fake = Fake(threads=[{'id': 'T1', 'isResolved': False, 'comments': [{'author': 'frankie'}]},
+                             {'id': 'T2', 'isResolved': False, 'comments': [{'author': 'someone'}]},
+                             {'id': 'T3', 'isResolved': True, 'comments': [{'author': 'frankie'}]}])
+        nit = {'call': 'non-blocking', 'holds': False, 'title': 'name it total_cents',
+               'draft': {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
+        outcome = self.post(fake, nit)
+        self.assertEqual(outcome, {'head': HEAD, 'outcome': 'approved', 'review': 'https://github.com/o/r/pull/7#approve'})
+        self.assertEqual([(command, arguments[:1]) for command, arguments, _ in fake.writes], [('resolve', ['T1']), ('approve', ['7'])])
+        command, arguments, files = fake.writes[1]
+        self.assertEqual(arguments[1:3], [HEAD, ''])
+        self.assertIn('- non-blocking: name it total_cents · `db/schema.ts:12`', files['body.md'])
+
+    def test_a_held_finding_requests_changes_with_its_inline_comment(self):
+        bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
+               {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
+        fake = Fake(standing={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE})
+        self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
+        self.assertEqual(len(fake.writes), 1, 'its own standing request for changes stays')
+        command, arguments, files = fake.writes[0]
+        self.assertEqual((command, arguments[3]), ('review', 'REQUEST_CHANGES'))
+        drafts = json.loads(next(text for name, text in files.items() if name.endswith('-drafts.json')))
+        self.assertEqual(drafts, [bug['draft']])
+
+    def test_a_gate_posts_findings_and_needs_a_human_and_dismisses_a_standing_request_for_changes(self):
+        self.gate('interface')
+        fake = Fake(standing={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE},
+                    required=lambda: self.fail('a gated PR never reads its checks'))
+        question = {'call': 'question', 'holds': False, 'title': 'is the column nullable?'}
+        outcome = self.post(fake, question)
+        self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['D1']))
+        (command, arguments, files), dismissal = fake.writes
+        self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
+        self.assertIn('**Needs a human.**', files['body.md'])
+        self.assertIn('- **D1** · architectural or interface decision: Add a totals column', files['body.md'])
+        self.assertIn('- question: is the column nullable?', files['body.md'])
+        self.assertEqual((dismissal[0], dismissal[1][:2]), ('dismiss', ['7', '41']))
+
+    def test_pending_checks_are_waited_on_then_approved(self):
+        answers = iter(['ci\tpending\nrequired: not all passed\n', 'ci\tpass\nrequired: all passed\n'])
+        outcome = self.post(Fake(required=lambda: next(answers)), wait=600)
+        self.assertEqual(outcome['outcome'], 'approved')
+
+    def test_checks_that_fail_or_never_finish_are_not_approved(self):
+        failed = self.post(Fake(required='ci\tfail\nrequired: not all passed\n'), wait=600)
+        self.assertEqual((failed['outcome'], failed['checks']), ('not-approved', ['ci\tfail']))
+        slow = Fake(required='ci\tpending\nrequired: not all passed\n')
+        outcome = self.post(slow, wait=120)
+        self.assertEqual(outcome['outcome'], 'not-approved')
+        self.assertIn('ci\tpending', slow.writes[0][2]['body.md'])
+
+    def test_a_moved_head_posts_nothing(self):
+        self.assertEqual(self.post(Fake(), head=NEWER), {'outcome': 'superseded', 'head': NEWER})
+        for heads, wait in (([NEWER], 600), ([NEWER], 0)):
+            fake = Fake(heads=heads, required='ci\tpending\nrequired: not all passed\n' if wait else
+                        'no required checks on main\nrequired: all passed\n')
+            self.assertEqual(self.post(fake, wait=wait)['outcome'], 'superseded')
+            self.assertEqual(fake.writes, [])
+
+    def test_a_person_never_posts_through_it(self):
+        with self.assertRaisesRegex(ValueError, 'posts only as an App'):
+            self.post(Fake(viewer='jokklan'))
+
+    def test_a_verdict_missing_a_table_row_is_refused(self):
+        (self.folder / 'GATES.json').write_text(json.dumps({'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [], 'decisions': []}))
+        with self.assertRaisesRegex(ValueError, 'D1 from the Decisions table has no entry'):
+            self.post(Fake())
+
+
+if __name__ == '__main__':
+    unittest.main()

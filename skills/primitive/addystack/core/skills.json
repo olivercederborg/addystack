@@ -19,6 +19,7 @@
     "orchestrate": "primitive",
     "reflect": "primitive",
     "reply-shape": "optional",
+    "request-human-review": "primitive",
     "review-artifact": "optional",
     "review-code": "primitive",
     "review-loop": "primitive",

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Request human review"
+  short_description: "Decide whether a PR needs a human, and post the outcome"
+  default_prompt: "Use $request-human-review to decide whether this PR needs a human reviewer."
+policy:
+  allow_implicit_invocation: true

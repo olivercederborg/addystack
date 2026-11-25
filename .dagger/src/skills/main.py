@@ -36,6 +36,7 @@ SKILL_SUITES = {
     "skills/primitive/correct": [],
     "skills/primitive/open-pr": [],
     "skills/primitive/reflect": [],
+    "skills/primitive/request-human-review": [],
     "skills/primitive/review-loop": ["skills/primitive/review-loop/references/review-lenses.md"],
     # github.sh in shared/scripts runs the tool's hooks/verdicts.py, as it has no copy beside it.
     "shared": [f"{TOOL}/hooks/verdicts.py", f"{TOOL}/hooks/evidence.py"],
@@ -316,6 +317,12 @@ class Skills:
     async def reflect_tests(self, kit: skill_source("skills/primitive/reflect")) -> None:
         """skills/primitive/reflect/scripts/test_*.py"""
         await skill_tests(kit, "skills/primitive/reflect")
+
+    @function
+    @check
+    async def request_human_review_tests(self, kit: skill_source("skills/primitive/request-human-review")) -> None:
+        """skills/primitive/request-human-review/scripts/test_*.py"""
+        await skill_tests(kit, "skills/primitive/request-human-review")
 
     @function
     @check
