@@ -20,7 +20,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 BASH = re.compile(r"\bgh\s+pr\s+ready\b(?![^\n;&|]*--undo)"
                   r"|\bgh\s+pr\s+edit\b[^\n;&|]*--add-reviewer\b"
-                  r"|\bgh\s+pr\s+create\b(?![^\n;&|]*(?:--draft\b|\s-d\b))"
+                  r"|\bgh\s+pr\s+create\b(?![^\n;&|]*(?:--draft\b(?!=false)|\s-d\b))"
                   r"|\bgh\s+stack\s+submit\b[^\n;&|]*--open\b")
 REMINDER = ("This call left a PR of the user's waiting on reviewers. Before ending the turn, call "
             '`watch_pull_request` on it with `until: "checks"`, unless this thread already watches it: '
