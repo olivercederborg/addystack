@@ -79,13 +79,20 @@ def _write(folder: Path, name: str, text: str) -> Path:
     return path
 
 
-def _notes(findings: list, heading: str) -> str:
+def _notes(findings: list, heading: str, folder: Path) -> str:
+    """Findings as Markdown in the review's body, each with its draft's text when it has one,
+    without the draft's disclosure line, since the body carries its own."""
     if not findings:
         return ''
     lines = [f'**{heading}**', '']
     for finding in findings:
-        where = f' · `{finding["draft"]["path"]}:{finding["draft"]["line"]}`' if finding.get('draft') else ''
+        draft = finding.get('draft')
+        where = f' · `{draft["path"]}:{draft["line"]}`' if draft else ''
         lines.append(f'- {finding["call"]}: {finding["title"]}{where}')
+        if draft:
+            text = (folder / draft['body_file']).read_text().strip().split('\n')
+            text = text[1:] if text and text[0].startswith('<sub>`AGENT`') else text
+            lines += [f'  {line}' if line.strip() else '' for line in text]
     return '\n' + '\n'.join(lines) + '\n'
 
 
@@ -100,49 +107,52 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     verdict = gates.load(folder / review['gates'])
     current = pr(number)
     head = review['head']
-    superseded = {'outcome': 'superseded', 'head': current['headRefOid']}
     if current['headRefOid'] != head:
-        return superseded
+        return {'outcome': 'superseded', 'head': current['headRefOid']}
     problems = gates.check(verdict, current['body'], head)
     if problems:
         raise ValueError('; '.join(problems))
     findings = review['findings']
     holds = any(finding['holds'] for finding in findings)
-    # Checks matter only when nothing else decides; a held finding or a gate never approves.
-    state, checks = ('passed', []) if holds or gates.gated(verdict) else required(number)
-    action = gates.decide(verdict, holds, state)
     deadline = now() + wait_seconds
-    while action == 'wait':
+    while True:
+        # The head and the checks are read last, right before the write: a push since starts
+        # its own review, and a held finding or a gate never reads the checks, since they
+        # can't approve.
+        moved = github('head', number).strip()
+        if moved != head:
+            return {'outcome': 'superseded', 'head': moved}
+        state, checks = ('passed', []) if holds or gates.gated(verdict) else required(number)
+        action = gates.decide(verdict, holds, state)
+        if action != 'wait':
+            break
         if now() >= deadline:
             action = 'not-approved'
             break
         sleep(POLL_SECONDS)
-        moved = github('head', number).strip()
-        if moved != head:
-            return {**superseded, 'head': moved}
-        state, checks = required(number)
-        action = gates.decide(verdict, holds, state)
-    earlier = github('reviewed', number).strip()
-    standing = json.loads(earlier) if earlier else None
-    # Right before the write: a push since the checks read starts its own review.
-    moved = github('head', number).strip()
-    if moved != head:
-        return {**superseded, 'head': moved}
     body = (folder / review['body']).read_text()
     outcome = {'head': head}
     with tempfile.TemporaryDirectory(dir=folder) as scratch:
         scratch = Path(scratch)
         if action == 'approve':
             # No inline comments: an open thread would hold the merge until someone resolves it.
-            body += _notes(findings, 'Notes that don\'t hold the approval')
+            body += _notes(findings, 'Notes that don\'t hold the approval', folder)
+            outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
+            outcome['outcome'] = 'approved'
             for thread in map(json.loads, filter(None, github('threads', number).splitlines())):
                 if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer):
                     github('resolve', thread['id'])
-            outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
-            outcome['outcome'] = 'approved'
         else:
+            # The App's approval or request for changes that still counts goes first, so a
+            # human gate never leaves an approval in place, and a fixed request never blocks
+            # the merge. A failed dismissal stops here, and a retry finds it again.
+            earlier = github('reviewed', number).strip()
+            active = json.loads(earlier)['active'] if earlier else None
+            if action != 'request-changes' and active:
+                github('dismiss', number, active['id'], _write(
+                    scratch, 'dismissal.md', f'Superseded at {head[:7]}: this review no longer holds; see the newer one.'))
             drafts = [finding['draft'] for finding in findings if finding.get('draft')]
-            body += _notes([finding for finding in findings if not finding.get('draft')], 'Findings')
+            body += _notes([finding for finding in findings if not finding.get('draft')], 'Findings', folder)
             if gates.gated(verdict):
                 body += '\n' + gates.section(verdict)
                 outcome['gated'] = [decision['id'] or decision['decision'] for decision in gates.gated(verdict)]
@@ -156,10 +166,6 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
             outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
                                   'not-approved': 'not-approved'}[action]
-            # An earlier request for changes still blocks the merge after its findings are fixed.
-            if action != 'request-changes' and standing and standing['state'] == 'CHANGES_REQUESTED':
-                github('dismiss', number, standing['id'], _write(
-                    scratch, 'dismissal.md', f'Superseded at {head[:7]}: no finding holds the approval now.'))
         for leftover in folder.glob(f'{scratch.name}-*.json'):
             leftover.unlink()
     return outcome

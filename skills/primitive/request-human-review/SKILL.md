@@ -81,9 +81,10 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
 | `superseded` | the head moved | nothing: the push starts its own review |
 
-It re-reads the head right before posting, posts only as an App, resolves its own threads
-when it approves, and dismisses its own standing request for changes once nothing holds
-the approval. End with its Outcome line.
+It reads the head and the required checks last, right before posting, posts only as an
+App, and resolves its own threads once it approves. Before any other outcome but a new
+request for changes, it withdraws its own approval or request for changes that still
+counts, so a gate never leaves an approval in place. End with its Outcome line.
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a

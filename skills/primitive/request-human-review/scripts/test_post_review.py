@@ -21,13 +21,14 @@ BODY = '| D1 | Add a totals column | 🤖 agent · build | — | — | `db/schem
 class Fake:
     """github.sh and the PR as GitHub would answer them, recording every write."""
 
-    def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='frankie[bot]',
-                 standing=None, threads=()):
-        self.required, self.heads, self.viewer, self.standing = required, list(heads), viewer, standing
+    def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='reviewer-app[bot]',
+                 active=None, threads=()):
+        self.required, self.heads, self.viewer, self.active = required, list(heads), viewer, active
         self.threads = list(threads)
-        self.writes = []
+        self.writes, self.commands = [], []
 
     def github(self, command, *arguments):
+        self.commands.append(command)
         if command == 'viewer':
             return self.viewer + '\n'
         if command == 'head':
@@ -35,7 +36,8 @@ class Fake:
         if command == 'required':
             return self.required() if callable(self.required) else self.required
         if command == 'reviewed':
-            return json.dumps(self.standing) + '\n' if self.standing else ''
+            latest = {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
+            return json.dumps({**latest, 'active': self.active}) + '\n'
         if command == 'threads':
             return ''.join(json.dumps(thread) + '\n' for thread in self.threads)
         files = {}
@@ -74,22 +76,24 @@ class Post(unittest.TestCase):
         return outcome
 
     def test_a_clear_pr_with_passed_checks_is_approved_with_notes_in_the_body_and_no_inline_comments(self):
-        fake = Fake(threads=[{'id': 'T1', 'isResolved': False, 'comments': [{'author': 'frankie'}]},
+        fake = Fake(threads=[{'id': 'T1', 'isResolved': False, 'comments': [{'author': 'reviewer-app'}]},
                              {'id': 'T2', 'isResolved': False, 'comments': [{'author': 'someone'}]},
-                             {'id': 'T3', 'isResolved': True, 'comments': [{'author': 'frankie'}]}])
+                             {'id': 'T3', 'isResolved': True, 'comments': [{'author': 'reviewer-app'}]}])
         nit = {'call': 'non-blocking', 'holds': False, 'title': 'name it total_cents',
                'draft': {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
         outcome = self.post(fake, nit)
         self.assertEqual(outcome, {'head': HEAD, 'outcome': 'approved', 'review': 'https://github.com/o/r/pull/7#approve'})
-        self.assertEqual([(command, arguments[:1]) for command, arguments, _ in fake.writes], [('resolve', ['T1']), ('approve', ['7'])])
-        command, arguments, files = fake.writes[1]
+        self.assertEqual([(command, arguments[:1]) for command, arguments, _ in fake.writes], [('approve', ['7']), ('resolve', ['T1'])])
+        command, arguments, files = fake.writes[0]
         self.assertEqual(arguments[1:3], [HEAD, ''])
-        self.assertIn('- non-blocking: name it total_cents · `db/schema.ts:12`', files['body.md'])
+        self.assertIn('- non-blocking: name it total_cents · `db/schema.ts:12`\n  Nit: name it total_cents.', files['body.md'])
+        # The head and the required checks are the last reads before the approval.
+        self.assertEqual(fake.commands[fake.commands.index('approve') - 2:fake.commands.index('approve')], ['head', 'required'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
                {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
-        fake = Fake(standing={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE})
+        fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE})
         self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
         self.assertEqual(len(fake.writes), 1, 'its own standing request for changes stays')
         command, arguments, files = fake.writes[0]
@@ -99,17 +103,32 @@ class Post(unittest.TestCase):
 
     def test_a_gate_posts_findings_and_needs_a_human_and_dismisses_a_standing_request_for_changes(self):
         self.gate('interface')
-        fake = Fake(standing={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE},
+        fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE},
                     required=lambda: self.fail('a gated PR never reads its checks'))
         question = {'call': 'question', 'holds': False, 'title': 'is the column nullable?'}
         outcome = self.post(fake, question)
         self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['D1']))
-        (command, arguments, files), dismissal = fake.writes
+        dismissal, (command, arguments, files) = fake.writes
         self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
         self.assertIn('**Needs a human.**', files['body.md'])
         self.assertIn('- **D1** · architectural or interface decision: Add a totals column', files['body.md'])
         self.assertIn('- question: is the column nullable?', files['body.md'])
         self.assertEqual((dismissal[0], dismissal[1][:2]), ('dismiss', ['7', '41']))
+
+    def test_a_gate_withdraws_the_apps_earlier_approval_and_a_failed_dismissal_posts_nothing(self):
+        self.gate('product')
+        fake = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': BASE})
+        self.assertEqual(self.post(fake)['outcome'], 'needs-human')
+        self.assertEqual([(command, arguments[:2]) for command, arguments, _ in fake.writes],
+                         [('dismiss', ['7', '40']), ('review', ['7', HEAD])])
+        denied = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': BASE})
+        def refuse(command, *arguments):
+            if command == 'dismiss':
+                raise ValueError('github.sh dismiss failed: HTTP 403')
+            return Fake.github(denied, command, *arguments)
+        with patch.object(denied, 'github', refuse), self.assertRaisesRegex(ValueError, 'HTTP 403'):
+            self.post(denied)
+        self.assertEqual(denied.writes, [])
 
     def test_pending_checks_are_waited_on_then_approved(self):
         answers = iter(['ci\tpending\nrequired: not all passed\n', 'ci\tpass\nrequired: all passed\n'])
@@ -141,7 +160,7 @@ class Post(unittest.TestCase):
 
     def test_a_person_never_posts_through_it(self):
         with self.assertRaisesRegex(ValueError, 'posts only as an App'):
-            self.post(Fake(viewer='jokklan'))
+            self.post(Fake(viewer='a-person'))
 
     def test_a_verdict_missing_a_table_row_is_refused(self):
         (self.folder / 'GATES.json').write_text(json.dumps({'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [], 'decisions': []}))
