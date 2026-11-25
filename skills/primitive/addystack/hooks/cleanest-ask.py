@@ -18,8 +18,8 @@ It sends only when all of these hold:
 - the run hasn't asked yet: no prompt since the last reply whose turn block is `done` is a
   `/cleanest` or the user's own quality-bar ask (ASKED), and no `/cleanest` this hook sent
   in this session is still waiting in T3's queue;
-- `/cleanest` is installed: Claude Code's commands/cleanest.md, which `addystack install`
-  links to the kit's commands/cleanest.md while this hook is enabled.
+- `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
+  commands/cleanest.md, which `addystack install` links while this hook is enabled.
 
 T3 leaves a message that starts with a slash command without its "not from the user"
 note (`withMessageSenderNote`), so the agent gets the command's body, the same sentence
@@ -28,8 +28,8 @@ text matches no go, so the gates that read the user's latest prompt grant nothin
 
 It sends with `t3 thread send <thread> /cleanest` (T3CODE_CLI_PATH), which queues it as
 the thread's next turn. It never blocks the reply and prints nothing: on any doubt or
-error it doesn't send. For review threads it appends each decision, a send or a skip
-with its reason, to cleanest-ask.jsonl in the state folder (ADDYSTACK_STATE), which the
+error it doesn't send. Once a card stops on a review or decide need in a review thread, it
+appends its decision, a send or a skip with its reason, to cleanest-ask.jsonl in the state folder (ADDYSTACK_STATE), which the
 trial reads. `cleanest-ask.py --dry-run [--transcript PATH] [--session ID]` prints the
 decision for this session's last reply and sends nothing."""
 import contextlib, json, os, pathlib, re, sqlite3, subprocess, sys, time
@@ -39,8 +39,11 @@ import t3_child, transcripts, turn_block, user_turn  # noqa: E402
 
 COMMAND = "/cleanest"
 REVIEW_TITLE = re.compile(r"◎ #\d")
-# The user's own quality-bar ask, as R183 counted it: the run already has its answer.
-ASKED = re.compile(r"cleanest|idiomatic|long[- ]term|best practice", re.I)
+# The user's own quality-bar question, as R183 counted asks but asked: "cleanest", or one of
+# its other terms in a question. The run already has its answer.
+ASKED = re.compile(r"cleanest|\b(?:idiomatic|long[- ]term|best[- ]practices?)\b[^?\n]*\?", re.I)
+# The command the kit ships, which install links into Claude Code's commands/.
+KIT_COMMAND = pathlib.Path(__file__).resolve().parent.parent / "commands" / "cleanest.md"
 # How T3 starts the notice that a delegated child finished, and Claude Code its notice that a
 # background task did: work the run started reporting back, so the card after it continues the run.
 CONTINUES = ("Delegated task node:", "<task-notification>")
@@ -83,9 +86,11 @@ def review_thread(session):
     return thread
 
 
-def queued(thread, session, asked):
-    """Whether a /cleanest this hook sent to thread in session hasn't arrived yet: the log
-    records how many /cleanest prompts the session held when it sent, and none came since."""
+def queued(found, thread, session, asked):
+    """Whether a /cleanest this hook sent to thread in session this run hasn't arrived yet:
+    the log records how many prompts and /cleanest prompts the session held when it sent,
+    no /cleanest came since, and no reply since ended the run. One the user cancelled stays
+    pending until the run ends."""
     try:
         lines = LOG.read_text().splitlines()
     except FileNotFoundError:
@@ -96,8 +101,20 @@ def queued(thread, session, asked):
         except ValueError:
             continue
         if (isinstance(row, dict) and row.get("sent") is True and (row.get("thread"), row.get("session")) == (thread, session)
-                and isinstance(row.get("asked"), int) and row["asked"] >= asked):
+                and isinstance(row.get("asked"), int) and row["asked"] >= asked
+                and isinstance(row.get("prompts"), int) and not ended(found[row["prompts"]:])):
             return True
+    return False
+
+
+def ended(exchanges):
+    """Whether any of exchanges' replies ends its run: its turn block is done."""
+    for exchange in exchanges:
+        try:
+            if exchange.reply is not None and turn_block.parse(exchange.reply).state == "done":
+                return True
+        except turn_block.Malformed:
+            pass
     return False
 
 
@@ -127,19 +144,17 @@ def check_run(found, path, thread, session):
     for exchange in reversed(found):
         if own_command(exchange.prompt) or ASKED.search(exchange.prompt):
             raise Skip("this run already asked", thread)
-        try:
-            if exchange.reply is not None and turn_block.parse(exchange.reply).state == "done":
-                break
-        except turn_block.Malformed:
-            pass
+        if ended([exchange]):
+            break
     asked = sum(own_command(exchange.prompt) for exchange in found)
-    if queued(thread, session, asked):
+    if queued(found, thread, session, asked):
         raise Skip(f"a {COMMAND} this hook sent is still queued", thread)
     return asked
 
 
 def decide(payload):
-    """The thread to send /cleanest to, and its session's /cleanest prompts so far; raises Skip."""
+    """The thread to send /cleanest to, and its session's /cleanest prompts and prompts so
+    far; raises Skip."""
     try:
         turn = turn_block.parse(payload.get("last_assistant_message") or "")
     except turn_block.Malformed as error:
@@ -157,12 +172,17 @@ def decide(payload):
     if not found:
         raise Skip("can't tell who sent the latest prompt", thread)
     asked = check_run(found, payload.get("transcript_path"), thread, session)
+    prompts = len(found)
     home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.expanduser("~/.claude")
-    if not os.path.isfile(os.path.join(home, "commands", "cleanest.md")):
-        raise Skip(f"{COMMAND} isn't installed; run addystack install", thread)
+    try:
+        installed = pathlib.Path(home, "commands", "cleanest.md").read_bytes() == KIT_COMMAND.read_bytes()
+    except OSError:
+        raise Skip(f"{COMMAND} isn't installed; run addystack install", thread) from None
+    if not installed:
+        raise Skip(f"commands/cleanest.md in {home} isn't the kit's {COMMAND}", thread)
     if not os.environ.get("T3CODE_CLI_PATH"):
         raise Skip("no T3 CLI (T3CODE_CLI_PATH)", thread)
-    return thread, asked
+    return thread, asked, prompts
 
 
 def log(row):
@@ -200,12 +220,12 @@ def main():
     payload = {}
     try:
         payload = json.load(sys.stdin)
-        thread, asked = decide(payload)
+        thread, asked, prompts = decide(payload)
         sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", thread, COMMAND],
                               capture_output=True, text=True, timeout=20)
         if sent.returncode:
             raise Skip(f"t3 thread send failed: {(sent.stderr or sent.stdout).strip()[:300]}", thread)
-        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "asked": asked})
+        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "asked": asked, "prompts": prompts})
     except Skip as skip:
         if skip.thread:
             log({"session": payload.get("session_id"), "thread": skip.thread, "sent": False, "reason": str(skip)})

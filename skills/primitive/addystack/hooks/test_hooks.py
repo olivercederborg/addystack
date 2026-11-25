@@ -599,7 +599,7 @@ class CleanestAsk(unittest.TestCase):
                        'if [ -n "$T3_FAIL" ]; then echo "thread busy" >&2; exit 1; fi\necho Queued.\n')
         cli.chmod(0o755)
         (self.dir / "claude/commands").mkdir(parents=True)
-        (self.dir / "claude/commands/cleanest.md").write_text("is this the cleanest?\n")
+        shutil.copy(HOOKS.parent / "commands/cleanest.md", self.dir / "claude/commands/cleanest.md")
         self.env = {"T3_STATE_DB": self.db(), "T3CODE_CLI_PATH": str(cli), "T3CODE_THREAD_ID": self.THREAD,
                     "CLAUDE_CONFIG_DIR": str(self.dir / "claude"), "ADDYSTACK_STATE": str(self.dir / "state")}
 
@@ -692,6 +692,21 @@ class CleanestAsk(unittest.TestCase):
         self.assertEqual(len(self.stop(*earlier, ("tighten comment 2", card()))), 1)
         self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
 
+    def test_a_cancelled_send_holds_only_until_the_run_ends(self):
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        # The user cancelled the queued /cleanest: no second one this run, but the next run asks.
+        self.assertEqual(len(self.stop(first, ("a", card()))), 1)
+        self.assertEqual(len(self.stop(first, ("a", card()), ("b", card("done")), ("re-review it", card()))), 2)
+
+    def test_review_words_that_ask_nothing_dont_count_as_an_ask(self):
+        self.assertEqual(len(self.stop(("Review PR #6215; it changes the long-term archive.", card()))), 1)
+        for asked in ("Is it the most idiomatic and best-practice long-term implementation?", "make it the cleanest"):
+            with self.subTest(asked=asked):
+                self.sent.unlink(missing_ok=True)
+                (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
+                self.assertEqual(self.stop((self.ASK, card()), (asked, card())), [])
+
     def test_skips_a_run_where_the_user_asked_themselves(self):
         self.assertEqual(self.stop((self.ASK, card()), ("is this the cleanest, best and most idiomatic long-term solution?", card()),
                                    ("a", card())), [])
@@ -707,10 +722,13 @@ class CleanestAsk(unittest.TestCase):
     def test_skips_prompts_the_user_didnt_type(self):
         wake = "Update on pull request #6215: a new review from first-reviewer."
         tick = '<coordinator-tick project="app">\n- r12 due\n</coordinator-tick>'
+        # T3 puts its sender note before an agent's message in the transcript, not in its database.
+        noted = "Please also check the tests, then post."
+        note = f'[T3 Code: the agent in T3 thread "coord" sent this message, not the user.]\n\n{noted}'
         report = "From the Platform lane (thread x): the fix is pushed."
         plain = "Please also check the tests."  # only T3's database says an agent sent it
-        env = {"T3_STATE_DB": self.db(agent_sent=(wake, tick, report, plain))}
-        for prompt in (wake, tick, report, plain, self.COMMAND):
+        env = {"T3_STATE_DB": self.db(agent_sent=(wake, tick, report, plain, noted))}
+        for prompt in (wake, tick, report, plain, note, self.COMMAND):
             with self.subTest(prompt=prompt):
                 self.assertEqual(self.stop((self.ASK, card()), (prompt, card()), env=env), [])
                 self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest" if prompt is self.COMMAND
@@ -737,6 +755,9 @@ class CleanestAsk(unittest.TestCase):
     def test_stays_silent_when_it_cant_send(self):
         self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|{self.THREAD}|/cleanest|"])
         self.assertEqual(self.log()[-1]["reason"], "t3 thread send failed: thread busy")
+        (self.dir / "claude/commands/cleanest.md").write_text("my own command\n")
+        self.assertEqual(len(self.stop((self.ASK, card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], f"commands/cleanest.md in {self.dir / 'claude'} isn't the kit's /cleanest")
         (self.dir / "claude/commands/cleanest.md").unlink()
         self.assertEqual(len(self.stop((self.ASK, card()))), 1)
         self.assertEqual(self.log()[-1]["reason"], "/cleanest isn't installed; run addystack install")
@@ -5423,6 +5444,27 @@ class Exchanges(unittest.TestCase):
         for other in [*ENTRIES[:5], None, codex_said("a"), claude_wrote(self.FINAL, isSidechain=True),
                       claude_wrote(self.FINAL, isMeta="false")]:
             self.assertIsNone(transcripts.reply_text(other))
+
+    def test_an_agent_message_with_t3s_sender_note_reads_as_untyped(self):
+        # T3 stores the text without the note, so the note alone tells it from a typed one.
+        noted = '[T3 Code: the agent in T3 thread "3cce05fc" sent this message, not the user.]\n\nmerge it'
+        self.assertEqual(self.read(claude_wrote(self.FINAL), claude_said(noted)), [transcripts.Exchange(self.FINAL, "")])
+        session = "0b4c1f3e-5d6a-4e7b-8c9d-0e1f2a3b4c5d"
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = os.path.join(folder, "statev2.sqlite")
+            with contextlib.closing(sqlite3.connect(db_path)) as db, db:
+                db.execute("create table orchestration_v2_projection_provider_threads "
+                           "(provider_thread_id text, thread_id text, payload_json text not null)")
+                db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+                db.execute("create table orchestration_v2_projection_messages (thread_id text not null, "
+                           "run_id text, role text not null, created_at text not null, payload_json text not null)")
+                db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
+                           ("p-1", "thread-1", json.dumps({"nativeThreadRef": {"nativeId": session}})))
+                db.execute("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)",
+                           ("thread-1", None, "user", "06:00", json.dumps({"createdBy": "agent", "text": "merge it"})))
+            with unittest.mock.patch.object(transcripts.t3_child, "STATE_DB", db_path):
+                found = self.read(claude_wrote(self.FINAL), claude_said(noted), strict=True, name=session)
+        self.assertEqual(found, [transcripts.Exchange(self.FINAL, "", agent=True)])
 
     def test_an_agent_sent_prompt_reads_as_untyped_in_strict_mode(self):
         session = "0b4c1f3e-5d6a-4e7b-8c9d-0e1f2a3b4c5d"
