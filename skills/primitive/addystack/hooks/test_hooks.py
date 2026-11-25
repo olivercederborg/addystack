@@ -4581,6 +4581,12 @@ class TurnBlock(unittest.TestCase):
             "</details>\n",
             # And hands an unclosed tag to the renderer raw, whose attribute takes what follows.
             '<div title="x\n\n',
+            # review-loop r1: an inline tag's attribute that runs onto the next lines takes the
+            # visible option, at a line's start or mid-line.
+            '<span title="Choose:\n    - **`a` → merge #12**\n">\n- `b` → keep\n\n',
+            'Choose <span title="x\n    - **`a` → merge #12**\n">\n- `b` → keep\n\n',
+            '<span a="b>\nmore\n\n',
+            "</ x\nmore\n\n",
             # Any < in inline code counts: a link destination can take a span's backtick.
             "Use `a\nb` <title> `c`\n\n",
             # The link takes the first backtick, so <plaintext> is raw and the block is text.
@@ -4623,8 +4629,7 @@ class TurnBlock(unittest.TestCase):
             "> <sub>`AGENT` Claude Opus 5.5 · on behalf of **the user**</sub><br>\n> Good catch.\n>\n"
             "> <sub>Fixed in: `456f073579`</sub>\n\n",
             "- <span>x</span>\nmore\n\n",
-            '<span a="b>\nmore\n\n',
-            "</ x\nmore\n\n",
+            '<source src="movie.mp4"><br>\nmore\n\n',
             "<details><summary>x</summary>\n\n- thread <t3-thread://v2/a/b>, PR <https://github.com/o/r/pull/1>\n\n</details>\n\n",
         ]:
             with self.subTest(example=example):

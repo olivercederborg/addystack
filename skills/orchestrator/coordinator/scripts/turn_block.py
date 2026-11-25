@@ -42,9 +42,9 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
   it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
   A block tag such as `<div` starts one, as does a whole tag alone on its line (CommonMark
   0.31.2 §4.6), but not `<sub>…</sub><br>` or an autolink.
-- Such a line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
-  `<div title="x`: the HTML block hands it to the renderer raw, and what follows becomes
-  the tag's attribute.
+- A line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
+  `<div title="x`, when it starts an HTML block or a line follows it: what follows
+  becomes the tag's attribute.
 Other tags, such as `<code>` in a fold's summary or `Option<T>` in inline code, are safe:
 CommonMark reads inline HTML only as a whole tag, which ends where HTML's tokenizer ends it.
 Known limit: an unsafe tag in a code span that does hold it, such as `<table>`, refuses
@@ -81,13 +81,13 @@ OPENS_FOLD = re.compile(r"<details(?=[\t\f />]|$)", re.I)
 # A line that starts a `<details>` HTML block: raw HTML to its end, with no code spans in it.
 FOLD_LINE = re.compile(r" {0,3}</?details(?=[\t\f />]|$)", re.I)
 # A line that starts an HTML block, past list and quote markers, by CommonMark 0.31.2 §4.6's
-# start condition 6, a block tag name (micromark's htmlBlockNames, and `source`, which 0.31
-# dropped) then whitespace, the line's end, > or />, or 7, one whole open or closing tag
+# start condition 6, a block tag name (micromark's htmlBlockNames) then whitespace, the
+# line's end, > or />, or 7, one whole open or closing tag
 # with only whitespace after it. Whitespace is any \s, as markdown-it-py reads it, wider
 # than micromark's spaces and tabs. UNSAFE holds conditions 1 to 5.
 BLOCK_NAMES = ("address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup|dd|details|dialog|dir|"
                "div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset|h[1-6]|head|header|hr|html|iframe|legend|"
-               "li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|source|summary|table|"
+               "li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|search|section|summary|table|"
                "tbody|td|tfoot|th|thead|title|tr|track|ul")
 ATTRIBUTE = r"""\s+[A-Za-z_:][\w.:-]*(?:\s*=\s*(?:[^"'=<>`\x00-\x20]+|'[^']*'|"[^"]*"))?"""
 HTML_START = re.compile(rf"[ \t>]*(?:(?:[-+*]|\d{{1,9}}[.)])[ \t>]*)*<(?:/?(?:{BLOCK_NAMES})(?=\s|/?>|$)"
@@ -188,7 +188,10 @@ def scan(lines):
     for at in range(top):
         line = lines[at]
         after = lines[at + 1] if at + 1 < len(lines) else ""
-        if not marks[at] and (UNSAFE.search(line) or HTML_START.match(line) and (after.strip(" \t") or not closed(line))):
+        starts, follows = HTML_START.match(line), after.strip(" \t")
+        # A tag left open at the line's end runs on, as an HTML block's raw HTML or as an
+        # inline tag whose attribute takes the paragraph's next line.
+        if not marks[at] and (UNSAFE.search(line) or starts and follows or not closed(line) and (starts or follows)):
             sure = False
     return marks, sure
 
