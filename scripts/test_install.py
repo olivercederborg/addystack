@@ -495,12 +495,28 @@ class RenamedSkill(Home):
         out = self.ok("install").stdout
         self.assertIn("review-teammate-pr is review-code now: links review-code to", out)
         self.assertFalse(os.path.lexists(old))
-        self.assertEqual(os.readlink(folder / "review-code"), str(kit_skills / "review-code"))
+        self.assertEqual((folder / "review-code").resolve(), (kit_skills / "review-code").resolve())
         # Once moved, a second install has nothing to do; a taken new name leaves the old link.
         self.assertNotIn("renamed-skill", self.ok("install").stdout)
         old.symlink_to(kit_skills / "review-teammate-pr")
         self.assertIn("dangles, and review-code is installed already", self.ok("install").stdout)
         self.assertTrue(old.is_symlink())
+
+    def test_moves_a_chain_of_host_links_in_one_install(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            folder.mkdir(parents=True, exist_ok=True)
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        self.assertEqual((claude / "review-code").resolve(), (kit_skills / "review-code").resolve())
+        self.assertFalse(os.path.lexists(claude / "review-teammate-pr"))
+        self.assertFalse(os.path.lexists(agents / "review-teammate-pr"))
 
 
 class ClaudeConfigDir(Home):
