@@ -954,17 +954,17 @@ class CleanestAskImplementation(CleanestAskCase):
         for title, thread_scope in (("◎ #6215 · first-reviewer", "review"), (self.TITLE, "implementation")):
             with self.subTest(title=title):
                 self.fresh()
-                env = {"T3_STATE_DB": self.db(title=title)}
+                env = {"T3_STATE_DB": self.db(title=title, agent_sent=(self.RESULT,))}
                 self.assertEqual(self.stop((self.ASK, self.card()), env=env, args=both), [self.SENT])
                 self.assertEqual([row["scope"] for row in self.log() if row["sent"]], [thread_scope])
-                # A second Stop in the same run: neither id sends again.
-                self.assertEqual(len(self.stop((self.ASK, self.card()), ("tighten it", self.card()), env=env,
-                                               args=both if thread_scope == "review" else ((),))), 1)
+                # A worker's result, then a second Stop in the same run: neither id sends again.
+                self.assertEqual(len(self.stop((self.ASK, self.card()), (self.RESULT, self.card()), env=env,
+                                               args=both)), 1)
+                self.assertEqual(self.log()[-1]["reason"], "this run already asked")
         # In a review thread a typed prompt doesn't start a new run, and a post card still asks.
         self.fresh()
         env = {"T3_STATE_DB": self.db(title="◎ #6215 · first-reviewer")}
         self.assertEqual(len(self.stop((self.ASK, self.card(classes=("stop:post",))), env=env, args=both)), 1)
-        self.set_run("run-1", "completed")
         self.assertEqual(len(self.stop((self.ASK, self.card()), (self.COMMAND, self.card()), ("a", self.card()),
                                        env=env, args=both)), 1)
         self.assertEqual(self.log()[-1]["reason"], "this run already asked")
