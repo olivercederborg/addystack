@@ -942,6 +942,8 @@ class CleanestAskImplementation(CleanestAskCase):
                           ("delegated child", {"T3_STATE_DB": self.db("thread:delegated-task:abc"),
                                                "T3CODE_THREAD_ID": "thread:delegated-task:abc"}),
                           ("coordinator's worker", {"T3_STATE_DB": self.db(first=worker, first_by="agent")}),
+                          ("worker naming its coordinator", {"T3_STATE_DB": self.db(first=worker.replace(
+                              "Worker of: t3-thread://", "Worker of: the ◆ app coordinator (t3-thread://"), first_by="agent")}),
                           ("workflow step", {"T3_STATE_DB": self.db("workflow:fefcbdb4", first_by="system",
                                                                     lineage={"workflowStep": True}),
                                              "T3CODE_THREAD_ID": "workflow:fefcbdb4"})):
@@ -1658,6 +1660,9 @@ class ReplyShapeContext(unittest.TestCase):
             skill.flush()
             for case, db, skips in [
                 ("agent-written brief with the marker", self.state_db(folder, worker, brief, created_by="agent"), True),
+                # As 51 Mac worker briefs named their coordinator by Nov 25, 2026.
+                ("the marker naming the coordinator", self.state_db(folder, worker, brief.replace(
+                    "Worker of: t3-thread://", "Worker of: the ◆ app coordinator (t3-thread://"), created_by="agent"), True),
                 ("the same text the user typed", self.state_db(folder, worker, brief, created_by="user"), False),
                 ("agent-written brief without the marker", self.state_db(
                     folder, worker, brief.replace("Worker of:", "Worker for:"), created_by="agent"), False),

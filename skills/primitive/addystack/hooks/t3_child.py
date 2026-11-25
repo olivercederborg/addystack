@@ -1,7 +1,8 @@
 """Finds whether a Claude Code or Codex session is a T3 delegated child, from T3's state
 database (T3_STATE_DB overrides its path). A child is a `thread:delegated-task:` thread,
 or a coordinator's worker on a linked machine: a top-level thread there whose first user
-message an agent wrote, with a line starting "Worker of: t3-thread://".
+message an agent wrote, with a line starting "Worker of: ", such as "Worker of:
+t3-thread://…" or "Worker of: the ◆ app coordinator (t3-thread://…)".
 reply-shape-context.py reads it to skip the reply rules for a child that doesn't opt in.
 Any doubt, such as a missing, locked, or changed database, reads as "not a child".
 
@@ -11,8 +12,9 @@ transcripts.py drops them."""
 import json, os, pathlib, re, sqlite3
 
 STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
-# A coordinator's brief names it on its own line.
-_WORKER_OF = re.compile(r"^Worker of: t3-thread://\S", re.M)
+# A coordinator's brief names it on its own line, as a link or by name: 51 Mac worker briefs
+# by Nov 25, 2026 start "Worker of: the ◆ … coordinator (t3-thread://…)".
+_WORKER_OF = re.compile(r"^Worker of: \S", re.M)
 # A brief line that asks for the user's reply rules, as an eval player that plays their session does.
 OPT_IN = "Reply rules: on"
 
