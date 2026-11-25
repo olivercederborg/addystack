@@ -325,6 +325,58 @@ class Agent(Home):
         self.assertIn(f"would leave {self.link} (agent)", self.ok("install", "--dry-run").stdout)
 
 
+class Command(Home):
+    """While cleanest-ask is enabled for Claude Code, install links ~/.claude/commands/cleanest.md,
+    the command the hook sends, to the kit's copy, and removes that link once it's off."""
+
+    def setUp(self):
+        super().setUp()
+        self.link = self.home / ".claude/commands/cleanest.md"
+        self.source = KIT / "commands/cleanest.md"
+
+    def enable(self, on=True):
+        self.write(self.config, json.dumps({"hooks": {"preset": "all", "enable": ["cleanest-ask"] if on else []}}))
+
+    def test_off_by_default_links_nothing(self):
+        self.assertNotIn("(command)", self.ok("install").stdout)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_links_it_while_enabled_and_removes_it_once_off(self):
+        self.enable()
+        self.assertIn(f"changed {self.link} (command)\n  links it to", self.ok("install").stdout)
+        self.assertEqual(os.readlink(self.link), str(self.source))
+        self.assertIn("disable-model-invocation: true", self.link.read_text())
+        self.assertNotIn("(command)", self.ok("install").stdout)
+        self.enable(False)
+        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_removes_a_link_to_the_kit_copy_from_before_the_checkout_moved(self):
+        self.write(self.state / "resolved.json", json.dumps({"kit": "/previous/addystack"}))
+        self.link.parent.mkdir(parents=True)
+        self.link.symlink_to("/previous/addystack/commands/cleanest.md")
+        self.enable(False)
+        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
+        self.assertFalse(os.path.lexists(self.link))
+
+    def test_leaves_a_users_own_file_and_link(self):
+        self.write(self.link, "my own command\n")
+        self.enable()
+        self.assertIn(f"left {self.link} (command)", self.cli("install").stdout)
+        self.assertEqual(self.link.read_text(), "my own command\n")
+        self.link.unlink()
+        self.link.symlink_to("/my/commands/cleanest.md")
+        self.enable(False)
+        self.assertNotIn("(command)", self.ok("install").stdout)
+        self.assertEqual(os.readlink(self.link), "/my/commands/cleanest.md")
+
+    def test_dry_run_previews_the_link_and_writes_nothing(self):
+        self.enable()
+        before = self.snapshot()
+        self.assertIn(f"would change {self.link} (command)", self.ok("install", "--dry-run").stdout)
+        self.assertEqual(self.snapshot(), before)
+
+
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so
     install writes Claude Code's hooks, agent link, and CLAUDE.md there; unset or blank,

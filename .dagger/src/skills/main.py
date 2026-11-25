@@ -22,6 +22,8 @@ HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies
                f"{TOOL}/lib", f"{TOOL}/addystack.defaults.jsonc", f"{TOOL}/schema",
                # StaleBuildCheck builds a copy of the kit.
                f"{TOOL}/bin", f"{TOOL}/core",
+               # CleanestAsk compares the installed command with the kit's.
+               f"{TOOL}/commands",
                # ReadyGate records through review-loop's copy.
                "skills/primitive/review-loop/scripts/verdicts.py"]
 # The kit's Python modules other suites import, without the hook tests.

@@ -33,6 +33,11 @@ or folder there is the user's, so install leaves it and reports it; so does a ve
 without agent_source(), since a link to it would dangle. Without verify-work, nothing forks
 into the agent, so install does nothing, and a disabled host's link stays too. No ledger
 entry: a link is always install's to replace and anything else never is.
+
+Commands: a hook in COMMANDS sends a Claude Code command, so while hookset selects it for
+Claude Code, install links that command in Claude's commands/ folder to the kit's copy, as
+it links the agent, and once it's no longer selected, removes a link to the kit's copy, or to
+the copy in the kit path the last build recorded, when the checkout has moved.
 """
 from __future__ import annotations
 
@@ -52,6 +57,8 @@ import skills_cli
 from config import Resolved
 
 LEDGER = _resolved.STATE.parent / "installed.json"
+# The command file each hook sends, from the kit's commands/ folder.
+COMMANDS = {"cleanest-ask": "cleanest.md"}
 
 
 def agent() -> Path:
@@ -74,10 +81,12 @@ _GLOBAL = config.GLOBAL
 class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
-    kind: Literal["hooks", "adopt-instructions", "agent"]
+    kind: Literal["hooks", "adopt-instructions", "agent", "command"]
     target: Path
     detail: str
     left: bool = False
+    # For a command: what install links target to, or None to remove the link.
+    source: Optional[Path] = None
 
 
 def run(resolved: Resolved) -> List[Change]:
@@ -89,6 +98,10 @@ def run(resolved: Resolved) -> List[Change]:
     for change in changes:
         if change.kind == "agent" and not change.left:
             _link(change.target, agent_source())
+        elif change.kind == "command" and not change.left and change.source:
+            _link(change.target, change.source)
+        elif change.kind == "command" and not change.left:
+            os.unlink(change.target)
     return changes
 
 
@@ -109,7 +122,28 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
-    return changes + ([agent] if agent else []), writes
+    return changes + ([agent] if agent else []) + _commands(resolved), writes
+
+
+def _commands(resolved: Resolved) -> List[Change]:
+    """The command links' changes: a link for each selected hook's command, and the removal of
+    a link to the kit's copy once its hook isn't selected."""
+    selected = {entry.id for entry in hookset.select(resolved, "claude")} if resolved["hosts"].get("claude") else set()
+    changes = []
+    for hook, name in COMMANDS.items():
+        link, source = config.claude_home() / "commands" / name, Path(resolved["kit"]) / "commands" / name
+        earlier = os.readlink(link) if link.is_symlink() else None
+        ours = {str(source), *(os.path.join(os.path.expanduser(kit), "commands", name) for kit in _moved_kits(resolved))}
+        if hook not in selected:
+            if earlier in ours:
+                changes.append(Change("command", link, f"removes it: {hook} is off"))
+        elif earlier is None and os.path.lexists(link):
+            changes.append(Change("command", link, f"a file addystack didn't link, left as is; {hook} needs it to "
+                                  f"link {render._home(source)}", left=True))
+        elif earlier != str(source):
+            changes.append(Change("command", link, f"links it to {render._home(source)}"
+                                  + (f", not {earlier}" if earlier else ""), source=source))
+    return changes
 
 
 def _agent(resolved: Resolved) -> Optional[Change]:

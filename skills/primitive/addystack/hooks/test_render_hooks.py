@@ -17,7 +17,9 @@ def setUpModule():
     unittest.addModuleCleanup(shutil.rmtree, state)
     user = state / "addystack.jsonc"
     # Each reply hook needs its preference on, so this names reply-shape and a rules file.
-    user.write_text(json.dumps({"hooks": {"preset": "all"}, "replies": {
+    # A trial hook, which no preset includes, is selected by its id.
+    every = sorted({entry["id"] for entries in MANIFEST.values() for entry in entries})
+    user.write_text(json.dumps({"hooks": {"preset": "all", "enable": every}, "replies": {
         "style": "reply-shape", "rules": str(HOOKS / "README.md"), "turnBlock": True}}))
     (state / "resolved.json").write_text(json.dumps(config.resolve(user)))
     for patch in (unittest.mock.patch.dict(os.environ, {"ADDYSTACK_STATE": str(state)}),

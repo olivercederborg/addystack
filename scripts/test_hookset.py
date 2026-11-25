@@ -1,7 +1,7 @@
 """Tests for lib/hookset.py: every manifest entry carries an id, tags, and a {{kit}}
 command; select() applies the preset's tags, then requires, then enable and disable, then
 hosts, in manifest order; a config shaped like the maintainer's selects today's whole
-manifest (plan check 1); render() groups by event and matcher; and drift() compares only the
+manifest but its trial hooks (plan check 1); render() groups by event and matcher; and drift() compares only the
 hooks addystack installs."""
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ import hookset  # noqa: E402
 MANIFEST = json.loads((KIT / "hooks" / "manifest.json").read_text())
 # Any file serves as replies.rules for selection; this one is in every checkout of the kit.
 RULES = KIT / "SKILL.md"
-TAGS = {"safety", "workflow", "replies", "machine"}
+TAGS = {"safety", "workflow", "replies", "machine", "trial"}
 
 
 def resolve(text, kit=KIT):
@@ -74,7 +74,8 @@ class Select(unittest.TestCase):
 
     def test_a_config_like_the_maintainers_selects_the_whole_manifest(self):
         """Check 1's hook half: preset all with the turn block on selects every manifest
-        entry, in order, with only `{{kit}}` filled in."""
+        entry but a trial one, which only an enable by id selects, in order, with only
+        `{{kit}}` filled in."""
         resolved = resolve(json.dumps({"hooks": {"preset": "all"},
                                        "replies": {"style": "reply-shape", "rules": str(RULES),
                                                    "turnBlock": True}}))
@@ -84,7 +85,7 @@ class Select(unittest.TestCase):
                 with self.subTest(runtime=runtime, host=host):
                     want = [(e["id"], e["event"], e["matcher"], e["command"].replace("{{kit}}", kit), e["timeout"],
                              e.get("onFailure")) for e in MANIFEST[runtime]
-                            if not e.get("hosts") or host in e["hosts"]]
+                            if (not e.get("hosts") or host in e["hosts"]) and "trial" not in e["tags"]]
                     got = [(e.id, e.event, e.matcher, e.command, e.timeout, e.onFailure)
                            for e in hookset.select(resolved, runtime, host)]
                     self.assertEqual(got, want)

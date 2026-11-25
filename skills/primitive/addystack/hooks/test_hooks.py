@@ -69,8 +69,10 @@ def resolved_state(folder, config_text, kit=None):
 
 
 # A user config that selects every hook in the manifest: each reply hook needs its
-# preference on, so it names reply-shape and a rules file.
-ALL_HOOKS = json.dumps({"hooks": {"preset": "all"}, "replies": {
+# preference on, so it names reply-shape and a rules file, and a trial hook, one no preset
+# includes, needs its id enabled.
+ALL_HOOKS = json.dumps({"hooks": {"preset": "all", "enable": sorted(
+    {e["id"] for es in json.loads((HOOKS / "manifest.json").read_text()).values() for e in es})}, "replies": {
     "style": "reply-shape", "rules": str(RULES), "turnBlock": True}})
 
 
@@ -562,6 +564,273 @@ class WatchReminder(unittest.TestCase):
                 out = subprocess.run([str(HOOKS / self.HOOK)], input=payload, capture_output=True, text=True,
                                      env={**os.environ, **self.ENV})
                 self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+
+def card(state="stop", kinds=("review",), classes=("stop:post", "routine")):
+    """A reply ending on a turn block in this state, with a need of each kind and an option of each class."""
+    block = {"state": state} if state == "done" else {
+        "state": state, "needs": [{"id": n + 1, "kind": kind, "name": "Review the drafted comments"}
+                                  for n, kind in enumerate(kinds)],
+        "options": [{"key": "abc"[n], "class": cls, "text": "Post the review"} for n, cls in enumerate(classes)]}
+    if state == "running":
+        block = {"state": "running", "elapsed": "2m"}
+    return f"Here's the review.\n\n<!-- turn {json.dumps(block)} -->"
+
+
+class CleanestAsk(unittest.TestCase):
+    """cleanest-ask.py, on review-teammate-pr's card on a work repo's #6215 on Nov 25, 2026,
+    after which the user typed "is this the cleanest, best and most idiomatic long-term
+    solution?", as they did in 50 of 85 review threads they typed in that week."""
+    HOOK = "cleanest-ask.py"
+    THREAD = "mcp:launch:review6215"
+    SESSION = "5f0c6a40-9d1e-4b1a-8c3e-2a7d9e0b6215"
+    ASK = "Review https://github.com/acme/app/pull/6215"
+    # What Claude Code writes when /cleanest arrives: the command, then its body as meta.
+    COMMAND = ['<command-message>cleanest</command-message>\n<command-name>/cleanest</command-name>',
+               "is this the cleanest, best and most idiomatic long-term solution?"]
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.dir = pathlib.Path(folder.name)
+        self.sent = self.dir / "sent.txt"
+        cli = self.dir / "t3"
+        cli.write_text(f'#!/bin/sh\nprintf "%s|" "$@" >> {self.sent}; echo >> {self.sent}\n'
+                       'if [ -n "$T3_FAIL" ]; then echo "thread busy" >&2; exit 1; fi\n'
+                       f'echo "{{\\"runId\\": \\"run-$(wc -l < {self.sent} | tr -d \' \')\\", \\"delivery\\": \\"queued\\"}}"\n')
+        cli.chmod(0o755)
+        (self.dir / "claude/commands").mkdir(parents=True)
+        shutil.copy(HOOKS.parent / "commands/cleanest.md", self.dir / "claude/commands/cleanest.md")
+        self.env = {"T3_STATE_DB": self.db(), "T3CODE_CLI_PATH": str(cli), "T3CODE_THREAD_ID": self.THREAD,
+                    "CLAUDE_CONFIG_DIR": str(self.dir / "claude"), "ADDYSTACK_STATE": str(self.dir / "state")}
+
+    def db(self, thread=THREAD, title="◎ #6215 · first-reviewer", first=ASK, first_by="user", agent_sent=(), lineage=None):
+        """T3's state database: thread owns SESSION, with this title, lineage, and first
+        message, and each text in agent_sent sent into it by an agent."""
+        key = repr((thread, title, first, first_by, agent_sent, lineage))
+        path = self.dir / f"state-{hashlib.sha1(key.encode()).hexdigest()[:8]}.sqlite"
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
+            db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, provider_thread_id text, payload_json text)")
+            db.execute("create table orchestration_v2_projection_threads (thread_id text, title text, payload_json text)")
+            db.execute("create table orchestration_v2_projection_messages (thread_id text, role text, payload_json text, created_at text, run_id text)")
+            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text, status text)")
+            db.execute("insert into orchestration_v2_projection_provider_threads values (?, 'p1', ?)",
+                       (thread, json.dumps({"nativeThreadRef": {"nativeId": self.SESSION}})))
+            db.execute("insert into orchestration_v2_projection_threads values (?, ?, ?)",
+                       (thread, title, json.dumps({"lineage": lineage or {"parentThreadId": None}})))
+            db.executemany("insert into orchestration_v2_projection_messages values (?, 'user', ?, ?, null)",
+                           [(thread, json.dumps({"text": text, "createdBy": by}), f"2026-11-25T10:0{n}:00Z")
+                            for n, (text, by) in enumerate([(first, first_by), *((t, "agent") for t in agent_sent)])])
+        return str(path)
+
+    def transcript(self, *turns):
+        """A Claude Code transcript: each turn a prompt (a string, or a list of parts) then its reply."""
+        path = self.dir / f"{self.SESSION}.jsonl"
+        lines = []
+        for prompt, reply in turns:
+            if isinstance(prompt, list):
+                lines += [claude_said(prompt[0]), {"type": "user", "isMeta": True, "message": {"content": prompt[1]}}]
+            else:
+                lines.append(claude_said(prompt))
+            lines.append(claude_wrote(reply))
+        path.write_text("".join(json.dumps(line) + "\n" for line in lines))
+        return str(path)
+
+    def stop(self, *turns, env=None, reply=None):
+        """Runs the hook at the end of the last turn; returns the CLI calls it made."""
+        payload = {"hook_event_name": "Stop", "session_id": self.SESSION, "transcript_path": self.transcript(*turns),
+                   "stop_hook_active": False, "last_assistant_message": reply or turns[-1][1]}
+        out = subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True, text=True,
+                             env={**os.environ, **self.env, **(env or {})})
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
+        return self.sent.read_text().splitlines() if self.sent.exists() else []
+
+    def set_run(self, run, status):
+        """Gives T3's run for the hook's nth send this status, as T3 does once it starts or cancels it."""
+        with contextlib.closing(sqlite3.connect(self.env["T3_STATE_DB"])) as db, db:
+            db.execute("insert into orchestration_v2_projection_runs values (?, 'p1', ?)", (run, status))
+
+    def log(self, raw=False):
+        """The decision log, each send as its last row, as the hook reads it, or every row when raw."""
+        path = self.dir / "state/cleanest-ask.jsonl"
+        rows = [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+        if raw:
+            return rows
+        latest = {}
+        for at, row in enumerate(rows):
+            latest[row.get("send") or at] = row
+        return list(latest.values())
+
+    def test_sends_once_on_a_card_that_stops_on_a_review_or_decide_need(self):
+        for kinds in (("review",), ("decide",), ("do", "decide")):
+            with self.subTest(kinds=kinds):
+                self.sent.unlink(missing_ok=True)
+                (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
+                self.assertEqual(self.stop((self.ASK, card(kinds=kinds))), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
+                self.assertEqual([(row["thread"], row["sent"]) for row in self.log()], [(self.THREAD, True)])
+
+    def test_sends_once_per_run(self):
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        # Another stop before the queued /cleanest arrives, such as a prompt the user queued first.
+        self.assertEqual(len(self.stop(first, ("tighten comment 2", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        # Its own turn, then the user's pick and the next card in the same run.
+        self.set_run("run-1", "completed")
+        answered = [first, (self.COMMAND, card()), ("a", card())]
+        self.assertEqual(len(self.stop(*answered[:2])), 1)
+        self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest")
+        self.assertEqual(len(self.stop(*answered)), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        # A reply that ends done closes the run: a later re-review asks again.
+        self.assertEqual(len(self.stop(*answered, ("b", card("done")), ("re-review the new commits", card()))), 2)
+
+    def test_sends_on_the_card_after_a_delegated_reviewers_result(self):
+        # On one machine, 18 of the 23 cards the user asked on in the week to Nov 25, 2026 came
+        # right after review-loop's reviewer reported back, as in ◎ #6217.
+        result = "Delegated task node:delegated-task:rl-6215-r1 (◎ #6215 r1 · gpt-6.1) [completed]:\nTwo findings."
+        env = {"T3_STATE_DB": self.db(first="Review #6215 with the review-teammate-pr skill.", first_by="agent",
+                                      agent_sent=(result,))}
+        self.assertEqual(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")), (result, card()),
+                                   env=env), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
+        # A background task's notice after the result, as in #6047 on Nov 19, 2026, continues the run too.
+        self.sent.unlink()
+        (self.dir / "state/cleanest-ask.jsonl").unlink()
+        task = "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"
+        self.assertEqual(len(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")),
+                                       (result, card("running")), (task, card()), env=env)), 1)
+
+    def test_a_cleanest_the_user_typed_earlier_doesnt_hide_a_queued_send(self):
+        earlier = [(self.ASK, card()), (self.COMMAND, card()), ("b", card("done")), ("re-review it", card())]
+        self.assertEqual(len(self.stop(*earlier)), 1)
+        self.assertEqual(len(self.stop(*earlier, ("tighten comment 2", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+
+    def test_a_cancelled_send_holds_only_until_the_run_ends(self):
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        # The user cancelled the queued /cleanest: no second one this run, but the next run asks.
+        self.assertEqual(len(self.stop(first, ("a", card()))), 1)
+        self.set_run("run-1", "cancelled")
+        self.assertEqual(len(self.stop(first, ("a", card()), ("b", card("done")), ("re-review it", card()))), 2)
+
+    def test_a_send_still_queued_holds_the_next_run(self):
+        # Prompts the user queued first can end a run and start another before /cleanest arrives.
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        self.assertEqual(len(self.stop(first, ("post it", card("done")), ("now review #6216", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
+        self.assertEqual(self.log()[0]["run"], "run-1")
+
+    def test_review_words_that_ask_nothing_dont_count_as_an_ask(self):
+        for prompt in ("Review PR #6215; it changes the long-term archive.",
+                       "Review PR #6215: will the long-term archive preserve deletions?"):
+            with self.subTest(prompt=prompt):
+                self.sent.unlink(missing_ok=True)
+                (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
+                self.assertEqual(len(self.stop((prompt, card()))), 1)
+        for asked in ("Is it the most idiomatic and best-practice long-term implementation?", "make it the cleanest",
+                      "whats the best long-term solution?", "is this really necessary for the long term?"):
+            with self.subTest(asked=asked):
+                self.sent.unlink(missing_ok=True)
+                (self.dir / "state/cleanest-ask.jsonl").unlink(missing_ok=True)
+                self.assertEqual(self.stop((self.ASK, card()), (asked, card())), [])
+
+    def test_skips_a_run_where_the_user_asked_themselves(self):
+        self.assertEqual(self.stop((self.ASK, card()), ("is this the cleanest, best and most idiomatic long-term solution?", card()),
+                                   ("a", card())), [])
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+
+    def test_skips_replies_that_dont_stop_on_a_review_or_decide_need(self):
+        for reply in (card("done"), card("running"), card(kinds=(), classes=("routine",)), card(kinds=("do",)),
+                      "No turn block here.", ""):
+            with self.subTest(reply=reply):
+                self.assertEqual(self.stop((self.ASK, reply)), [])
+        self.assertEqual(self.log(), [])
+
+    def test_skips_prompts_the_user_didnt_type(self):
+        wake = "Update on pull request #6215: a new review from first-reviewer."
+        tick = '<coordinator-tick project="app">\n- r12 due\n</coordinator-tick>'
+        # T3 puts its sender note before an agent's message in the transcript, not in its database.
+        noted = "Please also check the tests, then post."
+        note = f'[T3 Code: the agent in T3 thread "coord" sent this message, not the user.]\n\n{noted}'
+        report = "From the Platform lane (thread x): the fix is pushed."
+        plain = "Please also check the tests."  # only T3's database says an agent sent it
+        env = {"T3_STATE_DB": self.db(agent_sent=(wake, tick, report, plain, noted))}
+        for prompt in (wake, tick, report, plain, note, self.COMMAND):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(self.stop((self.ASK, card()), (prompt, card()), env=env), [])
+                self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest" if prompt is self.COMMAND
+                                 else "the latest prompt isn't the user's: a wake, a tick, or another agent's message")
+
+    def test_skips_children_workers_and_other_threads(self):
+        worker = "Act as the review sub-agent.\n\nWorker of: t3-thread://v2/env/5ba1b6b8\nReview it."
+        for name, env in (("delegated child", {"T3_STATE_DB": self.db("thread:delegated-task:abc"),
+                                               "T3CODE_THREAD_ID": "thread:delegated-task:abc"}),
+                          ("coordinator's worker", {"T3_STATE_DB": self.db(first=worker, first_by="agent")}),
+                          ("review-loop reviewer", {"T3_STATE_DB": self.db("thread:delegated-task:r1", "◎ #6215 r1 · gpt-6.1"),
+                                                    "T3CODE_THREAD_ID": "thread:delegated-task:r1"}),
+                          ("not a review thread", {"T3_STATE_DB": self.db(title="Fix the login redirect")}),
+                          # An unattended workflow review on Nov 23, 2026, whose prompts T3 records as the system's.
+                          ("workflow step", {"T3_STATE_DB": self.db("workflow:fefcbdb4", first_by="system",
+                                                                    lineage={"workflowStep": True}),
+                                             "T3CODE_THREAD_ID": "workflow:fefcbdb4"}),
+                          ("another thread's id", {"T3CODE_THREAD_ID": "mcp:launch:other"}),
+                          ("no T3", {"T3_STATE_DB": str(self.dir / "missing.sqlite")})):
+            with self.subTest(name):
+                self.assertEqual(self.stop((self.ASK, card()), env=env), [])
+        self.assertEqual(self.log(), [])
+
+    def test_stays_silent_when_it_cant_send(self):
+        self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
+        self.assertEqual(self.log()[-1]["reason"], "t3 thread send failed: thread busy")
+        (self.dir / "claude/commands/cleanest.md").write_text("my own command\n")
+        self.assertEqual(len(self.stop((self.ASK, card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], f"commands/cleanest.md in {self.dir / 'claude'} isn't the kit's /cleanest")
+        (self.dir / "claude/commands/cleanest.md").unlink()
+        self.assertEqual(len(self.stop((self.ASK, card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "/cleanest isn't installed; run addystack install")
+        for payload in ("not json", "[]", json.dumps({"session_id": 1, "last_assistant_message": card()})):
+            with self.subTest(payload=payload):
+                out = subprocess.run([str(HOOKS / self.HOOK)], input=payload, capture_output=True, text=True,
+                                     env={**os.environ, **self.env})
+                self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+    def test_a_send_whose_answer_is_lost_still_counts(self):
+        # T3 queues the message, then the CLI times out before it answers.
+        (self.dir / "t3").write_text(f'#!/bin/sh\necho accepted >> {self.sent}\nexec sleep 30\n')
+        first = (self.ASK, card())
+        self.assertEqual(len(self.stop(first)), 1)
+        self.assertEqual(self.log()[-1]["reason"], "t3 thread send timed out; counted as sent")
+        self.assertEqual(len(self.stop(first, ("tighten comment 2", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+        # With no record of a send, none goes out.
+        (self.dir / "state/cleanest-ask.jsonl").unlink()
+        (self.dir / "state/cleanest-ask.jsonl").mkdir()
+        self.assertEqual(len(self.stop(first)), 1)
+
+    def test_dry_run_prints_the_decision_and_sends_nothing(self):
+        run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), "--dry-run", "--transcript", self.transcript(*turns),
+                                             "--session", self.SESSION], capture_output=True, text=True,
+                                            env={**os.environ, **self.env}).stdout
+        self.assertEqual(run((self.ASK, card())), f"would send /cleanest to {self.THREAD}\n")
+        self.assertEqual(run((self.ASK, card("done"))), "skip: the reply is done\n")
+        self.assertFalse(self.sent.exists())
+        self.assertEqual(self.log(), [])
+
+    def test_only_an_enable_by_id_installs_it(self):
+        if str(HOOKS.parent / "lib") not in sys.path:
+            sys.path.append(str(HOOKS.parent / "lib"))
+        import config, hookset
+        for hooks, on in (({"preset": "recommended"}, False), ({"preset": "all"}, False),
+                          ({"preset": "all", "enable": ["cleanest-ask"]}, True),
+                          ({"preset": "recommended", "enable": ["cleanest-ask"]}, True)):
+            with self.subTest(hooks=hooks):
+                user = self.dir / "addystack.jsonc"
+                user.write_text(json.dumps({"hooks": hooks}))
+                selected = [entry.id for entry in hookset.select(config.resolve(user), "claude", "linux")]
+                self.assertEqual("cleanest-ask" in selected, on)
+                self.assertNotIn("cleanest-ask", [entry.id for entry in hookset.select(config.resolve(user), "codex", "linux")])
 
 
 class CompileClean(unittest.TestCase):
@@ -5217,6 +5486,27 @@ class Exchanges(unittest.TestCase):
         for other in [*ENTRIES[:5], None, codex_said("a"), claude_wrote(self.FINAL, isSidechain=True),
                       claude_wrote(self.FINAL, isMeta="false")]:
             self.assertIsNone(transcripts.reply_text(other))
+
+    def test_an_agent_message_with_t3s_sender_note_reads_as_untyped(self):
+        # T3 stores the text without the note, so the note alone tells it from a typed one.
+        noted = '[T3 Code: the agent in T3 thread "3cce05fc" sent this message, not the user.]\n\nmerge it'
+        self.assertEqual(self.read(claude_wrote(self.FINAL), claude_said(noted)), [transcripts.Exchange(self.FINAL, "")])
+        session = "0b4c1f3e-5d6a-4e7b-8c9d-0e1f2a3b4c5d"
+        with tempfile.TemporaryDirectory() as folder:
+            db_path = os.path.join(folder, "statev2.sqlite")
+            with contextlib.closing(sqlite3.connect(db_path)) as db, db:
+                db.execute("create table orchestration_v2_projection_provider_threads "
+                           "(provider_thread_id text, thread_id text, payload_json text not null)")
+                db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+                db.execute("create table orchestration_v2_projection_messages (thread_id text not null, "
+                           "run_id text, role text not null, created_at text not null, payload_json text not null)")
+                db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
+                           ("p-1", "thread-1", json.dumps({"nativeThreadRef": {"nativeId": session}})))
+                db.execute("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)",
+                           ("thread-1", None, "user", "06:00", json.dumps({"createdBy": "agent", "text": "merge it"})))
+            with unittest.mock.patch.object(transcripts.t3_child, "STATE_DB", db_path):
+                found = self.read(claude_wrote(self.FINAL), claude_said(noted), strict=True, name=session)
+        self.assertEqual(found, [transcripts.Exchange(self.FINAL, "", agent=True)])
 
     def test_an_agent_sent_prompt_reads_as_untyped_in_strict_mode(self):
         session = "0b4c1f3e-5d6a-4e7b-8c9d-0e1f2a3b4c5d"
