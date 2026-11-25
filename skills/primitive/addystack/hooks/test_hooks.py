@@ -2912,8 +2912,10 @@ class Verdicts(unittest.TestCase):
         branch = self.git("symbolic-ref", "--short", "HEAD").strip()
         self.record(verdict="not-verified", findings=["1 · the iOS run needs a device"])
         self.assertEqual(self.known(branch, self.base, self.head), "not verified until it runs: 1 · the iOS run needs a device")
-        self.commit_change("c\n")  # a later commit doesn't run it either
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "-m", "reworded")
         self.assertIn("needs a device", self.known(branch, self.base, self.git("rev-parse", "HEAD").strip()))
+        # A commit since changes the diff, so its re-check reads that code, and still owes the run.
+        self.assertIsNone(self.known(branch, self.base, self.commit_change("c\n")))
 
     def test_last_knows_a_fix_marked_finding_without_a_commit(self):
         branch = self.git("symbolic-ref", "--short", "HEAD").strip()
@@ -2948,11 +2950,237 @@ class Verdicts(unittest.TestCase):
             self.record(verdict="not-done", findings=findings)
             self.assertIsNone(self.known(branch, self.base, self.head), findings)  # nothing marked fix
         self.record()
-        self.assertIsNone(self.known(branch, self.base, self.head))
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        self.commit_change("c\n")  # a commit since changes the diff, so the re-check reads it
         self.assertNotIn("known", json.loads(self.last(branch).stdout))
         usage = subprocess.run(["python3", str(HOOKS / "verdicts.py"), "last", branch, self.base], cwd=self.repo,
                                capture_output=True, text=True)
         self.assertEqual(usage.returncode, 2)
+
+    def test_last_keeps_a_done_across_a_rebase_that_leaves_the_diff_the_same(self):
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        self.record()
+        self.git("checkout", "-q", "-b", "parent", self.base)  # the base gains an unrelated commit
+        pathlib.Path(self.repo, "g").write_text("g\n")
+        self.git("add", "g")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "g")
+        parent = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", branch)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "parent")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertNotEqual(head, self.head)
+        self.assertEqual(self.known(branch, parent, head), f"same diff as {self.head[:12]}, Done stands; rerun the "
+                         "layer's checks and a trial merge at the new head")
+        self.assertIsNotNone(verdicts.find_done(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), parent,
+                                                                                       head)))  # the gate keeps it too
+        self.assertIsNone(self.known(branch, parent, "nope"))  # a diff that won't read runs the re-check
+
+    def test_a_kept_done_still_fails_the_checks_a_new_base_breaks(self):
+        # A rebase that leaves the patch the same can still break it: the base renames
+        # the function the diff's test calls. known() keeps the Done, so the checks it
+        # names must be what catches this.
+        def commit(name, text, message):
+            pathlib.Path(self.repo, name).write_text(text)
+            self.git("add", name)
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "-b", "trunk", self.head)
+        base = commit("lib.py", "def total(xs):\n    return sum(xs)\n", "lib")
+        self.git("checkout", "-q", "-b", "work")
+        self.base = base
+        self.head = commit("test_lib.py", "import unittest, lib\n\n\nclass T(unittest.TestCase):\n"
+                           "    def test_total(self):\n        self.assertEqual(lib.total([1, 2]), 3)\n", "test")
+        check = ["python3", "-m", "unittest", "-q", "test_lib"]
+        self.assertEqual(subprocess.run(check, cwd=self.repo, capture_output=True).returncode, 0)
+        self.record(branch="work")
+        self.git("checkout", "-q", "trunk")
+        broken = commit("lib.py", "def sum_of(xs):\n    return sum(xs)\n", "rename total")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "trunk")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("Done stands; rerun the layer's checks", self.known("work", broken, head))
+        merge = subprocess.run(["git", "merge-tree", "--write-tree", broken, head], cwd=self.repo, capture_output=True)
+        self.assertEqual(merge.returncode, 0)  # the trial merge is clean
+        self.assertNotEqual(subprocess.run(check, cwd=self.repo, capture_output=True).returncode, 0)  # the checks fail it
+
+    def test_a_done_stands_only_for_its_own_commits_rebased(self):
+        # Review of #99: a commit added after a Done can leave the whole diff's patch-id the
+        # same, since patch-id ignores where a hunk lands: here it moves `access = True` from
+        # admin() to guest(). The re-check reads that commit; a kept Done would not.
+        body = "    # one\n    # two\n    # three\n    access = False\n    # four\n    # five\n    # six\n    return access\n"
+        text = "def admin():\n" + body + "\n\ndef guest():\n" + body
+        def commit(content, message):
+            pathlib.Path(self.repo, "policy.py").write_text(content)
+            self.git("add", "policy.py")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        self.base = commit(text, "policy")
+        self.git("checkout", "-q", "-b", "work")
+        self.head = commit(text.replace("access = False", "access = True", 1), "allow admin")
+        idiom = pathlib.Path(self.dir, "idiom.txt")
+        idiom.write_text("none: a plain assignment\n")
+        self.record(branch="work", evidence={"idiom": [str(idiom)]})
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
+        first, rest = text.rsplit("access = False", 1)
+        head = commit(first + "access = True" + rest, "allow guest instead")
+        self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), self.base, head)),
+                         self.patch_id())  # the same patch-id, so the merge gate's Done covers it too
+        self.assertIsNone(self.known("work", self.base, head))
+        # Review of #99, round 2: a rebase can move the hunk itself. The base changes admin()'s
+        # context, so `git rebase --apply` lands `access = True` in guest() under one commit
+        # whose patch-id still matches; range-diff pairs it as changed (!).
+        self.git("reset", "-q", "--hard", self.head)
+        self.git("checkout", "-q", "-b", "parent", self.base)
+        moved = commit(text.replace("# two", "# parent changed it", 1), "change admin's context")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "--apply", "parent")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("def guest", self.git("diff", moved, head))
+        self.assertEqual(verdicts._patch_id(pathlib.Path(self.repo), verdicts.diff(pathlib.Path(self.repo), moved, head)),
+                         self.patch_id())
+        self.assertIsNone(self.known("work", moved, head))
+        # Round 3: with context the base changed identically in both places, range-diff pairs
+        # the moved hunk as =; a base that changed a file the diff touches gets a re-check.
+        self.assertEqual(verdicts._git(pathlib.Path(self.repo), "diff", "--name-only", self.base, moved).split(), ["policy.py"])
+
+    def test_a_done_with_a_merge_commit_or_a_binary_file_gets_a_full_recheck(self):
+        # verify-work's re-check runs a full pass on both, since range-diff can't show them.
+        self.git("checkout", "-q", "-b", "work")
+        pathlib.Path(self.repo, "asset.bin").write_bytes(b"\0\1")
+        self.git("add", "asset.bin")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "asset")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIsNone(self.known("work", self.base, self.head))
+        self.git("reset", "-q", "--hard", "HEAD~1")  # a text-only branch, so only the merge commit stops it
+        self.commit_change("c\n")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
+        self.git("checkout", "-q", "-b", "side", self.base)
+        pathlib.Path(self.repo, "g").write_text("side\n")
+        self.git("add", "g")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "side")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-ff", "-m", "merge", "side")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="work")
+        self.assertIsNone(self.known("work", self.base, self.head))
+
+    def test_a_done_another_verdict_superseded_or_new_evidence_needs_gets_a_recheck(self):
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        self.record()
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--amend", "-m", "refactor f")
+        reworded = self.git("rev-parse", "HEAD").strip()  # the same diff, now a refactor: range-diff pairs it !
+        self.assertIsNone(self.known(branch, self.base, reworded))
+        self.git("reset", "-q", "--hard", self.head)
+        # A kind the range needs that the Done never backed, as after evidence.py gains a rule.
+        receipt = verdicts.last(pathlib.Path(self.repo), branch)
+        self.assertTrue(verdicts.known(pathlib.Path(self.repo), receipt, self.base, self.head))
+        with unittest.mock.patch.object(verdicts, "classify", return_value={"parity": ["a rule added since"]}):
+            self.assertEqual(verdicts.known(pathlib.Path(self.repo), receipt, self.base, self.head), "")
+        self.git("checkout", "-q", "-b", "other")
+        self.record(verdict="not-done", findings=["1 · Blocker · x → fix"], branch="other")
+        self.assertIsNone(self.known(branch, self.base, self.head))  # the merge gate reads the Not done
+
+    def test_a_done_whose_evidence_no_longer_backs_it_gets_a_recheck(self):
+        # Review of #99, round 2: a kind the verdict was required to back, and a log gone since.
+        branch = self.git("symbolic-ref", "--short", "HEAD").strip()
+        log = pathlib.Path(self.dir, "mutants.log")
+        log.write_text("killed: one\nkilled: two\nkilled: three\n")
+        self.record(evidence={"mutants": [str(log)]}, require=["mutants"])
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        log.write_text("killed: one\nkilled: two\nsurvived: three\n")  # the required log now shows a survivor
+        self.assertIsNone(self.known(branch, self.base, self.head))
+        log.unlink()
+        self.assertIsNone(self.known(branch, self.base, self.head))
+        # Review of #99, round 3: a mutant log saved for the head since, which a new Done must pass.
+        self.record()
+        self.assertIn("Done stands", self.known(branch, self.base, self.head))
+        saved = self.store().parent / "evidence" / self.head[:12]
+        saved.mkdir(parents=True)
+        (saved / "mutants.log").write_text("killed: one\nkilled: two\nsurvived: three\n")
+        self.assertIsNone(self.known(branch, self.base, self.head))
+
+    def test_a_done_survives_a_rebase_of_a_long_branch(self):
+        # verify-work on #99: range-diff pads its numbers to the widest, so 10 commits print
+        # " 1:  abc =  1:  def" up to "10:  abc = 10:  def", and a regex for one space read
+        # only row 10, keeping a Done whose rows 1-9 changed.
+        self.git("checkout", "-q", "-b", "long")
+        for n in range(10):
+            pathlib.Path(self.repo, f"n{n}").write_text(f"{n}\n")
+            self.git("add", f"n{n}")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", f"n{n}")
+        self.head = self.git("rev-parse", "HEAD").strip()
+        self.record(branch="long")
+        self.git("checkout", "-q", "-b", "parent", self.base)
+        pathlib.Path(self.repo, "g").write_text("g\n")
+        self.git("add", "g")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "g")
+        parent = self.git("rev-parse", "HEAD").strip()
+        self.git("checkout", "-q", "long")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "parent")
+        rebased = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("Done stands", self.known("long", parent, rebased))
+        # Rows 2 and 3 rewritten so the whole diff stays the same: n1 first holds x, and n2's
+        # commit sets it back as it adds n2.
+        self.git("reset", "-q", "--hard", f"{rebased}~9")
+        for name, files in (("n1", {"n1": "x\n"}), ("n2", {"n1": "1\n", "n2": "2\n"})):
+            for path, text in files.items():
+                pathlib.Path(self.repo, path).write_text(text)
+            self.git("add", "-A")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", name)
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "cherry-pick", f"{rebased}~7..{rebased}")
+        rewritten = self.git("rev-parse", "HEAD").strip()
+        self.assertEqual(verdicts.diff(pathlib.Path(self.repo), parent, rewritten),
+                         verdicts.diff(pathlib.Path(self.repo), parent, rebased))
+        self.assertIsNone(self.known("long", parent, rewritten))
+
+    def test_a_done_gets_a_recheck_when_the_base_changed_a_file_the_diff_touches(self):
+        # verify-work on #99: with no function context, range-diff pairs a moved hunk as =.
+        # The base edits the first block's context and `git apply` lands the change in the second.
+        block = "  # one\n  # two\n  # three\n  access = false\n  # four\n  # five\n  # six\n"
+        text = "[admin]\n" + block + "\n[guest]\n" + block
+        def commit(content, message):
+            pathlib.Path(self.repo, "policy.ini").write_text(content)
+            self.git("add", "policy.ini")
+            self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        self.base = commit(text, "policy")
+        self.git("checkout", "-q", "-b", "work")
+        self.head = commit(text.replace("access = false", "access = true", 1), "allow admin")
+        self.record(branch="work")
+        self.git("checkout", "-q", "-b", "parent", self.base)
+        moved = commit(text.replace("# two", "# parent changed it", 1), "change admin's context")
+        self.git("checkout", "-q", "work")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "rebase", "-q", "--apply", "parent")
+        head = self.git("rev-parse", "HEAD").strip()
+        self.assertIn("[guest]\n  # one\n  # two\n  # three\n  access = true", pathlib.Path(self.repo, "policy.ini").read_text())
+        self.assertRegex(self.git("range-diff", f"{self.base}..{self.head}", f"{moved}..{head}"), r"^1: +\w+ = 1:")
+        self.assertIsNone(self.known("work", moved, head))
+
+    def test_a_done_gets_a_recheck_when_a_line_moves_between_its_commits(self):
+        # verify-work on #99: the same whole diff, commit count, and messages, with line x
+        # moved from commit b into commit a, which range-diff pairs as ! on both rows.
+        def commits(*steps):
+            self.git("reset", "-q", "--hard", self.base)
+            for message, files in steps:
+                for path, text in files.items():
+                    pathlib.Path(self.repo, path).write_text(text)
+                self.git("add", "-A")
+                self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", message)
+            return self.git("rev-parse", "HEAD").strip()
+        g, h = "".join(f"g{n}\n" for n in range(20)), "".join(f"h{n}\n" for n in range(20))
+        self.git("checkout", "-q", "-b", "work")
+        self.head = commits(("a", {"g": g}), ("b", {"h": h, "g": g + "x\n"}))
+        self.record(branch="work")
+        self.assertIn("Done stands", self.known("work", self.base, self.head))
+        moved = commits(("a", {"g": g + "x\n"}), ("b", {"h": h}))
+        self.assertEqual(verdicts.diff(pathlib.Path(self.repo), self.base, moved),
+                         verdicts.diff(pathlib.Path(self.repo), self.base, self.head))
+        self.assertRegex(self.git("range-diff", f"{self.base}..{self.head}", f"{self.base}..{moved}"), r"(?m)^1: +\w+ ! 1:")
+        self.assertIsNone(self.known("work", self.base, moved))
 
     def commit_change(self, text):
         pathlib.Path(self.repo, "f").write_text(text)

@@ -221,19 +221,8 @@ def record(cwd: Path, target: ReviewTarget, hook_context: str | None, verdict: s
     gaps = [(kind, gap, required[kind]) for kind in required if (gap := kinds.done_gap(kind, evidence.get(kind, [])))]
     if "mutants" not in required and (survived := kinds.survivors(evidence.get("mutants", []))):
         gaps.append(("mutants", survived, ["supplied"]))  # a survivor the verifier found refuses Done on any path
-    # A mutant log saved for this head, in a folder named by its SHA or a prefix of 7 or more,
-    # and left out of a Done would hide its survivors. Only a Done reads them, so a Not done
-    # still revokes one when the folder won't read.
-    saved, left = _store(cwd).parent / "evidence", []
-    try:
-        try:
-            folders = list(saved.iterdir()) if verdict == "done" else []
-        except FileNotFoundError:  # no evidence saved yet; any other error could hide a log
-            folders = []
-        left = kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
-                                       and head.startswith(folder.name)], evidence.get("mutants", []))
-    except OSError as error:
-        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+    # Only a Done reads them, so a Not done still revokes one when the folder won't read.
+    left = _left_out_mutants(cwd, head, evidence.get("mutants", [])) if verdict == "done" else []
     if left:
         survived = [mutant for _, mutants in left for mutant in mutants]
         gaps.append(("mutants", f"{_shown([Path(path).name for path, _ in left])} in this head's evidence folder "
@@ -387,23 +376,93 @@ def last(cwd: Path, branch: str) -> Receipt | None:
     return None
 
 
+def _left_out_mutants(cwd: Path, head: str, passed: list[str]) -> list:
+    """evidence.left_out_mutants for the mutant logs saved for `head`, in a folder named by
+    its SHA or a prefix of 7 or more: a Done that leaves one out would hide its survivors.
+    VerdictError when the folder won't read, since any error could hide a log."""
+    import evidence as kinds
+
+    saved = _store(cwd).parent / "evidence"
+    try:
+        try:
+            folders = list(saved.iterdir())
+        except FileNotFoundError:  # no evidence saved yet
+            folders = []
+        return kinds.left_out_mutants([folder for folder in folders if len(folder.name) >= 7
+                                       and head.startswith(folder.name)], passed)
+    except OSError as error:
+        raise VerdictError(f"Done reads every mutant log in this head's evidence folder, and {error}")
+
+
 def known(cwd: Path, receipt: Receipt, base: str, head: str) -> str:
     """Why a re-check of `base...head` after `receipt` can only repeat it, or "" when it
-    can find something new: a Not verified waits on the real run it names, and a Not
-    done waits on a commit for each finding it marked fix while the diff and its merge
-    base are the ones it checked, since a restack onto a parent can bring the fix in. A
-    diff that won't read gives "", so the re-check runs."""
-    if receipt.verdict == "not-verified":
-        return "not verified until it runs: " + "; ".join(receipt.findings)
+    can find something new. While the diff and its merge base are the ones it checked, a
+    Not verified waits on the real run it names, and a Not done on a commit for each
+    finding it marked fix, since a restack onto a parent can bring the fix in. A Done
+    stands across a rebase `_rebased` shows changed nothing it read, though a new base can
+    still break it, so the reason names the checks and trial merge to rerun. A diff that
+    won't read gives "", so the re-check runs."""
     fixes = [text for text in receipt.findings if re.search(r"→ fix\b", text)]
-    if receipt.verdict != "not-done" or not fixes:
+    if receipt.verdict == "not-done" and not fixes:
         return ""
     try:
+        if receipt.verdict == "done":
+            return (f"same diff as {receipt.reviewed.head[:12]}, Done stands; rerun the layer's checks and a trial "
+                    "merge at the new head") if _rebased(cwd, receipt, base, head) else ""
         same = (_patch_id(cwd, diff(cwd, base, head)) == receipt.patch_id
                 and _git(cwd, "merge-base", base, head) == _git(cwd, "merge-base", *astuple(receipt.reviewed)))
     except VerdictError:
         return ""
-    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes) if same else ""
+    if not same:  # a changed diff gets its re-check, which still owes any run
+        return ""
+    if receipt.verdict == "not-verified":
+        return "not verified until it runs: " + "; ".join(receipt.findings)
+    return f"same diff as {receipt.reviewed.head[:12]}, so still open: " + "; ".join(fixes)
+
+
+def _rebased(cwd: Path, receipt: Receipt, base: str, head: str) -> bool:
+    """Whether a Done still covers `base...head` without reading it again, by the re-check's
+    own measure: `git range-diff` pairs every reviewed commit with one at the head as `=`
+    (patch-id alone ignores where a hunk lands), with no merge commit or binary file, which
+    the re-check reads in full; the store's latest verdict for the patch is still this Done,
+    as the merge gate reads it; and its evidence still backs, by the recorder's rules, every
+    kind it supplied, recorded as required, or the range now needs."""
+    import evidence as kinds  # here, so a broken evidence.py can't break find_done or status
+
+    patch_id = _patch_id(cwd, diff(cwd, base, head))
+    latest = _latest(cwd, patch_id)
+    if patch_id != receipt.patch_id or not latest or latest.verdict != "done":
+        return False
+    ranges, forks = [], []
+    for old, new in (astuple(receipt.reviewed), (base, head)):
+        fork = _git(cwd, "merge-base", old, new).strip()
+        if _git(cwd, "rev-list", "--merges", f"{fork}..{new}").strip():
+            return False
+        ranges.append(f"{fork}..{new}")
+        forks.append(fork)
+    # The same patches on the same files as the Done read them: a base that changed a file
+    # the diff touches can move an equal hunk to other lines, which no patch comparison sees.
+    paths = [path for path in _git(cwd, "diff", "--name-only", "-z", "--no-renames", f"{base}...{head}").split("\0") if path]
+    if not paths or _git(cwd, "diff", "--name-only", "--no-renames", *forks, "--", *paths).strip():
+        return False
+    pairs = re.findall(r"^\s*(?:\d+|-+):\s+(?:[0-9a-f]+|-+) ([=!<>])\s+(?:\d+|-+):",  # numbers pad to one width
+                       _git(cwd, "range-diff", "--no-color", *ranges), flags=re.M)
+    counts = {int(_git(cwd, "rev-list", "--count", commits)) for commits in ranges}
+    if set(pairs) != {"="} or counts != {len(pairs)}:  # a pair it didn't parse may be one that changed
+        return False
+    if any(line.startswith("-\t-\t") for line in _git(cwd, "diff", "--numstat", f"{base}...{head}").splitlines()):
+        return False
+    needed = {*receipt.evidence, *receipt.required, *classify(cwd, base, head)}
+    try:
+        for kind in needed:
+            refs, problems = kinds.check(kind, receipt.evidence.get(kind, []), cwd)
+            if problems or kinds.done_gap(kind, refs):
+                return False
+        if _left_out_mutants(cwd, head, receipt.evidence.get("mutants", [])):
+            return False
+    except (OSError, ValueError, kinds.EvidenceError, VerdictError):  # a log gone or unreadable since: read it again
+        return False
+    return True
 
 
 def status(cwd: Path, base: str, head: str) -> str:
