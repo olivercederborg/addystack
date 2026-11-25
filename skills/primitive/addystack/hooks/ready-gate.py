@@ -26,7 +26,7 @@ through `workdir`, and a hook timeout, which Codex lets through. `gh stack submi
 without a terminal, which opens drafts."""
 import json, os, re, signal, subprocess, sys
 
-from shell_dirs import ASSIGNMENT, LEADS, Walk, unreadable
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, LEADS, Walk, unreadable
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 RECORD = os.path.join(HERE, "verdicts.py").replace(os.path.expanduser("~"), "~", 1)
@@ -46,8 +46,6 @@ code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 # Nor are comments: a # that starts a word, so not after an escaped space.
 code = re.sub(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", "", code, flags=re.M)
-MOVES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:commit|push|pull|rebase|reset|merge|cherry-pick|am|revert|checkout|switch)\b"
-                   r"|\bgh\s+stack\s+(?:push|submit|rebase|sync|add|modify|checkout|switch|up|down|top|bottom|merge)\b")
 # gh commands that move a PR's head or base, or the branch a bare `gh pr ready` reads; co is
 # checkout's built-in alias. Aliases from `gh alias set` aren't read.
 SHIFTS = {("pr", "checkout"), ("pr", "co"), ("pr", "update-branch"), ("pr", "merge")}
@@ -227,7 +225,7 @@ for at, words, lead in walk:
                                "text the gate can't expand: write each PR out, as `gh pr ready 12 && gh pr ready 13`")
             readies += [(kind, one, cwd, value, moved, reasons) for one in runs]
     # A create, even a draft or a dry run, may push its branch first, so it moves a later ready's head.
-    moved = moved or bool(MOVES.search(pieces[at])) or "gh" in words and names in (["pr", "create"], ["pr", "new"])
+    moved = moved or bool(BRANCH_MOVES.search(pieces[at])) or "gh" in words and names in (["pr", "create"], ["pr", "new"])
 if not readies:
     sys.exit(0)
 

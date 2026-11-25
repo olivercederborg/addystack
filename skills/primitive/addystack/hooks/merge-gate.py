@@ -37,7 +37,7 @@ checks from the current directory and prints the PRs it resolves, then each reas
 `would pass` (exit 1 or 0). It reads the latest prompt from this session's transcript
 (CLAUDE_CODE_SESSION_ID in Claude Code, CODEX_THREAD_ID in Codex), so ask it in the turn
 that would merge."""
-import contextlib, glob, json, os, re, subprocess, sys
+import json, os, re, subprocess, sys
 
 from shell_dirs import Walk
 
@@ -46,22 +46,11 @@ DRY_RUN = sys.argv[1:2] == ["--dry-run"]
 STACK_SH = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "scripts",
                                          "stack.sh")).replace(os.path.expanduser("~"), "~", 1)
 
-def dry_run_payload(argv):
-    if not argv or argv[0].startswith("-") or len(argv) % 2 == 0:
-        sys.exit("usage: merge-gate.py --dry-run '<merge command>' [--transcript PATH] [--session ID]")
-    flags = dict(zip(argv[1::2], argv[2::2]))
-    if set(flags) - {"--transcript", "--session"}:
-        sys.exit(f"merge-gate.py --dry-run: unknown flag {sorted(set(flags) - {'--transcript', '--session'})[0]}")
-    session = flags.get("--session") or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("CODEX_THREAD_ID")
-    import hook_parity  # here: only a dry run looks the transcript up
-    claude, codex = hook_parity.config.claude_home(), os.environ.get("CODEX_HOME") or "~/.codex"
-    transcripts = sorted(glob.glob(f"{claude}/projects/*/{session}.jsonl")
-                         + glob.glob(os.path.expanduser(f"{codex}/sessions/*/*/*/rollout-*-{session}.jsonl")),
-                         key=os.path.getmtime) if session else []
-    return {"tool_input": {"command": argv[0]}, "cwd": os.getcwd(), "session_id": session,
-            "transcript_path": flags.get("--transcript") or (transcripts[-1] if transcripts else None)}
-
-payload = dry_run_payload(sys.argv[2:]) if DRY_RUN else json.load(sys.stdin)
+if DRY_RUN:
+    import user_turn  # here, as below: a broken module then blocks only merges
+    payload = user_turn.dry_run_payload(sys.argv[2:], "merge-gate.py")
+else:
+    payload = json.load(sys.stdin)
 command = (payload.get("tool_input") or {}).get("command", "")
 cwd = payload.get("cwd") or os.getcwd()
 
@@ -120,36 +109,11 @@ def run(*cmd):
         raise RuntimeError(f"`{' '.join(cmd[:4])}` failed: {result.stderr.decode(errors='replace').strip()[:200]}")
     return result.stdout.decode(errors="surrogateescape")
 
-def answered(found):
-    """The reply the latest prompt answers: the last one before it, past messages T3 says
-    another agent sent (Exchange.agent) that landed in the same turn, such as a worker's
-    result that arrived as the user typed. Those messages' own turn blocks never count. Any
-    other message in between that got no reply, typed or not, gives None."""
-    at = len(found) - 1
-    while found[at].reply is None and at and found[at - 1].agent:
-        at -= 1
-    return found[at].reply
-
-def letter_miss(reply, key):
-    """Why the key picks no option of the reply."""
-    import turn_block
-    if reply is None:
-        return "no reply of yours came before it"
-    try:
-        turn = turn_block.parse(reply)
-    except turn_block.Malformed as error:
-        return f"your reply before it has no valid turn block ({error})"
-    if all(option.key != key for option in turn.options):
-        return f"your reply before it offers no option {key}"
-    return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML that can hide it, "
-            "such as an open <title>, a comment, or a line starting with a tag and no blank line after it, "
-            "or a fence line it can't place")
-
 def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last
     of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
     go is a literal go (merge_go.py), held to the PRs it names when it names one with its
-    repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (answered,
+    repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (user_turn.answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
     and no PR of numbers in another repo (merge_go.names).
     stop:merge also covers marking ready, so "mark #17 ready, but don't merge" isn't one. A
@@ -157,22 +121,12 @@ def user_go(numbers, owner, repo):
     or a block in a message another agent sent gives no go."""
     pr = numbers[-1]
     try:
-        import sqlite3, t3_child, transcripts, turn_block
+        import turn_block, user_turn
         from merge_go import literal_go, names, REPO_NAMED
-        in_t3 = bool(os.environ.get("T3CODE_CLI_PATH"))  # where only T3's database tells another agent from the user
-        try:
-            with contextlib.closing(t3_child.connect()) as db:
-                owners = t3_child.threads(db, payload.get("session_id"))
-        except sqlite3.Error:
-            if in_t3:
-                return False, None
-            owners = []
-        if any(str(thread).startswith("thread:delegated-task:") for thread, in owners):
-            return False, None
-        if in_t3 and not owners:  # T3 can't tell its agents' messages from the user's in a session it doesn't own
+        found = user_turn.exchanges(payload)
+        if found is None:
             return False, None
         # The latest prompt itself: when the user didn't type it, an earlier go doesn't count.
-        found = transcripts.exchanges(payload.get("transcript_path"), strict=in_t3)
         prompt = found[-1].prompt if found else ""
         said = f'the user\'s "{prompt.strip()}"'
         if literal_go(prompt):
@@ -185,10 +139,10 @@ def user_go(numbers, owner, repo):
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
             return False, None
-        reply = answered(found)
+        reply = user_turn.answered(found)
         option = turn_block.picked(reply, prompt)
         if option is None:
-            return False, f"{said} picks nothing: {letter_miss(reply, key.group(1).lower())}"
+            return False, f"{said} picks nothing: {user_turn.letter_miss(reply, key.group(1).lower())}"
         if option.cls != "stop:merge" or not literal_go(option.text):
             return False, f'{said} picks "{option.text}" from your reply before it, which isn\'t a merge go'
         if not names(option.text, pr, owner, repo, numbers):
