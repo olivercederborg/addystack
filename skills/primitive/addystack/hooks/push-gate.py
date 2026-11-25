@@ -54,7 +54,7 @@ an approval that lands between the check and the push isn't seen.
 `push-gate.py --dry-run '<push command>' [--transcript PATH] [--session ID]` runs the
 same checks from the current directory and prints each branch it would push, then each
 reason or `would pass` (exit 1 or 0), reading the latest prompt as merge-gate.py's does."""
-import json, os, re, subprocess, sys
+import json, os, re, subprocess, sys, urllib.parse
 
 DRY_RUN = sys.argv[1:2] == ["--dry-run"]
 if DRY_RUN:
@@ -288,24 +288,25 @@ def git_targets(argv, where, earlier):
     return found, repos
 
 
-FIELDS = "number,url,state,headRefName,headRefOid,headRepository,headRepositoryOwner,reviews"
+FIELDS = "number,url,state,headRefOid,reviews"
 FORKED = {}  # repo: the repos it forks, which take PRs from it
 
 
 def pull_requests(where, branch, repo):
     """Every open PR whose head is branch in repo, opened on repo or on a repo it forks (its
-    parent and source), each found from GitHub, never from gh stack's best-effort view."""
+    parent and source), each found from GitHub, never from gh stack's best-effort view. The
+    REST list's `head=<owner>:<branch>` filter is exact, where `gh pr list --head` matches the
+    name in every fork and stops at its first 30."""
     if repo not in FORKED:
         FORKED[repo] = run(where, "gh", "api", f"repos/{repo}", "--jq",
                            '[.parent.full_name, .source.full_name] | map(select(. != null)) | unique | join(" ")').split()
+    owner, head = repo.split("/")[0], urllib.parse.quote(branch, safe="/")
     found = []
     for base in [repo, *(fork for fork in FORKED[repo] if fork != repo)]:
-        for pr in json.loads(run(where, "gh", "pr", "list", "-R", base, "--head", branch, "--state", "open",
-                                 "--json", FIELDS)):
-            head = f"{(pr.get('headRepositoryOwner') or {}).get('login')}/{(pr.get('headRepository') or {}).get('name')}"
-            if head.lower() == repo.lower():
-                found.append(pr)
-    return found
+        listed = run(where, "gh", "api", "--paginate", f"repos/{base}/pulls?head={owner}:{head}&state=open&per_page=100",
+                     "--jq", ".[] | .number").split()
+        found += [json.loads(run(where, "gh", "pr", "view", n, "-R", base, "--json", FIELDS)) for n in listed]
+    return [pr for pr in found if pr.get("state") == "OPEN"]
 
 
 def approvals(pr):

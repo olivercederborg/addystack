@@ -3668,12 +3668,20 @@ if s.get("broken"):
     sys.exit("gh: network down")
 if a[:2] == ["stack", "view"]:
     print(json.dumps(s["stack"]))
+elif a[:1] == ["api"] and "/pulls?" in a[-3]:  # --paginate repos/<base>/pulls?head=<owner>:<branch>&… --jq …
+    import urllib.parse
+    path, query = a[-3].split("?")
+    owner, branch = urllib.parse.parse_qs(query)["head"][0].split(":", 1)
+    base = path[len("repos/"):-len("/pulls")]
+    print("\n".join(str(pr["number"]) for pr in s["prs"].values() if pr["headRefName"] == branch
+                    and pr["headRepositoryOwner"]["login"] == owner and pr["state"] == "OPEN"
+                    and f"github.com/{base}/pull/" in pr["url"]))
 elif a[:1] == ["api"]:  # repos/<repo> --jq '<its parent and source>'
     print(" ".join(s.get("forks", {}).get(a[1][len("repos/"):], [])))
-elif a[:2] == ["pr", "list"]:
-    repo, head = a[a.index("-R") + 1], a[a.index("--head") + 1]
-    print(json.dumps([pr for pr in s["prs"].values() if pr["headRefName"] == head and pr["state"] == "OPEN"
-                      and f"github.com/{repo}/pull/" in pr["url"]]))
+elif a[:2] == ["pr", "view"]:
+    base = a[a.index("-R") + 1]
+    pr = next((pr for pr in s["prs"].values() if pr["url"] == f"https://github.com/{base}/pull/{a[2]}"), None)
+    print(json.dumps(pr)) if pr else sys.exit("no pull requests found")
 else:
     sys.exit(1)
 """
@@ -3931,7 +3939,7 @@ class PushGate(unittest.TestCase):
         scenario["prs"]["6119"].update(self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED], repo="acme/target"))
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
         self.dismisses(self.reason("git push origin HEAD"))
-        self.assertIn("-R acme/target", pathlib.Path(self.env["FAKE_GH"] + ".calls").read_text())
+        self.assertIn("repos/acme/target/pulls?head=acme:", pathlib.Path(self.env["FAKE_GH"] + ".calls").read_text())
         self.git("config", "--unset", "remote.origin.pushurl")
         self.scenario()
         # Deleting the PR's branch moves it; deleting a branch with no PR, or none, moves nothing.
@@ -3952,6 +3960,10 @@ class PushGate(unittest.TestCase):
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
         self.dismisses(self.reason("git push --force origin HEAD"))
         self.dismisses(self.reason("gh stack push"))
+        # review-loop r2: listed by GitHub's exact head=<owner>:<branch> filter, every page, since
+        # `gh pr list --head` matches the name in every fork and stops at 30.
+        self.assertIn(f"api --paginate repos/upstream/app/pulls?head=acme:{self.BRANCH}&state=open",
+                      pathlib.Path(self.env["FAKE_GH"] + ".calls").read_text())
         scenario.update(prs={"other": self.pull(6118, self.BRANCH, self.remote_head),
                              "6119": self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED])}, forks={})
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
