@@ -18,6 +18,10 @@ LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command"
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 MOVES = ("cd", "pushd", "popd")
 OPAQUE = ("eval", "source", ".")  # run code in this shell that the gate doesn't read, which may cd
+# A piece that may move a branch or a PR's head, so a gate that read the heads before the
+# command ran can't trust them past it (ready-gate.py, push-gate.py).
+BRANCH_MOVES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:commit|push|pull|rebase|reset|merge|cherry-pick|am|revert|checkout|switch)\b"
+                   r"|\bgh\s+stack\s+(?:push|submit|rebase|sync|add|modify|checkout|switch|up|down|top|bottom|merge)\b")
 
 
 def unreadable(word):

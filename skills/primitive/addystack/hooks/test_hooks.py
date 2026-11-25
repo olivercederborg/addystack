@@ -3909,6 +3909,22 @@ class PushGate(unittest.TestCase):
         self.dismisses(self.reason("git push"))
         self.dismisses(self.reason("git push -u origin HEAD"))
 
+    def test_counts_a_branch_an_earlier_command_moves(self):
+        # review-loop r1 on #104: the gate reads the tips before the shell runs, so a commit
+        # chained before the push passed while the PR's head still matched, then moved it.
+        self.scenario(head=self.local)
+        self.assertIsNone(self.reason("git push origin HEAD"))
+        for command in ["git commit --allow-empty -qm fix && git push -q origin HEAD",
+                        "git rebase main; gh stack push", "gh stack rebase && gh stack push"]:
+            with self.subTest(command=command):
+                self.assertIn(f"moves #6119 from {self.local[:10]} to a tip an earlier command in this one makes",
+                              self.reason(command))
+        self.scenario(reviews=())  # with no live approval, it still passes
+        self.assertIsNone(self.reason("git commit -qm fix && gh stack push"))
+        for command in ["git checkout main && git push", "gh stack checkout 12 && gh stack push", "git switch - ; git push"]:
+            with self.subTest(command=command):
+                self.assertIn("before it pushes, which changes the branches the push reads", self.reason(command))
+
     def test_a_sync_counts_a_branch_it_rebases(self):
         self.scenario(head=self.local)
         self.assertIsNone(self.reason("gh stack sync"))  # the trunk hasn't moved: nothing to push
@@ -3940,7 +3956,7 @@ class PushGate(unittest.TestCase):
         for command in ["(cd {repo}/../mirror); git push", "false || cd {repo}/../mirror; git push",
                         "(cd {repo}/../mirror && gh stack push)", "\\cd {repo}/../mirror && git push", "git -C $D push"]:
             with self.subTest(command=command):
-                self.assertIn("so the gate can't tell which checkout pushes", self.reason(command))
+                self.assertIn("so the gate can't tell what it pushes", self.reason(command))
         for command, why in [("d=$(pwd); cd $d && gh stack push", "runs `cd $d`, whose directory it can't read"),
                              ("git push origin \"$BRANCH\"", "can't tell which branch"),
                              ("git push origin --delete old", "deletes branches"),

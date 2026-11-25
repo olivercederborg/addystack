@@ -26,7 +26,10 @@ state database it can't read or a session no T3 thread owns.
 The gate reads pushes outside quotes and heredocs, at the start of a command after `cd`,
 `&&`, `;`, a pipe, or a subshell, and follows `git -C <path>` and each cd, pushd, and popd
 as shell_dirs.Walk reads them for merge-gate.py, denying a push after one it can't read or
-that may not run before it, such as a `cd` inside a subshell or after `||`. For gh
+that may not run before it, such as a `cd` inside a subshell or after `||`. The tips are
+read before the shell runs, so a commit, rebase, reset, or other branch move earlier in the
+command (shell_dirs.BRANCH_MOVES, as ready-gate.py reads it) counts each PR the push
+reaches as moved, and a branch or stack switch earlier denies. For gh
 stack, the branches are the current stack's unmerged, unqueued ones, with their PRs from
 `gh stack view --json`; a sync rebases a branch below which anything moved, or whose
 parent, the trunk's tip on the remote for the lowest, isn't in it. For git push, they are
@@ -94,17 +97,23 @@ RUNS = {"env", "nohup", "exec"}
 # cd that may not run before the push, or whose directory the gate can't read, leaves its
 # checkout unknown. A command substitution with no push in it, as in `d=$(cd x && pwd)`, runs
 # in its own shell and moves nothing.
-from shell_dirs import ASSIGNMENT, Walk
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, Walk
 walk = Walk(re.sub(r"\$\([^()`]*\)", lambda m: m.group(0) if PUSHY.search(m.group(0)) else "''", code), cwd)
-pushes = []  # (kind, args, checkout, and why the gate can't tell the checkout, or None)
-for _, words, lead in walk:
+# A commit, rebase, or other branch move earlier in the command runs after the gate reads the
+# tips, so each push after one counts every PR it reaches as moved. A switch of branch or
+# stack earlier changes which branches the push reads, so the gate can't tell them.
+SWITCHES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:checkout|switch)\b"
+                      r"|\bgh\s+(?:pr\s+(?:checkout|co)|stack\s+(?:checkout|switch|up|down|top|bottom|add|init))\b")
+pushes, earlier, switched = [], False, None  # (kind, args, checkout, why it can't tell the checkout or None, earlier)
+for piece, words, lead in walk:
     words = words[lead:]
     while words and (words[0] in RUNS or ASSIGNMENT.match(words[0])):
         words = words[1:]
-    where, unknown = walk.cwd, walk.unknown.get("dir")
+    where, unknown = walk.cwd, walk.unknown.get("dir") or switched
+    found = None
     if words[:3] in (["gh", "stack", "push"], ["gh", "stack", "submit"], ["gh", "stack", "sync"]):
         if not {"-h", "--help"} & set(words[3:]):
-            pushes.append((words[2], words[3:], where, unknown))
+            found = (words[2], words[3:], where, unknown, earlier)
     elif words[:1] == ["git"]:
         at = 1
         while at < len(words) and words[at].startswith("-"):
@@ -114,7 +123,13 @@ for _, words, lead in walk:
                 where = os.path.normpath(os.path.join(where, os.path.expanduser(words[at + 1])))
             at += 2 if words[at] in GIT_VALUED else 1
         if words[at:at + 1] == ["push"] and not {"-h", "--help", "-n", "--dry-run"} & set(words[at + 1:]):
-            pushes.append(("git", words[at + 1:], where, unknown))
+            found = ("git", words[at + 1:], where, unknown, earlier)
+    pushes += [found] if found else []
+    # A push moves no local branch, so of the pushes only a sync's rebase counts for those after it.
+    text = walk.pieces[piece]
+    earlier = earlier or bool(BRANCH_MOVES.search(text)) and not (found and found[0] != "sync")
+    switch = SWITCHES.search(text)
+    switched = switched or switch and f"runs `{switch.group(0)}` before it pushes, which changes the branches the push reads"
 if not pushes:
     passes(NO_PUSH)
 
@@ -271,10 +286,10 @@ def approvals(pr):
 
 try:
     live = {}  # PR number: (pr, branch, local tip, approvals)
-    for kind, args, where, unknown in pushes:
+    for kind, args, where, unknown, earlier in pushes:
         if unknown:
-            raise RuntimeError(f"this command {unknown}, so the gate can't tell which checkout pushes: run the push "
-                               "as `cd <checkout> && …` on a literal path")
+            raise RuntimeError(f"this command {unknown}, so the gate can't tell what it pushes: run the push "
+                               "as its own command, or as `cd <checkout> && …` on a literal path")
         targets, repo = (stack_targets(kind, args, where), None) if kind != "git" else git_targets(args, where)
         for branch, local, known in targets:
             if kind != "git" and not known:
@@ -282,14 +297,16 @@ try:
                     print(f"{branch}: no PR (from {where})")
                 continue
             pr = pull_request(where, branch, known, repo)
-            changed = pr is not None and local != pr["headRefOid"]
+            local, how = (None, "a tip an earlier command in this one makes") if earlier else (
+                local, None if local else "a rebased tip")
+            changed = pr is not None and (how is not None or local != pr["headRefOid"])
             if DRY_RUN:
                 said = ("no open PR" if pr is None else f"#{pr['number']}, " + (
-                    "unchanged" if not changed else f"{pr['headRefOid'][:10]} → {local[:10] if local else 'a rebased tip'}"))
+                    "unchanged" if not changed else f"{pr['headRefOid'][:10]} → {local[:10] if local else how}"))
                 print(f"{branch}: {said} (from {where})")
             approved = approvals(pr) if changed else []
             if approved:
-                live[pr["number"]] = (pr, branch, local, approved)
+                live[pr["number"]] = (pr, branch, local[:10] if local else how, approved)
 except Exception as error:
     deny(f"couldn't check what this push would move ({error})")
 if not live:
@@ -366,10 +383,9 @@ if DRY_RUN:
 if go:
     passes("the user's latest prompt names each dismissal")
 reasons = []
-for n, (pr, branch, local, found) in sorted(live.items()):
+for n, (pr, branch, to, found) in sorted(live.items()):
     who = " and ".join(f"{login}'s approval (submitted {when[:10]} {when[11:16]} UTC)" for login, when in found)
-    moves = f"{pr['headRefOid'][:10]} to {local[:10]}" if local else f"{pr['headRefOid'][:10]} to a rebased tip"
-    reasons.append(f"pushing `{branch}` moves #{n} from {moves}, which dismisses {who}")
+    reasons.append(f"pushing `{branch}` moves #{n} from {pr['headRefOid'][:10]} to {to}, which dismisses {who}")
 reasons.extend([note] if note else [])
 refs = " and ".join(f"#{n}" for n in sorted(live))
 approvers = " and ".join(sorted({login for *_, found in live.values() for login, _ in found}))
