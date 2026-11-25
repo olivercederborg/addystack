@@ -162,7 +162,7 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   unwatching to the coordinator, and report maintenance done, or what the next wake
   waits for, to it.
 
-**Done when:** maintenance is done, each open, ready PR in scope is watched until checks,
-and the rest are unwatched; or each unfinished PR in scope is watched and the report
+**Done when:** maintenance is done, each open, ready PR of the user's in scope is watched
+until checks, unless the user asked to stop watching it, and the rest are unwatched; or each unfinished PR in scope is watched and the report
 names what the next wake waits for. In a coordinator's worker, the report to the
 coordinator names either one.
