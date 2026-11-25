@@ -110,7 +110,7 @@ typed call stack, both as in [views](references/views.md).
 ````markdown
 🔴 **Hold for one fix: an export returns every company's rows.**
 
-#412 adds date-range CSV exports · +120 −30 in 4 files · 5/10: skips tenancy
+[#412, Add date-range CSV exports](https://github.com/acme/app/pull/412) · +120 −30 in 4 files · 5/10: skips tenancy
 
 ```ts
 // exports/handler.ts:18: the query has no company filter

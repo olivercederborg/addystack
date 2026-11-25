@@ -208,7 +208,7 @@ Write a handoff note beside the decision log: the goal, the verified state, the 
 items, and the next step.
 
 ````markdown
-🟡 **Settings lists each account's owner; 2 races open in #102.**
+🟡 **Settings lists each account's owner; 2 races open in [#102, Server accounts](…).**
 
 ```text
 main
@@ -218,11 +218,11 @@ main
 ```
 
 - **Do**: run checks 11 and 12 (Face ID) on your phone; the build is installed.
-- **Decide**: the 2 races in #102. Pick: fix the shared lock next milestone.
+- **Decide**: the 2 races. Pick: fix the shared lock next milestone.
 
 <details><summary>Checks: ⬜ 2 yours on a device · ✅ 3 passed, and the decision log</summary>
 
-⬜ 2 checks yours on a device · ✅ 10/12 checks · ✅ verify-work done on each layer · ✅ review-loop clean on #101 and #103
+⬜ 2 checks yours on a device · ✅ 10/12 checks · ✅ verify-work done on each layer · ✅ review-loop clean
 
 Decisions logged: 14, the 3 that shaped behavior listed here. Optional findings: 2 queued.
 

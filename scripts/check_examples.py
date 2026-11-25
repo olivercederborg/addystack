@@ -14,7 +14,9 @@ with four or more backticks. Inside one, this fails on:
 - an idioms check that doesn't name its lenses, as in `✅ idioms (typescript-style)`;
 - a turn block that doesn't parse (`hooks/turn_block.py`), when the example carries one.
   An example without one passes, and so does one shown in code;
-- a third Next option, `c`, where replies.md allows two.
+- a third Next option, `c`, where replies.md allows two;
+- an issue or PR id, such as DEV-3127 or #124, cited with no link whose text names it
+  (`hooks/named_links.py`), as reply-shape's "Links that name" asks.
 
 It checks every SKILL.md, plus `replies.md` and reply-shape's references.
 
@@ -26,7 +28,7 @@ import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / "skills" / "primitive" / "addystack" / "hooks"))
-import turn_block  # noqa: E402
+import named_links, turn_block  # noqa: E402
 
 LABEL_SENTENCE = re.compile(r"^\*\*(Decide|Review|Do)\*\* ")
 ENDING = re.compile(r"^\*\*(Next|Done)\*\*")
@@ -79,6 +81,9 @@ def check_block(start, block):
             turn_block.parse("\n".join(block))
         except turn_block.Malformed as error:
             problems.append((start + carried[0], f"turn block: {error}"))
+    for cited in named_links.unnamed("\n".join(block)):
+        problems.append((start + cited.line,
+                         f"cites {cited.id} without a link that names it, as in `[{cited.id}, title](url)`"))
     return problems
 
 
