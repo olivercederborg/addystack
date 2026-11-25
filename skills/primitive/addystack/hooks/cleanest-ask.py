@@ -6,8 +6,9 @@ and most idiomatic long-term solution?" before they type it.
 
 It sends only when all of these hold:
 - the reply's turn block (turn_block.py) stops with a `review` or `decide` need;
-- one top-level T3 thread owns the session, not a delegated child or a coordinator's
-  worker (t3_child.py), and it's the thread T3CODE_THREAD_ID names, when set;
+- one top-level T3 thread owns the session, not a delegated child, a coordinator's worker
+  (t3_child.py), or a T3 workflow's step, and it's the thread T3CODE_THREAD_ID names, when
+  set;
 - the thread is a review thread: its title starts `◎ #<number>`, which review-teammate-pr
   sets first, and which post-in-the-matrix's review_thread.py and the trial's baseline
   count by;
@@ -62,8 +63,8 @@ def review_thread(session):
             if len(owners) != 1:
                 raise Skip("no single T3 thread owns the session")
             thread = owners[0][0]
-            row = db.execute("select title from orchestration_v2_projection_threads where thread_id = ?",
-                             (thread,)).fetchone()
+            row = db.execute("select title, json_extract(payload_json, '$.lineage.workflowStep') "
+                             "from orchestration_v2_projection_threads where thread_id = ?", (thread,)).fetchone()
     except sqlite3.Error as error:
         raise Skip(f"can't read T3's state database ({error})") from None
     named = os.environ.get("T3CODE_THREAD_ID", "").strip()
@@ -71,6 +72,8 @@ def review_thread(session):
         raise Skip("T3CODE_THREAD_ID names another thread")
     if str(thread).startswith("thread:delegated-task:") or t3_child.delegated_brief(session) is not None:
         raise Skip("a delegated child")
+    if row and row[1]:  # a T3 workflow's unattended step, whose prompts T3 records as the system's
+        raise Skip("a workflow step")
     if not (row and isinstance(row[0], str) and REVIEW_TITLE.match(row[0])):
         raise Skip("not a review thread")
     return thread

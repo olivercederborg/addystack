@@ -603,18 +603,20 @@ class CleanestAsk(unittest.TestCase):
         self.env = {"T3_STATE_DB": self.db(), "T3CODE_CLI_PATH": str(cli), "T3CODE_THREAD_ID": self.THREAD,
                     "CLAUDE_CONFIG_DIR": str(self.dir / "claude"), "ADDYSTACK_STATE": str(self.dir / "state")}
 
-    def db(self, thread=THREAD, title="◎ #6215 · first-reviewer", first=ASK, first_by="user", agent_sent=()):
-        """T3's state database: thread owns SESSION, with this title and first message, and
-        each text in agent_sent sent into it by an agent."""
-        path = self.dir / f"state-{hashlib.sha1(repr((thread, title, first, first_by, agent_sent)).encode()).hexdigest()[:8]}.sqlite"
+    def db(self, thread=THREAD, title="◎ #6215 · first-reviewer", first=ASK, first_by="user", agent_sent=(), lineage=None):
+        """T3's state database: thread owns SESSION, with this title, lineage, and first
+        message, and each text in agent_sent sent into it by an agent."""
+        key = repr((thread, title, first, first_by, agent_sent, lineage))
+        path = self.dir / f"state-{hashlib.sha1(key.encode()).hexdigest()[:8]}.sqlite"
         with contextlib.closing(sqlite3.connect(path)) as db, db:
             db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, provider_thread_id text, payload_json text)")
-            db.execute("create table orchestration_v2_projection_threads (thread_id text, title text)")
+            db.execute("create table orchestration_v2_projection_threads (thread_id text, title text, payload_json text)")
             db.execute("create table orchestration_v2_projection_messages (thread_id text, role text, payload_json text, created_at text, run_id text)")
             db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
             db.execute("insert into orchestration_v2_projection_provider_threads values (?, 'p1', ?)",
                        (thread, json.dumps({"nativeThreadRef": {"nativeId": self.SESSION}})))
-            db.execute("insert into orchestration_v2_projection_threads values (?, ?)", (thread, title))
+            db.execute("insert into orchestration_v2_projection_threads values (?, ?, ?)",
+                       (thread, title, json.dumps({"lineage": lineage or {"parentThreadId": None}})))
             db.executemany("insert into orchestration_v2_projection_messages values (?, 'user', ?, ?, null)",
                            [(thread, json.dumps({"text": text, "createdBy": by}), f"2026-11-25T10:0{n}:00Z")
                             for n, (text, by) in enumerate([(first, first_by), *((t, "agent") for t in agent_sent)])])
@@ -701,6 +703,10 @@ class CleanestAsk(unittest.TestCase):
                           ("review-loop reviewer", {"T3_STATE_DB": self.db("thread:delegated-task:r1", "◎ #6215 r1 · gpt-6.1"),
                                                     "T3CODE_THREAD_ID": "thread:delegated-task:r1"}),
                           ("not a review thread", {"T3_STATE_DB": self.db(title="Fix the login redirect")}),
+                          # An unattended workflow review on Nov 23, 2026, whose prompts T3 records as the system's.
+                          ("workflow step", {"T3_STATE_DB": self.db("workflow:fefcbdb4", first_by="system",
+                                                                    lineage={"workflowStep": True}),
+                                             "T3CODE_THREAD_ID": "workflow:fefcbdb4"}),
                           ("another thread's id", {"T3CODE_THREAD_ID": "mcp:launch:other"}),
                           ("no T3", {"T3_STATE_DB": str(self.dir / "missing.sqlite")})):
             with self.subTest(name):
