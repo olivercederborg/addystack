@@ -14,7 +14,8 @@
     {"id": "watch-reminder", "tags": ["workflow"], "event": "PostToolUse", "matcher": "mcp__t3-code__pull_request_update|mcp__t3-code__pull_request_create|Bash", "command": "{{kit}}/hooks/watch-reminder.py", "timeout": 10},
     {"id": "card-check", "tags": ["workflow"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/card-check.py", "timeout": 10},
     {"id": "cleanest-ask", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py", "timeout": 30},
-    {"id": "cleanest-ask-impl", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py --scope implementation", "timeout": 30}
+    {"id": "cleanest-ask-impl", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py --scope implementation", "timeout": 30},
+    {"id": "named-links-notice", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/named-links-notice.py", "timeout": 10}
   ],
   "codex": [
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
@@ -22,6 +23,7 @@
     {"id": "skills-checkout-check", "tags": ["machine"], "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/skills-checkout-check.py", "timeout": 10},
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60},
     {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60},
-    {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60}
+    {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60},
+    {"id": "named-links-notice", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "UserPromptSubmit", "matcher": null, "command": "{{kit}}/hooks/named-links-notice.py", "timeout": 10}
   ]
 }
