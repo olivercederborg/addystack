@@ -148,9 +148,10 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   watching yet, including a PR the user asked to babysit that had no watch. The next
   wake runs another pass.
 - **Done**: hand the thread back to the user's inbox. A PR in scope that's open and
-  ready (not a draft) still waits on reviewers, so it stays watched: call
-  `watch_pull_request` on it with `until: "checks"`, which returns the thread to the
-  inbox and still wakes it on reviews, comments, and failed checks. Call
+  ready (not a draft) still waits on reviewers, so it stays watched until checks, which
+  returns the thread to the inbox and still wakes it on reviews, comments, and failed
+  checks: a new watch starts there, so call `watch_pull_request` with `until: "checks"`
+  only when this thread doesn't watch it yet or set `until: "merged"`. Call
   `unwatch_pull_request` only on a PR that merged or closed, a draft, or one the user's
   latest message asks to stop watching; the unwatch gate denies any other. Then stop at
   the user's merge rule for the repo's trust value, and report.
