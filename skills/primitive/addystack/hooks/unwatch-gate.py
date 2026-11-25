@@ -39,7 +39,9 @@ tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), 
 # A request to stop watching, and the refusals that read like one.
 STOP = re.compile(r"\bun-?watch\b|\bstop (?:watching|babysitting)\b|\b(?:no need to|don'?t|do not) (?:keep )?(?:watch|babysit)", re.I)
 REFUSAL = re.compile(r"\b(?:no need to|don'?t|do not|never|without) (?:un-?watch|stop (?:watching|babysitting))|\bkeep (?:watching|the watch|it watched)", re.I)
-ASK = 'call `watch_pull_request` with `until: "checks"` instead: the thread then returns to the user\'s inbox once checks finish, and the watch still wakes it on reviews, comments, and failed checks'
+ASK = ('end the turn with the watch on: a watch runs `until: "checks"` unless set to `"merged"`, so the thread '
+       "returns to the user's inbox once checks finish and still wakes on reviews, comments, and failed checks; "
+       'call `watch_pull_request` with `until: "checks"` only when it watches until merged')
 
 
 def passes(why):
