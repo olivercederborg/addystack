@@ -23,7 +23,9 @@ re-request <reviewer> on #6119", gives no go, nor does a T3 delegated child, or,
 state database it can't read or a session no T3 thread owns.
 
 The gate reads pushes outside quotes and heredocs, at the start of a command after `cd`,
-`&&`, `;`, a pipe, or a subshell, and follows `cd <path>` and `git -C <path>`. For gh
+`&&`, `;`, a pipe, or a subshell, and follows `git -C <path>` and each cd, pushd, and popd
+as shell_dirs.Walk reads them for merge-gate.py, denying a push after one it can't read or
+that may not run before it, such as a `cd` inside a subshell or after `||`. For gh
 stack, the branches are the current stack's unmerged, unqueued ones, with their PRs from
 `gh stack view --json`; a sync rebases a branch below which anything moved, or whose
 parent, the trunk's tip on the remote for the lowest, isn't in it. For git push, they are
@@ -36,10 +38,9 @@ Fails closed: when a check can't run, the push is denied. Codex runs it too, but
 or timeout there lets the push through, since Codex has no `onFailure: "block"`. Known
 limits: a push through `gh api`, a git alias, a script, `gh` or `git` run by its path, a
 command that runs only inside quotes or a heredoc (`bash -c '…'`), one a tool such as
-`xargs` repeats, a `cd` inside a subshell before a push outside it, a remote's
-configured `push` refspecs, a GitHub remote behind an ssh host alias, which reads as off
-GitHub, and in Codex a push reached only through `workdir`, which is checked
-against the session's cwd. It assumes the repo dismisses stale approvals, so in one that
+`xargs` repeats, a remote's configured `push` refspecs, a GitHub remote behind an ssh
+host alias, which reads as off GitHub, and in Codex a push reached only through
+`workdir`, which is checked against the session's cwd. It assumes the repo dismisses stale approvals, so in one that
 doesn't it denies a push that would dismiss nothing, and an approval that lands between
 the check and the push isn't seen.
 
@@ -67,7 +68,8 @@ def passes(why):
     sys.exit(0)
 
 
-if not re.search(r"\bpush\b|\bsubmit\b|\bsync\b", command):  # most commands: no parse, no gh
+PUSHY = re.compile(r"\bpush\b|\bsubmit\b|\bsync\b")
+if not PUSHY.search(command):  # most commands: no parse, no gh
     passes(NO_PUSH)
 
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
@@ -79,43 +81,39 @@ code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 code = re.sub(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", "", code, flags=re.M)  # nor are comments
 
-# Words that may lead a command, so `time git push` and `if gh stack push; then` still push.
-LEADS = {"if", "while", "until", "then", "else", "elif", "do", "!", "{", "time", "builtin", "command", "env",
-         "nohup", "exec"}
-ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 # What only the shell can expand: a variable, a glob, a quoted string with spaces (''), or ~+ and ~-.
 UNREADABLE = re.compile(r"[$*?\[{`]|^''$|^~[+-]")
 # git's global options that take the next word as their value.
 GIT_VALUED = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--exec-path"}
+# Words that run the command after them, past shell_dirs.LEADS, so `env git push` still pushes.
+RUNS = {"env", "nohup", "exec"}
 
 
-def place(where, path):
-    """Where `cd path` leaves the shell, or None when only the shell knows."""
-    if where is None or UNREADABLE.search(path) or path == "-":
-        return None
-    return os.path.normpath(os.path.join(where, os.path.expanduser(path)))
-
-
-pushes, here = [], cwd  # pushes: (kind, args, checkout or None)
-for piece in re.split(r"&&|\|\||[;|&\n()`]", code):
-    words = piece.split()
-    while words and (words[0] in LEADS or ASSIGNMENT.match(words[0])):
+# Where each push runs, read as merge-gate.py and ready-gate.py read it (shell_dirs.Walk): a
+# cd that may not run before the push, or whose directory the gate can't read, leaves its
+# checkout unknown. A command substitution with no push in it, as in `d=$(cd x && pwd)`, runs
+# in its own shell and moves nothing.
+from shell_dirs import ASSIGNMENT, Walk
+walk = Walk(re.sub(r"\$\([^()`]*\)", lambda m: m.group(0) if PUSHY.search(m.group(0)) else "''", code), cwd)
+pushes = []  # (kind, args, checkout, and why the gate can't tell the checkout, or None)
+for _, words, lead in walk:
+    words = words[lead:]
+    while words and (words[0] in RUNS or ASSIGNMENT.match(words[0])):
         words = words[1:]
-    if not words:
-        continue
-    if words[0] == "cd":
-        here = place(here, words[1] if len(words) > 1 else "~")
-    elif words[:3] in (["gh", "stack", "push"], ["gh", "stack", "submit"], ["gh", "stack", "sync"]):
+    where, unknown = walk.cwd, walk.unknown.get("dir")
+    if words[:3] in (["gh", "stack", "push"], ["gh", "stack", "submit"], ["gh", "stack", "sync"]):
         if not {"-h", "--help"} & set(words[3:]):
-            pushes.append((words[2], words[3:], here))
-    elif words[0] == "git":
-        at, where = 1, here
+            pushes.append((words[2], words[3:], where, unknown))
+    elif words[:1] == ["git"]:
+        at = 1
         while at < len(words) and words[at].startswith("-"):
             if words[at] == "-C" and at + 1 < len(words):
-                where = place(where, words[at + 1])
+                if UNREADABLE.search(words[at + 1]):
+                    unknown = unknown or f"runs `git -C {words[at + 1]}`, whose directory it can't read"
+                where = os.path.normpath(os.path.join(where, os.path.expanduser(words[at + 1])))
             at += 2 if words[at] in GIT_VALUED else 1
         if words[at:at + 1] == ["push"] and not {"-h", "--help", "-n", "--dry-run"} & set(words[at + 1:]):
-            pushes.append(("git", words[at + 1:], where))
+            pushes.append(("git", words[at + 1:], where, unknown))
 if not pushes:
     passes(NO_PUSH)
 
@@ -272,10 +270,10 @@ def approvals(pr):
 
 try:
     live = {}  # PR number: (pr, branch, local tip, approvals)
-    for kind, args, where in pushes:
-        if where is None:
-            raise RuntimeError("this command `cd`s where only the shell knows, so the gate can't tell which checkout "
-                               "pushes: run the push as `cd <checkout> && …` on a literal path")
+    for kind, args, where, unknown in pushes:
+        if unknown:
+            raise RuntimeError(f"this command {unknown}, so the gate can't tell which checkout pushes: run the push "
+                               "as `cd <checkout> && …` on a literal path")
         targets, repo = (stack_targets(kind, args, where), None) if kind != "git" else git_targets(args, where)
         for branch, local, known in targets:
             if kind != "git" and not known:

@@ -3894,7 +3894,8 @@ class PushGate(unittest.TestCase):
                         f"git push origin {self.BRANCH}:{self.BRANCH} 2>&1 | tail -3", "git push --all origin",
                         f"cd {{repo}} && git push origin {self.BRANCH}", f"git -C {{repo}} push origin {self.BRANCH}",
                         f"FOO=1 time git push origin {self.BRANCH}", f"if git push origin {self.BRANCH}; then echo ok; fi",
-                        "gh stack submit --auto", "gh stack push --remote origin", "(cd {repo} && gh stack push)"]:
+                        "gh stack submit --auto", "gh stack push --remote origin", f"env git push origin {self.BRANCH}",
+                        "d=$(cd {repo}/.. && pwd); cd {repo} && gh stack push"]:
             with self.subTest(command=command):
                 cwd = self.repo if "{repo}" not in command else elsewhere
                 self.dismisses(self.reason(command, cwd=cwd))
@@ -3924,7 +3925,17 @@ class PushGate(unittest.TestCase):
                       self.reason("gh stack push"))
         self.assertIn("gh: network down", self.reason("git push"))
         self.scenario()
-        for command, why in [("d=$(pwd); cd $d && gh stack push", "`cd`s where only the shell knows"),
+        # A cd the gate can't read, or one that may not run before the push, as shell_dirs.Walk
+        # reads it for merge-gate.py and ready-gate.py. The old parser read `(cd mirror); git
+        # push` as a push from mirror, whose remote is off GitHub, and let it through.
+        mirror = os.path.join(self.dir, "mirror")
+        subprocess.run(["git", "init", "-q", "-b", "main", mirror], check=True)
+        self.git("remote", "add", "origin", "ssh://mirror.example/~/repo.git", cwd=mirror)
+        for command in ["(cd {repo}/../mirror); git push", "false || cd {repo}/../mirror; git push",
+                        "(cd {repo}/../mirror && gh stack push)", "\\cd {repo}/../mirror && git push", "git -C $D push"]:
+            with self.subTest(command=command):
+                self.assertIn("so the gate can't tell which checkout pushes", self.reason(command))
+        for command, why in [("d=$(pwd); cd $d && gh stack push", "runs `cd $d`, whose directory it can't read"),
                              ("git push origin \"$BRANCH\"", "can't tell which branch"),
                              ("git push origin --delete old", "deletes branches"),
                              ("cd /nonexistent && git push", "No such file or directory")]:
