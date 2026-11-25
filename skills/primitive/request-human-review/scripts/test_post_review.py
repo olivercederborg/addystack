@@ -4,6 +4,7 @@ standing request for changes dismissed once nothing holds the approval."""
 import importlib.util
 from importlib.machinery import SourceFileLoader
 import json
+import subprocess
 import pathlib
 import tempfile
 import unittest
@@ -196,7 +197,14 @@ class Post(unittest.TestCase):
                   '    gh event listen --resource https://github.com/o/r/pull/7\n'
                   '  - It prints the first event as a JSON line on stdout and exits.\n'
                   'GraphQL: Resource not accessible by integration (repository.pullRequest.commits)\n')
-        self.assertEqual(post_review._error(hinted), 'GraphQL: Resource not accessible by integration (repository.pullRequest.commits)')
+        failed = lambda arguments, **kwargs: subprocess.CompletedProcess(arguments, 1, '', hinted)
+        with patch.object(post_review.subprocess, 'run', failed):
+            for call, prefix in ((lambda: post_review.pr(7), 'gh pr view 7 failed: '),
+                                 (lambda: post_review.github('required', 7), 'github.sh required failed: ')):
+                with self.assertRaises(ValueError) as raised:
+                    call()
+                self.assertEqual(str(raised.exception),
+                                 prefix + 'GraphQL: Resource not accessible by integration (repository.pullRequest.commits)')
 
     def test_a_moved_head_posts_nothing(self):
         self.assertEqual(self.post(Fake(), head=NEWER), {'outcome': 'superseded', 'head': NEWER})
