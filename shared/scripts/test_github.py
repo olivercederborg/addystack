@@ -18,11 +18,9 @@ elif a.startswith("api repos/o/r/rules/branches/main"):
     print("\n".join(s["required"]))
 elif a.startswith("api repos/o/r/branches/main --jq"):
     print("\n".join(s.get("classic", [])))
-elif a.startswith("pr checks"):
+elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a and "workflowRun" not in a:
     if s["checks"] == "unreadable":
-        sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.statusCheckRollup)")
-    if not s["checks"]:
-        print("no checks reported on the 'x' branch", file=sys.stderr)
+        sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
     print("\n".join(f"{name}\t{bucket}" for name, bucket in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))

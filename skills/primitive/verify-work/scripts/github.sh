@@ -103,14 +103,20 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     classic=$(gh api "repos/$slug/branches/$base" --jq '.protection.required_status_checks // empty
       | select(.enforcement_level != "off") | (.contexts // [])[]') || exit 1
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
-    # Checks it can't read aren't "none": gh says so when a PR has none, and anything else
-    # that leaves no output, such as a token without the checks permission, is an error.
-    err=$(mktemp)
-    if ! checks=$(gh pr checks "$1" --json name,bucket --jq '.[] | "\(.name)\t\(.bucket)"' 2>"$err") \
-      && [ -z "$checks" ] && ! grep -q 'no checks reported' "$err"; then
-      cat "$err" >&2; rm -f "$err"; exit 1
-    fi
-    rm -f "$err"
+    # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go). Read
+    # here rather than through gh pr checks, which also asks for each check's workflow run,
+    # which a token without the actions permission, such as an App's, may not read. Checks it
+    # can't read are an error, never none.
+    checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
+query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
+  commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
+    nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}}}' \
+      --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
+        elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
+        elif . == "CANCELLED" then "cancel" else "pending" end;
+        .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
+        | if .__typename == "CheckRun" then "\(.name)\t\((if .status == "COMPLETED" then .conclusion else .status end) | bucket)"
+          else "\(.context)\t\(.state | bucket)" end') || exit 1
     # A check can run more than once (a cancelled duplicate); its best state counts. The
     # required contexts count, or every reported check when the base requires none; one
     # that failed, was cancelled, or is running shows CI ran.
