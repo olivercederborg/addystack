@@ -195,6 +195,7 @@ class Exchange(NamedTuple):
     reply: Optional[str]  # the last assistant text since the prompt before; None if there's none
     prompt: str  # as prompts() gives it
     agent: bool = False  # T3's state database says only other agents ever sent its text
+    raw: str = ""  # its text, typed or not, past T3's sender note
 
 
 def exchanges(path, strict=False):
@@ -241,7 +242,7 @@ def exchanges(path, strict=False):
                 sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
                 # Only a text the user never sent is surely another agent's, however T3's copies pair.
                 out.append(Exchange(reply, "" if sent_by_agent else text,
-                                    sent_by_agent and "user" not in senders[sent]))
+                                    sent_by_agent and "user" not in senders[sent], sent))
                 reply = None
     except (OSError, TypeError, UnicodeDecodeError, RecursionError):  # partway too, so an earlier go doesn't stand
         return []
