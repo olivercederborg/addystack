@@ -64,6 +64,11 @@ class Unnamed(unittest.TestCase):
                      {"key": "a", "class": "stop:merge", "text": "merge #124"}]}))
         self.assertEqual(ids(reply), [])
 
+    def test_a_fence_in_a_list_item_and_a_comment_opener_in_code_hide_only_code(self):
+        self.assertEqual(ids("- ```text\n  #12\n  ```\n\nFixed #14."), ["#14"])
+        self.assertEqual(ids("> ~~~\n> #12\n> ~~~\nand #15"), ["#15"])
+        self.assertEqual(ids("See `<!--` and DEV-7. <!-- not shown -->"), ["DEV-7"])
+
     def test_a_named_repo_id_covers_its_bare_number_but_not_another_repo(self):
         self.assertEqual(ids("[addystack#12, Fix the gate](u) then #12 and dotfiles#12"), ["dotfiles#12"])
         self.assertEqual(ids("[#12, Fix the gate](u) then dotfiles#12"), ["dotfiles#12"])

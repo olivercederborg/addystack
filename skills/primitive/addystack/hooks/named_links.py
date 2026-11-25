@@ -8,7 +8,7 @@ replies with it, and scripts/check_examples.py the kit's example replies."""
 import re
 from typing import List, NamedTuple
 
-from turn_block import in_fence, lines_ended
+from turn_block import lines_ended
 
 # Standards and versions written like a Linear id, such as UTF-8, SHA-256, or GPT-4.
 STANDARDS = {"UTF", "SHA", "GPT", "ISO", "CVE", "RFC", "ADR", "AES", "RSA", "TLS", "SSL", "PEP", "UTC", "GMT",
@@ -16,6 +16,9 @@ STANDARDS = {"UTF", "SHA", "GPT", "ISO", "CVE", "RFC", "ADR", "AES", "RSA", "TLS
 # A code span: a backtick run, then the text up to the next run of the same length.
 CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`)(.+?)(?<!`)\1(?!`)", re.S)
 COMMENT = re.compile(r"<!--.*?-->", re.S)
+# A fence line: after any indent, quote markers, and list markers, three or more backticks
+# or tildes, as in a fence nested in a list item ("- ```text").
+FENCE = re.compile(r"^(?:\s*(?:>|[-*+]\s|\d+[.)]\s))*\s*(`{3,}|~{3,})")
 # [text](destination "title"), allowing one level of parentheses in the destination.
 LINK = re.compile(r"\[([^\[\]\n]*)\](\(\s*(?:<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*)"
                   r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\s*\))")
@@ -68,12 +71,33 @@ def covered(cited, named):
         other[0] == "pull" and other[2] == number for other in named))
 
 
+def fenced(lines):
+    """For each line, True when it is a fence line or inside a fenced code block. Unlike
+    turn_block.in_fence, which refuses a fence it can't place, this places one anywhere
+    a reader sees it: nested in a list item or a quote, or indented."""
+    marks, fence = [], None
+    for line in lines:
+        found = FENCE.match(line)
+        if fence is None and found:
+            fence = found.group(1)
+            marks.append(True)
+        elif fence is not None:
+            if found and found.group(1)[0] == fence[0] and len(found.group(1)) >= len(fence) \
+                    and not line[found.end():].strip():
+                fence = None
+            marks.append(True)
+        else:
+            marks.append(False)
+    return marks
+
+
 def visible(text):
-    """text with what a reader doesn't read as prose blanked: fenced code, HTML comments
-    (the turn block is one), and code spans. Line breaks stay, so lines keep their number."""
+    """text with what a reader doesn't read as prose blanked: fenced code, code spans, and
+    HTML comments (the turn block is one), in that order, so a `<!--` shown in code hides
+    nothing. Line breaks stay, so lines keep their number."""
     lines = lines_ended(text).split("\n")
-    text = "\n".join("" if fenced else line for line, fenced in zip(lines, in_fence(lines)))
-    return CODE_SPAN.sub(blank, COMMENT.sub(blank, text))
+    text = "\n".join("" if fence else line for line, fence in zip(lines, fenced(lines)))
+    return COMMENT.sub(blank, CODE_SPAN.sub(blank, text))
 
 
 def unnamed(text: str) -> List[Cited]:
