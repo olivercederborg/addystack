@@ -2,10 +2,10 @@
 
 Read before launching an owner thread: a top-level thread that owns one PR and watches
 it. Owners share two slots, so at most two build or run heavy checks at once. An owner
-holds its slot until its PR reaches maintenance done, not just until its draft opens. Queue the owners past two. Every launch, a queued owner's and a
-relaunch included, passes the PR owner row of
-[t3-delegation's Roles table](t3-delegation.md#roles) as `modelSelection`, since a
-launch without one takes the launching thread's model.
+holds its slot until its PR reaches maintenance done, not just until its draft opens.
+Queue the owners past two. Every launch, a queued owner's and a relaunch included,
+passes the PR owner row of [t3-delegation's Roles table](t3-delegation.md#roles) as
+`modelSelection`, since a launch without one takes the launching thread's model.
 
 Every message to an owner carries the standing rules file in full, and each new line
 goes to every open owner at once.

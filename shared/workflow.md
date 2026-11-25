@@ -53,11 +53,12 @@ gated        brain dump ─▶ scope-grill ─▶ architect ─▶ "go" ─▶ a
 
 Autopilot runs `babysit` once on its draft PRs: it restacks conflicts, handles review
 threads, and reruns or fixes CI, then pushes once and replies. Only PRs left unfinished
-after that pass get a watch, and each wake runs another pass. Maintenance done means
-the required checks are green (every check, when the base requires none), threads are
+after that pass get a watch, and each wake runs another pass. Maintenance done means the
+required checks are green (every check, when the base requires none), threads are
 handled, and nothing conflicts; babysit then keeps the watch only on a ready PR, which
-still waits on reviewers, and stops at the repo's merge rule. Independent PRs each get an owner thread that watches its own PR, and an
-hourly check reports on the owners while any are open.
+still waits on reviewers, and stops at the repo's merge rule. Independent PRs each get
+an owner thread that watches its own PR, and an hourly check reports on the owners while
+any are open.
 
 ## Projects
 
