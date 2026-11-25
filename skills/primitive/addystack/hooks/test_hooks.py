@@ -671,6 +671,21 @@ class CleanestAsk(unittest.TestCase):
         # A reply that ends done closes the run: a later re-review asks again.
         self.assertEqual(len(self.stop(*answered, ("b", card("done")), ("re-review the new commits", card()))), 2)
 
+    def test_sends_on_the_card_after_a_delegated_reviewers_result(self):
+        # On the devbox, 18 of the 23 cards the user asked on in the week to Nov 25, 2026 came
+        # right after review-loop's reviewer reported back, as in ◎ #6217.
+        result = "Delegated task node:delegated-task:rl-6215-r1 (◎ #6215 r1 · gpt-6.1) [completed]:\nTwo findings."
+        env = {"T3_STATE_DB": self.db(first="Review #6215 with the review-teammate-pr skill.", first_by="agent",
+                                      agent_sent=(result,))}
+        self.assertEqual(self.stop(("Review #6215 with the review-teammate-pr skill.", card("running")), (result, card()),
+                                   env=env), [f"thread|send|{self.THREAD}|/cleanest|"])
+
+    def test_a_cleanest_the_user_typed_earlier_doesnt_hide_a_queued_send(self):
+        earlier = [(self.ASK, card()), (self.COMMAND, card()), ("b", card("done")), ("re-review it", card())]
+        self.assertEqual(len(self.stop(*earlier)), 1)
+        self.assertEqual(len(self.stop(*earlier, ("tighten comment 2", card()))), 1)
+        self.assertEqual(self.log()[-1]["reason"], "a /cleanest this hook sent is still queued")
+
     def test_skips_a_run_where_the_user_asked_themselves(self):
         self.assertEqual(self.stop((self.ASK, card()), ("is this the cleanest, best and most idiomatic long-term solution?", card()),
                                    ("a", card())), [])

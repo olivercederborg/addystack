@@ -12,8 +12,9 @@ It sends only when all of these hold:
 - the thread is a review thread: its title starts `◎ #<number>`, which review-teammate-pr
   sets first, and which post-in-the-matrix's review_thread.py and the trial's baseline
   count by;
-- the latest prompt is the user's own (user_turn.py), not a PR-watch wake, a coordinator
-  tick, another agent's message, or a `/cleanest`;
+- the latest prompt is the user's own (user_turn.py), or T3's notice that a delegated child,
+  such as review-loop's reviewer, finished, which review-teammate-pr's card follows; not a
+  PR-watch wake, a coordinator tick, another agent's message, or a `/cleanest`;
 - the run hasn't asked yet: no prompt since the last reply whose turn block is `done` is a
   `/cleanest` or the user's own quality-bar ask (ASKED), and no `/cleanest` this hook sent
   in this session is still waiting in T3's queue;
@@ -40,6 +41,8 @@ COMMAND = "/cleanest"
 REVIEW_TITLE = re.compile(r"◎ #\d")
 # The user's own quality-bar ask, as R183 counted it: the run already has its answer.
 ASKED = re.compile(r"cleanest|idiomatic|long[- ]term|best practice", re.I)
+# How T3 starts the notice that a delegated child finished.
+CHILD_RESULT = "Delegated task node:"
 LOG = pathlib.Path(os.environ.get("ADDYSTACK_STATE", "~/.local/state/addystack")).expanduser() / "cleanest-ask.jsonl"
 
 
@@ -79,26 +82,43 @@ def review_thread(session):
     return thread
 
 
-def sent_here(thread, session):
-    """How many /cleanest this hook sent to thread in session, from the log."""
+def queued(thread, session, asked):
+    """Whether a /cleanest this hook sent to thread in session hasn't arrived yet: the log
+    records how many /cleanest prompts the session held when it sent, and none came since."""
     try:
         lines = LOG.read_text().splitlines()
     except FileNotFoundError:
-        return 0
-    count = 0
+        return False
     for line in lines:
         try:
             row = json.loads(line)
         except ValueError:
             continue
-        count += isinstance(row, dict) and row.get("sent") is True and (row.get("thread"), row.get("session")) == (thread, session)
-    return count
+        if (isinstance(row, dict) and row.get("sent") is True and (row.get("thread"), row.get("session")) == (thread, session)
+                and isinstance(row.get("asked"), int) and row["asked"] >= asked):
+            return True
+    return False
 
 
-def check_run(found, thread, session):
-    """Raises Skip unless the latest prompt is the user's and this run hasn't asked yet."""
+def latest_raw(path):
+    """The text of the transcript's last prompt, typed or not."""
+    raw = ""
+    with open(path) as transcript:
+        for line in transcript:
+            try:
+                entry = json.loads(line)
+            except (ValueError, RecursionError):
+                continue
+            if transcripts.prompt_text(entry) is not None:
+                raw = "\n".join(transcripts.texts(transcripts.text_parts(entry))).strip()
+    return raw
+
+
+def check_run(found, path, thread, session):
+    """The session's /cleanest prompts so far; raises Skip unless the latest prompt is the
+    user's or a child's result and this run hasn't asked yet."""
     latest = found[-1].prompt
-    if not latest:
+    if not latest and not latest_raw(path).startswith(CHILD_RESULT):
         raise Skip("the latest prompt isn't the user's: a wake, a tick, or another agent's message", thread)
     if own_command(latest):
         raise Skip(f"the latest prompt is {COMMAND}", thread)
@@ -110,12 +130,14 @@ def check_run(found, thread, session):
                 break
         except turn_block.Malformed:
             pass
-    if sent_here(thread, session) > sum(own_command(exchange.prompt) for exchange in found):
+    asked = sum(own_command(exchange.prompt) for exchange in found)
+    if queued(thread, session, asked):
         raise Skip(f"a {COMMAND} this hook sent is still queued", thread)
+    return asked
 
 
 def decide(payload):
-    """The thread to send /cleanest to; raises Skip."""
+    """The thread to send /cleanest to, and its session's /cleanest prompts so far; raises Skip."""
     try:
         turn = turn_block.parse(payload.get("last_assistant_message") or "")
     except turn_block.Malformed as error:
@@ -132,13 +154,13 @@ def decide(payload):
         raise Skip(f"can't tell who sent the latest prompt ({error})", thread) from None
     if not found:
         raise Skip("can't tell who sent the latest prompt", thread)
-    check_run(found, thread, session)
+    asked = check_run(found, payload.get("transcript_path"), thread, session)
     home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.expanduser("~/.claude")
     if not os.path.isfile(os.path.join(home, "commands", "cleanest.md")):
         raise Skip(f"{COMMAND} isn't installed; run addystack install", thread)
     if not os.environ.get("T3CODE_CLI_PATH"):
         raise Skip("no T3 CLI (T3CODE_CLI_PATH)", thread)
-    return thread
+    return thread, asked
 
 
 def log(row):
@@ -167,7 +189,7 @@ def main():
         payload = user_turn.dry_run_payload(["(stop)", *sys.argv[2:]], "cleanest-ask.py")
         try:
             payload["last_assistant_message"] = last_reply(payload["transcript_path"]) if payload["transcript_path"] else None
-            print(f"would send {COMMAND} to {decide(payload)}")
+            print(f"would send {COMMAND} to {decide(payload)[0]}")
         except Skip as skip:
             print(f"skip: {skip}")
         except Exception as error:  # noqa: BLE001 - the live hook stays silent on these too
@@ -176,12 +198,12 @@ def main():
     payload = {}
     try:
         payload = json.load(sys.stdin)
-        thread = decide(payload)
+        thread, asked = decide(payload)
         sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", thread, COMMAND],
                               capture_output=True, text=True, timeout=20)
         if sent.returncode:
             raise Skip(f"t3 thread send failed: {(sent.stderr or sent.stdout).strip()[:300]}", thread)
-        log({"session": payload.get("session_id"), "thread": thread, "sent": True})
+        log({"session": payload.get("session_id"), "thread": thread, "sent": True, "asked": asked})
     except Skip as skip:
         if skip.thread:
             log({"session": payload.get("session_id"), "thread": skip.thread, "sent": False, "reason": str(skip)})
