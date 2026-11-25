@@ -3860,7 +3860,11 @@ class PushGate(unittest.TestCase):
                 "push #6091 would dismiss the approval, so ping me first",
                 "push #6091 dismisses the teammate's approval. ask me first",
                 "push #6091 dismisses the teammate's approval; I'll decide tomorrow",
-                "push #6091 (dismisses the teammate's approval), so ask me first")),
+                "push #6091 (dismisses the teammate's approval), so ask me first",
+                # verify-work on ae9214f: a delay, a warning, or a report with the dismissal last.
+                "push #6091 tomorrow (dismisses the approval)", "push #6091 is risky, it dismisses the approval",
+                "push #6091 failed and dismissed the approval", "push #6091 next week, dismissing the approval",
+                "push everything except #6091 (dismisses approvals)")),
             (("fix it", self.offer({**restack, "text": "push #6091 once the teammate dismisses their approval"},
                                    text="Restack?\n\n"), "a"), "isn't a plain request to push"),
         ]:

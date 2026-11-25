@@ -350,14 +350,18 @@ except Exception as error:
 if not live:
     passes("no PR this push moves has a live approval")
 
-# A go's whole shape, as the denial suggests it: words of assent, a push verb with its object
-# (not "push to #N", which describes one), and last the dismissal set off by "(", a comma, or
-# "and": "push #6119 (dismisses the teammate's approval)", "go ahead and push #6119, it
-# dismisses …", never "pushing #6119 dismisses the approval" or a warning after it.
-GO = re.compile(r"^\W*(?:(?:ok|okay|yes|yep|sure|go ahead(?: and)?|please|then|so|lets|let's|and)\b[\s,.:!-]*)*"
-                r"(?:force-?push|push|restack|re-stack|rebase|sync|submit)\b(?!\s+(?:to|on|of|for|at|in|into|onto)\b)"
-                r".*(?:\(\s*|,\s*(?:it\s+|which\s+)?|\band\s+)dismiss\w*\s+(?:\S+\s+){0,6}?approv\w*\)?[\s.!]*$",
-                re.I | re.S)
+# A go's whole shape, built as merge_go.LITERAL_GO is, from fixed lists so no free words fit:
+# merge_go's OPENER, then push steps, each a verb with its PRs (merge_go.REFS), it, or the
+# stack, and a branch it goes onto, then last the dismissal of whose approval: "push #6119
+# (dismisses the teammate's approval)", "ok, restack and push #6091, dismissing …", never
+# "push #6119 tomorrow (dismisses …)" or "push #6119 is risky, it dismisses …".
+import merge_go
+STEP = (rf"(?:force-?push|push|restack|re-stack|rebase|sync|submit)(?:\s+(?:it|them|both|the (?:stack|branch)|{merge_go.REFS}))?"
+        r"(?:\s+(?:onto|on top of)\s+`?[\w./-]+`?)?")
+WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:[\w.@-]+(?:'s)?,?\s+(?:and\s+)?){0,5}"
+DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
+             rf"|,?\s+(?:and\s+)?(?:it\s+|which\s+)?dismiss(?:es|ing)?\s+{WHOSE}approvals?)")
+GO = re.compile(rf"{merge_go.OPENER}{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL}[.!]?", re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
 REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
@@ -369,7 +373,7 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|neve
 def literal_go(text):
     """Whether text is a short typed request to push that says it dismisses an approval."""
     text = text.strip().replace("’", "'")
-    return len(text) <= 200 and bool(GO.match(text)) and not REFUSAL.search(text)
+    return len(text) <= 200 and bool(GO.fullmatch(text)) and not REFUSAL.search(text)
 
 
 def slug(pr):
