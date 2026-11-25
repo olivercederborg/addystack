@@ -87,8 +87,8 @@ class Post(unittest.TestCase):
         command, arguments, files = fake.writes[0]
         self.assertEqual(arguments[1:3], [HEAD, ''])
         self.assertIn('- non-blocking: name it total_cents · `db/schema.ts:12`\n  Nit: name it total_cents.', files['body.md'])
-        # The head and the required checks are the last reads before the approval.
-        self.assertEqual(fake.commands[fake.commands.index('approve') - 2:fake.commands.index('approve')], ['head', 'required'])
+        # The required checks, then the head, are the last reads before the approval.
+        self.assertEqual(fake.commands[fake.commands.index('approve') - 2:fake.commands.index('approve')], ['required', 'head'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
@@ -144,6 +144,32 @@ class Post(unittest.TestCase):
         racing = Fake(heads=[NEWER], active={'id': 42, 'state': 'APPROVED', 'commit_id': NEWER})
         self.assertEqual(self.post(racing)['outcome'], 'superseded')
         self.assertEqual(racing.writes, [])
+
+    def test_a_push_during_the_checks_read_posts_nothing(self):
+        fake = Fake(heads=[NEWER], required='ci\tfail\nrequired: not all passed\n',
+                    active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})
+        self.assertEqual(self.post(fake)['outcome'], 'superseded')
+        self.assertEqual(fake.writes, [])
+
+    def test_an_approval_resolves_only_the_threads_it_read_and_never_fails_on_them(self):
+        fake = Fake(threads=[{'id': 'T1', 'isResolved': False, 'comments': [{'author': 'reviewer-app'}]}])
+        def later(command, *arguments):
+            result = Fake.github(fake, command, *arguments)
+            if command == 'approve':
+                fake.threads.append({'id': 'T9', 'isResolved': False, 'comments': [{'author': 'reviewer-app'}]})
+            if command == 'resolve':
+                raise ValueError('github.sh resolve failed: HTTP 502')
+            return result
+        with patch.object(fake, 'github', later):
+            outcome = self.post(fake)
+        self.assertEqual((outcome['outcome'], outcome['unresolved']), ('approved', ['T1']))
+        self.assertEqual([arguments for command, arguments, _ in fake.writes if command == 'resolve'], [['T1']])
+
+    def test_a_held_finding_withdraws_an_approval_before_requesting_changes(self):
+        bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow'}
+        fake = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': HEAD})
+        self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
+        self.assertEqual([(command, arguments[:2]) for command, arguments, _ in fake.writes][0], ('dismiss', ['7', '40']))
 
     def test_pending_checks_are_waited_on_then_approved(self):
         answers = iter(['ci\tpending\nrequired: not all passed\n', 'ci\tpass\nrequired: all passed\n'])

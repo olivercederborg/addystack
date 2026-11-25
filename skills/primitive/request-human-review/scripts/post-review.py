@@ -115,16 +115,21 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     findings = review['findings']
     holds = any(finding['holds'] for finding in findings)
     deadline = now() + wait_seconds
+    may_approve = not holds and not gates.gated(verdict)
     while True:
-        # The App's review that still counts, then the head and the checks, read last, right
-        # before the write: a push since starts its own review, and a held finding or a gate
-        # never reads the checks, since they can't approve.
+        # What the write acts on, then the head, read last, right before the write: the App's
+        # review that still counts, its open threads an approval resolves, and the checks. A
+        # push since any of them starts its own review. A held finding or a gate never reads
+        # the checks, since they can't approve.
         earlier = github('reviewed', number).strip()
         active = json.loads(earlier)['active'] if earlier else None
+        threads = [thread['id'] for thread in map(json.loads, filter(None, github('threads', number).splitlines()))
+                   if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer)] \
+            if may_approve else []
+        state, checks = required(number) if may_approve else ('passed', [])
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
-        state, checks = ('passed', []) if holds or gates.gated(verdict) else required(number)
         action = gates.decide(verdict, holds, state)
         if action != 'wait':
             break
@@ -142,15 +147,21 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 body += _notes(findings, 'Notes that don\'t hold the approval', folder)
                 outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
                 outcome['outcome'] = 'approved'
-                for thread in map(json.loads, filter(None, github('threads', number).splitlines())):
-                    if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer):
-                        github('resolve', thread['id'])
+                # Once approved, a thread it can't resolve is named, never a failure: a retry
+                # would post a second approval.
+                for thread in threads:
+                    try:
+                        github('resolve', thread)
+                    except ValueError:
+                        outcome.setdefault('unresolved', []).append(thread)
             else:
                 # The App's earlier review that still counts: an approval is withdrawn before
-                # anything posts, so a gate never leaves one in place; a request for changes only
-                # once its replacement posted, so a failed post never lifts the block. Either
-                # dismissal that fails stops the run, and a retry finds the review again.
-                withdraw = active if action != 'request-changes' else None
+                # anything posts, so nothing but an approval outcome leaves one in place; a request
+                # for changes only once its replacement posted, so a failed post never lifts the
+                # block, and never by a new request for changes, which replaces it. A dismissal
+                # that fails stops the run, and a retry finds the review again.
+                withdraw = active if not (action == 'request-changes' and active and
+                                          active['state'] == 'CHANGES_REQUESTED') else None
                 notice = f'Superseded at {head[:7]}: this review no longer holds; see the newer one.'
                 if withdraw and withdraw['state'] == 'APPROVED':
                     github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
