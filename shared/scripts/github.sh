@@ -17,7 +17,9 @@
 #   github.sh approve N SHA [DRAFTS.json [BODY]]  approve the head, with any inline comments and a body
 #   github.sh dismiss N REVIEW_ID FILE    dismiss a review, with FILE as the message
 #   github.sh viewer                      the login gh posts as, such as an App's <slug>[bot]
-#   github.sh reviewed N                  the viewer's latest submitted review: {id, state, commit_id}
+#   github.sh reviewed N                  the viewer's latest submitted review: {id, state, commit_id,
+#                                         active}, active being the approval or request for changes
+#                                         of theirs that still counts, or null
 #   github.sh landed N REVIEW_ID          read back the comments a review posted
 #
 # DRAFTS.json: [{"path": "src/a.ts", "line": 42, "side": "RIGHT", "body_file": "d1.md"}],
@@ -325,10 +327,18 @@ PY
     ;;
   reviewed)
     [ $# = 1 ] || usage
-    # A pending review isn't submitted, so it isn't the last word on any head.
+    # A pending review isn't submitted, so it isn't the last word on any head. A reviewer's
+    # latest approval, request for changes or dismissal is what counts; a comment changes nothing.
     login=$("$0" viewer)
     gh api --paginate "repos/$(repo)/pulls/$1/reviews" \
-      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id} | tojson" | tail -1
+      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id} | tojson" \
+      | python3 -c '
+import json, sys
+reviews = [json.loads(line) for line in sys.stdin if line.strip()]
+decisive = [review for review in reviews if review["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
+active = decisive[-1] if decisive and decisive[-1]["state"] != "DISMISSED" else None
+if reviews:
+    print(json.dumps({**reviews[-1], "active": active}))' 
     ;;
   landed)
     [ $# = 2 ] || usage

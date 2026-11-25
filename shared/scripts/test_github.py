@@ -191,10 +191,11 @@ a = " ".join(sys.argv[1:])
 if a.startswith("repo view"):
     print("o/r")
 elif a.startswith("api graphql") and "viewer" in a:
-    print("frankie[bot]")
-elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"frankie[bot]"' in a and '"PENDING"' in a:
-    print('{"id":1,"state":"CHANGES_REQUESTED","commit_id":"abc"}')
-    print('{"id":2,"state":"APPROVED","commit_id":"def"}')
+    print("reviewer-app[bot]")
+elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"reviewer-app[bot]"' in a and '"PENDING"' in a:
+    print('{"id":1,"state":"APPROVED","commit_id":"abc"}')
+    print('{"id":2,"state":"CHANGES_REQUESTED","commit_id":"def"}')
+    print('{"id":3,"state":"COMMENTED","commit_id":"fed"}')
 else:
     sys.exit(f"unexpected: gh {a}")
 """
@@ -209,10 +210,12 @@ class Reviewed(unittest.TestCase):
         (tmp / "bin" / "gh").chmod(0o755)
         env = {**os.environ, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}"}
         viewer = subprocess.run([str(SCRIPT), "viewer"], capture_output=True, text=True, env=env)
-        self.assertEqual((viewer.returncode, viewer.stdout), (0, "frankie[bot]\n"), viewer.stderr)
+        self.assertEqual((viewer.returncode, viewer.stdout), (0, "reviewer-app[bot]\n"), viewer.stderr)
         reviewed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env=env)
+        # The latest review is a comment; the request for changes before it still counts.
         self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
-                         (0, {"id": 2, "state": "APPROVED", "commit_id": "def"}), reviewed.stderr)
+                         (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
+                              "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"}}), reviewed.stderr)
 
 
 BRANCH_GH = r"""#!/usr/bin/env python3
