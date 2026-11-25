@@ -95,11 +95,20 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       rules=""
     fi
     rm -f "$err"
-    # An unprotected branch answers 404, with the error body on stdout.
-    classic=$(gh api "repos/$slug/branches/$base/protection/required_status_checks" \
-      --jq '.contexts[]' 2>/dev/null) || classic=""
+    # Classic protection's required contexts, from the branch itself: its protection
+    # endpoint needs administration read, which an App reviewer lacks, so a 403 there would
+    # read as no required checks. An unprotected branch's enforcement level is off.
+    classic=$(gh api "repos/$slug/branches/$base" --jq '.protection.required_status_checks // empty
+      | select(.enforcement_level != "off") | (.contexts // [])[]') || exit 1
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
-    checks=$(gh pr checks "$1" --json name,bucket --jq '.[] | "\(.name)\t\(.bucket)"' || true)
+    # Checks it can't read aren't "none": gh says so when a PR has none, and anything else
+    # that leaves no output, such as a token without the checks permission, is an error.
+    err=$(mktemp)
+    if ! checks=$(gh pr checks "$1" --json name,bucket --jq '.[] | "\(.name)\t\(.bucket)"' 2>"$err") \
+      && [ -z "$checks" ] && ! grep -q 'no checks reported' "$err"; then
+      cat "$err" >&2; rm -f "$err"; exit 1
+    fi
+    rm -f "$err"
     # A check can run more than once (a cancelled duplicate); its best state counts. The
     # required contexts count, or every reported check when the base requires none; one
     # that failed, was cancelled, or is running shows CI ran.

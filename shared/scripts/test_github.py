@@ -16,10 +16,13 @@ elif a.startswith("pr view"):
     print(f"main {str(s['draft']).lower()}")
 elif a.startswith("api repos/o/r/rules/branches/main"):
     print("\n".join(s["required"]))
-elif a.startswith("api repos/o/r/branches/main/protection"):
-    print('{"message":"Branch not protected"}')
-    sys.exit(1)
+elif a.startswith("api repos/o/r/branches/main --jq"):
+    print("\n".join(s.get("classic", [])))
 elif a.startswith("pr checks"):
+    if s["checks"] == "unreadable":
+        sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.statusCheckRollup)")
+    if not s["checks"]:
+        print("no checks reported on the 'x' branch", file=sys.stderr)
     print("\n".join(f"{name}\t{bucket}" for name, bucket in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
@@ -39,15 +42,23 @@ class Required(unittest.TestCase):
         stub.write_text(GH)
         stub.chmod(0o755)
 
-    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",)):
+    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",), classic=(), code=0):
         scenario = self.tmp / "scenario.json"
         scenario.write_text(json.dumps({"draft": draft, "required": list(required), "checks": checks,
-                                        "workflows": list(workflows)}))
+                                        "workflows": list(workflows), "classic": list(classic)}))
         result = subprocess.run([str(SCRIPT), "required", "7"], capture_output=True, text=True, cwd=self.tmp,
                                 env={**os.environ, "PATH": f"{self.tmp / 'bin'}:{os.environ['PATH']}",
                                      "SCENARIO": str(scenario)})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
+        self.assertEqual(result.returncode, code, result.stderr)
+        return result.stdout if code == 0 else result.stderr
+
+    def test_classic_protection_contexts_count(self):
+        self.assertEqual(self.required(draft=False, classic=["ci"], checks=[["ci", "pending"]]),
+                         "ci\tpending\nrequired: not all passed\n")
+
+    def test_checks_it_cannot_read_are_an_error_not_none(self):
+        self.assertIn("Resource not accessible by integration", self.required(draft=False, checks="unreadable", code=1))
+        self.assertEqual(self.required(draft=False, checks=[]), "no required checks on main\nrequired: all passed\n")
 
     def test_a_draft_whose_ci_skipped_did_not_run(self):
         self.assertEqual(self.required(required=["ci"]), "ci\tpass\nworkflows that skip drafts: ci.yml\n"
