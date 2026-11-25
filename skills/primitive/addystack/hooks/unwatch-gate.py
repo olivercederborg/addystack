@@ -21,8 +21,9 @@ its key picks: at most 200 characters, and the whole text a request to stop watc
 (unwatch, stop watching, don't watch) with its PRs, naming this one or none, as
 push-gate.py reads a push go; a URL names it on its host, owner, repo, and number.
 "stop watching #6226", "can you unwatch PR #6226?", or "don't watch it" is one, and
-"why did you unwatch it?", "don’t unwatch it", or "the unwatch was a bug" isn't. Fails
-closed: when a check can't run, such as `gh` failing or a call that names no PR, the unwatch is
+"why did you unwatch it?", "don’t unwatch it", or "the unwatch was a bug" isn't, nor is
+a URL past its number, such as `/files`, `/`, or a query. Fails closed: when a check
+can't run, such as `gh` failing or a call that names no PR, the unwatch is
 denied, which leaves a watch on and costs a wake at most.
 
 `unwatch-gate.py --dry-run '<PR url>' [--transcript PATH] [--session ID]` runs the same
@@ -84,7 +85,7 @@ def gh(*args):
 def target():
     """(gh pr view's PR argument and flags, host) for the PR the call names, or None."""
     url, number, repo = tool_input.get("url"), tool_input.get("number"), tool_input.get("repository")
-    if isinstance(url, str) and (found := re.match(r"https?://([^/]+)/[^/]+/[^/]+/pull/\d+", url)):
+    if isinstance(url, str) and (found := re.match(r"https?://([^/]+)/[^/]+/[^/]+/pull/\d+", url, re.I)):
         return [url], found.group(1)
     if isinstance(number, int) and isinstance(repo, str) and repo.count("/") >= 1:
         host = tool_input.get("host") if isinstance(tool_input.get("host"), str) else "github.com"

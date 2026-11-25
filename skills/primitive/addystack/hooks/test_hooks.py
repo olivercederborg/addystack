@@ -478,6 +478,7 @@ class UnwatchGate(unittest.TestCase):
 
     def test_number_and_repository_name_the_pr(self):
         self.assertIsNotNone(self.reason({"number": 6226, "repository": "acme/app"}))
+        self.assertIn("#6226 is open", self.reason({"url": "HTTPS://github.com/acme/app/pull/6226"}))
         calls = pathlib.Path(self.gh + ".calls").read_text()
         self.assertIn("pr view 6226 -R github.com/acme/app", calls)
 
