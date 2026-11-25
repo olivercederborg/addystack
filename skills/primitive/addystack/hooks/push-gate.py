@@ -29,15 +29,17 @@ as shell_dirs.Walk reads them for merge-gate.py, denying a push after one it can
 that may not run before it, such as a `cd` inside a subshell or after `||`. The tips are
 read before the shell runs, so a commit, rebase, reset, or other branch move earlier in the
 command (shell_dirs.BRANCH_MOVES, as ready-gate.py reads it) counts each PR the push
-reaches as moved, and a branch or stack switch earlier denies. For gh
-stack, the branches are the current stack's unmerged, unqueued ones, with their PRs from
-`gh stack view --json`; a sync rebases a branch below which anything moved, or whose
-parent, the trunk's tip on the remote for the lowest, isn't in it. For git push, they are
-the branches `git push --dry-run --porcelain` says it would update or delete, so
-push.default, refspecs, and `--all` read as git reads them, with each branch's open
-same-repo PR found by name in the GitHub repo of each push URL (`pushurl`, else `url`); a
-push to a remote whose configured URLs don't name github.com, such as another machine,
-moves no PR, and one git refuses for its refspec moves nothing. No `stack.sh` subcommand pushes, so it reads none.
+reaches as moved, and a branch or stack switch earlier denies. For gh stack, the
+branches are the current stack's unmerged, unqueued ones from `gh stack view --json`,
+pushed to the remote gh stack picks (stack_remote); a sync rebases a branch below which
+anything moved, or whose parent as the remote has it, the trunk's tip for the lowest,
+isn't in it. For git push, they are the branches `git push --dry-run --porcelain` says it
+would update or delete, so push.default, refspecs, and `--all` read as git reads them, to
+the GitHub repo of each push URL (`pushurl`, else `url`); a remote whose configured URLs
+don't name github.com, such as another machine, moves no PR, and a push git refuses for
+its refspec moves nothing. Each branch's PRs are every open one GitHub lists with it as
+the head, on its repo or a repo that repo forks, keyed by URL, so two repos' #N stay
+apart. No `stack.sh` subcommand pushes, so it reads none.
 
 Fails closed: when a check can't run, the push is denied. Codex runs it too, but a crash
 or timeout there lets the push through, since Codex has no `onFailure: "block"`. Known
@@ -192,27 +194,52 @@ def github_repos(where, remote):
     return sorted({repo for repo in map(github_repo, urls) if repo})
 
 
+def stack_remote(where, args):
+    """The remote gh stack pushes to, picked as gh-stack v0.2.1's pickRemote does
+    (cmd/utils.go, and ResolveRemote in internal/git/gitops.go, at github/gh-stack@80b6d6e):
+    --remote, the current branch's pushRemote, remote.pushDefault, its remote, gh-stack.remote,
+    then the only remote. With several and none set, gh stack asks, so the gate can't tell."""
+    given = value(args, "--remote")
+    if given:
+        return given
+    current = run(where, "git", "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+    keys = [f"branch.{current}.pushRemote", "remote.pushDefault", f"branch.{current}.remote", "gh-stack.remote"]
+    for key in keys if current else keys[1:2] + keys[3:]:
+        found = run(where, "git", "config", "--get", key, check=False)
+        if found:
+            return found
+    remotes = run(where, "git", "remote").split()
+    if len(remotes) != 1:
+        raise RuntimeError("gh stack can't pick a remote here without asking: pass `--remote <name>`")
+    return remotes[0]
+
+
 def stack_targets(kind, args, where):
-    """(branch, local tip or None when a sync rebases it, PR URL or None) for each branch
-    gh stack pushes: the stack's unmerged, unqueued branches, bottom first."""
+    """(branch, local tip or None when a sync rebases it, how or None) for each branch gh stack
+    pushes, the stack's unmerged, unqueued ones, bottom first, and the GitHub repos its
+    remote reaches. A sync fetches first, then rebases each branch onto the one below as the
+    remote has it: the trunk's tip, and a branch the remote moved ahead of its local tip
+    fast-forwards, so each branch above it rebases."""
     stack = json.loads(run(where, "gh", "stack", "view", "--json"))
-    remote = value(args, "--remote") or "origin"
-    parent, moved, found = None, False, []
-    if kind == "sync":  # it fetches first, so the trunk it rebases onto is the remote's
-        listed = run(where, "git", "ls-remote", remote, f"refs/heads/{stack['trunk']}").split()
-        if not listed:
+    remote = stack_remote(where, args)
+    parent, moved, found, heads = None, False, [], {}
+    if kind == "sync":
+        for line in run(where, "git", "ls-remote", "--heads", remote).splitlines():
+            commit, ref = line.split("\t")
+            heads[ref[len("refs/heads/"):]] = commit
+        if stack["trunk"] not in heads:
             raise RuntimeError(f"`{remote}` has no branch `{stack['trunk']}`")
-        parent = listed[0]
+        parent = heads[stack["trunk"]]
     for branch in stack["branches"]:
         if branch.get("isMerged") or branch.get("isQueued"):
             continue
         local = tip(where, f"refs/heads/{branch['name']}")
         if kind == "sync":
             moved = moved or bool(branch.get("needsRebase")) or not contains(where, parent, local)
-            parent = local
-        pr = branch.get("pr") or {}
-        found.append((branch["name"], None if moved else local, pr.get("url") or pr.get("number")))
-    return found
+            ahead = heads.get(branch["name"])
+            parent = local if not ahead or contains(where, ahead, local) else ahead
+        found.append((branch["name"], None if moved else local, "a rebased tip" if moved else None))
+    return found, github_repos(where, remote)
 
 
 def git_targets(argv, where, earlier):
@@ -261,18 +288,24 @@ def git_targets(argv, where, earlier):
     return found, repos
 
 
-FIELDS = "number,url,state,headRefName,headRefOid,isCrossRepository,reviews"
+FIELDS = "number,url,state,headRefName,headRefOid,headRepository,headRepositoryOwner,reviews"
+FORKED = {}  # repo: the repos it forks, which take PRs from it
 
 
-def pull_request(where, branch, pr, repo):
-    """The open PR a branch heads: pr, a URL or number gh stack knows, or else the
-    same-repo PR whose head is branch in repo. None when there's none."""
-    if pr:
-        found = json.loads(run(where, "gh", "pr", "view", str(pr), "--json", FIELDS))
-        return found if found.get("state") == "OPEN" else None
-    listed = json.loads(run(where, "gh", "pr", "list", "--head", branch, "--state", "open",
-                            *(["-R", repo] if repo else []), "--json", FIELDS))
-    return next((found for found in listed if not found.get("isCrossRepository")), None)
+def pull_requests(where, branch, repo):
+    """Every open PR whose head is branch in repo, opened on repo or on a repo it forks (its
+    parent and source), each found from GitHub, never from gh stack's best-effort view."""
+    if repo not in FORKED:
+        FORKED[repo] = run(where, "gh", "api", f"repos/{repo}", "--jq",
+                           '[.parent.full_name, .source.full_name] | map(select(. != null)) | unique | join(" ")').split()
+    found = []
+    for base in [repo, *(fork for fork in FORKED[repo] if fork != repo)]:
+        for pr in json.loads(run(where, "gh", "pr", "list", "-R", base, "--head", branch, "--state", "open",
+                                 "--json", FIELDS)):
+            head = f"{(pr.get('headRepositoryOwner') or {}).get('login')}/{(pr.get('headRepository') or {}).get('name')}"
+            if head.lower() == repo.lower():
+                found.append(pr)
+    return found
 
 
 def approvals(pr):
@@ -286,33 +319,26 @@ def approvals(pr):
 
 
 try:
-    live = {}  # PR number: (pr, branch, local tip, approvals)
+    live = {}  # PR URL: (pr, branch, where it moves to, approvals)
     for kind, args, where, unknown, earlier in pushes:
         if unknown:
             raise RuntimeError(f"this command {unknown}, so the gate can't tell what it pushes: run the push "
                                "as its own command, or as `cd <checkout> && …` on a literal path")
-        if kind == "git":
-            moving, repos = git_targets(args, where, earlier)
-            targets = [(branch, local, how, None, repo) for branch, local, how in moving for repo in repos]
-        else:
-            targets = [(branch, local, None if local else "a rebased tip", known, None)
-                       for branch, local, known in stack_targets(kind, args, where)]
-        for branch, local, how, known, repo in targets:
-            if kind != "git" and not known:
-                if DRY_RUN:
-                    print(f"{branch}: no PR (from {where})")
-                continue
-            pr = pull_request(where, branch, known, repo)
+        targets, repos = git_targets(args, where, earlier) if kind == "git" else stack_targets(kind, args, where)
+        for branch, local, how in targets:
             if earlier:
                 local, how = None, "a tip an earlier command in this one makes"
-            changed = pr is not None and (how is not None or local != pr["headRefOid"])
-            if DRY_RUN:
-                said = ("no open PR" if pr is None else f"#{pr['number']}, " + (
-                    "unchanged" if not changed else f"{pr['headRefOid'][:10]} → {local[:10] if local else how}"))
-                print(f"{branch}: {said} (from {where})")
-            approved = approvals(pr) if changed else []
-            if approved:
-                live[pr["number"]] = (pr, branch, local[:10] if local else how, approved)
+            prs = [pr for repo in repos for pr in pull_requests(where, branch, repo)]
+            if DRY_RUN and not prs:
+                print(f"{branch}: no open PR (from {where})")
+            for pr in prs:
+                changed = how is not None or local != pr["headRefOid"]
+                if DRY_RUN:
+                    print(f"{branch}: #{pr['number']}, " + ("unchanged" if not changed else
+                          f"{pr['headRefOid'][:10]} → {local[:10] if local else how}") + f" (from {where})")
+                approved = approvals(pr) if changed else []
+                if approved:
+                    live[pr["url"]] = (pr, branch, local[:10] if local else how, approved)
 except Exception as error:
     deny(f"couldn't check what this push would move ({error})")
 if not live:
@@ -337,17 +363,25 @@ def literal_go(text):
             and not REFUSAL.search(text))
 
 
+def slug(pr):
+    """(owner, name) of the repo pr is on."""
+    return re.search(r"github\.com/([^/]+)/([^/]+)/pull/", pr["url"]).groups()
+
+
+def label(pr):
+    """#N, or "<repo> #N" when the PRs the push moves sit in more than one repo, so a go names
+    each with its repo."""
+    return f"{slug(pr)[1]} #{pr['number']}" if len({slug(each) for each, *_ in live.values()}) > 1 else f"#{pr['number']}"
+
+
 def unnamed(text):
     """The PRs of live that text doesn't name, as "#N" words: merge_go.names, held to a
     text that names a PR, so "push it" names none."""
     import merge_go
     read, _ = merge_go.spans(text)
-    numbers = sorted(live)
-    missing = []
-    for n, (pr, *_) in sorted(live.items()):
-        owner, repo = re.search(r"github\.com/([^/]+)/([^/]+)/pull/", pr["url"]).groups()
-        if not read or not merge_go.names(text, n, owner, repo, numbers):
-            missing.append(f"#{n}")
+    numbers = sorted({pr["number"] for pr, *_ in live.values()})
+    missing = [label(pr) for pr, *_ in live.values()
+               if not read or not merge_go.names(text, pr["number"], *slug(pr), numbers)]
     return " and ".join(missing)
 
 
@@ -389,13 +423,15 @@ if DRY_RUN:
 if go:
     passes("the user's latest prompt names each dismissal")
 reasons = []
-for n, (pr, branch, to, found) in sorted(live.items()):
+for pr, branch, to, found in sorted(live.values(), key=lambda each: each[0]["url"]):
     who = " and ".join(f"{login}'s approval (submitted {when[:10]} {when[11:16]} UTC)" for login, when in found)
-    reasons.append(f"pushing `{branch}` moves #{n} from {pr['headRefOid'][:10]} to {to}, which dismisses {who}")
+    reasons.append(f"pushing `{branch}` moves {label(pr)} from {pr['headRefOid'][:10]} to {to}, which dismisses {who}")
 reasons.extend([note] if note else [])
-refs = " and ".join(f"#{n}" for n in sorted(live))
+refs = " and ".join(sorted(label(pr) for pr, *_ in live.values()))
 approvers = " and ".join(sorted({login for *_, found in live.values() for login, _ in found}))
-reasons.append(f"ask the user first with a `stop:push` option that names {refs} and the dismissal, such as "
+numbers = [pr["number"] for pr, *_ in live.values()]
+reasons.append(("two of these PRs share a number, so push each in its own command, and for each "
+                if len(set(numbers)) < len(numbers) else "") + f"ask the user first with a `stop:push` option that names {refs} and the dismissal, such as "
                f'"push {refs} (dismisses {approvers}\'s approval)", or have them type that request; '
                "a delegated child reports the push back to its owner instead")
 deny(*reasons)

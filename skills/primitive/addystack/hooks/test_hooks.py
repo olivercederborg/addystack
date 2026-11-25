@@ -3668,12 +3668,12 @@ if s.get("broken"):
     sys.exit("gh: network down")
 if a[:2] == ["stack", "view"]:
     print(json.dumps(s["stack"]))
-elif a[:2] == ["pr", "view"]:
-    pr = s["prs"].get(a[2].rstrip("/").rsplit("/", 1)[-1])
-    print(json.dumps(pr)) if pr else sys.exit("no pull requests found")
+elif a[:1] == ["api"]:  # repos/<repo> --jq '<its parent and source>'
+    print(" ".join(s.get("forks", {}).get(a[1][len("repos/"):], [])))
 elif a[:2] == ["pr", "list"]:
-    head = a[a.index("--head") + 1]
-    print(json.dumps([pr for pr in s["prs"].values() if pr["headRefName"] == head and pr["state"] == "OPEN"]))
+    repo, head = a[a.index("-R") + 1], a[a.index("--head") + 1]
+    print(json.dumps([pr for pr in s["prs"].values() if pr["headRefName"] == head and pr["state"] == "OPEN"
+                      and f"github.com/{repo}/pull/" in pr["url"]]))
 else:
     sys.exit(1)
 """
@@ -3737,9 +3737,11 @@ class PushGate(unittest.TestCase):
         self.git("commit", "-qm", message)
         return self.git("rev-parse", "HEAD")
 
-    def pull(self, n, branch, head, reviews=()):
-        return {"number": n, "url": f"https://github.com/acme/app/pull/{n}", "state": "OPEN",
-                "headRefName": branch, "headRefOid": head, "isCrossRepository": False, "reviews": list(reviews)}
+    def pull(self, n, branch, head, reviews=(), repo="acme/app", base=None):
+        """PR n on base (repo, unless a fork's PR), from branch in repo."""
+        return {"number": n, "url": f"https://github.com/{base or repo}/pull/{n}", "state": "OPEN",
+                "headRefName": branch, "headRefOid": head, "headRepository": {"name": repo.split("/")[1]},
+                "headRepositoryOwner": {"login": repo.split("/")[0]}, "reviews": list(reviews)}
 
     def scenario(self, reviews=(APPROVED,), head=None, needs_rebase=False, n=6119, branch=BRANCH, **extra):
         """PR n on branch, its head on GitHub at head (the pushed commit) with reviews, and
@@ -3873,7 +3875,11 @@ class PushGate(unittest.TestCase):
         self.assertIsNone(self.reason("git push -u origin effect-native/next"))
         stack = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
         del stack["stack"]["branches"][0]["pr"]
+        # review-loop r1 on #104: gh stack view finds PRs best-effort, so one it lists without
+        # its PR (an API error it swallowed) is still looked up.
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(stack))
+        self.dismisses(self.reason("gh stack push"))
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**stack, "prs": {}}))
         self.assertIsNone(self.reason("gh stack push"))
         self.scenario()
         self.git("tag", "v1")
@@ -3922,7 +3928,7 @@ class PushGate(unittest.TestCase):
         self.git("config", "--add", f"url.{os.path.join(self.dir, 'origin')}.insteadOf", target)
         self.git("remote", "set-url", "--push", "origin", target)
         scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
-        scenario["prs"]["6119"]["url"] = "https://github.com/acme/target/pull/6119"
+        scenario["prs"]["6119"].update(self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED], repo="acme/target"))
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
         self.dismisses(self.reason("git push origin HEAD"))
         self.assertIn("-R acme/target", pathlib.Path(self.env["FAKE_GH"] + ".calls").read_text())
@@ -3936,6 +3942,74 @@ class PushGate(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIsNone(self.reason(command))
         self.assertIsNone(self.reason("git push -q origin HEAD:refs/heads/new-branch"))
+
+    def test_finds_every_pr_a_branch_heads(self):
+        # review-loop r1 on #104: a fork's PR on its parent, a second PR from the same head,
+        # and two repos' #6119 in one command.
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        upstream = self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED], base="upstream/app")
+        scenario.update(prs={"fork": upstream}, forks={"acme/app": ["upstream/app"]})
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.dismisses(self.reason("git push --force origin HEAD"))
+        self.dismisses(self.reason("gh stack push"))
+        scenario.update(prs={"other": self.pull(6118, self.BRANCH, self.remote_head),
+                             "6119": self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED])}, forks={})
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.dismisses(self.reason("git push origin HEAD"))
+        self.dismisses(self.reason("gh stack push"))
+        # A second remote whose repo has its own approved #6119.
+        self.git("remote", "add", "other", "https://github.com/acme/other.git")
+        self.git("config", "--add", f"url.{os.path.join(self.dir, 'origin')}.insteadOf", "https://github.com/acme/other.git")
+        scenario["prs"]["second"] = self.pull(6119, self.BRANCH, self.remote_head, [self.APPROVED], repo="acme/other")
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        both = "git push origin HEAD && git push other HEAD"
+        reason = self.reason(both, said=("push other #6119 (dismisses teammate's approval)",))
+        self.assertIn("moves app #6119 from", reason)
+        self.assertIn("moves other #6119 from", reason)
+        self.assertIn("doesn't name app #6119", reason)
+        # merge_go reads one number named twice beside a repo as a possible refusal, so two
+        # repos' #6119 get no go in one command; the denial says to push each on its own.
+        reason = self.reason(both, said=("push app #6119 and other #6119 (dismisses teammate's approvals)",))
+        self.assertIn("two of these PRs share a number, so push each in its own command", reason)
+        self.assertIsNone(self.reason("git push other HEAD", said=("push other #6119 (dismisses teammate's approval)",)))
+
+    def test_a_sync_reads_the_remote_and_branches_gh_stack_does(self):
+        # review-loop r1 on #104: gh stack picks the branch's pushRemote over origin, and a
+        # lower branch the remote moved ahead fast-forwards, so the approved one above it rebases.
+        self.scenario(head=self.local)
+        upstream, writer = os.path.join(self.dir, "upstream"), os.path.join(self.dir, "writer")
+        subprocess.run(["git", "clone", "-q", "--bare", os.path.join(self.dir, "origin"), upstream], check=True, env=self.env)
+        subprocess.run(["git", "clone", "-q", upstream, writer], check=True, env=self.env)
+        pathlib.Path(writer, "g").write_text("moved\n")
+        self.git("add", ".", cwd=writer)
+        self.git("commit", "-qm", "upstream moved", cwd=writer)
+        self.git("push", "-q", "origin", "main", cwd=writer)
+        self.git("remote", "add", "upstream", "https://github.com/acme/app.git")
+        self.git("config", "--add", f"url.{upstream}.insteadOf", "https://github.com/acme/app.git/")
+        self.git("config", "remote.upstream.url", "https://github.com/acme/app.git/")
+        self.assertIsNone(self.reason("gh stack sync"))  # the branch's remote, origin, whose trunk hasn't moved
+        self.git("config", f"branch.{self.BRANCH}.pushRemote", "upstream")
+        self.assertIn("to a rebased tip", self.reason("gh stack sync"))
+        self.assertIsNone(self.reason("gh stack sync --remote origin"))
+        self.git("config", "--unset", f"branch.{self.BRANCH}.pushRemote")
+        self.git("config", "--unset", f"branch.{self.BRANCH}.remote")
+        self.assertIn("can't pick a remote here without asking", self.reason("gh stack sync"))
+        self.git("remote", "remove", "upstream")
+        # A two-branch stack: lower, which the remote moved ahead, under the approved branch.
+        lower = self.git("rev-parse", "main")
+        self.git("push", "-q", "origin", "main:lower")
+        subprocess.run(["git", "clone", "-q", os.path.join(self.dir, "origin"), writer + "2"], check=True, env=self.env)
+        self.git("checkout", "-q", "lower", cwd=writer + "2")
+        pathlib.Path(writer + "2", "h").write_text("lower moved\n")
+        self.git("add", ".", cwd=writer + "2")
+        self.git("commit", "-qm", "lower moved", cwd=writer + "2")
+        self.git("push", "-q", "origin", "lower", cwd=writer + "2")
+        self.git("branch", "lower", lower)
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["stack"]["branches"].insert(0, {"name": "lower", "isMerged": False, "isQueued": False, "needsRebase": False})
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.assertIn(f"moves #6119 from {self.local[:10]} to a rebased tip", self.reason("gh stack sync"))
+        self.assertIsNone(self.reason("gh stack push"))
 
     def test_counts_a_branch_an_earlier_command_moves(self):
         # review-loop r1 on #104: the gate reads the tips before the shell runs, so a commit
