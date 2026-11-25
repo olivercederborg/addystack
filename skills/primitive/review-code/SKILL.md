@@ -32,6 +32,17 @@ When a verified finding can't be hit yet and depends on what the author meant, s
 a contract for a later milestone, its call is **question**. Cite the PR's own test or
 spec as the sign of the narrower intent.
 
+## Unattended mode
+
+`--unattended` reviews as an App with nobody in the loop, and the request that starts it
+is the go to post. Steps 1, 2, 4, and 6 run as written, except: a step that needs the
+user (their plan, the rename, a provider that isn't signed in) is skipped, and the
+review's body says so; step 6 diffs from `github.sh reviewed N`'s `commit_id` when it's
+an ancestor of the head, else the whole PR; drafts use the disclosure's short form. Step
+3 keeps each finding's recommended call and drops one grounding can't reproduce. In
+place of step 5 and its watch, write `REVIEW.json` and follow `request-human-review`,
+which decides and posts.
+
 ## 1. Load the PR
 
 - Fetch the title, description, linked issue (the spec), base and head SHAs and the
