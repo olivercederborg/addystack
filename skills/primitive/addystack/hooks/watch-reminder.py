@@ -6,10 +6,11 @@ finish and the watch still wakes it on reviews and comments. The calls are
 `pull_request_update` with `ready: true`, `state: "open"`, or `requestReviewers`,
 `pull_request_create` without `draft: true`, and a Bash command that runs `gh pr ready`
 (not `--undo`), `gh pr reopen`, `gh pr edit --add-reviewer`, `gh pr create` without
-`--draft`, or `gh stack submit --open`. A reopen counts since T3 ends a watch when its PR
-closes. The call can't tell a draft, another author's PR, or a stack's several PRs, so the
-reminder asks for a watch on each open, ready PR of the user's it left. On Nov 25, 2026 an agent requested two reviews on a work repo's #6215 and ended the turn
-with no watch, and the user had to say "watch it"; the reply rules asked for a watch only
+`--draft`, or `gh stack submit --open`. A reopen counts since T3 ends a watch when its
+PR closes. The call can't tell a draft, another author's PR, or a stack's several PRs,
+so the reminder asks for a watch on each open, ready PR of the user's it left. On Nov
+25, 2026 an agent requested two reviews on a work repo's #6215 and ended the turn with
+no watch, and the user had to say "watch it"; the reply rules asked for a watch only
 after a push or a new PR. unwatch-gate.py keeps such a watch on afterwards.
 
 It reads the command as text, so a `gh pr ready` inside quotes or a heredoc reminds too,
