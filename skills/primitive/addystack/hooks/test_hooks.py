@@ -672,7 +672,7 @@ class CleanestAsk(unittest.TestCase):
         self.assertEqual(len(self.stop(*answered, ("b", card("done")), ("re-review the new commits", card()))), 2)
 
     def test_sends_on_the_card_after_a_delegated_reviewers_result(self):
-        # On the devbox, 18 of the 23 cards the user asked on in the week to Nov 25, 2026 came
+        # On one machine, 18 of the 23 cards the user asked on in the week to Nov 25, 2026 came
         # right after review-loop's reviewer reported back, as in ◎ #6217.
         result = "Delegated task node:delegated-task:rl-6215-r1 (◎ #6215 r1 · gpt-6.1) [completed]:\nTwo findings."
         env = {"T3_STATE_DB": self.db(first="Review #6215 with the review-teammate-pr skill.", first_by="agent",
