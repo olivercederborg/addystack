@@ -46,6 +46,10 @@ def rules_on(brief):
     return isinstance(brief, str) and any(line.startswith(OPT_IN) for line in brief.splitlines())
 
 
+def skips_rules(session_id):
+    """True for a T3 delegated child whose brief doesn't opt in. Any doubt reads as False."""
+    raise NotImplementedError
+
 def connect():
     uri = pathlib.Path(STATE_DB).expanduser().resolve().as_uri() + "?mode=ro"
     return sqlite3.connect(uri, uri=True, timeout=1)

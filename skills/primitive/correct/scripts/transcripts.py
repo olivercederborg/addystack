@@ -298,6 +298,13 @@ def exchanges(path, strict=False):
     return out
 
 
+def final_reply(path):
+    """The text of the final reply the session's last finished turn ended on, read from
+    the file's tail: Claude Code's `end_turn` message, Codex's `final_answer`. None when
+    a prompt is newer than any final reply (an interrupted turn), the final message has
+    no text, or the file can't be read."""
+    raise NotImplementedError
+
 def prompts(path, strict=False):
     """Each prompt in the transcript at path, oldest first, as exchanges() reads it."""
     return [exchange.prompt for exchange in exchanges(path, strict)]
