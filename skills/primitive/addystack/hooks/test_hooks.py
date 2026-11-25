@@ -3929,6 +3929,23 @@ class PushGate(unittest.TestCase):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
         self.assertIsNone(self.reason("gh stack push", said=("push #6215 and #6216 (dismisses the teammate's approvals)",)))
+        # verify-work on b512f73: with one live approval, a go naming no PR in its push names
+        # none after it either, and a step after the dismissal opens on a routine step verb.
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**scenario, "prs": {"6216": scenario["prs"]["6216"]}}))
+        for text, why in [("push it (dismisses the reviewer's approval), then post the reply on #6215", "doesn't name #6216"),
+                          ("push (dismisses the reviewer's approval), then run gh stack push on #6215", "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), then run the deploy to production",
+                           "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), then update production data", "isn't a plain request"),
+                          ("push #6216 (dismisses the reviewer's approval), restack #6215", "isn't a plain request")]:
+            with self.subTest(text=text):
+                self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        for text in ("push #6216 (dismisses the reviewer's approval), run CI, update both PR descriptions",
+                     "push (dismisses the reviewer's approval), then re-verify and watch CI"):
+            with self.subTest(text=text):
+                self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
         # Only a push takes the "yes:" lead; merge_go doesn't change.
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))
