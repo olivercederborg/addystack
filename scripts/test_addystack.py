@@ -279,6 +279,17 @@ class Notes(Cli):
         self.assertEqual(result.returncode, 1, result.stdout)
         self.assertIn("review-teammate-pr.md is for review-teammate-pr, which is review-code now", result.stdout)
 
+    def test_a_note_built_under_the_old_name_still_shows_a_changed_skill(self):
+        self.note("review-teammate-pr", "- Ask about the migration.\n")
+        self.run_cli("build")
+        # As if the last build ran before the rename, against an older skill.
+        built = self.state / "notes" / "review-code.md"
+        old = self.state / "notes" / "review-teammate-pr.md"
+        old.write_text(re.sub(r"sha256 [0-9a-f]{64}", "sha256 " + "0" * 64, built.read_text()))
+        built.unlink()
+        result = self.run_cli("doctor")
+        self.assertIn("FAIL  notes: review-code changed since", result.stdout)
+
     def test_doctor_passes_with_a_built_note(self):
         self.run_cli("build")
         result = self.run_cli("doctor")

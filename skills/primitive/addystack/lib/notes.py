@@ -129,11 +129,14 @@ def problems(resolved: Resolved) -> List[Tuple[str, str]]:
             found.append((f"{note} names no core skill {note.stem}",
                           f"rename {note} to a core skill's name, or delete it"))
             continue
+        # Before the first build after a rename, the note is still built under its old name.
+        built_note = built_dir() / f"{applying[note]}.md"
+        built_note = built_note if built_note.exists() else built_dir() / note.name
         try:
-            recorded = _HASH.search((built_dir() / f"{applying[note]}.md").read_text())
+            recorded = _HASH.search(built_note.read_text())
         except (OSError, UnicodeDecodeError):
             continue  # not built yet: the built-files check names it
         if recorded and recorded.group(1) != _digest(skill):
-            found.append((f"{note.stem} changed since {note} was built",
+            found.append((f"{applying[note]} changed since {note} was built",
                           f"reread {note} against {skill}, then run addystack build"))
     return found
