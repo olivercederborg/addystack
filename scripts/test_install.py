@@ -518,6 +518,25 @@ class RenamedSkill(Home):
         self.assertFalse(os.path.lexists(claude / "review-teammate-pr"))
         self.assertFalse(os.path.lexists(agents / "review-teammate-pr"))
 
+    def test_a_chain_goes_to_the_renamed_checkout_folder_never_to_another_skill(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("kit\n")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            folder.mkdir(parents=True, exist_ok=True)
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        foreign = self.home / "foreign/review-code"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("foreign\n")
+        (agents / "review-code").symlink_to(foreign)
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        self.assertEqual((claude / "review-code" / "SKILL.md").read_text(), "kit\n")
+        self.assertEqual((agents / "review-code" / "SKILL.md").read_text(), "foreign\n")
+
 
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so

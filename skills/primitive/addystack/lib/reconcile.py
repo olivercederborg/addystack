@@ -208,24 +208,27 @@ def _renamed_skills(resolved: Resolved) -> List[Change]:
     linked checkout's update left dangling: install links the new name to the new folder
     beside it and drops the old link. A new name already taken is the user's, so the old link
     is reported and left."""
-    # Both hosts can share one folder through a link, and one host's link can point at the
-    # other's: each folder once, and a link this plan makes counts as there.
+    # Both hosts can share one folder through a link, and one host's link can lead through
+    # the other's: each folder once, and each link goes straight to the folder its chain ended
+    # at, renamed, never to whatever another folder holds under the new name.
     folders = dict.fromkeys(skills_cli.folder(host).resolve() for host in ("claude", "codex")
                             if resolved["hosts"].get(host))
-    dangling = [(folder / old, new) for folder in folders for old, new in skill_layer.RENAMED.items()
-                if (folder / old).is_symlink() and not (folder / old).exists()]
-    planned = {link.with_name(new) for link, new in dangling}
     changes = []
-    for link, new in dangling:
-        moved = (link.parent / os.readlink(link)).parent.resolve() / new
-        if not (moved / "SKILL.md").is_file() and moved not in planned:
-            continue
-        if os.path.lexists(link.with_name(new)):
-            changes.append(Change("renamed-skill", link, f"dangles, and {new} is installed already; remove it",
-                                  left=True))
-        else:
-            changes.append(Change("renamed-skill", link, f"{link.name} is {new} now: links {new} to "
-                                  f"{render._home(moved)} in its place", source=moved))
+    for folder in folders:
+        for old, new in skill_layer.RENAMED.items():
+            link = folder / old
+            if not link.is_symlink() or link.exists():
+                continue
+            ended = Path(os.path.realpath(link))
+            moved = ended.parent / new
+            if ended.name != old or not (moved / "SKILL.md").is_file():
+                continue
+            if os.path.lexists(folder / new):
+                changes.append(Change("renamed-skill", link, f"dangles, and {new} is installed already; remove it",
+                                      left=True))
+            else:
+                changes.append(Change("renamed-skill", link, f"{old} is {new} now: links {new} to "
+                                      f"{render._home(moved)} in its place", source=moved))
     return changes
 
 
