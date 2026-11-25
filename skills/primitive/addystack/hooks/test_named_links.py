@@ -85,6 +85,55 @@ class Unnamed(unittest.TestCase):
         self.assertEqual(named_links.unnamed("a\r\n```\nx\n```\r\nsee #7"), [named_links.Cited("#7", 4)])
 
 
+class FinalReply(unittest.TestCase):
+    def final(self, entries, raw_tail=""):
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as transcript:
+            transcript.write("".join(json.dumps(entry) + "\n" for entry in entries) + raw_tail)
+        self.addCleanup(os.unlink, transcript.name)
+        return transcripts.final_reply(transcript.name)
+
+    def test_claude_joins_the_end_turn_messages_text_parts(self):
+        first, second = claude_reply("Part one.")[1], claude_reply("Part two.")[1]
+        self.assertEqual(self.final([claude_said("go"), first, {"type": "attachment"}, second, *CLAUDE_AFTER]),
+                         "Part one.\nPart two.")
+
+    def test_claude_takes_the_last_end_turn_message_only(self):
+        entries = [*claude_transcript("Old reply."), claude_said("again"), *claude_reply("New reply.", "msg_2")]
+        self.assertEqual(self.final(entries), "New reply.")
+
+    def test_claude_thinking_only_or_sidechain_has_no_reply(self):
+        thinking = claude_reply("x")[0]
+        self.assertIsNone(self.final([*claude_transcript("Old."), claude_said("again"),
+                                      {**thinking, "message": {**thinking["message"], "id": "msg_2"}}]))
+        sidechain = {**claude_reply("Side.", "msg_3")[1], "isSidechain": True}
+        self.assertEqual(self.final([*claude_transcript("Main."), sidechain]), "Main.")
+
+    def test_codex_takes_the_final_answer_not_the_commentary(self):
+        self.assertEqual(self.final(codex_transcript("Done.", commentary="Checking DEV-1.")), "Done.")
+        self.assertIsNone(self.final([codex_said("go"), codex_wrote("Checking.", phase="commentary")]))
+
+    def test_an_interrupted_turn_has_no_final_reply(self):
+        interrupted = [claude_said("next task"), {"type": "user", "message": {
+            "content": [{"type": "text", "text": "[Request interrupted by user]"}]}}]
+        self.assertIsNone(self.final([*claude_transcript("Old DEV-1."), *interrupted]))
+        self.assertIsNone(self.final([*codex_transcript("Old DEV-1."), codex_said("next task")]))
+
+    def test_an_injected_prompt_after_the_answer_is_not_a_newer_prompt(self):
+        agents = codex_said("# AGENTS.md instructions for /repo\n\n<INSTRUCTIONS>…</INSTRUCTIONS>")
+        self.assertEqual(self.final([*codex_transcript("Done."), agents]), "Done.")
+
+    def test_a_cut_or_unparsable_last_line_and_a_missing_file(self):
+        self.assertEqual(self.final(claude_transcript("Done."), raw_tail='{"type": "assist'), "Done.")
+        self.assertIsNone(transcripts.final_reply("/nonexistent/transcript.jsonl"))
+
+    def test_a_reply_far_from_the_end_is_read_across_blocks_and_one_past_the_limit_is_not(self):
+        filler = {"type": "progress", "data": "x" * 1000}
+        near = (transcripts.TAIL_BLOCK * 3) // 1000
+        self.assertEqual(self.final([*claude_transcript("Done."), *[filler] * near]), "Done.")
+        past = transcripts.TAIL_LIMIT // 1000 + 10
+        self.assertIsNone(self.final([*claude_transcript("Done."), *[filler] * past]))
+
+
 class MergeGoStillReadsTheOption(unittest.TestCase):
     """The named link goes in the visible reply; the turn block's option keeps `merge #124`,
     so merge-gate's pick still reads as a go for #124."""
