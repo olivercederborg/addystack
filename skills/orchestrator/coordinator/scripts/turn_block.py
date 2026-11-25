@@ -41,8 +41,8 @@ code span doesn't hide a `<` once a link destination eats its backtick, hold non
 - A line that starts an HTML block, past list and quote markers, with no blank line after
   it: the block runs to the next blank line, so the lines after it are raw HTML, not fences.
   A block tag such as `<div` starts one, as does a whole tag alone on its line (CommonMark
-  0.31.2 §4.6), but not `<sub>…</sub><br>` or an autolink. Any other line that starts
-  with a tag holds only attribute-free formatting tags (PLAIN).
+  0.31.2 §4.6). Any other line starting with a tag holds only attribute-free formatting
+  tags (PLAIN), such as `<sub>…</sub><br>`.
 - A line whose tag the WHATWG tokenizer hasn't closed at the line's end, such as
   `<div title="x`, when it starts an HTML block or a line follows it: what follows
   becomes the tag's attribute.
