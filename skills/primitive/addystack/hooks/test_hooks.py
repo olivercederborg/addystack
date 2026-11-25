@@ -3942,7 +3942,10 @@ class PushGate(unittest.TestCase):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
         for text in ("push #6216 (dismisses the reviewer's approval), run CI, update both PR descriptions",
-                     "push (dismisses the reviewer's approval), then re-verify and watch CI"):
+                     "push (dismisses the reviewer's approval), then re-verify and watch CI",
+                     # verify-work on 78e8c49: a count after the push names no PR.
+                     "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
+                     "push it (dismisses the reviewer's approval), then update 2 PR descriptions"):
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))

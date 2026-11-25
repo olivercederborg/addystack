@@ -72,11 +72,12 @@ addystack adds the two-option cap and each option's class.
     merge-gate places a bare PR after one named with its repo in no repo.
   - `stop:push`: a force-push to a shared branch, or a push to a branch someone else
     owns or one that would dismiss an approval. A push that would dismiss one opens with
-    the push, names each PR unless only one has an approval, then the dismissal and only
-    steps such as replying, in at most 200 characters, with no refusal, condition, or
-    question, as in "push #6119 (dismisses the reviewer's approval), post the reply".
-    push-gate allows that push only on a pick of such an option, so a push folded into a
-    `stop:post` option or "don't push #6119 yet, it would dismiss the approval" is denied.
+    the push, names each PR (or, for a lone approval, no #N anywhere), then the dismissal
+    and only steps such as replying, in at most 200 characters, with no refusal,
+    condition, or question, as in "push #6119 (dismisses the reviewer's approval), post
+    the reply". push-gate allows that push only on a pick of such an option, so a push
+    folded into a `stop:post` option or "don't push #6119 yet, it would dismiss the
+    approval" is denied.
   - `stop:post`: a message to a person.
   - `stop:prod`: a production write or a migration on shared data.
   - `stop:credential`: a missing credential, account, or secret.
