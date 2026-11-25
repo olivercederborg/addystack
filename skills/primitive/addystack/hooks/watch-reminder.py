@@ -22,10 +22,13 @@ BASH = re.compile(r"\bgh\s+pr\s+ready\b(?![^\n;&|]*--undo)"
                   r"|\bgh\s+pr\s+edit\b[^\n;&|]*--add-reviewer\b"
                   r"|\bgh\s+pr\s+create\b(?![^\n;&|]*(?:--draft\b(?!=false)|\s-d\b))"
                   r"|\bgh\s+stack\s+submit\b[^\n;&|]*--open\b")
-REMINDER = ("This call left a PR of the user's waiting on reviewers. Before ending the turn, call "
-            '`watch_pull_request` on it with `until: "checks"`, unless this thread already watches it: '
-            "the thread returns to the user's inbox once checks finish, and the watch still wakes it on "
-            "reviews, comments, and failed checks. Keep the watch on while the PR is open and ready.")
+# The call alone can't tell a draft, another author's PR, or a PR that already existed, and
+# `gh stack submit --open` readies a whole stack, so the agent checks which PRs it left waiting.
+REMINDER = ("This call may have left PRs waiting on reviewers. Before ending the turn, call "
+            '`watch_pull_request` with `until: "checks"` on each one that is open, ready (not a draft), '
+            "and the user's, unless this thread already watches it: the thread returns to the user's inbox "
+            "once checks finish, and the watch still wakes it on reviews, comments, and failed checks. Keep "
+            "the watch on while the PR is open and ready.")
 
 
 def waits_on_reviewers(tool, tool_input):

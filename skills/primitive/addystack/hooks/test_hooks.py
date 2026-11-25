@@ -523,7 +523,10 @@ class WatchReminder(unittest.TestCase):
                 ("Bash", {"command": "gh pr create --fill --draft=false"}),
                 ("Bash", {"command": "gh stack submit --open"})):
             with self.subTest(tool=tool, tool_input=tool_input):
-                self.assertIn('`until: "checks"`', self.remind(tool, tool_input))
+                reminder = self.remind(tool, tool_input)
+                self.assertIn('`until: "checks"`', reminder)
+                # The call alone can't tell a draft, another author's PR, or a stack's several PRs.
+                self.assertIn("each one that is open, ready (not a draft), and the user's", reminder)
 
     def test_other_calls_add_nothing(self):
         for tool, tool_input in (
