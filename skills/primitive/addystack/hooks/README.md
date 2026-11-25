@@ -22,7 +22,7 @@ sends a reply back makes the agent post it a second time.
 
 `turn_block.py` isn't a hook: it parses the turn block that ends each final reply, as [`references/turn-block.md`](../references/turn-block.md) specifies it, for `merge-gate.py`.
 
-`shell_dirs.py` isn't a hook: it follows a command's `cd`, `pushd`, and `popd` for `merge-gate.py` and `ready-gate.py`, so both read the checkout a merge or ready runs in the same way.
+`shell_dirs.py` isn't a hook: it follows a command's `cd`, `pushd`, and `popd` for `merge-gate.py`, `ready-gate.py`, and `push-gate.py`, so each reads the checkout a merge, ready, or push runs in the same way.
 
 ## Install
 

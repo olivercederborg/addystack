@@ -1,5 +1,6 @@
 """Where a shell command's working directory stands as bash runs it, piece by piece, for the
-gates that check what a command reaches from where it runs (ready-gate.py, merge-gate.py).
+gates that check what a command reaches from where it runs (ready-gate.py, merge-gate.py,
+push-gate.py).
 `Walk` follows cd, pushd, and popd, and records in `unknown` why it can't tell once a change
 it can't read may have run: inside a subshell, pipeline, or block, after `||`, in an `&&`
 chain past its end, to where only the shell knows (a variable, ~+, a dir-stack entry, CDPATH,

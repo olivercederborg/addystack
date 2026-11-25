@@ -40,9 +40,9 @@ limits: a push through `gh api`, a git alias, a script, `gh` or `git` run by its
 command that runs only inside quotes or a heredoc (`bash -c '…'`), one a tool such as
 `xargs` repeats, a remote's configured `push` refspecs, a GitHub remote behind an ssh
 host alias, which reads as off GitHub, and in Codex a push reached only through
-`workdir`, which is checked against the session's cwd. It assumes the repo dismisses stale approvals, so in one that
-doesn't it denies a push that would dismiss nothing, and an approval that lands between
-the check and the push isn't seen.
+`workdir`, which is checked against the session's cwd. It assumes the repo dismisses
+stale approvals, so in one that doesn't it denies a push that would dismiss nothing, and
+an approval that lands between the check and the push isn't seen.
 
 `push-gate.py --dry-run '<push command>' [--transcript PATH] [--session ID]` runs the
 same checks from the current directory and prints each branch it would push, then each
