@@ -41,6 +41,15 @@ RELEASE = pathlib.Path("core") / "skills.json"
 CORE = ("primitive", "orchestrator")
 # The layers a release ships. A user's own skills and a team's install from their own repos.
 SHIPPED = (*CORE, "optional")
+# Each core skill's earlier name, {old: new}, so a rename keeps what a user had under the old
+# one: a note keeps applying (lib/notes.py), update installs the new name only where the old
+# one was installed (bin/addystack), and install moves a link to the old folder (lib/reconcile.py).
+RENAMED = {"review-teammate-pr": "review-code"}
+
+
+def current(name: str) -> str:
+    """The skill's name now: name itself, or what it was renamed to."""
+    return RENAMED.get(name, name)
 
 
 def listed(root: pathlib.Path):
