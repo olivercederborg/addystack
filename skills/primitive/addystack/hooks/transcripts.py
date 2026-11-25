@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 
 import t3_child
 
-NOT_TYPED = ("<", "# AGENTS.md", "Context handoff", "[Historical user", "Delegated task node:",
+NOT_TYPED = ("<", "[T3 Code: ", "# AGENTS.md", "Context handoff", "[Historical user", "Delegated task node:",
              "This session is being continued", "Caveat:", "Update on pull request")
 ATTACHMENT = re.compile(r"\[(?:Attached image|Image|Terminal|User attached|Request interrupted)[^\]]*\]")
 QUOTE = re.compile(r"\[Assistant quote\]\((t3-citation://[^)\s]*)\)")
@@ -48,6 +48,9 @@ WINDOW = re.compile(r"Untrusted captured-window data follows as JSON\..*?End unt
 MARKER = re.compile(r"\[(?:assistant-quote-\d+|[A-Z][A-Za-z ]{1,30}: [^\]\n]*; ref=[^\]\n]*)\]")
 # "From the Platform lane (…): …", "From the orchestrator: …", sent by t3_thread_send, for
 # a transcript T3's state database doesn't know.
+# The line T3 puts before a message an agent, a tool, or a scheduled task sent, never before
+# one the user typed (withMessageSenderNote). Its database stores the text without it.
+SENDER_NOTE = re.compile(r"\[T3 Code: [^\]\n]*\]\n\n")
 OTHER_THREAD = re.compile(r"From the [^:.\n]{0,80}?\b(?:lane|thread|orchestrator)\b")
 
 
@@ -228,6 +231,8 @@ def exchanges(path, strict=False):
                     reply, command = (said, False) if said else (reply, command)
                     continue
                 sent = "\n".join(texts(text_parts(entry))).strip()
+                if note := SENDER_NOTE.match(sent):
+                    sent = sent[note.end():]
                 # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
                 if command and sent.startswith("<local-command-stdout>"):
                     reply, command = out.pop().reply, False
