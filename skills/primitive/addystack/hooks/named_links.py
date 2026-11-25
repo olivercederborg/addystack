@@ -12,7 +12,7 @@ Nov 25, 2026 hit: indented code reads as prose, since a list item's continuation
 the same; a fence inside an HTML comment counts as a fence; link text holding brackets
 isn't a link; a reference link counts without its definition; a label such as "View PR
 #9" names it; and a digit-only color such as #333, unless a colon comes right before it,
-reads as a PR.
+reads as a PR."""
 import re
 from typing import List, NamedTuple
 
