@@ -390,6 +390,30 @@ class Command(Home):
         self.assertEqual(self.snapshot(), before)
 
 
+class RenamedSkill(Home):
+    """A linked checkout's update renames a skill's folder; install moves the dangling link."""
+
+    def test_moves_a_dangling_link_to_the_renamed_folder_and_leaves_a_taken_name(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        folder = self.home / ".claude/skills"
+        # The home installs every core skill; this user has only the old link.
+        if os.path.lexists(folder / "review-code"):
+            (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        old = folder / "review-teammate-pr"
+        old.symlink_to(kit_skills / "review-teammate-pr")
+        out = self.ok("install").stdout
+        self.assertIn("review-teammate-pr is review-code now: links review-code to", out)
+        self.assertFalse(os.path.lexists(old))
+        self.assertEqual(os.readlink(folder / "review-code"), str(kit_skills / "review-code"))
+        # Once moved, a second install has nothing to do; a taken new name leaves the old link.
+        self.assertNotIn("renamed-skill", self.ok("install").stdout)
+        old.symlink_to(kit_skills / "review-teammate-pr")
+        self.assertIn("dangles, and review-code is installed already", self.ok("install").stdout)
+        self.assertTrue(old.is_symlink())
+
+
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so
     install writes Claude Code's hooks, agent link, and CLAUDE.md there; unset or blank,
