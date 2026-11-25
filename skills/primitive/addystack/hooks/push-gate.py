@@ -361,7 +361,12 @@ STEP = (rf"(?:force-?push|push|restack|re-stack|rebase|sync|submit)(?:\s+(?:it|t
 WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:[\w.@-]+(?:'s)?,?\s+(?:and\s+)?){0,5}"
 DISMISSAL = (rf"(?:\s*\(\s*dismiss(?:es|ing)?\s+{WHOSE}approvals?\s*\)"
              rf"|(?:,\s*(?:it\s+|which\s+)?|,?\s+and\s+)dismiss(?:es|ing)?\s+{WHOSE}approvals?)")
-GO = re.compile(rf"{merge_go.OPENER}{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL}[.!]?", re.I)
+# Routine steps may follow the dismissal, each opening on one of these verbs: "push #6203
+# (dismisses the teammate's approval), then post 3 replies, resolve both threads".
+AFTER = (r"(?:\s*[,;]\s*(?:then\s+)?|,?\s+and\s+(?:then\s+)?)(?:post|reply|answer|resolve|re-?request|restack|"
+         r"re-?verify|verify|re-?run|run|watch|update|comment|dispatch|file|link)\b[^,;]*")
+GO = re.compile(rf"{merge_go.OPENER}(?P<push>{STEP}(?:(?:,\s*|,?\s+and\s+(?:then\s+)?){STEP})*{DISMISSAL})(?:{AFTER})*[.!]?",
+                re.I)
 # A request with any of these may refuse, wait, ask, or only describe what the push would do,
 # so it's no go: a question opens with its verb or asks word even without its ?.
 REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|never|not|no|without|avoid|unless|if|until|"
@@ -371,9 +376,11 @@ REFUSAL = re.compile(r"\?|\b(?:\w+n't|\w+'ll|dont|wont|cant|shouldnt|do not|neve
 
 
 def literal_go(text):
-    """Whether text is a short typed request to push that says it dismisses an approval."""
+    """The push of text, up to its dismissal, when text is a short typed request to push
+    that says it dismisses an approval, else None."""
     text = text.strip().replace("’", "'")
-    return len(text) <= 200 and bool(GO.fullmatch(text)) and not REFUSAL.search(text)
+    found = len(text) <= 200 and not REFUSAL.search(text) and GO.fullmatch(text)
+    return found.group("push") if found else None
 
 
 def slug(pr):
@@ -388,8 +395,8 @@ def label(pr):
 
 
 def unnamed(text):
-    """The PRs of live that text doesn't name, as "#N" words: merge_go.names, held to a
-    text that names a PR, so "push it" names none."""
+    """The PRs of live that text, a go's push, doesn't name, as "#N" words: merge_go.names,
+    held to a text that names a PR, so "push it" names none."""
     read, _ = merge_go.spans(text)
     numbers = sorted({pr["number"] for pr, *_ in live.values()})
     missing = [label(pr) for pr, *_ in live.values()
@@ -408,8 +415,9 @@ def user_go():
             return False, None
         prompt = found[-1].prompt if found else ""
         said = f'the user\'s "{prompt.strip()}"'
-        if literal_go(prompt):
-            missing = unnamed(prompt)
+        pushed = literal_go(prompt)
+        if pushed:
+            missing = unnamed(pushed)
             return (True, None) if not missing else (False, f"{said} doesn't name {missing}")
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
@@ -421,9 +429,10 @@ def user_go():
         picks = f'{said} picks "{option.text}", a {option.cls} option of your reply before it'
         if option.cls != "stop:push":
             return False, f"{picks}, and only a stop:push option allows a push that dismisses an approval"
-        if not literal_go(option.text):  # as a typed go: a push, the dismissal, and no refusal or condition
+        pushed = literal_go(option.text)  # as a typed go: a push, the dismissal, and no refusal or condition
+        if not pushed:
             return False, f"{picks}, which isn't a plain request to push that says it dismisses an approval"
-        missing = unnamed(option.text)
+        missing = unnamed(pushed)
         return (True, None) if not missing else (False, f"{picks}, which doesn't name {missing}")
     except Exception:
         return False, None

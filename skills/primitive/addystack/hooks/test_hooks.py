@@ -3880,6 +3880,35 @@ class PushGate(unittest.TestCase):
             self.env["T3CODE_CLI_PATH"] = "/t3"
             self.assertIsNotNone(self.reason("gh stack push", said=("push #6091 (dismisses teammate's approval)",)))
 
+    def test_replays_the_push_picks_with_steps_after_the_dismissal(self):
+        # Nov 25, 2026: the stop:push options the user picked on #6203 at 10:36:55 (transcript
+        # 7ba090ed) and on #6215 at 11:59:39 (acdfd830), which the gate refused for the steps
+        # after the dismissal, and the 10:36:37 one, which names no dismissal.
+        for n, text in [(6203, "push #6203 (dismisses Satish627's approval), then post 3 replies, resolve both threads"),
+                        (6215, "push #6215 (dismisses jokklan's approval), post the reply, resolve the thread"),
+                        (6203, "push #6203, dismissing Casper's approval; then reply, resolve, update the PR description")]:
+            with self.subTest(text=text):
+                self.scenario(n=n)
+                self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        self.scenario(n=6203)
+        for text, why in [("yes: push both fixes, post the 3 replies, resolve both threads", "isn't a plain request"),
+                          # A step after the dismissal that refuses, waits, asks, or opens on no step verb.
+                          *((text, "isn't a plain request") for text in (
+                              "push #6203 (dismisses Satish627's approval), so ask me first",
+                              "push #6203 (dismisses Satish627's approval), and ask me first",
+                              "push #6203 (dismisses Satish627's approval), then wait for CI",
+                              "push #6203 (dismisses Satish627's approval), post the reply once CI passes",
+                              "push #6203 (dismisses Satish627's approval), tomorrow post the reply",
+                              "push #6203 (dismisses Satish627's approval), post the reply, but not yet")),
+                          # The PRs count only in the push: a trailing step names none.
+                          ("push #6204 (dismisses Satish627's approval), then post the reply on #6203", "doesn't name #6203")]:
+            with self.subTest(text=text):
+                reason = self.reason("gh stack push", said=("fix it", self.offer(
+                    {"class": "stop:push", "text": text}, text="Push?\n\n"), "a"))
+                self.assertIn("which dismisses teammate's approval", reason)
+                self.assertIn(why, reason)
+
     def test_passes_a_push_that_dismisses_nothing(self):
         # Unchanged: the branch's tip is the PR's head.
         self.scenario(head=self.local)
