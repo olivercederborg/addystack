@@ -124,6 +124,13 @@ class Post(unittest.TestCase):
         self.assertEqual(outcome['outcome'], 'not-approved')
         self.assertIn('ci\tpending', slow.writes[0][2]['body.md'])
 
+    def test_checks_it_cannot_read_never_approve(self):
+        def unreadable():
+            raise ValueError('github.sh required failed: Resource not accessible by integration')
+        outcome = self.post(Fake(required=unreadable))
+        self.assertEqual(outcome['outcome'], 'not-approved')
+        self.assertIn('Resource not accessible by integration', outcome['checks'][0])
+
     def test_a_moved_head_posts_nothing(self):
         self.assertEqual(self.post(Fake(), head=NEWER), {'outcome': 'superseded', 'head': NEWER})
         for heads, wait in (([NEWER], 600), ([NEWER], 0)):

@@ -47,7 +47,8 @@ a decision above.
   pattern, look for a sibling at the base; none found is a gate.
 - List each sensitive area the diff touches with its `path:line`.
 
-Write `GATES.json` in the shape `scripts/gates.py` documents, then run
+Write `GATES.json` in a folder of its own (`mktemp -d`), so reviews that run side by side
+in one checkout keep their files apart, in the shape `scripts/gates.py` documents, then run
 `scripts/gates.py check <PR> GATES.json` and fix what it names.
 
 **Done when:** `gates.py check` passes on the PR's current head.

@@ -56,8 +56,12 @@ def pr(number: int) -> dict:
 
 def required(number: int) -> tuple:
     """'passed', 'pending' or 'failed' for the base's required checks on the head, with each
-    one that hasn't passed. A draft whose CI skipped is pending: it never approves."""
-    lines = github('required', number).splitlines()
+    one that hasn't passed. A draft whose CI skipped is pending: it never approves. Checks it
+    can't read, such as without the checks permission, never pass."""
+    try:
+        lines = github('required', number).splitlines()
+    except ValueError as unreadable:
+        return 'failed', [f'unreadable: {unreadable}']
     open_checks = [line for line in lines if '\t' in line and line.split('\t', 1)[1] not in PASSED]
     if any(line.split('\t', 1)[1] in FAILED for line in open_checks):
         return 'failed', open_checks
