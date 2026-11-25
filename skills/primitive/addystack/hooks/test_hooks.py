@@ -449,7 +449,8 @@ class UnwatchGate(unittest.TestCase):
 
     def test_a_typed_request_to_stop_watching_passes(self):
         for prompt in ("stop watching it", "unwatch #6226", "ok, unwatch https://github.com/acme/app/pull/6226",
-                       "no need to watch it anymore", "don't babysit it", "please stop watching #6226 and #6215"):
+                       "no need to watch it anymore", "don't babysit it", "please stop watching #6226 and #6215",
+                       "unwatch https://github.com/Acme/App/pull/6226"):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.reason(said=(prompt,)))
 
@@ -460,7 +461,11 @@ class UnwatchGate(unittest.TestCase):
                        "you unwatch PRs too early, never do that", "unwatch it once it merges",
                        # A request for another PR.
                        "don’t unwatch it", "the unwatch on #6226 was a bug", "re-check the unwatch-gate fix",
-                       "stop watching #6215", "unwatch 6215", "unwatch " + "x" * 200):
+                       "stop watching #6215", "unwatch 6215", "unwatch " + "x" * 200,
+                       # The same number in another repo.
+                       "unwatch https://github.com/other/repo/pull/6226",
+                       "stop watching https://github.com/acme/web/pull/6226",
+                       "unwatch https://github.com/pull/6226"):
             with self.subTest(prompt=prompt):
                 self.assertIsNotNone(self.reason(said=(prompt,)))
 

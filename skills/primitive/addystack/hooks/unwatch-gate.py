@@ -19,8 +19,9 @@ own: the thread it reports to keeps the user's. A go is the user's own latest pr
 (user_turn.py) that asks to stop watching or unwatch, typed or as the text of the option
 its key picks: at most 200 characters, and the whole text a request to stop watching
 (unwatch, stop watching, don't watch) with its PRs, naming this one or none, as
-push-gate.py reads a push go. "stop watching #6226" or "don't watch it" is one, and "why
-did you unwatch it?", "don’t unwatch it", or "the unwatch was a bug" isn't. Fails closed:
+push-gate.py reads a push go; a URL names it on its host, owner, repo, and number.
+"stop watching #6226" or "don't watch it" is one, and "why did you unwatch it?",
+"don’t unwatch it", or "the unwatch was a bug" isn't. Fails closed:
 when a check can't run, such as `gh` failing or a call that names no PR, the unwatch is
 denied, which leaves a watch on and costs a wake at most.
 
@@ -89,29 +90,41 @@ def target():
     return None
 
 
-def asks_to_stop(text, number):
-    """Whether text is a plain request to stop watching that names PR number or no PR."""
+LINK = re.compile(r"https?://\S+?/pull/\d+")
+
+
+def url_key(url):
+    """(host, owner, repo, number) of a PR URL, in lower case, or None."""
+    found = isinstance(url, str) and re.fullmatch(r"https?://([^/\s]+)/([^/\s]+)/([^/\s]+)/pull/(\d+)", url)
+    return (*(part.lower() for part in found.groups()[:3]), int(found.group(4))) if found else None
+
+
+def asks_to_stop(text, pr):
+    """Whether text is a plain request to stop watching that names pr or no PR: a URL names
+    it on its host, owner, repo, and number, and a #N on its number."""
     if not isinstance(text, str):
         return False
     text = text.strip().replace("\u2019", "'")
-    named = {int(n) for n in re.findall(r"(?:#|/pull/)(\d+)", text)}
-    return len(text) <= 200 and bool(GO.fullmatch(text)) and (not named or number in named)
+    key = url_key(pr.get("url"))
+    named = [key is not None and url_key(found) == key for found in LINK.findall(text)]
+    named += [int(n) == pr.get("number") for n in re.findall(r"#(\d+)", LINK.sub("", text))]
+    return len(text) <= 200 and bool(GO.fullmatch(text)) and (not named or any(named))
 
 
-def user_go(number):
-    """Whether the user's latest prompt, typed or a key's picked option, asks to stop watching PR number."""
+def user_go(pr):
+    """Whether the user's latest prompt, typed or a key's picked option, asks to stop watching pr."""
     try:
         import turn_block, user_turn
         found = user_turn.exchanges(payload)
         if not found:
             return False
         prompt = found[-1].prompt
-        if asks_to_stop(prompt, number):
+        if asks_to_stop(prompt, pr):
             return True
         if not turn_block.PICK.fullmatch(prompt or ""):
             return False
         option = turn_block.picked(user_turn.answered(found), prompt)
-        return option is not None and asks_to_stop(option.text, number)
+        return option is not None and asks_to_stop(option.text, pr)
     except Exception:
         return False
 
@@ -135,7 +148,7 @@ if pr.get("isDraft"):
     passes(f"#{pr['number']} is a draft, which waits on no reviewer")
 if (pr.get("author") or {}).get("login") != me:
     passes(f"#{pr['number']} is {(pr.get('author') or {}).get('login')}'s, not {me}'s")
-if user_go(pr['number']):
+if user_go(pr):
     passes("the user's latest prompt asks to stop watching")
 deny(f"#{pr['number']} is open and ready for review, so its watch stays on until it merges or closes",
      f"to hand the thread back while it waits, {ASK}",
