@@ -3900,7 +3900,7 @@ class PushGate(unittest.TestCase):
                               "push #6203 (dismisses the reviewer's approval), tomorrow post the reply",
                               "push #6203 (dismisses the reviewer's approval), post the reply, but not yet")),
                           # The PRs count only in the push: a trailing step names none.
-                          ("push #6204 (dismisses the reviewer's approval), then post the reply on #6203", "doesn't name #6203")]:
+                          ("push #6204 (dismisses the reviewer's approval), then post the reply on #6203", "isn't a plain request")]:
             with self.subTest(text=text):
                 reason = self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a"))
@@ -3924,7 +3924,7 @@ class PushGate(unittest.TestCase):
         for text, why in [("yes: push (dismisses the reviewer's approval), post the reply, resolve the thread",
                            "doesn't name #6215 and #6216"),
                           ("push #6215 (dismisses the reviewer's approval)", "doesn't name #6216"),
-                          ("yes: push (dismisses the reviewer's approval), post the reply on #6216", "doesn't name #6215 and #6216")]:
+                          ("yes: push (dismisses the reviewer's approval), post the reply on #6216", "isn't a plain request")]:
             with self.subTest(text=text):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
@@ -3932,25 +3932,33 @@ class PushGate(unittest.TestCase):
         # verify-work on b512f73: with one live approval, a go naming no PR in its push names
         # none after it either, and a step after the dismissal opens on a routine step verb.
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**scenario, "prs": {"6216": scenario["prs"]["6216"]}}))
-        for text, why in [("push it (dismisses the reviewer's approval), then post the reply on #6215", "doesn't name #6216"),
+        for text, why in [("push it (dismisses the reviewer's approval), then post the reply on #6215", "isn't a plain request"),
                           ("push (dismisses the reviewer's approval), then run gh stack push on #6215", "isn't a plain request"),
                           ("push #6216 (dismisses the reviewer's approval), then run the deploy to production",
                            "isn't a plain request"),
                           ("push #6216 (dismisses the reviewer's approval), then update production data", "isn't a plain request"),
                           ("push #6216 (dismisses the reviewer's approval), restack #6215", "isn't a plain request"),
-                          # verify-work on dc8690e: a number after a push that names no PR may name
-                          # another PR, and no word list tells a count from one, so any number refuses.
-                          *((text, "doesn't name #6216") for text in (
+                          # verify-work on dc8690e and review-loop r1: a step after the dismissal names
+                          # no PR, takes no other action, and doesn't undo the push.
+                          *((text, "isn't a plain request") for text in (
                               "push (dismisses the reviewer's approval), then post the reply on PR 6215",
                               "push it (dismisses the reviewer's approval), then post the reply and force-push 6215",
                               "push (dismisses the reviewer's approval), post the reply on https://github.com/acme/app/pull/6215",
-                              "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads"))]:
+                              "push (dismisses the reviewer's approval), then post the reply on #6215",
+                              "push #6216 (dismisses the reviewer's approval), post the reply and skip the push",
+                              "push #6216 (dismisses the reviewer's approval), post the reply and do the push tomorrow",
+                              "push #6216 (dismisses the reviewer's approval), then watch #6215"))]:
             with self.subTest(text=text):
                 self.assertIn(why, self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
         for text in ("push #6216 (dismisses the reviewer's approval), run CI, update both PR descriptions",
                      "push (dismisses the reviewer's approval), then re-verify and watch CI",
-                     "yes: push #6216 (dismisses the reviewer's approval), post the 3 replies, resolve both threads"):
+                     "yes: push #6216 (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
+                     # review-loop r1: a count or an approver's login with a digit names no PR.
+                     "yes: push (dismisses the reviewer's approval), post the 3 replies, resolve both threads",
+                     "push (dismisses reviewer2's approval), post the reply",
+                     "push (dismisses the reviewer's approval), then post the CodeRabbit reply and resolve its thread, "
+                     "re-request the reviewer's review"):
             with self.subTest(text=text):
                 self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
                     {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
