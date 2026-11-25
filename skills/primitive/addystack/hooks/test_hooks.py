@@ -3876,6 +3876,7 @@ class PushGate(unittest.TestCase):
         pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(stack))
         self.assertIsNone(self.reason("gh stack push"))
         self.scenario()
+        self.git("tag", "v1")
         self.assertIsNone(self.reason(f"git push origin refs/tags/v1 {self.BRANCH}:refs/tags/v2"))
         self.git("remote", "add", "mirror", "ssh://mirror.example/~/repo.git")
         self.assertIsNone(self.reason(f"git push mirror {self.BRANCH}"))
@@ -3896,7 +3897,7 @@ class PushGate(unittest.TestCase):
         elsewhere = os.path.join(self.dir, "elsewhere")
         os.makedirs(elsewhere)
         for command in [f"git push origin {self.BRANCH}", f"git push -f origin {self.BRANCH}",
-                        f"git push origin +{self.BRANCH}", f"git push origin 'HEAD~0' {self.local}:refs/heads/{self.BRANCH}",
+                        f"git push origin +{self.BRANCH}", f"git push origin 'HEAD' {self.local}:refs/heads/{self.BRANCH}",
                         f"git push origin {self.BRANCH}:{self.BRANCH} 2>&1 | tail -3", "git push --all origin",
                         f"cd {{repo}} && git push origin {self.BRANCH}", f"git -C {{repo}} push origin {self.BRANCH}",
                         f"FOO=1 time git push origin {self.BRANCH}", f"if git push origin {self.BRANCH}; then echo ok; fi",
@@ -3908,6 +3909,33 @@ class PushGate(unittest.TestCase):
         self.git("checkout", "-q", self.BRANCH)
         self.dismisses(self.reason("git push"))
         self.dismisses(self.reason("git push -u origin HEAD"))
+
+    def test_reads_what_git_itself_would_push(self):
+        # review-loop r1 on #104: push.default=matching, a configured pushurl, and a deletion,
+        # each read by the gate's own refspec rules, as `git push --dry-run --porcelain` reads them.
+        self.git("checkout", "-q", "main")
+        self.git("config", "push.default", "matching")
+        self.dismisses(self.reason("git push origin"))
+        self.git("config", "--unset", "push.default")
+        self.git("checkout", "-q", self.BRANCH)
+        target = "https://github.com/acme/target.git"
+        self.git("config", "--add", f"url.{os.path.join(self.dir, 'origin')}.insteadOf", target)
+        self.git("remote", "set-url", "--push", "origin", target)
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6119"]["url"] = "https://github.com/acme/target/pull/6119"
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.dismisses(self.reason("git push origin HEAD"))
+        self.assertIn("-R acme/target", pathlib.Path(self.env["FAKE_GH"] + ".calls").read_text())
+        self.git("config", "--unset", "remote.origin.pushurl")
+        self.scenario()
+        # Deleting the PR's branch moves it; deleting a branch with no PR, or none, moves nothing.
+        self.assertIn(f"moves #6119 from {self.remote_head[:10]} to a deletion", self.reason(f"git push origin --delete {self.BRANCH}"))
+        self.assertIn("to a deletion", self.reason(f"git push origin :{self.BRANCH}"))
+        self.git("push", "-q", "origin", "main:obsolete")
+        for command in ["git push origin --delete obsolete", "git push origin :obsolete", "git push origin --delete gone"]:
+            with self.subTest(command=command):
+                self.assertIsNone(self.reason(command))
+        self.assertIsNone(self.reason("git push -q origin HEAD:refs/heads/new-branch"))
 
     def test_counts_a_branch_an_earlier_command_moves(self):
         # review-loop r1 on #104: the gate reads the tips before the shell runs, so a commit
@@ -3958,8 +3986,7 @@ class PushGate(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn("so the gate can't tell what it pushes", self.reason(command))
         for command, why in [("d=$(pwd); cd $d && gh stack push", "runs `cd $d`, whose directory it can't read"),
-                             ("git push origin \"$BRANCH\"", "can't tell which branch"),
-                             ("git push origin --delete old", "deletes branches"),
+                             ("git push origin \"$BRANCH\"", "can't tell which remote or refspec"),
                              ("cd /nonexistent && git push", "No such file or directory")]:
             with self.subTest(command=command):
                 self.assertIn(why, self.reason(command))

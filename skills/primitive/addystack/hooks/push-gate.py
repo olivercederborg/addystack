@@ -33,16 +33,17 @@ reaches as moved, and a branch or stack switch earlier denies. For gh
 stack, the branches are the current stack's unmerged, unqueued ones, with their PRs from
 `gh stack view --json`; a sync rebases a branch below which anything moved, or whose
 parent, the trunk's tip on the remote for the lowest, isn't in it. For git push, they are
-its refspecs' destination branches, `--all`'s local branches, or the current branch's
-push destination, with each branch's open same-repo PR found by name in the remote's
-GitHub repo; a push to a remote whose configured URL doesn't name github.com, such as
-another machine, moves no PR. No `stack.sh` subcommand pushes, so it reads none.
+the branches `git push --dry-run --porcelain` says it would update or delete, so
+push.default, refspecs, and `--all` read as git reads them, with each branch's open
+same-repo PR found by name in the GitHub repo of each push URL (`pushurl`, else `url`); a
+push to a remote whose configured URLs don't name github.com, such as another machine,
+moves no PR, and one git refuses for its refspec moves nothing. No `stack.sh` subcommand pushes, so it reads none.
 
 Fails closed: when a check can't run, the push is denied. Codex runs it too, but a crash
 or timeout there lets the push through, since Codex has no `onFailure: "block"`. Known
 limits: a push through `gh api`, a git alias, a script, `gh` or `git` run by its path, a
 command that runs only inside quotes or a heredoc (`bash -c '…'`), one a tool such as
-`xargs` repeats, a remote's configured `push` refspecs, a GitHub remote behind an ssh
+`xargs` repeats, a GitHub remote behind an ssh
 host alias, which reads as off GitHub, and in Codex a push reached only through
 `workdir`, which is checked against the session's cwd. It assumes the repo dismisses
 stale approvals, so in one that doesn't it denies a push that would dismiss nothing, and
@@ -123,7 +124,8 @@ for piece, words, lead in walk:
                 where = os.path.normpath(os.path.join(where, os.path.expanduser(words[at + 1])))
             at += 2 if words[at] in GIT_VALUED else 1
         if words[at:at + 1] == ["push"] and not {"-h", "--help", "-n", "--dry-run"} & set(words[at + 1:]):
-            found = ("git", words[at + 1:], where, unknown, earlier)
+            options = [word for i, word in enumerate(words[1:at], 1) if "-C" not in (word, words[i - 1])]
+            found = ("git", (options, words[at + 1:]), where, unknown, earlier)
     pushes += [found] if found else []
     # A push moves no local branch, so of the pushes only a sync's rebase counts for those after it.
     text = walk.pieces[piece]
@@ -176,12 +178,18 @@ def value(args, *names):
     return found
 
 
-def github_repo(where, remote):
-    """owner/name of the GitHub repo a remote, by name or URL, points at, or None for a
-    remote off github.com. The configured URL, before any insteadOf rewrite."""
-    url = run(where, "git", "config", "--get", f"remote.{remote}.url", check=False) or remote
+def github_repo(url):
+    """owner/name of the GitHub repo a URL points at, or None for one off github.com."""
     found = re.search(r"github\.com[:/]+([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", url)
     return f"{found.group(1)}/{found.group(2)}" if found else None
+
+
+def github_repos(where, remote):
+    """The GitHub repos a push to remote, by name or URL, reaches: its push URLs, or else its
+    URL, as configured, before any insteadOf rewrite."""
+    urls = (run(where, "git", "config", "--get-all", f"remote.{remote}.pushurl", check=False).split()
+            or [run(where, "git", "config", "--get", f"remote.{remote}.url", check=False) or remote])
+    return sorted({repo for repo in map(github_repo, urls) if repo})
 
 
 def stack_targets(kind, args, where):
@@ -207,10 +215,13 @@ def stack_targets(kind, args, where):
     return found
 
 
-def git_targets(args, where):
-    """(branch, local tip, None) for each branch on a GitHub remote that git push updates,
-    and that remote's owner/name."""
-    flags, positional, at = [], [], 0
+def git_targets(argv, where, earlier):
+    """(branch, local tip or None, how it moves or None) for each branch git push would
+    update, as `git push --dry-run --porcelain` lists them, so push.default, refspecs,
+    --all, and deletions read as git reads them, and the GitHub repos it pushes to. After an
+    earlier branch move in the command, a branch up to date now counts too."""
+    options, args = argv
+    positional, at = [], 0
     while at < len(args):
         arg, at = args[at], at + 1
         if arg == "--":
@@ -218,46 +229,36 @@ def git_targets(args, where):
             break
         if arg in ("--repo", "-o", "--push-option", "--receive-pack", "--exec"):
             at += 1
-        elif arg.startswith("-"):
-            flags.append(arg.split("=")[0])
-        else:
+        elif not arg.startswith("-"):
             positional.append(arg)
-    if {"-d", "--delete", "--prune"} & set(flags):
-        raise RuntimeError("the gate doesn't read a push that deletes branches: run the deletion as its own push")
+    for word in positional:
+        if UNREADABLE.search(word):
+            raise RuntimeError(f"can't tell which remote or refspec `{word}` names")
     current = run(where, "git", "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
     # With no remote named, git pushes to the current branch's push remote.
     remote = positional[0] if positional else value(args, "--repo") or current and run(
         where, "git", "for-each-ref", "--format=%(push:remotename)", f"refs/heads/{current}") or "origin"
-    if UNREADABLE.search(remote):
-        raise RuntimeError(f"can't tell which remote `{remote}` is")
-    repo = github_repo(where, remote)
-    if repo is None:
-        return [], None
-    specs = positional[1:]
-    if {"--all", "--branches", "--mirror"} & set(flags):
-        specs += run(where, "git", "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
-    elif not specs and "--tags" not in flags:
-        if not current:
-            return [], repo  # detached: git push names nothing to push
-        destination = run(where, "git", "for-each-ref", "--format=%(push:remoteref)", f"refs/heads/{current}")
-        specs = [f"{current}:{destination or current}"]
+    repos = github_repos(where, remote)
+    if not repos:
+        return [], []
+    loud = [arg for arg in args if arg not in ("-q", "--quiet")]  # --quiet drops the porcelain lines
+    result = subprocess.run(["git", *options, "push", "--dry-run", "--porcelain", "--no-verify", *loud], cwd=where,
+                            capture_output=True, timeout=40)
+    out, err = result.stdout.decode(errors="surrogateescape"), result.stderr.decode(errors="replace").strip()
+    if not re.search(r"^To ", out, re.M):
+        # A refspec git refuses before it reaches the remote fails the push too, so it moves nothing.
+        if result.returncode and re.search(r"src refspec .* does not match any|invalid refspec|not currently on a "
+                                           r"branch|has no upstream branch|remote ref does not exist", err):
+            return [], repos
+        raise RuntimeError(f"`git push --dry-run` failed: {err[:200]}")
     found = []
-    for spec in specs:
-        if UNREADABLE.search(spec):
-            raise RuntimeError(f"can't tell which branch the refspec `{spec}` pushes")
-        source, colon, destination = spec.lstrip("+").partition(":")
-        if colon and not source:
-            raise RuntimeError(f"the gate doesn't read a push that deletes branches (`{spec}`): run it on its own")
-        destination = destination if colon else (current if source == "HEAD" else source)
-        if destination in ("HEAD", "@"):
-            destination = current
-        if destination.startswith("refs/"):
-            if not destination.startswith("refs/heads/"):
-                continue  # a tag or another namespace moves no PR
-            destination = destination[len("refs/heads/"):]
-        if destination:
-            found.append((destination, tip(where, source), None))
-    return found, repo
+    # Each line is "<flag>\t<from>:<to>\t<summary>": = is up to date and ! rejected, so neither moves.
+    for flag, source, destination in re.findall(r"^([ +*!=-])\t([^\t]*):([^\t]+)\t", out, re.M):
+        if flag == "!" or flag == "=" and not earlier or not destination.startswith("refs/heads/"):
+            continue  # a tag or another namespace moves no PR
+        branch = destination[len("refs/heads/"):]
+        found.append((branch, None, "a deletion") if flag == "-" else (branch, tip(where, source), None))
+    return found, repos
 
 
 FIELDS = "number,url,state,headRefName,headRefOid,isCrossRepository,reviews"
@@ -290,15 +291,20 @@ try:
         if unknown:
             raise RuntimeError(f"this command {unknown}, so the gate can't tell what it pushes: run the push "
                                "as its own command, or as `cd <checkout> && …` on a literal path")
-        targets, repo = (stack_targets(kind, args, where), None) if kind != "git" else git_targets(args, where)
-        for branch, local, known in targets:
+        if kind == "git":
+            moving, repos = git_targets(args, where, earlier)
+            targets = [(branch, local, how, None, repo) for branch, local, how in moving for repo in repos]
+        else:
+            targets = [(branch, local, None if local else "a rebased tip", known, None)
+                       for branch, local, known in stack_targets(kind, args, where)]
+        for branch, local, how, known, repo in targets:
             if kind != "git" and not known:
                 if DRY_RUN:
                     print(f"{branch}: no PR (from {where})")
                 continue
             pr = pull_request(where, branch, known, repo)
-            local, how = (None, "a tip an earlier command in this one makes") if earlier else (
-                local, None if local else "a rebased tip")
+            if earlier:
+                local, how = None, "a tip an earlier command in this one makes"
             changed = pr is not None and (how is not None or local != pr["headRefOid"])
             if DRY_RUN:
                 said = ("no open PR" if pr is None else f"#{pr['number']}, " + (
