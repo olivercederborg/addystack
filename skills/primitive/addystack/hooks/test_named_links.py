@@ -69,6 +69,9 @@ class Unnamed(unittest.TestCase):
         self.assertEqual(ids("> ~~~\n> #12\n> ~~~\nand #15"), ["#15"])
         self.assertEqual(ids("See `<!--` and DEV-7. <!-- not shown -->"), ["DEV-7"])
 
+    def test_a_one_character_repo_and_a_number_before_punctuation_are_ids(self):
+        self.assertEqual(ids("Merged x#12 and #13; next is #14."), ["x#12", "#13", "#14"])
+
     def test_a_named_repo_id_covers_its_bare_number_but_not_another_repo(self):
         self.assertEqual(ids("[addystack#12, Fix the gate](u) then #12 and dotfiles#12"), ["dotfiles#12"])
         self.assertEqual(ids("[#12, Fix the gate](u) then dotfiles#12"), ["dotfiles#12"])

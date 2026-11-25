@@ -23,13 +23,14 @@ FENCE = re.compile(r"^(?:\s*(?:>|[-*+]\s|\d+[.)]\s))*\s*(`{3,}|~{3,})")
 LINK = re.compile(r"\[([^\[\]\n]*)\](\(\s*(?:<[^>\n]*>|(?:[^()\s]|\([^()\s]*\))*)"
                   r"(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\s*\))")
 URL = re.compile(r"<?\b(?:https?|ftp)://[^\s<>`]*>?|\bwww\.[^\s<>`]+")
-# DEV-3127; owner/repo#12 or repo#12; #12. A number with a leading zero, as in #000, is a
-# hex color, and so is one right after a colon or before a semicolon (color:#333;); an &
-# before # starts an HTML entity (&#123;). C# and F# take no number.
+# DEV-3127; owner/repo#12 or repo#12, a repo name of one character too; #12, before any
+# punctuation, as in "#13; then". A number with a leading zero, as in #000, is a hex
+# color, and so is one right after a colon (color:#333); an & before # starts an HTML
+# entity (&#123;). C# and F# take no number.
 ID = re.compile(r"(?<![\w-])(?P<team>[A-Z]{2,6})-(?P<issue>[1-9]\d*)(?![\w-])"
-                r"|(?<![\w./-])(?P<repo>(?:[A-Za-z0-9][\w.-]*/)?[A-Za-z0-9][\w.-]*[A-Za-z0-9_])"
-                r"#(?P<pull>[1-9]\d*)(?![\w;-])"
-                r"|(?<![\w&#:])#(?P<number>[1-9]\d*)(?![\w;-])")
+                r"|(?<![\w./-])(?P<repo>(?:[A-Za-z0-9][\w.-]*/)?[A-Za-z0-9](?:[\w.-]*[A-Za-z0-9_])?)"
+                r"#(?P<pull>[1-9]\d*)(?![\w-])"
+                r"|(?<![\w&#:])#(?P<number>[1-9]\d*)(?![\w-])")
 WORD = re.compile(r"[^\W\d_]{2,}")
 
 
