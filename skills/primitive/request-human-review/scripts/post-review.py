@@ -224,13 +224,16 @@ def fetch(base: str, number: int, approved: str) -> None:
 
 
 def retargeted(number: int, since: str) -> bool:
-    """Whether the PR's base branch changed after `since`, an ISO time, as its timeline records."""
-    result = subprocess.run(['gh', 'api', '--paginate', f'repos/{{owner}}/{{repo}}/issues/{number}/timeline', '--jq',
-                             '.[] | select(.event == "base_ref_changed") | .created_at'], capture_output=True, text=True, timeout=120)
+    """Whether the PR's base branch changed at or after `since`, an ISO time: by hand, or by GitHub
+    when the base branch was merged and deleted. Only the issue events list records either; the
+    timeline doesn't. The same second counts, since GitHub's times have no finer grain."""
+    result = subprocess.run(['gh', 'api', '--paginate', f'repos/{{owner}}/{{repo}}/issues/{number}/events', '--jq',
+                             '.[] | select(.event == "base_ref_changed" or .event == "automatic_base_change_succeeded") '
+                             '| .created_at'], capture_output=True, text=True, timeout=120)
     if result.returncode:
-        raise ValueError(f'gh api timeline failed: {_error(result.stderr)}')
+        raise ValueError(f'gh api issue events failed: {_error(result.stderr)}')
     changed = [datetime.fromisoformat(line.strip().replace('Z', '+00:00')) for line in result.stdout.splitlines() if line.strip()]
-    return any(at > datetime.fromisoformat(since.replace('Z', '+00:00')) for at in changed)
+    return any(at >= datetime.fromisoformat(since.replace('Z', '+00:00')) for at in changed)
 
 
 def carry(number: int, approved: str) -> dict:

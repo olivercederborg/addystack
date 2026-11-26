@@ -292,10 +292,15 @@ class Carry(unittest.TestCase):
                 self.assertEqual(fake.writes, [])
 
     def test_a_base_change_counts_only_after_the_approval(self):
-        timeline = subprocess.CompletedProcess([], 0, '2026-11-26T09:00:00Z\n2026-11-26T11:00:00Z\n', '')
-        with patch.object(post_review.subprocess, 'run', return_value=timeline):
+        events = subprocess.CompletedProcess([], 0, '2026-11-26T09:00:00Z\n2026-11-26T11:00:00Z\n', '')
+        with patch.object(post_review.subprocess, 'run', return_value=events) as run:
             self.assertTrue(post_review.retargeted(7, '2026-11-26T10:00:00Z'))
+            self.assertTrue(post_review.retargeted(7, '2026-11-26T11:00:00Z'), 'the same second counts')
             self.assertFalse(post_review.retargeted(7, '2026-11-26T12:00:00Z'))
+        # The issue events list, not the timeline, records base changes, GitHub's automatic ones too.
+        command = run.call_args.args[0]
+        self.assertEqual(command[3], 'repos/{owner}/{repo}/issues/7/events')
+        self.assertIn('automatic_base_change_succeeded', command[5])
 
     def test_pending_checks_and_a_moved_head_post_nothing(self):
         pending = Fake(approved=self.approved_at(self.APPROVED), required='ci\tpending\nrequired: not all passed\n')
