@@ -566,12 +566,14 @@ class WatchReminder(unittest.TestCase):
                 self.assertEqual((out.returncode, out.stdout), (0, ""))
 
 
-def card(state="stop", kinds=("review",), classes=("stop:post", "routine")):
-    """A reply ending on a turn block in this state, with a need of each kind and an option of each class."""
+def card(state="stop", kinds=("review",), classes=("stop:post", "routine"), needs=None, text="Post the review"):
+    """A reply ending on a turn block in this state, with a need of each kind, or a decide need
+    for each (id, name) in needs, and an option of each class, option a's text being text."""
+    needs = needs or [(n + 1, "Review the drafted comments") for n in range(len(kinds))]
+    kinds = kinds if len(kinds) == len(needs) else ("decide",) * len(needs)
     block = {"state": state} if state == "done" else {
-        "state": state, "needs": [{"id": n + 1, "kind": kind, "name": "Review the drafted comments"}
-                                  for n, kind in enumerate(kinds)],
-        "options": [{"key": "abc"[n], "class": cls, "text": "Post the review"} for n, cls in enumerate(classes)]}
+        "state": state, "needs": [{"id": number, "kind": kind, "name": name} for (number, name), kind in zip(needs, kinds)],
+        "options": [{"key": "abc"[n], "class": cls, "text": text if n == 0 else "Hold it"} for n, cls in enumerate(classes)]}
     if state == "running":
         block = {"state": "running", "elapsed": "2m"}
     return f"Here's the review.\n\n<!-- turn {json.dumps(block)} -->"
@@ -868,8 +870,8 @@ class CleanestAskImplementation(CleanestAskCase):
     RESULT = "Delegated task node:delegated-task:w1 (token store) [completed]:\nPushed #6110."
     SENT = "thread|send|--json|mcp:launch:coord-effect|/cleanest|"
 
-    def card(self, state="stop", kinds=("decide",), classes=("decision", "decision")):
-        return card(state, kinds, classes)
+    def card(self, state="stop", kinds=("decide",), classes=("decision", "decision"), needs=None, text="Post the review"):
+        return card(state, kinds, classes, needs, text)
 
     def test_sends_where_option_a_decides_merges_or_pushes(self):
         for cls in IMPLEMENTATION_CLASSES:
@@ -900,14 +902,15 @@ class CleanestAskImplementation(CleanestAskCase):
         answered = [first, (self.COMMAND, self.card())]
         self.assertEqual(len(self.stop(*answered)), 1)
         self.assertEqual(self.log()[-1]["reason"], "the latest prompt is /cleanest")
-        # The user's pick starts the next run, though no reply ended `done`.
-        self.assertEqual(len(self.stop(*answered, ("a", self.card()))), 2)
+        # The user's pick starts the next run, though no reply ended `done`, and its card's decision is new.
+        second = self.card(needs=[(2, "split the token store PR")])
+        self.assertEqual(len(self.stop(*answered, ("a", second))), 2)
         # Their own ask holds the run they typed it in, and their next prompt starts another.
-        asked = [*answered, ("a", self.card()), ("is this really necessary for the long term?", self.card())]
+        asked = [*answered, ("a", second), ("is this really necessary for the long term?", self.card(needs=[(3, "keep the cache")]))]
         self.set_run("run-2", "completed")
         self.assertEqual(len(self.stop(*asked)), 2)
         self.assertEqual(self.log()[-1]["reason"], "this run already asked")
-        self.assertEqual(len(self.stop(*asked, ("ok, build it", self.card()))), 3)
+        self.assertEqual(len(self.stop(*asked, ("ok, build it", self.card(needs=[(4, "name the client")])))), 3)
 
     def test_sends_on_the_card_after_a_workers_result_in_a_run_the_user_started(self):
         # 18 of the 47 asked-on cards that week came right after a worker or child reported back.
@@ -970,6 +973,76 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(len(self.stop((self.ASK, self.card()), (self.COMMAND, self.card()), ("a", self.card()),
                                        env=env, args=both)), 1)
         self.assertEqual(self.log()[-1]["reason"], "this run already asked")
+
+    CHECKED = "a /cleanest or the user's ask already checked every decision on the card"
+    PUSH = "push #6153, #6179, #6213, #6225 and #6248"
+
+    def test_asks_once_about_a_decision_until_a_new_one_appears(self):
+        # ◆ ox-migration on Nov 26, 2026: a pick, the card it fired on, /cleanest's answer, then
+        # the user's question about that answer, which got the same decision explained again.
+        scope = self.card(needs=[(67, "milestone 3 scope (5 questions from probe-79)")])
+        rule = self.card(needs=[(68, "one focused-test rule in #6179 instead of both, then push")],
+                         classes=("stop:push", "stop:push"))
+        turns = [("A", scope)]
+        self.assertEqual(len(self.stop(*turns)), 1)
+        self.set_run("run-1", "completed")
+        turns.append((self.COMMAND, rule))
+        self.assertEqual(len(self.stop(*turns)), 1)
+        turns.append(("What does this even mean? Can you explain with natural and clear language?", rule))
+        self.assertEqual(len(self.stop(*turns)), 1)
+        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+        # The coordinator shows the first decision again: checked too, its name in other spacing and case.
+        again = self.card(needs=[(67, "Milestone 3  scope (5 questions from probe-79)")])
+        self.assertEqual(len(self.stop(*turns, ("b", again))), 1)
+        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+        # The user's own ask checks the card it answered and the card that answers it.
+        self.fresh()
+        asked = [("Plan milestone 3", scope), ("is this the cleanest, best and most idiomatic long-term solution?", rule),
+                 ("why both rules?", rule)]
+        self.assertEqual(self.stop(*asked), [])
+        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+        self.assertEqual(self.stop(*asked, ("and the scope?", scope)), [])
+
+    def test_sends_on_a_card_with_a_new_decision_beside_a_checked_one(self):
+        # A coordinator keeps its queued needs on every card; a new one beside them still asks.
+        queued = (12, "merge window with the team")
+        turns = [(self.ASK, self.card(needs=[queued])), (self.COMMAND, self.card(needs=[queued]))]
+        self.set_run("run-1", "completed")
+        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[queued]))), [])
+        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[queued, (13, "raise the Typecheck limit")])))), 1)
+
+    def test_reads_a_decision_by_its_name_not_its_id(self):
+        # Outside a coordinator, need 1 is often a new decision: 197 of the week's 362 replayed sends
+        # shared an id with a checked card, 58 a name. A need renumbered keeps its name.
+        turns = [(self.ASK, self.card(needs=[(1, "merge the four approved PRs")])),
+                 (self.COMMAND, self.card(needs=[(2, "start building the lint rules PR")]))]
+        self.set_run("run-1", "completed")
+        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "push #6136 fixes and reply to the reviewer")])))), 1)
+        self.fresh()
+        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(6, "start building the lint rules PR")]))), [])
+        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+
+    def test_skips_a_card_that_asks_again_for_a_go_the_user_gave(self):
+        # ◆ ox-migration on Nov 26, 2026: push-gate refused each push's wording, and the
+        # coordinator re-asked the push under a new need each time, after a pick or a typed go.
+        def push(number, name):
+            return self.card(needs=[(number, name)], classes=("stop:push", "decision"),
+                             text=f"{self.PUSH} (dismisses the reviewer's approval)")
+        first = push(70, "push all five PRs (dismisses the reviewer's approvals on #6179, #6213)")
+        went = "the user already gave the stop:push go this card asks for again"
+        for go, card in (("A", push(71, "push the five PRs (dismisses the reviewer's approval on #6179 and #6213)")),
+                         (self.PUSH, push(72, "push the five PRs (dismisses the reviewer's approval)"))):
+            with self.subTest(go=go):
+                self.fresh()
+                self.assertEqual(self.stop((self.ASK, first), (go, self.card("running")), (self.RESULT, card)), [])
+                self.assertEqual(self.log()[-1]["reason"], went)
+        # A go for another gate, a go the user typed for a pick that isn't one, or a new run still asks.
+        merge = self.card(needs=[(73, "merge the five PRs")], classes=("stop:merge", "decision"))
+        for turns in ([(self.ASK, first), ("a", merge)], [(self.ASK, self.card()), ("a", first)],
+                      [(self.ASK, first), ("push", first)], [(self.ASK, first), ("a", self.card()), ("now rebase it", first)]):
+            with self.subTest(turns=turns):
+                self.fresh()
+                self.assertEqual(len(self.stop(*turns)), 1)
 
     def test_dry_run_takes_the_scope(self):
         run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), *self.ARGS, "--dry-run", "--transcript",
