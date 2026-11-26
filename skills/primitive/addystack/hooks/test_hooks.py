@@ -4952,12 +4952,21 @@ class PushGate(unittest.TestCase):
 class CardCheck(unittest.TestCase):
     """card-check.py on the stop:push and stop:merge options of real cards."""
 
+    def setUp(self):
+        self.repo = tempfile.mkdtemp()  # a repo with no CI, as addystack's
+        self.addCleanup(shutil.rmtree, self.repo)
+        git = lambda *args: subprocess.run(["git", "-C", self.repo, *args], check=True, capture_output=True)
+        git("init", "-q")
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "base")
+        self.git = git
+
     def run_hook(self, *options, active=False):
         reply = "Push?\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
                                       "options": [{"key": key, "class": cls, "text": text}
                                                   for key, (cls, text) in zip("ab", options)]})
         out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
-            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active,
+             "cwd": self.repo})).stdout
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
 
     def test_sends_back_an_option_the_gate_would_refuse(self):
@@ -4982,6 +4991,17 @@ class CardCheck(unittest.TestCase):
                           ("routine", "merge only #6080")]:
             with self.subTest(text=text):
                 self.assertIsNone(self.run_hook((cls, text)))
+        # merge-gate reads a merge go only for a PR with no checks, so in a repo with CI, or
+        # where it can't tell, a merge option passes: a work repo's "merge only #6080" had 20 checks.
+        merge = ("stop:merge", "merge only #6080")
+        pathlib.Path(self.repo, ".github", "workflows").mkdir(parents=True)
+        pathlib.Path(self.repo, ".github", "workflows", "ci.yml").write_text("on: pull_request\n")
+        self.git("add", ".")
+        self.git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "ci")
+        self.assertIsNone(self.run_hook(merge))
+        self.assertIsNotNone(self.run_hook(("stop:push", "fix both gaps, push (dismisses the reviewer's approvals), re-verify")))
+        shutil.rmtree(os.path.join(self.repo, ".git"))
+        self.assertIsNone(self.run_hook(merge))
         for payload in ("", "not json", json.dumps({"last_assistant_message": "no block"})):
             with self.subTest(payload=payload):
                 self.assertEqual(subprocess.run([str(HOOKS / "card-check.py")], input=payload, capture_output=True,

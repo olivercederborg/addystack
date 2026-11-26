@@ -7,18 +7,21 @@ new card: on Nov 26, 2026 push-gate refused three informed goes in a row on one 
 
 It checks only what the reply can know offline:
 - a `stop:merge` option that mentions merging must be merge_go.literal_go, as merge-gate.py
-  reads a pick: "merge #12 and #13", not "merge #12, #13, and #14" or "merge only #12". A
-  ready-only option, such as "mark #12 ready", passes;
+  reads a pick: "merge #12 and #13", not "merge #12, #13, and #14" or "merge only #12". It's
+  checked only when the session's checkout is a repo with no `.github/workflows` at HEAD,
+  since merge-gate reads the go only for a PR with no checks (`has_ci`). A ready-only
+  option, such as "mark #12 ready", passes;
 - a `stop:push` option that mentions dismissing must be push_go.literal_go, as push-gate.py
   reads a pick. Whether a push dismisses an approval depends on reviews the reply can't
   see, so an option that names no dismissal passes, and so does one whose PRs the gate
   would find incomplete.
 
-Of 1,198 cards with such a class from Nov 18 to 26, 2026, on two machines, 27 options were
-ones it flags. T3 shows a reply as it streams, so the user sees the first card too; the
+Of 1,198 cards with such a class from Nov 18 to 26, 2026, on two machines, it flags 23
+push options and 1 merge option, in a repo with no CI; the 3 merge options it skips were in a
+repo with CI, where merge-gate merges on green checks whatever the text. T3 shows a reply as it streams, so the user sees the first card too; the
 resent one comes seconds later and is the one a key answers (user_turn.answered).
 stop_hook_active keeps it to one send per stop, and any doubt or error passes."""
-import json, os, re, sys
+import json, os, re, subprocess, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -26,12 +29,23 @@ DISMISS = re.compile(r"\bdismiss", re.I)
 MERGE = re.compile(r"\bmerg", re.I)
 
 
-def refused(turn):
+def no_ci(cwd):
+    """Whether cwd is in a git repo with no `.github/workflows` at HEAD; False when it can't tell."""
+    try:
+        listed = subprocess.run(["git", "ls-tree", "-r", "--name-only", "HEAD", "--", ".github/workflows"], cwd=cwd,
+                                capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return listed.returncode == 0 and not listed.stdout.strip()
+
+
+def refused(turn, cwd):
     """(option, the go it should be) for each option of turn the gate would refuse."""
     import merge_go, push_go
     found = []
     for option in turn.options:
-        if option.cls == "stop:merge" and MERGE.search(option.text) and not merge_go.literal_go(option.text):
+        if option.cls == "stop:merge" and MERGE.search(option.text) and not merge_go.literal_go(option.text) \
+                and no_ci(cwd):
             found.append((option, 'the plain merge request and nothing else, as in "merge #12 and #13", which merge-gate '
                                   "takes as the user's go"))
         elif option.cls == "stop:push" and DISMISS.search(option.text) and not push_go.literal_go(option.text):
@@ -49,7 +63,7 @@ def main():
         if event.get("stop_hook_active"):
             return
         import turn_block
-        found = refused(turn_block.parse(event.get("last_assistant_message") or ""))
+        found = refused(turn_block.parse(event.get("last_assistant_message") or ""), event.get("cwd") or os.getcwd())
     except Exception:  # Malformed included: no block, nothing to check
         return
     if found:
