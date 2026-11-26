@@ -2,7 +2,7 @@
 """addystack: install, configure, build, and check the addystack skills kit.
 
     addystack install [--dry-run]      merge hooks, adopt instruction files, link the work-verifier agent,
-                                       build, doctor; never a skill
+                                       unlink skills the kit dropped, build, doctor; never adds a skill
     addystack update [--to TAG]        update the kit and its skills, then install
     addystack init [--yes] [--force]   write ~/.config/addystack/addystack.jsonc
     addystack build [--check|--dry-run]
@@ -56,8 +56,9 @@ import skills_cli  # noqa: E402
 
 
 def install(args: argparse.Namespace) -> int:
-    """Validates the config, reconciles hooks, instruction files, and Claude Code's
-    work-verifier agent link, builds, then runs doctor (D10). --dry-run prints each change,
+    """Validates the config, reconciles hooks, instruction files, Claude Code's
+    work-verifier agent link, and links to skills the kit dropped, builds, then runs doctor
+    (D10). --dry-run prints each change,
     and build's diffs from the state those changes would leave, and writes nothing."""
     value = _resolve()
     if value is None:

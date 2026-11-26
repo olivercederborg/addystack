@@ -1,6 +1,6 @@
 ---
 name: correct
-description: "Turns a mistake agents keep repeating in a repo into the strongest check that catches it. Use for /correct, when a correction lands twice (\"you did X again\", \"make this impossible\"), or when reflect hands one over."
+description: "Turns a mistake agents keep repeating in a repo into the strongest check that catches it. Use for /correct, when a correction lands twice (\"you did X again\", \"make this impossible\")."
 metadata:
   layer: primitive
 ---
@@ -31,17 +31,16 @@ existing hits stand and fails when a change adds more.
 ## 1. Find the classes
 
 Read-only. First list what already enforces rules in the target repo (this checkout, or
-the one reflect named): lint configs, the baseline or suppressions file and the guard
-that reads it, typecheck strictness, CI's commands and what CI skips (drafts,
-`paths-ignore`), and `AGENTS.md`'s rule table. Fetch the default branch when there's a
-remote, and note its head as the base.
+the one named): lint configs, the baseline or suppressions file and the guard that reads
+it, typecheck strictness, CI's commands and what CI skips (drafts, `paths-ignore`), and
+`AGENTS.md`'s rule table. Fetch the default branch when there's a remote, and note its
+head as the base.
 
 Then read every source in [mining.md](references/mining.md): review-fix commits and the
 commits they fixed, reverts, PR review comments, CI failures, and the user's typed
-corrections in T3 through `scripts/corrections.py`. When reflect hands a class over, its
-citations are occurrences. Group by the shape of the fix. A class needs two cited
-occurrences (a SHA, a PR comment or CI run URL, or a T3 thread and timestamp); list a
-single one as skipped, with its citation.
+corrections in T3 through `scripts/corrections.py`. Group by the shape of the fix. A class
+needs two cited occurrences (a SHA, a PR comment or CI run URL, or a T3 thread and
+timestamp); list a single one as skipped, with its citation.
 
 ## 2. Pick the level
 

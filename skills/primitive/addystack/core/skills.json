@@ -17,7 +17,6 @@
     "maintain-verification-skill": "optional",
     "open-pr": "primitive",
     "orchestrate": "primitive",
-    "reflect": "primitive",
     "reply-shape": "optional",
     "review-artifact": "optional",
     "review-loop": "primitive",

@@ -4,6 +4,17 @@
 It never installs or links a skill: skills install with `npx skills add`, and doctor
 accepts that install or a maintainer's linked checkout.
 
+Skill links: a maintainer links skills from the checkout, so once the kit drops a skill,
+its links stay in each host's skill folder, dangling or at a folder that only untracked
+files such as __pycache__ keep. So in both hosts' skill folders, enabled or not, since one
+host's link can lead through the other's, install removes a link with no SKILL.md behind it
+that resolves, itself or through another link, into the kit checkout's skills/<layer>/ (or
+the checkout the last build recorded, when it moved), when the kit has no skill of that
+name, once each when one host's folder is the other's. Any other link stays, a link into a
+previous checkout that still has the skill's SKILL.md too: that checkout can be another
+repo the user still links skills from, as the workshop was before the kit moved out. In an npx skills install, update removes a skill the release no longer
+lists as core (_update_skills); one that was never core stays.
+
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
 hookset.merge into Claude Code's settings.json `hooks` key and Codex's
 ~/.codex/hooks.json (hookset.settings_path), so every hook addystack didn't install stays where it
@@ -53,6 +64,7 @@ import config
 import hookset
 import render
 import resolved as _resolved
+import skill_layer
 import skills_cli
 from config import Resolved
 
@@ -81,7 +93,7 @@ _GLOBAL = config.GLOBAL
 class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
-    kind: Literal["hooks", "adopt-instructions", "agent", "command"]
+    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link"]
     target: Path
     detail: str
     left: bool = False
@@ -100,7 +112,7 @@ def run(resolved: Resolved) -> List[Change]:
             _link(change.target, agent_source())
         elif change.kind == "command" and not change.left and change.source:
             _link(change.target, change.source)
-        elif change.kind == "command" and not change.left:
+        elif change.kind in ("command", "skill-link") and not change.left:
             os.unlink(change.target)
     return changes
 
@@ -122,7 +134,47 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
-    return changes + ([agent] if agent else []) + _commands(resolved), writes
+    return changes + ([agent] if agent else []) + _commands(resolved) + _skill_links(resolved), writes
+
+
+def _skill_links(resolved: Resolved) -> List[Change]:
+    """The removal of each host's link to a skill the kit's checkout dropped; see Skill
+    links above."""
+    kit = Path(resolved["kit"])
+    trees = {_place(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
+    changes, seen = [], set()
+    for host in ("claude", "codex"):
+        folder = skills_cli.folder(host)
+        if not folder.is_dir():
+            continue
+        for link in sorted(folder.iterdir()):
+            entry = (_place(str(folder)), link.name)
+            if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
+                    or skill_layer.folder(kit, link.name):
+                continue
+            seen.add(entry)
+            gone = Path(os.path.realpath(link))
+            if _place(str(gone.parent.parent)) in trees:
+                changes.append(Change("skill-link", link, f"removes it: the kit has no {link.name} skill at "
+                                                          f"{render._home(gone)}"))
+    return changes
+
+
+def _skill_tree(kit: str) -> Optional[str]:
+    """A kit checkout's skills/ folder, the addystack skill's grandparent, or None for a kit
+    the skills CLI installed, whose skills it removes itself."""
+    tree = Path(os.path.abspath(os.path.expanduser(kit))).parents[1]
+    return str(tree) if tree.name.casefold() == "skills" else None
+
+
+def _place(path: str) -> Any:
+    """What names one folder however its path is spelled, in case or through links: its
+    device and inode, or for a folder that's gone, its resolved path."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return os.path.realpath(path)
+    return info.st_dev, info.st_ino
 
 
 def _commands(resolved: Resolved) -> List[Change]:

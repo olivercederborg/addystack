@@ -119,9 +119,9 @@ review.
   the interfaces they approve. Elsewhere, it reaches the code through their review of
   the agent's picks.
 - **Framework (gradually):** each correction the user repeats becomes a lint rule, a
-  convention, or a type, through `reflect`, which hands target-repo ones to `correct`;
-  `correct` proves each check fails on a past mistake and extends the repo's lint
-  ratchet. Every structural rule the codebase enforces is one less shape to approve.
+  convention, or a type, through `correct`, which proves each check fails on a past
+  mistake and extends the repo's lint ratchet. Every structural rule the codebase
+  enforces is one less shape to approve.
 
 **End state:** the user approves only interfaces that are genuinely new, and the
 framework decides the rest.

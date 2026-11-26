@@ -6,8 +6,9 @@ user's install, init --yes, build, and doctor."""
 from __future__ import annotations
 
 import json, os, pathlib, shutil, stat, sys, unittest
+from pathlib import Path
 
-from addystack_home import KIT, SKILLS, Home
+from addystack_home import BIN, KIT, SKILLS, Home
 
 sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
 import reconcile  # noqa: E402
@@ -387,6 +388,95 @@ class Command(Home):
         self.enable()
         before = self.snapshot()
         self.assertIn(f"would change {self.link} (command)", self.ok("install", "--dry-run").stdout)
+        self.assertEqual(self.snapshot(), before)
+
+
+class SkillLinks(Home):
+    """Install removes both hosts' links to a skill the kit's checkout dropped, as a
+    maintainer's linked checkout leaves them after a pull, and leaves unrelated links."""
+
+    def setUp(self):
+        super().setUp()
+        self.claude, self.agents = self.home / ".claude/skills", self.home / ".agents/skills"
+
+    def drop(self, name, target):
+        """Links name as a maintainer does: the skills CLI's folder at target, and Claude Code's
+        folder through it."""
+        (self.agents / name).symlink_to(target)
+        (self.claude / name).symlink_to(f"../../.agents/skills/{name}")
+
+    def test_removes_both_links_to_a_dropped_skill_and_a_second_install_changes_none(self):
+        gone = KIT.parent / "dropped"
+        self.drop("dropped", gone)
+        out = self.ok("install").stdout
+        for link in (self.claude / "dropped", self.agents / "dropped"):
+            self.assertIn(f"changed {link} (skill-link)\n  removes it: the kit has no dropped skill at", out)
+            self.assertFalse(os.path.lexists(link))
+        self.assertNotIn("(skill-link)", self.ok("install").stdout)
+
+    def test_removes_a_link_to_a_folder_only_untracked_files_keep_in_the_checkout_the_last_build_recorded(self):
+        old = self.home / "old/skills"
+        (old / "primitive/dropped/scripts/__pycache__").mkdir(parents=True)
+        self.write(self.state / "resolved.json", json.dumps({"kit": str(old / "primitive/addystack")}))
+        self.drop("dropped", old / "primitive/dropped")
+        self.ok("install")
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_leaves_a_kit_skill_and_a_users_link(self):
+        # A kit skill linked at an old layer's path is the kit's still, not install's to drop.
+        (self.claude / "correct").unlink()
+        (self.claude / "correct").symlink_to(KIT.parents[1] / "optional/correct")
+        (self.claude / "mine").symlink_to(self.home / "my-skills/gone")
+        self.assertNotIn("(skill-link)", self.cli("install").stdout)
+        for link in (self.claude / "correct", self.claude / "mine"):
+            self.assertTrue(link.is_symlink(), link)
+
+    def test_a_disabled_hosts_link_goes_too_so_none_is_left_through_a_removed_one(self):
+        self.drop("dropped", KIT.parent / "dropped")
+        self.write(self.config, json.dumps({"hosts": {"claude": False}}))
+        self.ok("install")
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_claude_skill_folder_naming_the_shared_one_in_another_case_removes_the_link_once(self):
+        if not (self.home / ".AGENTS").exists():
+            self.skipTest("the file system tells case apart")
+        other = self.home / "custom-claude"
+        other.mkdir()
+        (other / "skills").symlink_to("../.AGENTS/skills")
+        self.env["CLAUDE_CONFIG_DIR"] = str(other)
+        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
+        self.assertEqual(self.ok("install").stdout.count("(skill-link)"), 1)
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_claude_skill_folder_that_links_to_the_shared_one_removes_the_link_once(self):
+        shutil.rmtree(self.claude)
+        self.claude.symlink_to("../.agents/skills")
+        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
+        out = self.ok("install").stdout
+        self.assertEqual(out.count("(skill-link)"), 1, out)
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def removes_in_another_case(self, target, bin_):
+        if not (self.home / ".AGENTS").exists():
+            self.skipTest("the file system tells case apart")
+        self.drop("dropped", target)
+        self.assertIn("(skill-link)", self.ok("install", bin_=bin_).stdout)
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_link_into_the_checkout_spelled_in_another_case_still_counts(self):
+        self.removes_in_another_case(Path(str(KIT.parent / "dropped").replace("/skills/", "/SKILLS/")), BIN)
+
+    def test_a_kit_run_from_a_path_spelled_in_another_case_still_finds_its_checkout(self):
+        cased_bin = Path(str(BIN).replace("/skills/primitive/", "/SKILLS/primitive/"))
+        self.removes_in_another_case(KIT.parent / "dropped", cased_bin)
+
+    def test_dry_run_previews_the_removal_and_writes_nothing(self):
+        self.drop("dropped", KIT.parent / "dropped")
+        before = self.snapshot()
+        self.assertIn(f"would change {self.claude / 'dropped'} (skill-link)", self.ok("install", "--dry-run").stdout)
         self.assertEqual(self.snapshot(), before)
 
 

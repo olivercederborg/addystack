@@ -15,7 +15,6 @@ shared/format.md                                               skills/primitive/
 shared/format.md                                               skills/primitive/build/references/format.md
 shared/format.md                                               skills/primitive/correct/references/format.md
 shared/format.md                                               skills/primitive/open-pr/references/format.md
-shared/format.md                                               skills/primitive/reflect/references/format.md
 shared/format.md                                               skills/primitive/review-loop/references/format.md
 shared/format.md                                               skills/primitive/review-teammate-pr/references/format.md
 shared/format.md                                               skills/primitive/scope-grill/references/format.md
@@ -47,7 +46,6 @@ shared/t3-delegation.md                                        skills/orchestrat
 shared/t3-delegation.md                                        skills/primitive/addystack/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/architect/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/orchestrate/references/t3-delegation.md
-shared/t3-delegation.md                                        skills/primitive/reflect/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/review-loop/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/review-teammate-pr/references/t3-delegation.md
 shared/t3-delegation.md                                        skills/primitive/scope-grill/references/t3-delegation.md
@@ -59,7 +57,6 @@ shared/taste.md                                                skills/primitive/
 shared/taste.md                                                skills/primitive/build/references/taste.md
 shared/taste.md                                                skills/primitive/correct/references/taste.md
 shared/taste.md                                                skills/primitive/open-pr/references/taste.md
-shared/taste.md                                                skills/primitive/reflect/references/taste.md
 shared/taste.md                                                skills/primitive/review-loop/references/taste.md
 shared/taste.md                                                skills/primitive/review-teammate-pr/references/taste.md
 shared/taste.md                                                skills/primitive/scope-grill/references/taste.md
@@ -75,7 +72,6 @@ shared/views.md                                                skills/primitive/
 shared/views.md                                                skills/primitive/build/references/views.md
 shared/views.md                                                skills/primitive/correct/references/views.md
 shared/views.md                                                skills/primitive/open-pr/references/views.md
-shared/views.md                                                skills/primitive/reflect/references/views.md
 shared/views.md                                                skills/primitive/review-loop/references/views.md
 shared/views.md                                                skills/primitive/review-teammate-pr/references/views.md
 shared/views.md                                                skills/primitive/scope-grill/references/views.md
@@ -92,11 +88,8 @@ skills/primitive/addystack/hooks/evidence.py                   skills/primitive/
 skills/primitive/addystack/hooks/evidence.py                   skills/primitive/verify-work/scripts/evidence.py
 skills/primitive/addystack/hooks/evidence.py                   skills/orchestrator/coordinator/scripts/evidence.py
 skills/primitive/addystack/hooks/t3_child.py                   skills/primitive/correct/scripts/t3_child.py
-skills/primitive/addystack/hooks/t3_child.py                   skills/primitive/reflect/scripts/t3_child.py
 skills/primitive/addystack/hooks/turn_block.py                 skills/orchestrator/coordinator/scripts/turn_block.py
-skills/primitive/addystack/hooks/turn_block.py                 skills/preferences/chief/scripts/turn_block.py
 skills/primitive/addystack/hooks/transcripts.py                skills/primitive/correct/scripts/transcripts.py
-skills/primitive/addystack/hooks/transcripts.py                skills/primitive/reflect/scripts/transcripts.py
 skills/primitive/addystack/hooks/verdicts.py                   skills/orchestrator/autopilot/scripts/verdicts.py
 skills/primitive/addystack/hooks/verdicts.py                   skills/orchestrator/babysit/scripts/verdicts.py
 skills/primitive/addystack/hooks/verdicts.py                   skills/primitive/address-review/scripts/verdicts.py

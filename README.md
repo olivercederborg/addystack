@@ -38,7 +38,7 @@ A skill calls only skills in its own layer or a lower one. Each skill's `SKILL.m
 
 | Layer | Skills |
 |---|---|
-| primitive: one job each | `scope-grill`, `architect`, `build`, `review-loop`, `verify-work`, `open-pr`, `address-review`, `review-teammate-pr`, `grounding`, `tidy`, `blast-radius`, `show-me-your-work`, `orchestrate`, `unslop`, `correct`, `reflect`, `domain-modeling`, `addystack` |
+| primitive: one job each | `scope-grill`, `architect`, `build`, `review-loop`, `verify-work`, `open-pr`, `address-review`, `review-teammate-pr`, `grounding`, `tidy`, `blast-radius`, `show-me-your-work`, `orchestrate`, `unslop`, `correct`, `domain-modeling`, `addystack` |
 | orchestrator: runs primitives as steps | `autopilot` builds an approved plan to a verified PR stack, `babysit` keeps a watched PR moving, `coordinator` runs a project from one thread |
 | optional: extras `update` never adds or removes | `reply-shape`, `review-artifact`, `use-lakebed`, `ketchup`, `bro`, `in-your-own-words`, `maintain-verification-skill` |
 
@@ -69,7 +69,8 @@ flags notes whose skill changed.
 In a git checkout of the kit, `update` fast-forwards the branch you're on. It leaves the
 checkout as it is, says why, and still installs when it can't: uncommitted changes, no
 upstream, or commits the upstream lacks. A checkout detached at a release tag moves to
-the newest tag, and `--to TAG` checks out that `v*` tag.
+the newest tag, and `--to TAG` checks out that `v*` tag. Skills linked from the checkout
+whose folder the kit dropped lose their links when `install` runs.
 
 ## Working on the kit
 
@@ -89,8 +90,8 @@ symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), 
 
 ## Credits
 
-- [Matt Pocock's skills](https://github.com/mattpocock/skills) (MIT): `domain-modeling` is vendored from it (see its `NOTICE`), `scope-grill` adapts `grilling`, `reflect` adds checks from `retro`, and the kit uses `codebase-design`, `tdd`, and `diagnosing-bugs` when installed.
-- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT): `reflect`, `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and `maintain-verification-skill` come from it (see each one's `NOTICE`), and `autopilot` and `orchestrate` take rules from its playbooks.
+- [Matt Pocock's skills](https://github.com/mattpocock/skills) (MIT): `domain-modeling` is vendored from it (see its `NOTICE`), `scope-grill` adapts `grilling`, and the kit uses `codebase-design`, `tdd`, and `diagnosing-bugs` when installed.
+- [Lauren Tan's pstack](https://github.com/cursor/plugins/tree/main/pstack) (MIT): `correct`, `architect`, `ketchup`, `blast-radius`, `show-me-your-work`, `unslop`, `bro`, `in-your-own-words`, and `maintain-verification-skill` come from it (see each one's `NOTICE`), and `autopilot` and `orchestrate` take rules from its playbooks.
 - [Ben Holmes's skills](https://github.com/bholmesdev/skills) (MIT, see its `NOTICE`): `tidy` adapts `simplify`.
 - [Ayoub Ghriss's i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT, see its `NOTICE`): `reply-shape` adapts it.
 - [HumanLayer's skills](https://github.com/humanlayer/skills): `open-pr`'s default body follows `visual-pr`.

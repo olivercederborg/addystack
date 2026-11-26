@@ -28,5 +28,3 @@ Avoid em dashes and substitute asides. Use a period or comma instead of parenthe
 ## Finish
 
 Check that the edit says something concrete, retains the original facts and uncertainty, and keeps the source's register (casual or formal). Return the requested text without an editing report unless one was requested or an unresolved gap needs explaining.
-
-When revising this skill, use [the evaluation guide](evals/run.md) and its [cases](evals/cases.md) on meaning, specificity, voice, and restraint.
