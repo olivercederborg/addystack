@@ -23,9 +23,9 @@ class Fake:
     """github.sh and the PR as GitHub would answer them, recording every write."""
 
     def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='reviewer-app[bot]',
-                 active=None, threads=(), approved=None, decision=None):
+                 active=None, threads=(), approved=None, latest=None):
         self.required, self.heads, self.viewer, self.active = required, list(heads), viewer, active
-        self.approved, self.decision = approved, decision or approved
+        self.approved, self.latest = approved, latest or approved or {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
         self.threads = list(threads)
         self.writes, self.commands = [], []
 
@@ -38,8 +38,7 @@ class Fake:
         if command == 'required':
             return self.required() if callable(self.required) else self.required
         if command == 'reviewed':
-            latest = {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
-            return json.dumps({**latest, 'decision': self.decision, 'active': self.active, 'approved': self.approved}) + '\n'
+            return json.dumps({**self.latest, 'active': self.active, 'approved': self.approved}) + '\n'
         if command == 'threads':
             return ''.join(json.dumps(thread) + '\n' for thread in self.threads)
         files = {}
@@ -248,9 +247,10 @@ class Carry(unittest.TestCase):
 
     APPROVED = 'd' * 40
 
-    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None):
+    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False):
         diffs = diffs or {self.APPROVED: 'same', head: 'same'}
         with patch.object(post_review, 'github', fake.github), \
+                patch.object(post_review, 'retargeted', lambda number, since: retargeted), \
                 patch.object(post_review, 'pr', lambda number, fields='': {'headRefOid': head, 'baseRefName': 'main',
                                                                             'state': state, 'isDraft': draft}), \
                 patch.object(post_review, 'fetch', lambda *arguments: None), \
@@ -258,7 +258,7 @@ class Carry(unittest.TestCase):
             return post_review.carry(7, self.APPROVED)
 
     def approved_at(self, sha):
-        return {'id': 40, 'state': 'DISMISSED', 'commit_id': sha}
+        return {'id': 40, 'state': 'DISMISSED', 'commit_id': sha, 'submitted_at': '2026-11-26T10:00:00Z'}
 
     def test_an_unchanged_diff_this_app_approved_is_approved_again(self):
         fake = Fake(approved=self.approved_at(self.APPROVED))
@@ -274,18 +274,26 @@ class Carry(unittest.TestCase):
         cases = {
             "the PR's own diff changed": dict(diffs={APPROVED: 'old', HEAD: 'new'}),
             'this App has no approval at': dict(approved=None),
-            'this App decided again after its approval at': dict(decision={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED}),
+            'this App reviewed again after its approval at': dict(latest={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED}),
+            'this App reviewed again after its approval at ': dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED}),
+            'the PR moved to another base branch after the approval': dict(retargeted=True),
             'the PR is closed or a draft': dict(draft=True),
             'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
         }
         for why, case in cases.items():
             with self.subTest(why=why):
-                fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), decision=case.get('decision'),
+                fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
-                outcome = self.carry(fake, draft=case.get('draft', False), diffs=case.get('diffs'))
+                outcome = self.carry(fake, draft=case.get('draft', False), diffs=case.get('diffs'), retargeted=case.get('retargeted', False))
                 self.assertEqual(outcome['outcome'], 'not-carried')
-                self.assertIn(why, outcome['why'])
+                self.assertIn(why.strip(), outcome['why'])
                 self.assertEqual(fake.writes, [])
+
+    def test_a_base_change_counts_only_after_the_approval(self):
+        timeline = subprocess.CompletedProcess([], 0, '2026-11-26T09:00:00Z\n2026-11-26T11:00:00Z\n', '')
+        with patch.object(post_review.subprocess, 'run', return_value=timeline):
+            self.assertTrue(post_review.retargeted(7, '2026-11-26T10:00:00Z'))
+            self.assertFalse(post_review.retargeted(7, '2026-11-26T12:00:00Z'))
 
     def test_pending_checks_and_a_moved_head_post_nothing(self):
         pending = Fake(approved=self.approved_at(self.APPROVED), required='ci\tpending\nrequired: not all passed\n')

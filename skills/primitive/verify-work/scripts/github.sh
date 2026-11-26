@@ -19,10 +19,9 @@
 #   github.sh dismiss N REVIEW_ID FILE    dismiss a review, with FILE as the message
 #   github.sh viewer                      the login gh posts as, such as an App's <slug>[bot]
 #   github.sh reviewed N                  the viewer's latest submitted review: {id, state, commit_id,
-#                                         decision, active, approved}: decision, their latest approval,
-#                                         request for changes or dismissal; active, their approval or
-#                                         request for changes that still counts; approved, their latest
-#                                         approval, even dismissed
+#                                         submitted_at, active, approved}: active, their approval or request
+#                                         for changes that still counts; approved, their latest approval,
+#                                         even dismissed
 #   github.sh landed N REVIEW_ID          read back the comments a review posted
 #
 # DRAFTS.json: [{"path": "src/a.ts", "line": 42, "side": "RIGHT", "body_file": "d1.md"}],
@@ -339,11 +338,14 @@ PY
     # A pending review isn't submitted, so it isn't the last word on any head. A reviewer's
     # latest approval, request for changes or dismissal is what counts; a comment changes nothing.
     # A dismissed review reads DISMISSED; the timeline's dismissal says what it was.
-    login=$("$0" viewer) slug=$(repo) dismissed=$(mktemp)
+    # One assignment per line: in a combined one, set -e sees only the last substitution's status.
+    login=$("$0" viewer)
+    slug=$(repo)
+    dismissed=$(mktemp)
     gh api --paginate "repos/$slug/issues/$1/timeline" \
       --jq '.[] | select(.event == "review_dismissed") | .dismissed_review | {review_id, state} | tojson' > "$dismissed"
     gh api --paginate "repos/$slug/pulls/$1/reviews" \
-      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id} | tojson" \
+      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id, submitted_at} | tojson" \
       | python3 -c '
 import json, sys
 reviews = [json.loads(line) for line in sys.stdin if line.strip()]
@@ -353,8 +355,7 @@ active = decisive[-1] if decisive and decisive[-1]["state"] != "DISMISSED" else 
 approvals = [review for review in reviews if review["state"] == "APPROVED"
              or review["state"] == "DISMISSED" and was.get(review["id"]) == "approved"]
 if reviews:
-    print(json.dumps({**reviews[-1], "decision": decisive[-1] if decisive else None, "active": active,
-                      "approved": approvals[-1] if approvals else None}))' "$dismissed"
+    print(json.dumps({**reviews[-1], "active": active, "approved": approvals[-1] if approvals else None}))' "$dismissed"
     rm -f "$dismissed"
     ;;
   landed)

@@ -184,10 +184,12 @@ class Anchors(unittest.TestCase):
 
 
 REVIEWED_GH = r"""#!/usr/bin/env python3
-import sys
+import os, sys
 a = " ".join(sys.argv[1:])
 if a.startswith("repo view"):
     print("o/r")
+elif a.startswith("api graphql") and "viewer" in a and os.environ.get("VIEWER_FAILS"):
+    sys.exit("temporary GitHub failure")
 elif a.startswith("api graphql") and "viewer" in a:
     print("reviewer-app[bot]")
 elif a.startswith("api --paginate repos/o/r/issues/7/timeline") and "review_dismissed" in a:
@@ -219,9 +221,12 @@ class Reviewed(unittest.TestCase):
         # latest approval is the one a push dismissed, which the timeline says was an approval.
         self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
                          (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
-                              "decision": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "approved": {"id": 4, "state": "DISMISSED", "commit_id": "bcd"}}), reviewed.stderr)
+        # A viewer it can't read fails the command, rather than reading as no reviews at all.
+        failed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env={**env, "VIEWER_FAILS": "1"})
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertEqual(failed.stdout, "")
 
 
 BRANCH_GH = r"""#!/usr/bin/env python3

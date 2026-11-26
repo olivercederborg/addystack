@@ -33,6 +33,7 @@ repository's checkout. Its Outcome is approved (with carried_from), not-carried 
 caller reviews instead), pending (the checks haven't finished; try again later), or superseded.
 """
 import argparse
+from datetime import datetime
 import json
 from pathlib import Path
 import subprocess
@@ -222,6 +223,16 @@ def fetch(base: str, number: int, approved: str) -> None:
         raise ValueError(f'git fetch failed: {_error(result.stderr)}')
 
 
+def retargeted(number: int, since: str) -> bool:
+    """Whether the PR's base branch changed after `since`, an ISO time, as its timeline records."""
+    result = subprocess.run(['gh', 'api', '--paginate', f'repos/{{owner}}/{{repo}}/issues/{number}/timeline', '--jq',
+                             '.[] | select(.event == "base_ref_changed") | .created_at'], capture_output=True, text=True, timeout=120)
+    if result.returncode:
+        raise ValueError(f'gh api timeline failed: {_error(result.stderr)}')
+    changed = [datetime.fromisoformat(line.strip().replace('Z', '+00:00')) for line in result.stdout.splitlines() if line.strip()]
+    return any(at > datetime.fromisoformat(since.replace('Z', '+00:00')) for at in changed)
+
+
 def carry(number: int, approved: str) -> dict:
     """Re-approve a PR whose own diff is byte-identical to the one this App approved at `approved`:
     re-proves the approval and the identical diff, re-reads the PR, head and required checks, then
@@ -239,9 +250,14 @@ def carry(number: int, approved: str) -> dict:
     approval = json.loads(earlier).get('approved') if earlier else None
     if not approval or approval['commit_id'] != approved:
         return {'outcome': 'not-carried', 'head': head, 'why': f'this App has no approval at {approved[:7]}'}
-    # A request for changes after the approval is this App's last word, which a carry must not lift.
-    if (json.loads(earlier).get('decision') or {}).get('id') != approval['id']:
-        return {'outcome': 'not-carried', 'head': head, 'why': f'this App decided again after its approval at {approved[:7]}'}
+    # Any review after the approval, such as a request for changes or a needs-human comment, is
+    # this App's last word, which a carry must not lift.
+    if json.loads(earlier)['id'] != approval['id']:
+        return {'outcome': 'not-carried', 'head': head, 'why': f'this App reviewed again after its approval at {approved[:7]}'}
+    # The fingerprint is against today's base, so a PR moved to another base could match with
+    # code the approval never saw.
+    if retargeted(number, approval['submitted_at']):
+        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR moved to another base branch after the approval'}
     base = f"origin/{current['baseRefName']}"
     fetch(current['baseRefName'], number, approved)
     if gates.own_diff(base, approved) != gates.own_diff(base, head):
