@@ -5146,6 +5146,13 @@ class PushGate(unittest.TestCase):
                 reason = self.reason(self.COORDINATOR, said=("fix it", card(plain), "a"), cwd=self.dir)
                 self.assertIn('picks "push the cleanup", a stop:push option of your reply before it, which isn\'t a plain '
                               "request to push that says it dismisses an approval", reason)
+        # review-loop r1: a typed push without its dismissal counts only after a reply whose
+        # visible text shows the option, whatever spelling of the block's opener it uses.
+        for opener in ("<!-- turn ", "<!--turn "):
+            hidden = claude_wrote("Next: a → push #6119\n\n" + opener + json.dumps(unread(
+                {"state": "stop", "options": [go]}, "a standing name over 80 characters")) + " -->")
+            with self.subTest(opener=opener):
+                self.assertIsNotNone(self.reason(self.COORDINATOR, said=("fix it", hidden, "push #6119"), cwd=self.dir))
         bad = claude_wrote(self.CARD + block({"state": "stop", "options": [{**go, "class": "push"}]}))
         self.assertIn('picks nothing: your reply before it has no valid turn block (options[0].class "push" is not one of',
                       self.reason(self.COORDINATOR, said=("fix it", bad, "a"), cwd=self.dir))

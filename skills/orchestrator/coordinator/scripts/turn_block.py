@@ -328,6 +328,18 @@ def lines_ended(text):
 
 def block_body(reply):
     """The JSON text of the reply's one turn block; raises Malformed."""
+    return located(reply)[1].group(1)
+
+
+def before_block(reply):
+    """The reply's text before its turn block, line endings as lines_ended writes them: what
+    the user sees above it. Raises Malformed."""
+    text, block = located(reply)
+    return text[:block.start()]
+
+
+def located(reply):
+    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
     if not isinstance(reply, str):
         raise Malformed("no turn block at the end of the reply")
     reply = lines_ended(reply)
@@ -351,7 +363,7 @@ def block_body(reply):
                         else "the turn block is not closed with -->")
     if "-->" in block.group(1) or "--!>" in block.group(1):
         raise Malformed("the turn block holds --> or --!>, which ends the comment early")
-    return block.group(1)
+    return reply, block
 
 
 def read_fields(value, where, required, optional=()):

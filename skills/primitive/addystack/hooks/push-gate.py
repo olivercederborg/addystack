@@ -422,7 +422,7 @@ def offered(reply):
     found = turn_block.certain(reply) if isinstance(reply, str) else None
     if found is None or found != turn_block.certain(reply.strip(turn_block.JS_SPACE)):
         return ()
-    shown = reply[:reply.rfind(turn_block.MARK)].replace("’", "'")
+    shown = turn_block.before_block(reply).replace("’", "'")  # any spelling parse takes, such as `<!--turn`
     return tuple(option for option in found if option.cls == "stop:push" and option.text.replace("’", "'") in shown
                  and (go := literal_go(option.text)) and not unmet(go))
 
