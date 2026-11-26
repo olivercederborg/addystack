@@ -1020,12 +1020,16 @@ class CleanestAskImplementation(CleanestAskCase):
                 self.assertEqual(self.stop(*turns, env=env), [])
                 self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
 
-    def test_the_first_stop_card_after_the_ask_is_its_answer_even_without_needs(self):
+    def test_the_first_stop_or_done_reply_after_the_ask_is_its_answer_even_without_needs(self):
         # A ready card with no needs answers the ask; a worker's later card brings a new decision.
         env = {"T3_STATE_DB": self.db(agent_sent=(self.RESULT,))}
         ready = self.card(kinds=(), classes=("stop:merge", "decision"))
         turns = [("Build it", self.card(needs=[(2, "name the client")])), ("is this the cleanest long-term solution?", ready),
                  (self.RESULT, self.card(needs=[(1, "choose the storage model")]))]
+        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "choose the storage model")])), env=env)), 1)
+        # A done reply answers it too.
+        self.fresh()
+        turns[1] = (turns[1][0], self.card("done"))
         self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "choose the storage model")])), env=env)), 1)
 
     def test_a_need_only_a_running_reply_carried_isnt_checked(self):
