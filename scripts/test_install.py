@@ -458,17 +458,20 @@ class SkillLinks(Home):
         self.assertEqual(out.count("(skill-link)"), 1, out)
         self.assertFalse(os.path.lexists(self.agents / "dropped"))
 
-    def test_a_link_or_the_kit_spelled_in_another_case_still_counts_as_the_checkout(self):
+    def removes_in_another_case(self, target, bin_):
         if not (self.home / ".AGENTS").exists():
             self.skipTest("the file system tells case apart")
-        cased = Path(str(KIT.parent / "dropped").replace("/skills/primitive/", "/SKILLS/primitive/"))
+        self.drop("dropped", target)
+        self.assertIn("(skill-link)", self.ok("install", bin_=bin_).stdout)
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_link_into_the_checkout_spelled_in_another_case_still_counts(self):
+        self.removes_in_another_case(Path(str(KIT.parent / "dropped").replace("/skills/", "/SKILLS/")), BIN)
+
+    def test_a_kit_run_from_a_path_spelled_in_another_case_still_finds_its_checkout(self):
         cased_bin = Path(str(BIN).replace("/skills/primitive/", "/SKILLS/primitive/"))
-        for target, bin_ in ((cased, BIN), (KIT.parent / "dropped", cased_bin)):
-            with self.subTest(target=target, bin_=bin_):
-                self.drop("dropped", target)
-                self.assertIn("(skill-link)", self.ok("install", bin_=bin_).stdout)
-                self.assertFalse(os.path.lexists(self.claude / "dropped"))
-                self.assertFalse(os.path.lexists(self.agents / "dropped"))
+        self.removes_in_another_case(KIT.parent / "dropped", cased_bin)
 
     def test_dry_run_previews_the_removal_and_writes_nothing(self):
         self.drop("dropped", KIT.parent / "dropped")
