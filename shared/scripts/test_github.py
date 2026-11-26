@@ -219,6 +219,7 @@ class Reviewed(unittest.TestCase):
         # latest approval is the one a push dismissed, which the timeline says was an approval.
         self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
                          (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
+                              "decision": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "approved": {"id": 4, "state": "DISMISSED", "commit_id": "bcd"}}), reviewed.stderr)
 

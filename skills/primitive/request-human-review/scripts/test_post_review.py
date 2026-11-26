@@ -23,9 +23,9 @@ class Fake:
     """github.sh and the PR as GitHub would answer them, recording every write."""
 
     def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='reviewer-app[bot]',
-                 active=None, threads=(), approved=None):
+                 active=None, threads=(), approved=None, decision=None):
         self.required, self.heads, self.viewer, self.active = required, list(heads), viewer, active
-        self.approved = approved
+        self.approved, self.decision = approved, decision or approved
         self.threads = list(threads)
         self.writes, self.commands = [], []
 
@@ -39,7 +39,7 @@ class Fake:
             return self.required() if callable(self.required) else self.required
         if command == 'reviewed':
             latest = {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
-            return json.dumps({**latest, 'active': self.active, 'approved': self.approved}) + '\n'
+            return json.dumps({**latest, 'decision': self.decision, 'active': self.active, 'approved': self.approved}) + '\n'
         if command == 'threads':
             return ''.join(json.dumps(thread) + '\n' for thread in self.threads)
         files = {}
@@ -274,12 +274,13 @@ class Carry(unittest.TestCase):
         cases = {
             "the PR's own diff changed": dict(diffs={APPROVED: 'old', HEAD: 'new'}),
             'this App has no approval at': dict(approved=None),
+            'this App decided again after its approval at': dict(decision={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED}),
             'the PR is closed or a draft': dict(draft=True),
             'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
         }
         for why, case in cases.items():
             with self.subTest(why=why):
-                fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)),
+                fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), decision=case.get('decision'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
                 outcome = self.carry(fake, draft=case.get('draft', False), diffs=case.get('diffs'))
                 self.assertEqual(outcome['outcome'], 'not-carried')

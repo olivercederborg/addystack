@@ -239,6 +239,9 @@ def carry(number: int, approved: str) -> dict:
     approval = json.loads(earlier).get('approved') if earlier else None
     if not approval or approval['commit_id'] != approved:
         return {'outcome': 'not-carried', 'head': head, 'why': f'this App has no approval at {approved[:7]}'}
+    # A request for changes after the approval is this App's last word, which a carry must not lift.
+    if (json.loads(earlier).get('decision') or {}).get('id') != approval['id']:
+        return {'outcome': 'not-carried', 'head': head, 'why': f'this App decided again after its approval at {approved[:7]}'}
     base = f"origin/{current['baseRefName']}"
     fetch(current['baseRefName'], number, approved)
     if gates.own_diff(base, approved) != gates.own_diff(base, head):
