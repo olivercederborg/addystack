@@ -159,12 +159,16 @@ def decision(need):
 
 def checked(found):
     """The decisions a /cleanest or the user's quality-bar ask already checked this session:
-    each need on a card an ask answered, and on the card that answered the ask."""
+    each need on the card an ask answered (user_turn.answered) and on the card that answered
+    the ask, past messages another agent sent that landed in the ask's turn."""
     seen = set()
     for at, exchange in enumerate(found):
         if not asks(exchange.prompt):
             continue
-        for reply in (exchange.reply, found[at + 1].reply if at + 1 < len(found) else None):
+        after = at + 1
+        while after < len(found) and found[after].reply is None and found[after].agent:
+            after += 1
+        for reply in (user_turn.answered(found[:at + 1]), found[after].reply if after < len(found) else None):
             try:
                 seen |= {decision(need) for need in turn_block.parse(reply or "").needs}
             except turn_block.Malformed:

@@ -1002,6 +1002,18 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
         self.assertEqual(self.stop(*asked, ("and the scope?", scope)), [])
 
+    def test_a_workers_result_in_the_asks_turn_doesnt_hide_a_checked_card(self):
+        # A worker's result can land in the turn before the ask or in the ask's own turn.
+        env = {"T3_STATE_DB": self.db(agent_sent=(self.RESULT,))}
+        ask = "is this the cleanest long-term solution?"
+        storage, client = self.card(needs=[(1, "choose the storage model")]), self.card(needs=[(2, "name the client")])
+        for turns in ([("Build it", storage), (self.RESULT, None), (ask, client), ("Explain it", storage)],
+                      [("Build it", client), (ask, None), (self.RESULT, storage), ("Explain it", storage)]):
+            with self.subTest(turns=turns):
+                self.fresh()
+                self.assertEqual(self.stop(*turns, env=env), [])
+                self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+
     def test_sends_on_a_card_with_a_new_decision_beside_a_checked_one(self):
         # A coordinator keeps its queued needs on every card; a new one beside them still asks.
         queued = (12, "merge window with the team")
