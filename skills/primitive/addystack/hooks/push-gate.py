@@ -416,12 +416,14 @@ def unmet(go, explicit=False):
 
 
 def offered(reply):
-    """The reply's stop:push options that are a go for every live approval, or ()."""
+    """The reply's stop:push options that are a go for every live approval and that the
+    user saw: the text before the turn block shows the option's text, or ()."""
     import turn_block  # here, as user_turn: a broken module then gives no go, not a crash
     turn = turn_block.certain(reply) if isinstance(reply, str) else None
     if turn is None or turn != turn_block.certain(reply.strip(turn_block.JS_SPACE)):
         return ()
-    return tuple(option for option in turn.options if option.cls == "stop:push"
+    shown = reply[:reply.rfind(turn_block.MARK)].replace("’", "'")
+    return tuple(option for option in turn.options if option.cls == "stop:push" and option.text.replace("’", "'") in shown
                  and (go := literal_go(option.text)) and not unmet(go))
 
 

@@ -4606,7 +4606,8 @@ class PushGate(unittest.TestCase):
         # said the dismissal. The gate refused all three; only the 06:46 option's wording passed.
         self.five()
         named = "push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval)"
-        pick = lambda text, cls="stop:push": ("fix it", self.offer({"class": cls, "text": text}, text="Push?\n\n"), "A")
+        pick = lambda text, cls="stop:push": ("fix it", self.offer({"class": cls, "text": text},
+                                                                   text=f"**Next**\n\n- `a` → {text}\n\n"), "A")
         typed = "push #6153, #6179, #6213, #6225 and #6248"
         for said in [pick("yes: push all five PRs, dismissing the teammate's approvals on #6179 and #6213"),
                      pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179 and #6213)"),
@@ -4649,9 +4650,13 @@ class PushGate(unittest.TestCase):
         # review-loop r1 on 7a90b85: a typed push without its dismissal names each PR itself,
         # its verb, not a branch name, pushes, and a count matches the PRs the push moves.
         card = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
-                                     text="Push?\n\n"))
+                                     text="- `a` → push #6119 (dismisses the teammate's approval)\n\n"))
         self.assertIsNone(self.reason("gh stack push", said=card + ("push #6119",)))
         self.assertIn("doesn't name #6119", self.reason("gh stack push", said=card + ("push it",)))
+        # review-loop r3: the dismissal counts only when the reply shows it, not just its turn block.
+        hidden = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
+                                       text="Next: a → push #6119\n\n"))
+        self.assertIn("offers no stop:push option", self.reason("gh stack push", said=hidden + ("push #6119",)))
         self.assertIsNotNone(self.reason("gh stack push", said=card + ("rebase #6119 onto push-fixes",)))
         self.five()
         text = "push both PRs, dismissing the teammate's approvals on #6179 and #6213"
@@ -4985,7 +4990,10 @@ class CardCheck(unittest.TestCase):
                      # verify-work on 5aa419e: a condition, a modal, or a no: lead asks for a push the gate refuses.
                      "push #12 and #13 once CI is green (dismisses the reviewer's approval)",
                      "push #12 (this will dismiss the reviewer's approval)",
-                     "no: restack #6110 and #6076 again (dismisses the reviewer's approvals)"):
+                     "no: restack #6110 and #6076 again (dismisses the reviewer's approvals)",
+                     # verify-work and review-loop r3 on ccbb04e: a push beside a declined one.
+                     "push #12, but don't restack #13 (dismisses the reviewer's approval on #12)",
+                     "push #6119 (dismisses the teammate's approval), but don't push #6120"):
             with self.subTest(text=text):
                 reason = self.run_hook(("stop:push", text), ("decision", "no: hold it"))
                 self.assertIn(f'option a, "{text}", is stop:push, but push-gate would refuse it', reason)
@@ -5003,6 +5011,8 @@ class CardCheck(unittest.TestCase):
                           # review-loop r2: a curly apostrophe, and a verb inside a word.
                           ("stop:push", "don’t push #12 (dismisses the reviewer's approval)"),
                           ("stop:push", "report the Firebase approval dismissal"),
+                          ("stop:push", "skip the push on #6119 because it dismisses the approval"),
+                          ("stop:push", "report the pushback on dismissing the approval"),
                           # merge-gate reads a merge go only for a PR with no checks, which a reply can't see.
                           ("stop:merge", "merge only #6080"), ("stop:merge", "mark #12 ready, but do not merge"),
                           ("stop:post", "push #6091 and post the reply, which dismisses the approval")]:
