@@ -27,7 +27,7 @@ unwatched that T3 no longer watches; when its coordinator's Workers table says a
 on another machine, whose end wakes nothing here, and no timer or task is pending; when no
 PR is watched, no task or child is pending, and no timer on the thread runs next; and when
 its `eta` has no timer by then or pending task, since a watch can miss a re-run that ends
-between polls. Replayed on 2,278 `running` turns from Nov 19 to 26, 2026, on two machines,
+between polls. Replayed on 2,284 `running` turns from Nov 19 to 26, 2026, on two machines,
 it sends back the turn before 10 of the 12 status asks that a missing wake caused. It reads
 T3's state database, since `t3 thread show` lists no pending task while a run is active,
 and passes outside T3 or when the database can't be read."""
@@ -117,12 +117,26 @@ def wakes(thread):
 
 
 LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # as project.py reads a coordinator's links
+# A bare thread id, as `project.py worker --thread mcp:launch:…` writes one: a launched thread,
+# a delegated child, or a UUID.
+BARE = re.compile(r"(?<![\w:/])(mcp:launch:[0-9a-f]+|thread:[\w%:.-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
+CELL = re.compile(r"(?<!\\)\|")  # project.py's: a cell ends at a | that isn't escaped
 
 
-def remote_workers(thread):
-    """The Workers rows, in project.md of the coordinator project whose thread this is, that
-    say running, overdue, or unknown and link a thread on another machine: T3 here can't see
-    such a thread end, so nothing here wakes on it."""
+def remote(cell, coordinator, known):
+    """Whether a Workers row's Thread cell names a thread on another machine: a link to
+    another environment than the coordinator's, or a bare id that T3 here doesn't know."""
+    link = LINK.search(cell)
+    if link:
+        return link.group(1) != coordinator
+    bare = BARE.search(cell)
+    return bool(bare) and not known(bare.group(1))
+
+
+def remote_workers(thread, known):
+    """The live Workers rows (running, overdue, or unknown), in project.md of the coordinator
+    project whose thread this is, whose thread is on another machine: T3 here can't see such
+    a thread end, so nothing here wakes on it. known(id) says whether T3 here has a thread."""
     found = []
     for path in pathlib.Path(os.environ.get("ADDYSTACK_ORCHESTRATE", "~/.local/state/orchestrate")).expanduser().glob(
             "*/project.md"):
@@ -132,14 +146,23 @@ def remote_workers(thread):
             continue
         start = next((at for at, line in enumerate(lines) if line.strip() == "## Workers"), len(lines))
         stop = next((at for at in range(start + 1, len(lines)) if lines[at].startswith("## ")), len(lines))
-        rows = [line for line in lines[start:stop] if line.startswith("|")]
-        columns = [cell.strip() for cell in rows[0].strip("|").split("|")] if rows else []
-        for line in rows[2:]:
-            row = dict(zip(columns, (cell.strip() for cell in line.strip("|").split("|"))))
-            link = LINK.search(row.get("Thread", ""))
-            if link and link.group(1) != head.group(1) and re.match(r"(running|overdue|unknown)\b", row.get("State", "")):
+        rows = [[cell.strip() for cell in CELL.split(line.strip().strip("|"))] for line in lines[start:stop]
+                if line.startswith("|")]
+        for cells in rows[2:]:
+            row = dict(zip(rows[0], cells))
+            if re.match(r"(running|overdue|unknown)\b", row.get("State", "")) and remote(
+                    row.get("Thread", ""), head.group(1), known):
                 found.append(row.get("Worker", "?"))
     return found
+
+
+def known_thread(thread):
+    import t3_child
+    db = t3_child.connect()
+    try:
+        return db.execute("select 1 from orchestration_v2_projection_threads where thread_id = ?", (thread,)).fetchone() is not None
+    finally:
+        db.close()
 
 
 def wake_gap(turn, reply, thread, now):
@@ -154,7 +177,7 @@ def wake_gap(turn, reply, thread, now):
         return (f"this reply names {prs}, which this thread watched and never unwatched, but T3 no longer watches "
                 "it: a user's Stop ends every watch on a thread without a word. Call `watch_pull_request` on it again "
                 "before ending the turn")
-    if not (tasks or timer) and (away := remote_workers(thread)):
+    if not (tasks or timer) and (away := remote_workers(thread, known_thread)):
         return (f"this reply's turn block is `running`, and Workers says {', '.join(away)} runs on another machine, "
                 "whose end wakes nothing here. Set a `once` `schedule_task` on this thread at the time you expect "
                 "its news, or read its status now")
@@ -182,22 +205,25 @@ def main():
         found = refused(turn)
     except Exception:  # Malformed included: no block, nothing to check
         return
-    reasons = ["; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
-                         f"user picked it" for option in found) + f". Write it as {SHAPE}"] if found else []
     try:
         import t3_child
-        gap = wake_gap(turn, event["last_assistant_message"], os.environ.get("T3CODE_THREAD_ID", ""), time.time()) if t3_child.in_t3() else None
+        gap = wake_gap(turn, event["last_assistant_message"], os.environ.get("T3CODE_THREAD_ID", ""), time.time()) \
+            if t3_child.in_t3() else None
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None
+    # A running block carries no options (turn_block.parse), so at most one of these holds.
     if gap:
-        reasons.append(gap[0].upper() + gap[1:])
-    if reasons:
-        steps = ["with the wake set"] * bool(gap) + ["with only that option reworded, or its other steps split into "
-                                                     "their own option"] * bool(found)
-        # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
-        # its docs keep "block" for errors.
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (
-            f"{'. '.join(reasons)}. Send your whole reply again {', and '.join(steps)}. T3 shows the turn's last "
-            "message as its reply, so the resent reply has to stand on its own. Add no note about the change.")}}))
+        reason, step = gap[0].upper() + gap[1:], "with the wake set"
+    elif found:
+        reason = "; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
+                           f"user picked it" for option in found) + f". Write it as {SHAPE}"
+        step = "with only that option reworded, or its other steps split into their own option"
+    else:
+        return
+    # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
+    # its docs keep "block" for errors.
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (
+        f"{reason}. Send your whole reply again {step}. T3 shows the turn's last message as its reply, so the "
+        "resent reply has to stand on its own. Add no note about the change.")}}))
 
 main()

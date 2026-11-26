@@ -5305,6 +5305,14 @@ class CardCheckWakes(unittest.TestCase):
         write("running, started 14:44")
         self.assertIn("Workers says split-40 runs on another machine", self.run_hook(watched))
         self.assertIsNone(self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, self.LATER)])))
+        # Nov 25, 2026: review-70's row held a bare id, `--thread "mcp:launch:6c2262…"`, for a linked machine's thread.
+        bare = (folder / "project.md").read_text().replace(f"<t3-thread://v2/{linked}/mcp:launch:abc>", "mcp:launch:abc")
+        (folder / "project.md").write_text(bare)
+        self.assertIn("Workers says split-40 runs on another machine", self.run_hook(watched))
+        with contextlib.closing(sqlite3.connect(watched)) as db, db:  # a thread T3 here knows is local
+            db.execute("insert into orchestration_v2_projection_threads values ('mcp:launch:abc', '{}', null, null)")
+        self.assertIsNone(self.run_hook(watched))
+        watched = self.db(links=[{**self.WATCH, "number": 6154}])
         for name, args in (("done", ("done: PR opened",)), ("on this machine", ("running", mac)),
                            ("another coordinator", ("running", linked, "thread-other"))):
             with self.subTest(name):
@@ -5322,8 +5330,8 @@ class CardCheckWakes(unittest.TestCase):
             with self.subTest(name):
                 self.assertIsNone(self.run_hook(**kwargs))
 
-    def test_one_send_names_a_refused_push_and_a_missing_wake(self):
-        # A stop block can't be running, so the two checks meet only on separate replies; each keeps its text.
+    def test_a_stop_reply_gets_only_the_push_check(self):
+        # A running block carries no options, so the two checks never meet on one reply.
         reason = self.run_hook(self.db(), state="stop", options=[("stop:push", "push #12 once CI is green (dismisses "
                                                                                "the reviewer's approval)")])
         self.assertIn("is stop:push, but push-gate would refuse it", reason)
