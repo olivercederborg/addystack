@@ -41,14 +41,14 @@ by the other provider reviews the whole PR, even on a re-review, and is skipped 
 when the whole PR changes no behavior; when it doesn't run, because its provider isn't
 signed in, it fails, or its wait times out, it counts as missing and the review hands on
 why, so nothing approves without it (after a wait that times out, `task_cancel` the
-pass, which the review no longer needs; when that answers `cancel_requested`, follow
-T3's `next`, and when the child's end wakes the run, go on with the pass missing); step
-6 diffs from `github.sh reviewed N`'s `commit_id` when it's an ancestor of the head,
-else the whole PR; the review's body and drafts use the disclosure's short form without
-a name, since nobody is in the loop. Step 3 keeps each finding's recommended call and
-drops one grounding can't reproduce. In place of step 5 and its watch, follow
-`request-human-review`, which takes the findings, writes `REVIEW.json` beside its
-`GATES.json`, and decides and posts.
+pass, which the review no longer needs; that returns `cancel_requested`, so
+`t3_thread_wait` on its thread until the run ends, ending the turn when it returns
+`next`, then go on with the pass missing); step 6 diffs from `github.sh reviewed N`'s
+`commit_id` when it's an ancestor of the head, else the whole PR; the review's body and
+drafts use the disclosure's short form without a name, since nobody is in the loop. Step
+3 keeps each finding's recommended call and drops one grounding can't reproduce. In
+place of step 5 and its watch, follow `request-human-review`, which takes the findings,
+writes `REVIEW.json` beside its `GATES.json`, and decides and posts.
 
 ## 1. Load the PR
 
