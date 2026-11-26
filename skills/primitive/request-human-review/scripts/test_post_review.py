@@ -247,16 +247,19 @@ class Carry(unittest.TestCase):
 
     APPROVED = 'd' * 40
 
-    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('main',)):
+    compared = []
+
+    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('b' * 40,)):
         diffs = diffs or {self.APPROVED: 'same', head: 'same'}
         bases = list(bases)
         def pr(number, fields=''):
-            return {'headRefOid': head, 'baseRefName': bases.pop(0) if len(bases) > 1 else bases[0], 'state': state, 'isDraft': draft}
+            return {'headRefOid': head, 'baseRefName': 'main', 'baseRefOid': bases.pop(0) if len(bases) > 1 else bases[0],
+                    'state': state, 'isDraft': draft}
         with patch.object(post_review, 'github', fake.github), \
                 patch.object(post_review, 'retargeted', lambda number, since: retargeted), \
                 patch.object(post_review, 'pr', pr), \
                 patch.object(post_review, 'fetch', lambda *arguments: None), \
-                patch.object(post_review.gates, 'own_diff', lambda base, commit: diffs[commit]):
+                patch.object(post_review.gates, 'own_diff', lambda base, commit: self.compared.append(base) or diffs[commit]):
             return post_review.carry(7, self.APPROVED)
 
     def approved_at(self, sha):
@@ -266,6 +269,8 @@ class Carry(unittest.TestCase):
         fake = Fake(approved=self.approved_at(self.APPROVED))
         outcome = self.carry(fake)
         self.assertEqual((outcome['outcome'], outcome['carried_from']), ('approved', self.APPROVED))
+        # Both fingerprints are against the base commit the PR read named, not the branch's tip later.
+        self.assertEqual(set(self.compared), {'b' * 40})
         (command, arguments, files), = fake.writes
         self.assertEqual((command, arguments[:3]), ('approve', ['7', HEAD, '']))
         self.assertIn("byte-identical", files['body.md'])
@@ -280,7 +285,7 @@ class Carry(unittest.TestCase):
             'this App reviewed again after its approval at ': dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED}),
             'the PR moved to another base branch after the approval': dict(retargeted=True),
             'the head is the approved commit': dict(head=APPROVED),
-            'the PR changed while the carry was proved': dict(bases=('main', 'release')),
+            'the PR changed while the carry was proved': dict(bases=('b' * 40, 'e' * 40)),
             'the PR is closed or a draft': dict(draft=True),
             'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
         }
@@ -289,7 +294,7 @@ class Carry(unittest.TestCase):
                 fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
                 outcome = self.carry(fake, head=case.get('head', HEAD), draft=case.get('draft', False), diffs=case.get('diffs'),
-                                     retargeted=case.get('retargeted', False), bases=case.get('bases', ('main',)))
+                                     retargeted=case.get('retargeted', False), bases=case.get('bases', ('b' * 40,)))
                 self.assertEqual(outcome['outcome'], 'not-carried')
                 self.assertIn(why.strip(), outcome['why'])
                 self.assertEqual(fake.writes, [])

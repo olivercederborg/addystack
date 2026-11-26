@@ -215,8 +215,11 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     return outcome
 
 
+SNAPSHOT = 'headRefOid,baseRefName,baseRefOid,state,isDraft'
+
+
 def fetch(base: str, number: int, approved: str) -> None:
-    """The base branch, the PR's head and the approved commit, into the checkout this runs in."""
+    """The base commit, the PR's head and the approved commit, into the checkout this runs in."""
     result = subprocess.run(['git', 'fetch', '--quiet', 'origin', base, f'pull/{number}/head', approved],
                             capture_output=True, text=True, timeout=600)
     if result.returncode:
@@ -245,7 +248,8 @@ def carry(number: int, approved: str) -> dict:
     viewer = github('viewer').strip()
     if not viewer.endswith('[bot]'):
         raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
-    current = pr(number, 'headRefOid,baseRefName,state,isDraft')
+    # The base's commit, not only its name: the fingerprints are proved against that one commit.
+    current = pr(number, SNAPSHOT)
     head = current['headRefOid']
     if current['state'] != 'OPEN' or current['isDraft']:
         return {'outcome': 'not-carried', 'head': head, 'why': 'the PR is closed or a draft'}
@@ -263,8 +267,8 @@ def carry(number: int, approved: str) -> dict:
     # code the approval never saw.
     if retargeted(number, approval['submitted_at']):
         return {'outcome': 'not-carried', 'head': head, 'why': 'the PR moved to another base branch after the approval'}
-    base = f"origin/{current['baseRefName']}"
-    fetch(current['baseRefName'], number, approved)
+    base = current['baseRefOid']
+    fetch(base, number, approved)
     if gates.own_diff(base, approved) != gates.own_diff(base, head):
         return {'outcome': 'not-carried', 'head': head, 'why': "the PR's own diff changed"}
     state, checks = required(number)
@@ -273,11 +277,11 @@ def carry(number: int, approved: str) -> dict:
     if state == 'failed':
         return {'outcome': 'not-carried', 'head': head, 'why': 'required checks did not pass', 'checks': checks}
     # Right before the write: a push since the head was read starts its own review, and a PR
-    # retargeted, closed or turned draft meanwhile no longer matches what was proved.
+    # retargeted, moved on, closed or turned draft meanwhile no longer matches what was proved.
     moved = github('head', number).strip()
     if moved != head:
         return {'outcome': 'superseded', 'head': moved}
-    if pr(number, 'headRefOid,baseRefName,state,isDraft') != current:
+    if pr(number, SNAPSHOT) != current:
         return {'outcome': 'not-carried', 'head': head, 'why': 'the PR changed while the carry was proved'}
     with tempfile.TemporaryDirectory() as scratch:
         body = Path(scratch) / 'body.md'
