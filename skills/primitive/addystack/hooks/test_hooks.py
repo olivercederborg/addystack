@@ -1007,12 +1007,23 @@ class CleanestAskImplementation(CleanestAskCase):
         env = {"T3_STATE_DB": self.db(agent_sent=(self.RESULT,))}
         ask = "is this the cleanest long-term solution?"
         storage, client = self.card(needs=[(1, "choose the storage model")]), self.card(needs=[(2, "name the client")])
+        task = "<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>"
         for turns in ([("Build it", storage), (self.RESULT, None), (ask, client), ("Explain it", storage)],
-                      [("Build it", client), (ask, None), (self.RESULT, storage), ("Explain it", storage)]):
+                      [("Build it", client), (ask, None), (self.RESULT, storage), ("Explain it", storage)],
+                      # Progress text before the worker's result or a task notice, then the answer card.
+                      [("Build it", client), (ask, "I will check the design."), (self.RESULT, storage), ("Explain it", storage)],
+                      [("Build it", client), (ask, "I will check the design."), (task, storage), ("Explain it", storage)]):
             with self.subTest(turns=turns):
                 self.fresh()
                 self.assertEqual(self.stop(*turns, env=env), [])
                 self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+
+    def test_a_need_only_a_running_reply_carried_isnt_checked(self):
+        # A progress reply's block is hidden: the user first sees the decision on a later stop card.
+        hidden = '⏳ 2m\n\n<!-- turn {"state": "running", "elapsed": "2m", "needs": [{"id": 1, "kind": "decide", "name": "choose the storage model"}]} -->'
+        turns = [("Build it", hidden), ("is this the cleanest long-term solution?", self.card(needs=[(2, "name the client")])),
+                 ("What about storage?", self.card(needs=[(1, "choose the storage model")]))]
+        self.assertEqual(len(self.stop(*turns)), 1)
 
     def test_sends_on_a_card_with_a_new_decision_beside_a_checked_one(self):
         # A coordinator keeps its queued needs on every card; a new one beside them still asks.

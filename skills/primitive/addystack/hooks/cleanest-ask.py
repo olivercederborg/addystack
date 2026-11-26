@@ -157,22 +157,30 @@ def decision(need):
     return need.id, " ".join(need.name.split()).casefold()
 
 
+def stop_needs(reply):
+    """The decisions a stop card shows; none for any other reply."""
+    try:
+        turn = turn_block.parse(reply or "")
+    except turn_block.Malformed:
+        return set()
+    return {decision(need) for need in turn.needs} if turn.state == "stop" else set()
+
+
 def checked(found):
     """The decisions a /cleanest or the user's quality-bar ask already checked this session:
-    each need on the card an ask answered (user_turn.answered) and on the card that answered
-    the ask, past messages another agent sent that landed in the ask's turn."""
+    each need on the stop card the ask answered (user_turn.answered), and on the first stop
+    card after the ask before the user typed again, past a worker's result or a task notice
+    and the progress text before it."""
     seen = set()
     for at, exchange in enumerate(found):
         if not asks(exchange.prompt):
             continue
-        after = at + 1
-        while after < len(found) and found[after].reply is None and found[after].agent:
-            after += 1
-        for reply in (user_turn.answered(found[:at + 1]), found[after].reply if after < len(found) else None):
-            try:
-                seen |= {decision(need) for need in turn_block.parse(reply or "").needs}
-            except turn_block.Malformed:
-                pass
+        seen |= stop_needs(user_turn.answered(found[:at + 1]))
+        for later in found[at + 1:]:
+            answer = stop_needs(later.reply)
+            seen |= answer
+            if answer or later.prompt:
+                break
     return seen
 
 
