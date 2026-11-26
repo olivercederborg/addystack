@@ -43,12 +43,19 @@ signed in, it fails, or its wait times out, it counts as missing and the review 
 why, so nothing approves without it (after a wait that times out, `task_cancel` the
 pass, which the review no longer needs; that returns `cancel_requested`, so
 `t3_thread_wait` on its thread until the run ends, ending the turn when it returns
-`next`, then go on with the pass missing); step 6 diffs from `github.sh reviewed N`'s
-`commit_id` when it's an ancestor of the head, else the whole PR; the review's body and
-drafts use the disclosure's short form without a name, since nobody is in the loop. Step
-3 keeps each finding's recommended call and drops one grounding can't reproduce. In
-place of step 5 and its watch, follow `request-human-review`, which takes the findings,
-writes `REVIEW.json` beside its `GATES.json`, and decides and posts.
+`next`, then go on with the pass missing); the request says what happened, the event,
+the old and new heads, the last approved head, whether the base moved, and whether the
+PR's own diff changed, and step 6 decides from those facts what to read again; the
+review's body and drafts use the disclosure's short form without a name, since nobody is
+in the loop. Step 3 keeps each finding's recommended call and drops one grounding can't
+reproduce. In place of step 5 and its watch, follow `request-human-review`, which takes
+the findings, writes `REVIEW.json` beside its `GATES.json`, and decides and posts.
+
+When the request is to answer a comment, a reply to this App's comment or a mention of
+it, answer only that: read the comment, its thread and the code it points at, reply with
+`github.sh reply` on a review comment's thread or `github.sh comment` on the PR, and
+stop. An answer runs no review, no second-opinion pass, and never reaches
+`request-human-review`.
 
 ## 1. Load the PR
 
@@ -221,8 +228,8 @@ When the author has addressed the comments, or a push dismissed the user's appro
 (keep the watch running through a dismissal):
 
 - Diff to the new head from the commit the user approved after a dismissal, or else
-  from the previously reviewed head. If the branch was rebased, review the full PR diff
-  again and say so.
+  from the previously reviewed head. After a rebase, compare the PR's own diff before and
+  after, and review what changed in it.
 - Mark each earlier comment as fixed, partly fixed, or not fixed, one line each. Judge
   the behavior, not whether the author copied the suggestion; a "fixed" reply or a
   resolved thread only tells you where to look.
