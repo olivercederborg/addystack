@@ -158,28 +158,31 @@ def decision(need):
 
 
 def stop_needs(reply):
-    """The decisions a stop card shows; none for any other reply."""
+    """The decisions a stop card shows, or None for a reply that isn't a stop card."""
     try:
         turn = turn_block.parse(reply or "")
     except turn_block.Malformed:
-        return set()
-    return {decision(need) for need in turn.needs} if turn.state == "stop" else set()
+        return None
+    return {decision(need) for need in turn.needs} if turn.state == "stop" else None
 
 
 def checked(found):
     """The decisions a /cleanest or the user's quality-bar ask already checked this session:
-    each need on the stop card the ask answered (user_turn.answered), and on the first stop
-    card after the ask before the user typed again, past a worker's result or a task notice
-    and the progress text before it."""
+    each need on the card the ask answered and on the first stop card after the ask before the
+    user typed again. Both reach past prompts the user didn't type that landed in the ask's
+    turn, such as a worker's result or a task notice, and past progress text."""
     seen = set()
     for at, exchange in enumerate(found):
         if not asks(exchange.prompt):
             continue
-        seen |= stop_needs(user_turn.answered(found[:at + 1]))
+        before = at
+        while found[before].reply is None and before and not found[before - 1].prompt:
+            before -= 1
+        seen |= stop_needs(found[before].reply) or set()
         for later in found[at + 1:]:
             answer = stop_needs(later.reply)
-            seen |= answer
-            if answer or later.prompt:
+            if answer is not None or later.prompt:
+                seen |= answer or set()
                 break
     return seen
 
