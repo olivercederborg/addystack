@@ -18,18 +18,19 @@ import merge_go
 
 # A count of PRs names none of them: "all five PRs", "both PRs".
 COUNTED = r"(?:all(?: the)?(?: (?:\d{1,2}|two|three|four|five|six|seven|eight|nine|ten))?|both|the) prs"
+VERB = r"(?:force-?push|push|restack|re-stack|rebase|sync|submit)"
 COUNTS = {"both": 2, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+COUNT = re.compile(rf"\b{VERB}\s+(?:all\s+(?:the\s+)?)?({'|'.join(COUNTS)}|\d{{1,2}}(?=\s+prs\b))\b", re.I)
 
 
 def counted(push):
-    """How many PRs push steps' count says ("all five PRs", "both PRs"), or None for none."""
-    found = re.search(r"\b(both|two|three|four|five|six|seven|eight|nine|ten|\d{1,2}) prs\b", push, re.I)
-    return None if not found else COUNTS.get(found.group(1).lower()) or int(found.group(1))
+    """Each count of PRs push steps say, "both" alone included: "push both", "all five PRs"."""
+    return [COUNTS.get(word.lower()) or int(word) for word in COUNT.findall(push)]
 
 
 # The branch a push goes onto, which it doesn't push: "onto develop", "restacked on develop".
 BASE = r"\s+(?:(?:restacked|rebased)\s+(?:on|onto|on top of)|onto|on top of)\s+`?[\w./-]+`?"
-STEP = (rf"(?P<verb>force-?push|push|restack|re-stack|rebase|sync|submit)"
+STEP = (rf"(?<![\w-])(?P<verb>{VERB})"
         rf"(?:\s+(?:it|them|both|the (?:stack|branch)|{COUNTED}|{merge_go.REFS}))?(?:{BASE})?")
 STEPS = re.compile(STEP, re.I)
 STEP = STEP.replace("?P<verb>", "?:")  # PUSH repeats it, and a group name can't repeat

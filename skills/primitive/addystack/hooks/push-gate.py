@@ -401,15 +401,17 @@ def strays(go):
 
 
 def unmet(go, explicit=False):
-    """Why a Go isn't one for every live approval, or None when it is. A count of PRs, as in
-    "all five PRs", must be the number the push moves, so it can't understate the push."""
+    """Why a Go isn't one for every live approval, or None when it is. Each count of PRs, as in
+    "all five PRs" or "push both", must be the number the push moves, so it can't understate
+    the push."""
     missing, stray, count = unnamed(go, explicit), strays(go), counted(go.push)
     if missing:
         return f"doesn't name {missing}"
     if stray:
         return f"names {stray} in its dismissal, which this push doesn't move"
-    if count is not None and count != len(moved):
-        return f"says {count} PRs, but this push moves {len(moved)}"
+    wrong = [n for n in count if n != len(moved)]
+    if wrong:
+        return f"says {wrong[0]} PRs, but this push moves {len(moved)}"
     return None
 
 
