@@ -84,7 +84,8 @@ def own_diff(base: str, head: str, cwd: str = '.') -> str:
         # Bytes: text mode would turn a path's carriage return into a newline before hashing.
         return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, check=True, timeout=120).stdout
     fork = git('merge-base', base, head).decode().strip()
-    raw = git('diff-tree', '-r', '--no-renames', '--no-abbrev', '--full-index', '-z', fork, head)
+    # A submodule set to ignore changes would otherwise drop out of the diff.
+    raw = git('diff-tree', '-r', '--no-renames', '--no-abbrev', '--full-index', '--ignore-submodules=none', '-z', fork, head)
     return hashlib.sha256(raw).hexdigest()
 
 

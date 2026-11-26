@@ -153,6 +153,18 @@ class OwnDiff(unittest.TestCase):
             fingerprints.append(gates.own_diff(self.base, self.rev('HEAD'), str(self.repo)))
         self.assertNotEqual(*fingerprints)
 
+    def test_a_submodule_set_to_ignore_changes_still_changes_it(self):
+        fingerprints = []
+        self.git('config', 'submodule.vendor.ignore', 'all')
+        for name, link in (('two', '2' * 40), ('three', '3' * 40)):
+            self.git('switch', '-q', '-c', name, self.base)
+            (self.repo / '.gitmodules').write_text('[submodule "vendor"]\n\tpath = vendor\n\turl = ./vendor\n\tignore = all\n')
+            self.git('add', '.gitmodules')
+            self.git('update-index', '--add', '--cacheinfo', f'160000,{link},vendor')
+            self.git('commit', '-q', '-m', name)
+            fingerprints.append(gates.own_diff(self.base, self.rev('HEAD'), str(self.repo)))
+        self.assertNotEqual(*fingerprints)
+
     def test_a_mode_or_a_binary_byte_changes_it(self):
         before = gates.own_diff(self.base, self.approved, str(self.repo))
         self.git('update-index', '--chmod=+x', 'feature.txt')
