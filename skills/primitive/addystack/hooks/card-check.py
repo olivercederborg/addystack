@@ -128,20 +128,16 @@ def wakes(thread):
 
 
 URL = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)", re.I)
-# A PR as the reply names it, as project.py's PR_REF reads one: a URL, owner/repo#N, repo#N, or #N.
-PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
-                    r"|(?<![\w/#])#(\d+)\b", re.I)
-LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # as project.py reads a coordinator's links
 # A bare thread id, as `project.py worker --thread mcp:launch:…` writes one: a launched thread,
 # a delegated child, or a UUID.
 BARE = re.compile(r"(?<![\w:/])(mcp:launch:[0-9a-f]+|thread:[\w%:.-]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
-CELL = re.compile(r"(?<!\\)\|")  # project.py's: a cell ends at a | that isn't escaped
 
 
 def remote(cell, coordinator, known):
     """Whether a Workers row's Thread cell names a thread on another machine: a link to
     another environment than the coordinator's, or a bare id that T3 here doesn't know."""
-    link = LINK.search(cell)
+    import project_md
+    link = project_md.LINK.search(cell)
     if link:
         return link.group(1) != coordinator
     bare = BARE.search(cell)
@@ -152,22 +148,18 @@ def remote_workers(thread, known):
     """The live Workers rows (running, overdue, or unknown), in project.md of the coordinator
     project whose thread this is, whose thread is on another machine: T3 here can't see such
     a thread end, so nothing here wakes on it. known(id) says whether T3 here has a thread."""
+    import project_md
     found = []
     for path in pathlib.Path(os.environ.get("ADDYSTACK_ORCHESTRATE", "~/.local/state/orchestrate")).expanduser().glob(
             "*/project.md"):
         lines = path.read_text().splitlines()
-        head = next((LINK.search(line) for line in lines if line.startswith("Coordinator:")), None)
+        head = next((project_md.LINK.search(line) for line in lines if line.startswith("Coordinator:")), None)
         if not head or head.group(2) != thread:
             continue
         start = next((at for at, line in enumerate(lines) if line.strip() == "## Workers"), len(lines))
         stop = next((at for at in range(start + 1, len(lines)) if lines[at].startswith("## ")), len(lines))
-        rows = [[cell.strip() for cell in CELL.split(line.strip().strip("|"))] for line in lines[start:stop]
-                if line.startswith("|")]
-        for cells in rows[2:]:
-            if len(cells) != len(rows[0]):  # project.py's _workers skips it, and the tick flags it
-                continue
-            row = dict(zip(rows[0], cells))
-            if re.match(r"(running|overdue|unknown)\b", row.get("State", "")) and remote(
+        for row in project_md.workers(lines, start, stop)[0]:  # an odd row is the tick's to flag
+            if project_md.THREAD_ROW.match(row.get("State", "")) and remote(
                     row.get("Thread", ""), head.group(1), known):
                 found.append(row.get("Worker", "?"))
     return found
@@ -188,12 +180,10 @@ def wake_gap(turn, reply, thread, now):
     if turn.state != "running":
         return None
     watched, ended, tasks, timer = wakes(thread)
-    # A range `#20–#22` names each PR in it, as project.py's _pr_refs reads one.
-    text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
-        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0],
-                  reply[:reply.rfind("<!--")])
+    import project_md
+    said = project_md.ranges(reply[:reply.rfind("<!--")])  # a range `#20–#22` names each PR in it
     named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
-             for url_repo, url_n, repo, n, local in PR_REF.findall(text)]
+             for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(said)]
     # #N names any repo's #N; repo#N matches owner/repo by its last part.
     hit = sorted({pr for pr in ended for repo, number in named if number == pr[1] and (
         repo is None or repo == pr[0] or "/" not in repo and pr[0].endswith("/" + repo))})

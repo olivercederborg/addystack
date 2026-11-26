@@ -48,6 +48,7 @@ import time
 from datetime import date, datetime, timezone
 from pathlib import Path
 
+import project_md
 import project_queue
 import turn_block
 
@@ -55,7 +56,6 @@ STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done",
           "replaced by <worker>", "absorbed into <worker>")
 STATE = re.compile(r"(queued|overdue|unknown|running|waiting|stuck|done|dropped)\b|(replaced by|absorbed into) \S")
 COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect"}
-CELL = re.compile(r"(?<!\\)\|")
 
 SKELETON = """# ◆ {project}
 
@@ -179,8 +179,7 @@ def _bullet(text: str) -> str:
     return "- " + text.replace("\r\n", "\n").replace("\r", "\n").strip().replace("\n", "\n  ")
 
 
-def _cells(row: str) -> list[str]:
-    return [cell.strip() for cell in CELL.split(row.strip())[1:-1]]
+_cells = project_md.cells
 
 
 def _row(cells: list[str]) -> str:
@@ -374,12 +373,8 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 # the coordinator's model wakes only for news T3 doesn't deliver. A heartbeat that woke it
 # hourly took no action on 91% of its turns.
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
-THREAD_ROW = re.compile(r"(running|overdue|unknown)\b")  # a row whose thread should be running
 PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
-LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # bare, in <…>, or a Markdown link's (…)
-# A PR as its URL, owner/repo#N, repo#N (the checkout's owner), or #N (the checkout's repo).
-PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
-                    r"|(?<![\w/#])#(\d+)\b")
+LINK, PR_REF, THREAD_ROW = project_md.LINK, project_md.PR_REF, project_md.THREAD_ROW
 REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
@@ -443,18 +438,7 @@ def _header(lines: list[str], field: str) -> str:
 
 def _workers(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
     """The Workers rows as {column: cell}, and the rows whose cells don't match the header."""
-    start, end = _section(lines, "Workers")
-    table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
-    if len(table) < 2:
-        return [], []
-    header, rows, odd = _cells(lines[table[0]]), [], []
-    for i in table[2:]:
-        cells = _cells(lines[i])
-        if len(cells) == len(header):
-            rows.append(dict(zip(header, cells)))
-        else:
-            odd.append(lines[i])
-    return rows, odd
+    return project_md.workers(lines, *_section(lines, "Workers"))
 
 
 def _listened(lines: list[str], key: str) -> str:
@@ -469,8 +453,7 @@ def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
-        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
+    text = project_md.ranges(text)
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
         repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
