@@ -28,6 +28,9 @@ It sends only when all of these hold:
   since the last reply whose turn block is `done`; in the implementation scope it also
   starts at the user's last typed prompt that isn't an ask, and needs one: a run an agent's
   prompt started, such as a scheduled task's, doesn't ask;
+- in the implementation scope, the card names a `review` or `decide` need the session hasn't
+  checked (checked), since a follow-up question the user types about a card starts a new run,
+  and a coordinator shows its queued needs for many turns;
 - no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
   `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
 - `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
@@ -145,6 +148,46 @@ def asks(prompt):
     return own_command(prompt) or bool(ASKED.search(prompt))
 
 
+def decision(need):
+    """What names a need's decision across cards: its id and its name. An id alone misleads: in
+    the week to Nov 25, 2026, 197 of the implementation scope's 362 replayed sends shared a need
+    id with a card a /cleanest or the user's ask had checked, but only 55 its id and name; most
+    of the rest reused id 1 for another decision. A name alone matched 3 more, needs re-queued
+    under a new id, one after a rebase changed it, and the user asked again there (R189)."""
+    return need.id, " ".join(need.name.split()).casefold()
+
+
+def card_needs(reply):
+    """The decisions a reply that ends its turn shows: a stop card's needs, none for a done
+    reply, or None for progress text, a running reply, or no block."""
+    try:
+        turn = turn_block.parse(reply or "")
+    except turn_block.Malformed:
+        return None
+    return {decision(need) for need in turn.needs} if turn.state in ("stop", "done") else None
+
+
+def checked(found):
+    """The decisions a /cleanest or the user's quality-bar ask already checked this session:
+    each need on the card the ask answered and on the first stop or done reply after the ask
+    before the user typed again. Both reach past prompts the user didn't type that landed in the ask's
+    turn, such as a worker's result or a task notice, and past progress text."""
+    seen = set()
+    for at, exchange in enumerate(found):
+        if not asks(exchange.prompt):
+            continue
+        before = at
+        while found[before].reply is None and before and not found[before - 1].prompt:
+            before -= 1
+        seen |= card_needs(found[before].reply) or set()
+        for later in found[at + 1:]:
+            answer = card_needs(later.reply)
+            if answer is not None or later.prompt:
+                seen |= answer or set()
+                break
+    return seen
+
+
 def ended(exchanges, scope):
     """Whether any of exchanges ends its run: its reply's turn block is done, or, in the
     implementation scope, its prompt is one the user typed that isn't an ask."""
@@ -225,6 +268,9 @@ def decide(payload, scope):
     if not found:
         raise Skip("can't tell who sent the latest prompt", thread)
     check_run(found, payload.get("transcript_path"), thread, session, scope)
+    if scope == IMPLEMENTATION and {decision(need) for need in turn.needs
+                                    if need.kind in ("review", "decide")} <= checked(found):
+        raise Skip(f"a {COMMAND} or the user's ask already checked every decision on the card", thread)
     home = os.environ.get("CLAUDE_CONFIG_DIR", "").strip() or os.path.expanduser("~/.claude")
     try:
         installed = pathlib.Path(home, "commands", "cleanest.md").read_bytes() == KIT_COMMAND.read_bytes()
