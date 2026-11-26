@@ -231,7 +231,8 @@ class T3Session(unittest.TestCase):
              True, (True, self.DESKTOP_CLI)),
             ("a linked machine's T3 server", {**thread, "T3CODE_HOME": "/home/u/.t3"}, True, (True, "PATH")),
             ("a linked machine without t3 on PATH", {**thread, "T3CODE_HOME": "/home/u/.t3"}, False, (True, None)),
-            ("the Mac's Codex app-server", {**thread, "T3CODE_PROJECT_ROOT": "/p"}, True, (True, "PATH")),
+            ("the Mac's Codex app-server", {"T3CODE_CLI_PATH": self.DESKTOP_CLI}, True, (True, self.DESKTOP_CLI)),
+            ("a Codex thread's commands", {**thread, "T3CODE_PROJECT_ROOT": "/p"}, True, (True, "PATH")),
             ("a terminal, T3's panel included", {}, True, (False, None)),
             ("T3's own server processes", {"T3CODE_HOME": "/home/u/.t3"}, True, (False, None)),
         ]

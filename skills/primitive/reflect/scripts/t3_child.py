@@ -24,11 +24,11 @@ OPT_IN = "Reply rules: on"
 
 
 def in_t3():
-    """True when T3 started this session: T3 names its thread in T3CODE_THREAD_ID for each
-    Claude Code session it starts, on the Mac and on a linked machine's T3 server, and for
-    the Mac's Codex app-server. T3's desktop app also sets T3CODE_CLI_PATH; a linked
-    machine's server didn't on Nov 26, 2026 (t3 v0.1.13), nor did the Codex app-server.
-    T3's terminal panel sets neither."""
+    """True when T3 started this session. On Nov 26, 2026 (t3 v0.1.13), T3's desktop app set
+    T3CODE_CLI_PATH on what it starts, Codex's app-server included, and T3CODE_THREAD_ID on
+    each Claude Code session; a linked machine's T3 server set only T3CODE_THREAD_ID there,
+    and Codex passes only T3CODE_THREAD_ID to a thread's commands, through its per-thread
+    shell config. T3's terminal panel sets neither."""
     return bool(os.environ.get("T3CODE_CLI_PATH") or os.environ.get("T3CODE_THREAD_ID"))
 
 
