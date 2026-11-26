@@ -4637,7 +4637,8 @@ class PushGate(unittest.TestCase):
                  "doesn't name #6213"),
                 (pick(named)[:2] + ("push #6153 and #6179",), "doesn't name #6213"),
                 (pick(named)[:2] + ("hold on", claude_wrote("Holding."), typed), "offers no stop:push option"),
-                (pick(named)[:2] + ("push #6153, #6179, #6213, #6225 and #6248 tomorrow",), None)]:
+                (pick(named)[:2] + ("push #6153, #6179, #6213, #6225 and #6248 tomorrow",), None),
+                (pick(named)[:2] + ("rebase the stack",), None)]:
             with self.subTest(said=repr(said)[-240:]):
                 reason = self.reason("gh stack push", said=said)
                 self.assertIn("which dismisses teammate's approval", reason)

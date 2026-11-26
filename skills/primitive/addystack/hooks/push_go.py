@@ -70,6 +70,7 @@ def literal_go(text):
 
 
 def plain_go(text):
-    """The push steps of text when it is literal_go's request without the dismissal, else None."""
+    """The push steps of text when it is literal_go's request without the dismissal, and says
+    push or submit, else None: a typed "rebase the stack" may mean only the local rebase."""
     found = read(PLAIN, text)
-    return found.group("push") if found else None
+    return found.group("push") if found and re.search(r"\bpush\b|\bsubmit\b", found.group("push"), re.I) else None
