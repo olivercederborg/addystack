@@ -57,8 +57,9 @@ def refused(turn):
 # T3's work that outlives the run and wakes the thread when it ends (pendingBackgroundTurnItems).
 ACTIVE = "('pending', 'running', 'waiting')"
 SLACK = 120  # seconds a timer may fire after the eta: T3's scheduler polls, so one at the eta lands a little late
-UNITS = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600}
-DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b", re.I)
+UNITS = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600,
+         "d": 86400, "day": 86400, "w": 604800, "wk": 604800, "week": 604800}
+DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?|d|days?|w|wks?|weeks?)\b", re.I)
 
 
 def seconds(eta):
@@ -187,8 +188,12 @@ def wake_gap(turn, reply, thread, now):
     if turn.state != "running":
         return None
     watched, ended, tasks, timer = wakes(thread)
+    # A range `#20–#22` names each PR in it, as project.py's _pr_refs reads one.
+    text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
+        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0],
+                  reply[:reply.rfind("<!--")])
     named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
-             for url_repo, url_n, repo, n, local in PR_REF.findall(reply[:reply.rfind("<!--")])]
+             for url_repo, url_n, repo, n, local in PR_REF.findall(text)]
     # #N names any repo's #N; repo#N matches owner/repo by its last part.
     hit = sorted({pr for pr in ended for repo, number in named if number == pr[1] and (
         repo is None or repo == pr[0] or "/" not in repo and pr[0].endswith("/" + repo))})

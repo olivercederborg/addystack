@@ -5255,7 +5255,7 @@ class CardCheckWakes(unittest.TestCase):
     def test_an_eta_needs_a_timer_by_then_or_a_pending_task(self):
         # Nov 20, 2026: a live watch on #6086 sent no wake after a 36-second Lint re-run, eta 6 min.
         watched = self.db(links=[self.WATCH])
-        for eta in ("6 min", "about 6 minutes", "~1 h 30 min", "45m"):
+        for eta in ("6 min", "about 6 minutes", "~1 h 30 min", "45m", "1 day", "2 weeks"):  # review-loop r3: days, weeks
             with self.subTest(eta=eta):
                 reason = self.run_hook(watched, eta=eta)
                 self.assertIn(f"This reply's eta is {eta}, but only a PR watch will wake this thread", reason)
@@ -5295,7 +5295,7 @@ class CardCheckWakes(unittest.TestCase):
         self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, denied])))
         # review-loop r1 on 549f8b0: a qualified or URL reference names it too, and an unwatch of
         # another repo's #6153 doesn't end this one's.
-        for said in ("CI is running on o/r#6153.", "CI is running on r#6153.",
+        for said in ("CI is running on o/r#6153.", "CI is running on r#6153.", "CI is running on #6152–#6154.",
                      "CI is running on https://github.com/o/r/pull/6153."):
             with self.subTest(said=said):
                 self.assertIn("names #6153", self.run_hook(db, said=said))
@@ -5346,6 +5346,11 @@ class CardCheckWakes(unittest.TestCase):
     def test_fails_open_and_checks_only_running_replies_in_t3(self):
         empty = self.db()
         outside = {k: "" for k in ("T3CODE_THREAD_ID", "T3CODE_CLI_PATH")}
+        # review-loop r3: T3CODE_HOME moves T3's data directory, and the database with it.
+        home = self.dir / "home"
+        (home / "userdata").mkdir(parents=True)
+        shutil.copy(empty, home / "userdata" / "statev2.sqlite")
+        self.assertIn("nothing in T3 will wake", self.run_hook("", env={"T3CODE_HOME": str(home)}))
         for name, kwargs in (("no database", {"db": str(self.dir / "missing.sqlite")}),
                              ("unknown thread", {"db": empty, "env": {"T3CODE_THREAD_ID": "thread-other"}}),
                              ("outside T3", {"db": empty, "env": outside}),
