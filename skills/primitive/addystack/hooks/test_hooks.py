@@ -1034,7 +1034,7 @@ class CleanestAskImplementation(CleanestAskCase):
             return self.card(needs=[(number, name)], classes=("stop:push", "decision"),
                              text=f"{self.PUSH} (dismisses the reviewer's approval)")
         first = push(70, "push all five PRs (dismisses the reviewer's approvals on #6179, #6213)")
-        went = "the user already gave the stop:push go this card asks for again"
+        went = "the user gave a stop:push go earlier in this run"
         for go, card in (("A", push(71, "push the five PRs (dismisses the reviewer's approval on #6179 and #6213)")),
                          (self.PUSH, push(72, "push the five PRs (dismisses the reviewer's approval)"))):
             with self.subTest(go=go):

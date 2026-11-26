@@ -280,7 +280,7 @@ def decide(payload, scope):
     run = check_run(found, payload.get("transcript_path"), thread, session, scope)
     if scope == IMPLEMENTATION and turn.recommended.cls in GATES and any(
             (option := go(exchange)) is not None and option.cls == turn.recommended.cls for exchange in run):
-        raise Skip(f"the user already gave the {turn.recommended.cls} go this card asks for again", thread)
+        raise Skip(f"the user gave a {turn.recommended.cls} go earlier in this run", thread)
     if scope == IMPLEMENTATION and {decision(need) for need in turn.needs
                                     if need.kind in ("review", "decide")} <= checked(found):
         raise Skip(f"a {COMMAND} or the user's ask already checked every decision on the card", thread)
