@@ -613,7 +613,9 @@ class WatchReminder(unittest.TestCase):
         for command in ("gh pr edit 6233 --add-reviewer the-reviewer && gh pr view 6233 --json reviewRequests --jq '[.reviewRequests[].login]'",
                         "cd /repo && for n in 6089 6090; do gh pr edit $n --add-reviewer \"the-reviewer\"; done",
                         "cat > body.md <<'EOF'\nFixes the export.\nEOF\ngh pr create --title \"Fix export\" --body-file body.md",
-                        "gh pr ready 6255 && gh pr merge 6255 --auto --squash"):
+                        "gh pr ready 6255 && gh pr merge 6255 --auto --squash",
+                        # merge-gate's reading: --disable-auto and --help merge nothing.
+                        "gh pr ready 12 && gh pr merge 12 --disable-auto", "gh pr ready 12 && gh pr merge --help"):
             with self.subTest(command=command):
                 self.assertIn('`until: "checks"`', self.remind("Bash", {"command": command}))
 

@@ -53,7 +53,8 @@ def waits_on_reviewers(tool, tool_input):
         if not isinstance(tool_input.get("command"), str):
             return False
         run = QUOTED.sub("''", HEREDOC.sub("", tool_input["command"]))
-        return bool(BASH.search(run)) and not any(not WAITS & set(found.group(2).split()) for found in MERGE.finditer(run))
+        merges = any(not WAITS & set(found.group(2).split()) for found in MERGE.finditer(run))
+        return bool(BASH.search(run)) and not merges
     return False
 
 

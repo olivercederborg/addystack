@@ -28,7 +28,7 @@ sends a reply back makes the agent post it a second time.
 
 `turn_block.py` isn't a hook: it parses the turn block that ends each final reply, as [`references/turn-block.md`](../references/turn-block.md) specifies it. `merge-gate.py`, `push-gate.py`, `unwatch-gate.py`, and `card-check.py`'s push check read only its options (`turn_block.options`), so a block that breaks a rule on another field, such as a standing name over 80 characters, still gives its pick; a malformed options list or a block out of place still gives none. card-check's wake check reads `state` and `eta`, so it runs only on a block `parse` accepts.
 
-`shell_dirs.py` isn't a hook: it follows a command's `cd`, `pushd`, and `popd` for `merge-gate.py`, `ready-gate.py`, and `push-gate.py`, so each reads the checkout a merge, ready, or push runs in the same way.
+`shell_dirs.py` isn't a hook: it follows a command's `cd`, `pushd`, and `popd` for `merge-gate.py`, `ready-gate.py`, and `push-gate.py`, so each reads the checkout a merge, ready, or push runs in the same way, and holds the heredoc, quoted-string, and merge patterns those gates and `watch-reminder.py` read a command with.
 
 ## Install
 
