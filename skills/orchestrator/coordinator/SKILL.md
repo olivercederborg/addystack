@@ -151,7 +151,8 @@ inputs or one of Parallel by default's three reasons.
   messages this thread only with news T3 doesn't send, such as a worker that stopped
   while its row says running. Its message opens `<coordinator-tick>`: handle each line as
   this step says and fix its row, or the line repeats hourly. When you set `tick`, run
-  `project.py <folder> tick` once to see that the timer runs.
+  `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
+  a rate-limit reset, puts it in the turn block's `eta`, so card-check asks for its timer.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
