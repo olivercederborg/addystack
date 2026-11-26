@@ -56,6 +56,7 @@ def refused(turn):
 
 # T3's work that outlives the run and wakes the thread when it ends (pendingBackgroundTurnItems).
 ACTIVE = "('pending', 'running', 'waiting')"
+SLACK = 120  # seconds a timer may fire after the eta: T3's scheduler polls, so one at the eta lands a little late
 UNITS = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600}
 DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b", re.I)
 
@@ -88,17 +89,19 @@ def wakes(thread):
         links = json.loads(row[0]).get("pullRequests") or []
         # A stack-dismissed link's watch wakes nobody (T3's pullRequestWatchTasks).
         watched = {link.get("number") for link in links if link.get("watch") and link.get("source") != "stack-dismissed"}
-        calls = {}  # each PR's last watch or unwatch call that went through
+        calls = {}  # (repository, number) -> whether its last watch or unwatch call that went through was a watch
         for name, given, output in db.execute(
                 "select json_extract(payload_json, '$.toolName'), json_extract(payload_json, '$.input'), "
                 "json_extract(payload_json, '$.output') from orchestration_v2_projection_turn_items where thread_id = ? "
                 "and type = 'dynamic_tool' and status = 'completed' and json_extract(payload_json, '$.toolName') "
                 "like '%watch_pull_request' order by ordinal", (thread,)):
             given = json.loads(given) if given else {}
-            number = given.get("number") or (re.search(r"/pull/(\d+)", str(given.get("url"))) or [None, None])[1]
-            if number and not re.search(r'"isError": ?true|hook error', str(output)):
-                calls[int(number)] = not name.endswith("unwatch_pull_request")
-        ended = {link.get("number") for link in links if calls.get(link.get("number")) and not link.get("watch")
+            url = URL.search(str(given.get("url")))
+            pr = (url.group(1), int(url.group(2))) if url else (str(given.get("repository")), given.get("number"))
+            if isinstance(pr[1], int) and not re.search(r'"isError": ?true|hook error', str(output)):
+                calls[(pr[0].lower(), pr[1])] = not name.endswith("unwatch_pull_request")
+        ended = {(str(link.get("repository")).lower(), link.get("number")) for link in links
+                 if calls.get((str(link.get("repository")).lower(), link.get("number"))) and not link.get("watch")
                  and (link.get("snapshot") or {}).get("state") == "open"}
         tasks = [task.get("kind") for payload, in db.execute(
             "select payload_json from orchestration_v2_projection_provider_threads where thread_id = ?1 "
@@ -110,12 +113,16 @@ def wakes(thread):
             f"where i.thread_id = ? and i.type in ('command_execution', 'dynamic_tool', 'subagent') and i.status in {ACTIVE} "
             "and (r.status is null or r.status != 'rolled_back')", (thread,)) if persistent != 1]
         timer = db.execute("select min(next_run_at) from scheduled_tasks where thread_id = ? and enabled = 1 "
-                           "and thread_mode = 'continue' and next_run_at is not null", (thread,)).fetchone()[0]
+                           "and thread_mode != 'new_thread' and next_run_at is not null", (thread,)).fetchone()[0]
     finally:
         db.close()
     return watched, ended, tasks, when(timer) if timer else None
 
 
+URL = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)", re.I)
+# A PR as the reply names it, as project.py's PR_REF reads one: a URL, owner/repo#N, repo#N, or #N.
+PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
+                    r"|(?<![\w/#])#(\d+)\b", re.I)
 LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # as project.py reads a coordinator's links
 # A bare thread id, as `project.py worker --thread mcp:launch:…` writes one: a launched thread,
 # a delegated child, or a UUID.
@@ -149,6 +156,8 @@ def remote_workers(thread, known):
         rows = [[cell.strip() for cell in CELL.split(line.strip().strip("|"))] for line in lines[start:stop]
                 if line.startswith("|")]
         for cells in rows[2:]:
+            if len(cells) != len(rows[0]):  # project.py's _workers skips it, and the tick flags it
+                continue
             row = dict(zip(rows[0], cells))
             if re.match(r"(running|overdue|unknown)\b", row.get("State", "")) and remote(
                     row.get("Thread", ""), head.group(1), known):
@@ -171,9 +180,13 @@ def wake_gap(turn, reply, thread, now):
     if turn.state != "running":
         return None
     watched, ended, tasks, timer = wakes(thread)
-    named = {int(number) for number in re.findall(r"(?<![\w/])#(\d+)\b", reply[:reply.rfind("<!--")])}
-    if named & ended:
-        prs = ", ".join(f"#{number}" for number in sorted(named & ended))
+    named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
+             for url_repo, url_n, repo, n, local in PR_REF.findall(reply[:reply.rfind("<!--")])]
+    # #N names any repo's #N; repo#N matches owner/repo by its last part.
+    hit = sorted({pr for pr in ended for repo, number in named if number == pr[1] and (
+        repo is None or repo == pr[0] or "/" not in repo and pr[0].endswith("/" + repo))})
+    if hit:
+        prs = ", ".join(f"#{number}" for _, number in hit)
         return (f"this reply names {prs}, which this thread watched and never unwatched, but T3 no longer watches "
                 "it: a user's Stop ends every watch on a thread without a word. Call `watch_pull_request` on it again "
                 "before ending the turn")
@@ -188,7 +201,7 @@ def wake_gap(turn, reply, thread, now):
                 "on before ending the turn: watch each PR it waits on, or set a `once` `schedule_task` on this "
                 "thread at the time it expects news. If nothing is pending, end `stop` or `done`")
     due = seconds(turn.eta)
-    if due is None or tasks or timer is not None and timer <= now + due + max(600, due / 2):
+    if due is None or tasks or timer is not None and timer <= now + due + SLACK:
         return None
     return (f"this reply's eta is {turn.eta}, but only a PR watch will wake this thread, and a watch can miss a "
             "re-run that ends between its polls. Set a `once` `schedule_task` on this thread at the eta, or drop "

@@ -5218,7 +5218,7 @@ class CardCheckWakes(unittest.TestCase):
                                                "stop_hook_active": active})).stdout
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
 
-    WATCH = {"number": 6153, "source": "agent", "watch": {"until": "merged", "checksPending": True}}
+    WATCH = {"repository": "o/r", "number": 6153, "source": "agent", "watch": {"until": "merged", "checksPending": True}}
 
     def test_sends_back_a_running_reply_nothing_will_wake(self):
         # Nov 26, 2026: a user's Stop at 09:43 cleared the five watches the 12:02 and 12:27 replies waited on.
@@ -5246,7 +5246,9 @@ class CardCheckWakes(unittest.TestCase):
                          ("native subagent", self.db(tasks=[{"taskId": "a1", "kind": "subagent"}])),
                          ("delegated child", self.db(items=[("subagent", "running", "completed", None)])),
                          ("background tool", self.db(items=[("dynamic_tool", "running", "completed", {"x": 1})])),
-                         ("timer on this thread", self.db(timers=[("continue", 1, self.MUCH_LATER)]))):
+                         ("timer on this thread", self.db(timers=[("continue", 1, self.MUCH_LATER)])),
+                         # T3 runs a fresh_session task in the same thread with a fresh context.
+                         ("fresh-session timer", self.db(timers=[("fresh_session", 1, self.MUCH_LATER)]))):
             with self.subTest(name):
                 self.assertIsNone(self.run_hook(db))
 
@@ -5259,8 +5261,10 @@ class CardCheckWakes(unittest.TestCase):
                 self.assertIn(f"This reply's eta is {eta}, but only a PR watch will wake this thread", reason)
         self.assertIn("eta is 6 min", self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, self.MUCH_LATER)]),
                                                     eta="6 min"))
+        late = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + 900))  # review-loop r1: 15 min late
+        self.assertIn("eta is 6 min", self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, late)]), eta="6 min"))
         for name, db, eta in (("timer by the eta", self.db(links=[self.WATCH], timers=[("continue", 1, self.LATER)]), "6 min"),
-                              ("timer within its slack", self.db(timers=[("continue", 1, self.MUCH_LATER)]), "2 h"),
+                              ("timer by a 2 h eta", self.db(timers=[("continue", 1, self.MUCH_LATER)]), "2 h"),
                               ("pending child", self.db(items=[("subagent", "running", "completed", None)]), "6 min"),
                               ("clock time", watched, "by 15:30"), ("no number", watched, "soon")):
             with self.subTest(name):
@@ -5271,7 +5275,7 @@ class CardCheckWakes(unittest.TestCase):
 
     def test_sends_back_a_named_pr_whose_watch_t3_ended(self):
         # Nov 26, 2026, 12:27: "#6153's browser tests are re-running", while #6253's later watch still ran.
-        ended = {"number": 6153, "source": "agent", "watch": None, "snapshot": {"state": "open"}}
+        ended = {"repository": "o/r", "number": 6153, "source": "agent", "watch": None, "snapshot": {"state": "open"}}
         other = {**self.WATCH, "number": 6253}
         db = self.db(links=[ended, other], items=[self.WATCHED])
         reason = self.run_hook(db)
@@ -5289,6 +5293,15 @@ class CardCheckWakes(unittest.TestCase):
             with self.subTest(name):
                 self.assertIsNone(self.run_hook(**kwargs))
         self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, denied])))
+        # review-loop r1 on 549f8b0: a qualified or URL reference names it too, and an unwatch of
+        # another repo's #6153 doesn't end this one's.
+        for said in ("CI is running on o/r#6153.", "CI is running on r#6153.",
+                     "CI is running on https://github.com/o/r/pull/6153."):
+            with self.subTest(said=said):
+                self.assertIn("names #6153", self.run_hook(db, said=said))
+        self.assertIsNone(self.run_hook(db, said="CI is running on o/other#6153."))
+        elsewhere = (*unwatched[:3], {"repository": "o/other", "number": 6153}, *unwatched[4:])
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, elsewhere])))
 
     def test_sends_back_a_coordinator_whose_worker_runs_on_another_machine(self):
         # Nov 23, 2026: a worker on a linked machine finished at 15:27, and the Mac coordinator heard nothing until 17:30.
@@ -5312,6 +5325,9 @@ class CardCheckWakes(unittest.TestCase):
         with contextlib.closing(sqlite3.connect(watched)) as db, db:  # a thread T3 here knows is local
             db.execute("insert into orchestration_v2_projection_threads values ('mcp:launch:abc', '{}', null, null)")
         self.assertIsNone(self.run_hook(watched))
+        # review-loop r1: a row whose cells don't match the header is the tick's to flag, as project.py skips it.
+        (folder / "project.md").write_text(bare.replace("| #6153 | running", "| #6153 | extra | running"))
+        self.assertIsNone(self.run_hook(self.db(links=[{**self.WATCH, "number": 6155}])))
         watched = self.db(links=[{**self.WATCH, "number": 6154}])
         for name, args in (("done", ("done: PR opened",)), ("on this machine", ("running", mac)),
                            ("another coordinator", ("running", linked, "thread-other"))):
