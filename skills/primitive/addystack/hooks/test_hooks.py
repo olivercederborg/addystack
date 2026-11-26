@@ -2,7 +2,7 @@
 check whether it denies."""
 import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
 
-import hook_parity, merge_go, resolved, transcripts, turn_block, verdicts, workflow_triggers
+import hook_parity, merge_go, resolved, t3_child, transcripts, turn_block, verdicts, workflow_triggers
 
 try:
     from markdown_it import MarkdownIt
@@ -207,6 +207,37 @@ class KeychainHomeGuard(unittest.TestCase):
             with self.subTest(command=command):
                 subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"tool_input": {"command": command}}),
                                capture_output=True, text=True, timeout=2, check=True)
+
+class T3Session(unittest.TestCase):
+    """t3_child.in_t3 and cli, from the variables T3 set on each machine on Nov 26, 2026."""
+    DESKTOP_CLI = "/Applications/T3.app/bin/t3"
+
+    def session(self, env, on_path=True):
+        """(in_t3, cli) with env's T3 variables, "PATH" for a cli that's `t3` on PATH."""
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        pathlib.Path(folder, "t3").write_text("#!/bin/sh\n")
+        os.chmod(os.path.join(folder, "t3"), 0o755)
+        rest = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
+        with unittest.mock.patch.dict(os.environ, {**rest, "PATH": folder if on_path else "/nonexistent", **env}, clear=True):
+            cli = t3_child.cli()
+            return t3_child.in_t3(), "PATH" if cli == os.path.join(folder, "t3") else cli
+
+    def test_finds_t3_and_its_cli_where_t3_started_the_session(self):
+        thread = {"T3CODE_THREAD_ID": "mcp:launch:a"}
+        cases = [
+            ("the Mac's desktop app, whose CLI wins over PATH", {**thread, "T3CODE_CLI_PATH": self.DESKTOP_CLI},
+             True, (True, self.DESKTOP_CLI)),
+            ("a linked machine's T3 server", {**thread, "T3CODE_HOME": "/home/u/.t3"}, True, (True, "PATH")),
+            ("a linked machine without t3 on PATH", {**thread, "T3CODE_HOME": "/home/u/.t3"}, False, (True, None)),
+            ("the Mac's Codex app-server", {**thread, "T3CODE_PROJECT_ROOT": "/p"}, True, (True, "PATH")),
+            ("a terminal, T3's panel included", {}, True, (False, None)),
+            ("T3's own server processes", {"T3CODE_HOME": "/home/u/.t3"}, True, (False, None)),
+        ]
+        for name, env, on_path, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.session(env, on_path), expected)
+
 
 class ChildFastModeOff(unittest.TestCase):
     HOOK = "child-fast-mode-off.py"
