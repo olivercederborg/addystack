@@ -326,16 +326,17 @@ class Agent(Home):
 
 
 class Command(Home):
-    """While cleanest-ask is enabled for Claude Code, install links ~/.claude/commands/cleanest.md,
-    the command the hook sends, to the kit's copy, and removes that link once it's off."""
+    """While cleanest-ask or cleanest-ask-impl is enabled for Claude Code, install links
+    ~/.claude/commands/cleanest.md, the command they send, to the kit's copy, and removes that
+    link once both are off."""
 
     def setUp(self):
         super().setUp()
         self.link = self.home / ".claude/commands/cleanest.md"
         self.source = KIT / "commands/cleanest.md"
 
-    def enable(self, on=True):
-        self.write(self.config, json.dumps({"hooks": {"preset": "all", "enable": ["cleanest-ask"] if on else []}}))
+    def enable(self, on=True, ids=("cleanest-ask",)):
+        self.write(self.config, json.dumps({"hooks": {"preset": "all", "enable": list(ids) if on else []}}))
 
     def test_off_by_default_links_nothing(self):
         self.assertNotIn("(command)", self.ok("install").stdout)
@@ -348,15 +349,27 @@ class Command(Home):
         self.assertIn("disable-model-invocation: true", self.link.read_text())
         self.assertNotIn("(command)", self.ok("install").stdout)
         self.enable(False)
-        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
+        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask and cleanest-ask-impl are off",
+                      self.ok("install").stdout)
         self.assertFalse(os.path.lexists(self.link))
+
+    def test_keeps_it_while_either_id_is_enabled(self):
+        for ids in (("cleanest-ask-impl",), ("cleanest-ask", "cleanest-ask-impl")):
+            with self.subTest(ids=ids):
+                self.enable(ids=ids)
+                self.ok("install")
+                self.assertEqual(os.readlink(self.link), str(self.source))
+        self.enable(ids=("cleanest-ask-impl",))
+        self.assertNotIn("(command)", self.ok("install").stdout)
+        self.assertEqual(os.readlink(self.link), str(self.source))
 
     def test_removes_a_link_to_the_kit_copy_from_before_the_checkout_moved(self):
         self.write(self.state / "resolved.json", json.dumps({"kit": "/previous/addystack"}))
         self.link.parent.mkdir(parents=True)
         self.link.symlink_to("/previous/addystack/commands/cleanest.md")
         self.enable(False)
-        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask is off", self.ok("install").stdout)
+        self.assertIn(f"changed {self.link} (command)\n  removes it: cleanest-ask and cleanest-ask-impl are off",
+                      self.ok("install").stdout)
         self.assertFalse(os.path.lexists(self.link))
 
     def test_leaves_a_users_own_file_and_link(self):

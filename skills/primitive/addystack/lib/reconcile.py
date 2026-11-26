@@ -34,10 +34,10 @@ without agent_source(), since a link to it would dangle. Without verify-work, no
 into the agent, so install does nothing, and a disabled host's link stays too. No ledger
 entry: a link is always install's to replace and anything else never is.
 
-Commands: a hook in COMMANDS sends a Claude Code command, so while hookset selects it for
-Claude Code, install links that command in Claude's commands/ folder to the kit's copy, as
-it links the agent, and once it's no longer selected, removes a link to the kit's copy, or to
-the copy in the kit path the last build recorded, when the checkout has moved.
+Commands: the hooks in COMMANDS send a Claude Code command, so while hookset selects any of
+them for Claude Code, install links that command in Claude's commands/ folder to the kit's
+copy, as it links the agent, and once none is selected, removes a link to the kit's copy, or
+to the copy in the kit path the last build recorded, when the checkout has moved.
 """
 from __future__ import annotations
 
@@ -57,8 +57,8 @@ import skills_cli
 from config import Resolved
 
 LEDGER = _resolved.STATE.parent / "installed.json"
-# The command file each hook sends, from the kit's commands/ folder.
-COMMANDS = {"cleanest-ask": "cleanest.md"}
+# Each command file in the kit's commands/ folder, and the hooks that send it.
+COMMANDS = {"cleanest.md": ("cleanest-ask", "cleanest-ask-impl")}
 
 
 def agent() -> Path:
@@ -126,19 +126,20 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
 
 
 def _commands(resolved: Resolved) -> List[Change]:
-    """The command links' changes: a link for each selected hook's command, and the removal of
-    a link to the kit's copy once its hook isn't selected."""
+    """The command links' changes: a link for each command a selected hook sends, and the
+    removal of a link to the kit's copy once none of its hooks is selected."""
     selected = {entry.id for entry in hookset.select(resolved, "claude")} if resolved["hosts"].get("claude") else set()
     changes = []
-    for hook, name in COMMANDS.items():
+    for name, hooks in COMMANDS.items():
+        on = [hook for hook in hooks if hook in selected]
         link, source = config.claude_home() / "commands" / name, Path(resolved["kit"]) / "commands" / name
         earlier = os.readlink(link) if link.is_symlink() else None
         ours = {str(source), *(os.path.join(os.path.expanduser(kit), "commands", name) for kit in _moved_kits(resolved))}
-        if hook not in selected:
+        if not on:
             if earlier in ours:
-                changes.append(Change("command", link, f"removes it: {hook} is off"))
+                changes.append(Change("command", link, f"removes it: {' and '.join(hooks)} are off"))
         elif earlier is None and os.path.lexists(link):
-            changes.append(Change("command", link, f"a file addystack didn't link, left as is; {hook} needs it to "
+            changes.append(Change("command", link, f"a file addystack didn't link, left as is; {' and '.join(on)} needs it to "
                                   f"link {render._home(source)}", left=True))
         elif earlier != str(source):
             changes.append(Change("command", link, f"links it to {render._home(source)}"
