@@ -3,8 +3,8 @@
 A reply rules file (`replies.rules`) can end every final reply with one turn block: a line
 of JSON in an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
 `hooks/merge-gate.py` reads which option a key picked, and tools such as Prefrontal read
-the rest. `replies.turnBlock` no longer changes anything: it chose the Stop hooks that
-checked the block, which the kit removed.
+the rest. `hooks/card-check.py` sends a reply back once when a `stop:push` option asks for a push
+that dismisses an approval in words push-gate won't take as a go. `replies.turnBlock` no longer changes anything.
 `turn_block.py`'s docstring holds the parser's exact limits: which code blocks and spans
 hide an example block, and which replies' picks count as a merge go.
 
@@ -72,12 +72,13 @@ addystack adds the two-option cap and each option's class.
     merge-gate places a bare PR after one named with its repo in no repo.
   - `stop:push`: a force-push to a shared branch, or a push to a branch someone else
     owns or one that would dismiss an approval. A push that would dismiss one opens with
-    the push, names each PR (or none, for a lone approval), then the dismissal
-    and only steps such as replying, in at most 200 characters, with no refusal,
-    condition, or question, as in "push #6119 (dismisses the reviewer's approval), post
-    the reply". push-gate allows that push only on a pick of such an option, so a push
-    folded into a `stop:post` option or "don't push #6119 yet, it would dismiss the
-    approval" is denied.
+    the push, names each PR (or none, for a lone approval) there or in the dismissal
+    ("dismisses the reviewer's approvals on #6179 and #6213"), then only steps such as
+    replying, in at most 200 characters, with no refusal, condition, or question, as in
+    "push #6119 (dismisses the reviewer's approval), post the reply". push-gate allows that
+    push on a pick of such an option, the same request typed, or the push typed without its
+    dismissal, naming each PR, right after a reply that shows such an option, so a push folded into a
+    `stop:post` option or "don't push #6119 yet, it would dismiss the approval" is denied.
   - `stop:post`: a message to a person.
   - `stop:prod`: a production write or a migration on shared data.
   - `stop:credential`: a missing credential, account, or secret.

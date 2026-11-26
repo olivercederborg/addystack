@@ -4593,6 +4593,92 @@ class PushGate(unittest.TestCase):
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))
 
+    def five(self):
+        """The Nov 26, 2026 push: five PRs move, and the teammate approved #6179 and #6213."""
+        prs = {str(n): self.pull(n, self.BRANCH, self.remote_head, [self.APPROVED] if n in (6179, 6213) else [])
+               for n in (6153, 6179, 6213, 6225, 6248)}
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**scenario, "prs": prs}))
+
+    def test_replays_the_three_refused_goes_on_five_prs(self):
+        # Nov 26, 2026 (transcript 467a616c): the user's goes at 06:42:03 and 06:45:18 picked
+        # these options, and at 06:46:20 typed the push, answering a reply whose option a
+        # said the dismissal. The gate refused all three; only the 06:46 option's wording passed.
+        self.five()
+        named = "push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval)"
+        pick = lambda text, cls="stop:push": ("fix it", self.offer({"class": cls, "text": text},
+                                                                   text=f"**Next**\n\n- `a` → {text}\n\n"), "A")
+        typed = "push #6153, #6179, #6213, #6225 and #6248"
+        for said in [pick("yes: push all five PRs, dismissing the teammate's approvals on #6179 and #6213"),
+                     pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179 and #6213)"),
+                     pick(named), pick(named)[:2] + (typed,),
+                     pick("yes: push all five PRs, dismissing the teammate's approvals on #6179 and #6213")[:2] + (typed,),
+                     pick("push the stack (dismisses the teammate's approvals on #6179 & #6213)"),
+                     pick("push #6153 (dismisses the teammate's approval on #6179 and #6213), post the reply"),
+                     (typed + " (dismisses the teammate's approval on PR #6179 and #6213)",)]:
+            with self.subTest(said=repr(said)[-240:]):
+                self.assertIsNone(self.reason("gh stack push", said=said))
+        for said, why in [
+                # A refusal, a question, or a dismissal that misses a live PR or names one the push doesn't move.
+                (pick("don't push #6179 (dismisses the teammate's approval on #6179 and #6213)"), "isn't a plain request"),
+                (pick("push #6179 and #6213 (dismisses the teammate's approval on #6179 and #6213)?"), "isn't a plain request"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179"), "doesn't name #6213"),
+                (pick("push all five PRs (dismisses the teammate's approval)"), "doesn't name #6179 and #6213"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179, #6213 and #6999"),
+                 "names #6999 in its dismissal, which this push doesn't move"),
+                (pick("push all 5 PRs, dismissing the teammate's approvals on 6179 and 6213"), "isn't a plain request"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179 and #6213", "stop:post"),
+                 "only a stop:push option"),
+                # A typed push without the dismissal: only right after a reply whose stop:push option is a go.
+                ((typed,), "your reply before it shows no stop:push option that does"),
+                (pick(named, "decision")[:2] + (typed,), "shows no stop:push option that does"),
+                (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)")[:2]
+                 + (typed,), "shows no stop:push option that does"),
+                (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)"),
+                 "doesn't name #6213"),
+                (pick(named)[:2] + ("push #6153 and #6179",), "doesn't name #6213"),
+                (pick(named)[:2] + ("hold on", claude_wrote("Holding."), typed), "shows no stop:push option"),
+                (pick(named)[:2] + ("push #6153, #6179, #6213, #6225 and #6248 tomorrow",), None),
+                (pick(named)[:2] + ("rebase the stack",), None)]:
+            with self.subTest(said=repr(said)[-240:]):
+                reason = self.reason("gh stack push", said=said)
+                self.assertIn("which dismisses teammate's approval", reason)
+                if why:
+                    self.assertIn(why, reason)
+
+    def test_takes_a_typed_push_only_with_its_prs_and_a_true_count(self):
+        # review-loop r1 on 7a90b85: a typed push without its dismissal names each PR itself,
+        # its verb, not a branch name, pushes, and a count matches the PRs the push moves.
+        card = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
+                                     text="- `a` → push #6119 (dismisses the teammate's approval)\n\n"))
+        self.assertIsNone(self.reason("gh stack push", said=card + ("push #6119",)))
+        self.assertIn("doesn't name #6119", self.reason("gh stack push", said=card + ("push it",)))
+        # review-loop r3: the dismissal counts only when the reply shows it, not just its turn block.
+        hidden = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
+                                       text="Next: a → push #6119\n\n"))
+        self.assertIn("shows no stop:push option", self.reason("gh stack push", said=hidden + ("push #6119",)))
+        self.assertIsNotNone(self.reason("gh stack push", said=card + ("rebase #6119 onto push-fixes",)))
+        self.five()
+        text = "push both PRs, dismissing the teammate's approvals on #6179 and #6213"
+        for said in [(text,), ("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a"),
+                     # verify-work and review-loop r2 on 5aa419e: "both" alone, and a second count.
+                     ("push both (dismisses the teammate's approvals on #6179 and #6213)",),
+                     ("restack all five PRs and push both PRs (dismisses the teammate's approvals on #6179 and #6213)",)]:
+            with self.subTest(said=said[-1]):
+                self.assertIn("says 2 PRs, but this push moves 5", self.reason("gh stack push", said=said))
+
+    def test_takes_a_push_restacked_on_its_base(self):
+        # Nov 25, 2026, 12:23 (transcript 21e564b0): the user's "a" on #6091's restack.
+        self.scenario(n=6091)
+        text = "push #6091 restacked on develop (dismisses the teammate's approval), re-request teammate"
+        self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+            {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6092"] = self.pull(6092, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.assertIn("doesn't name #6092", self.reason("gh stack push", said=(
+            "push #6091 restacked on 6092 (dismisses the teammate's approvals)",)))
+
     # The reply the user's 11:58:09 "a" answered on Nov 25, 2026 (transcript acdfd830), names
     # replaced: its reviewer-reply disclosure line, `<sub>` and `<br>`, made the gate read the
     # pick as nothing.
@@ -4883,6 +4969,59 @@ class PushGate(unittest.TestCase):
                                                             "would pass: no PR this push moves has a live approval\n"))
         self.assertEqual(self.dry_run("gh pr view 6119"), (0, "would pass: no `gh stack push`, `submit`, or `sync`, or "
                                                               "`git push`, outside quotes for the gate to check\n"))
+
+
+class CardCheck(unittest.TestCase):
+    """card-check.py on the stop:push options of real cards."""
+
+    def run_hook(self, *options, active=False):
+        reply = "Push?\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
+                                      "options": [{"key": key, "class": cls, "text": text}
+                                                  for key, (cls, text) in zip("ab", options)]})
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    def test_sends_back_a_push_option_the_gate_would_refuse(self):
+        # Real options from Nov 18 to 26, 2026, names replaced: each a pick push-gate refuses.
+        for text in ("fix both gaps, push (dismisses the reviewer's approvals), re-verify",
+                     "push 837dc2fa0d now, which dismisses the reviewer's approvals on #5805 and #5806",
+                     "you merge #6110 and #6076; then I restack #6091 (dismisses the reviewer's approval)",
+                     # verify-work on 5aa419e: a condition, a modal, or a no: lead asks for a push the gate refuses.
+                     "push #12 and #13 once CI is green (dismisses the reviewer's approval)",
+                     "push #12 (this will dismiss the reviewer's approval)",
+                     "no: restack #6110 and #6076 again (dismisses the reviewer's approvals)",
+                     # verify-work and review-loop r3 on ccbb04e: a push beside a declined one.
+                     "push #12, but don't restack #13 (dismisses the reviewer's approval on #12)",
+                     "push #6119 (dismisses the teammate's approval), but don't push #6120"):
+            with self.subTest(text=text):
+                reason = self.run_hook(("stop:push", text), ("decision", "no: hold it"))
+                self.assertIn(f'option a, "{text}", is stop:push, but push-gate would refuse it', reason)
+                self.assertIn("Send your whole reply again", reason)
+                self.assertIsNone(self.run_hook(("stop:push", text), active=True))  # once per stop
+
+    def test_passes_an_option_the_gate_takes_or_that_asks_for_no_push(self):
+        for cls, text in [("stop:push", "yes: push all five PRs, dismissing the reviewer's approvals on #6179 and #6213"),
+                          ("stop:push", "push #6153, #6179, #6213, #6225 and #6248 (dismisses the reviewer's approval)"),
+                          # No dismissal named: whether one is live is the gate's call, from GitHub.
+                          ("stop:push", "push both PRs, re-request the reviewer"), ("stop:push", "force-push the branch"),
+                          # review-loop r1 on 7a90b85: a refusal, or an option that asks for no push.
+                          ("stop:push", "don't push #6179 (dismisses the reviewer's approval on #6179)"),
+                          ("stop:push", "report only the details, which dismisses approvals on #5805 and #5806"),
+                          # review-loop r2: a curly apostrophe, and a verb inside a word.
+                          ("stop:push", "don’t push #12 (dismisses the reviewer's approval)"),
+                          ("stop:push", "report the Firebase approval dismissal"),
+                          ("stop:push", "skip the push on #6119 because it dismisses the approval"),
+                          ("stop:push", "report the pushback on dismissing the approval"),
+                          # merge-gate reads a merge go only for a PR with no checks, which a reply can't see.
+                          ("stop:merge", "merge only #6080"), ("stop:merge", "mark #12 ready, but do not merge"),
+                          ("stop:post", "push #6091 and post the reply, which dismisses the approval")]:
+            with self.subTest(text=text):
+                self.assertIsNone(self.run_hook((cls, text)))
+        for payload in ("", "not json", json.dumps({"last_assistant_message": "no block"})):
+            with self.subTest(payload=payload):
+                self.assertEqual(subprocess.run([str(HOOKS / "card-check.py")], input=payload, capture_output=True,
+                                                text=True, check=True).stdout, "")
 
 
 class VerdictStamp(unittest.TestCase):
