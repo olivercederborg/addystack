@@ -78,7 +78,9 @@ def when(stamp):
 def wakes(thread):
     """What T3 holds for thread, from its state database: (watched PR numbers, the open PRs
     whose watch this thread started and never ended, which T3 then ended, pending task kinds,
-    the next timer's epoch or None). Raises sqlite3.Error or LookupError in doubt."""
+    the next timer's epoch or None). Raises sqlite3.Error or LookupError in doubt. A watch
+    another thread started for this one isn't read: finding it scans every thread's calls,
+    about a minute on an 18.8 GB database, and 50 calls in 3 threads did so by Nov 26, 2026."""
     import t3_child
     db = t3_child.connect()
     try:
@@ -96,8 +98,13 @@ def wakes(thread):
                 "and type = 'dynamic_tool' and status = 'completed' and json_extract(payload_json, '$.toolName') "
                 "like '%watch_pull_request' order by ordinal", (thread,)):
             given = json.loads(given) if given else {}
+            if given.get("threadId") not in (None, thread):  # a call on another thread's watch
+                continue
+            # T3's result names the PR it resolved, such as a short repository's owner/repo.
+            done = re.search(r'"repository": ?"([^"]+)", ?"number": ?(\d+)', str(output).replace('\\"', '"'))
             url = URL.search(str(given.get("url")))
-            pr = (url.group(1), int(url.group(2))) if url else (str(given.get("repository")), given.get("number"))
+            pr = (done.group(1), int(done.group(2))) if done else (url.group(1), int(url.group(2))) if url else (
+                str(given.get("repository")), given.get("number"))
             if isinstance(pr[1], int) and not re.search(r'"isError": ?true|hook error', str(output)):
                 calls[(pr[0].lower(), pr[1])] = not name.endswith("unwatch_pull_request")
         ended = {(str(link.get("repository")).lower(), link.get("number")) for link in links

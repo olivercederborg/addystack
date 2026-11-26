@@ -5302,6 +5302,14 @@ class CardCheckWakes(unittest.TestCase):
         self.assertIsNone(self.run_hook(db, said="CI is running on o/other#6153."))
         elsewhere = (*unwatched[:3], {"repository": "o/other", "number": 6153}, *unwatched[4:])
         self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, elsewhere])))
+        # review-loop r2: an unwatch aimed at another thread leaves this one's ended watch, and a
+        # short repository matches the owner/repo T3 resolved it to.
+        aimed = (*unwatched[:3], {"url": "https://github.com/o/r/pull/6153", "threadId": "thread-other"}, *unwatched[4:])
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, aimed])))
+        resolved = json.dumps({"host": "github.com", "repository": "o/r", "number": 6153, "watching": True})
+        short = ("dynamic_tool", "completed", "completed", {"repository": "r", "number": 6153},
+                 "mcp__t3-code__watch_pull_request", {"content": resolved, "structuredContent": json.loads(resolved)})
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[short])))
 
     def test_sends_back_a_coordinator_whose_worker_runs_on_another_machine(self):
         # Nov 23, 2026: a worker on a linked machine finished at 15:27, and the Mac coordinator heard nothing until 17:30.
