@@ -99,6 +99,64 @@ class Decide(unittest.TestCase):
         self.assertNotIn('D2', text)
 
 
+class OwnDiff(unittest.TestCase):
+    """The PR's own diff after a rebase: unchanged when only the base moved, changed by a mode or
+    by a binary file's bytes."""
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        self.git('init', '-q', '-b', 'main')
+        self.commit('base.txt', 'base\n')
+        self.base = self.rev('HEAD')
+        self.git('switch', '-q', '-c', 'pr')
+        self.commit('feature.txt', 'feature\n')
+        (self.repo / 'blob.bin').write_bytes(b'\x00\x01\x02')
+        self.git('add', 'blob.bin')
+        self.git('commit', '-q', '-m', 'binary')
+        self.approved = self.rev('HEAD')
+
+    def git(self, *arguments):
+        return subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=t', '-c', 'user.email=t@example.com',
+                               *arguments], capture_output=True, text=True, check=True).stdout
+
+    def rev(self, name):
+        return self.git('rev-parse', name).strip()
+
+    def commit(self, path, text):
+        (self.repo / path).write_text(text)
+        self.git('add', path)
+        self.git('commit', '-q', '-m', path)
+
+    def rebased(self):
+        """main moves on; the PR is rebased onto it."""
+        self.git('switch', '-q', 'main')
+        self.commit('other.txt', 'other\n')
+        self.git('switch', '-q', 'pr')
+        self.git('rebase', '-q', 'main')
+        return self.rev('HEAD')
+
+    def test_a_rebase_that_only_moves_the_base_keeps_the_fingerprint(self):
+        before = gates.own_diff(self.base, self.approved, str(self.repo))
+        head = self.rebased()
+        self.assertNotEqual(head, self.approved)
+        self.assertEqual(gates.own_diff(self.rev('main'), head, str(self.repo)), before)
+        # The approved head reads the same against the moved base, since its merge base is still the old one.
+        self.assertEqual(gates.own_diff(self.rev('main'), self.approved, str(self.repo)), before)
+
+    def test_a_mode_or_a_binary_byte_changes_it(self):
+        before = gates.own_diff(self.base, self.approved, str(self.repo))
+        self.git('update-index', '--chmod=+x', 'feature.txt')
+        self.git('commit', '-q', '-m', 'mode')
+        moded = self.rev('HEAD')
+        self.assertNotEqual(gates.own_diff(self.base, moded, str(self.repo)), before)
+        (self.repo / 'blob.bin').write_bytes(b'\x00\x01\x03')
+        self.git('commit', '-q', '-am', 'byte')
+        self.assertNotEqual(gates.own_diff(self.base, self.rev('HEAD'), str(self.repo)),
+                            gates.own_diff(self.base, moded, str(self.repo)))
+
+
 class Cli(unittest.TestCase):
     def test_decide_tells_an_author_what_an_unattended_reviewer_would_do(self):
         folder = tempfile.TemporaryDirectory()

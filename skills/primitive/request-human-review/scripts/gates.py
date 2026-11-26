@@ -17,9 +17,11 @@ established pattern, so it needs no human. A sensitive area gets a deeper review
 
     gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head
     gates.py decide GATES.json    what an unattended reviewer would do with no held finding
+    gates.py own-diff BASE HEAD   the PR's own-diff fingerprint, run in the repository's checkout
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
@@ -75,8 +77,15 @@ def check(verdict: dict, pr_body: str, head: str) -> list:
 
 def own_diff(base: str, head: str, cwd: str = '.') -> str:
     """A fingerprint of the PR's own diff, from the merge base of base and head to head: equal
-    fingerprints mean byte-identical diffs, file modes and binary files included."""
-    raise NotImplementedError
+    fingerprints mean byte-identical diffs, file modes and binary files included. It hashes git's
+    raw tree diff, where each changed path carries both modes and both blob ids, and a blob id is
+    the hash of the file's bytes, so no file needs reading."""
+    def git(*arguments):
+        return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
+                              timeout=120).stdout
+    fork = git('merge-base', base, head).strip()
+    raw = git('diff-tree', '-r', '--no-renames', '--no-abbrev', '--full-index', '-z', fork, head)
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 def gated(verdict: dict) -> list:
@@ -122,6 +131,9 @@ def main(arguments):
         problems = check(verdict, pr['body'], pr['headRefOid'])
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
+    if len(arguments) == 3 and arguments[0] == 'own-diff':
+        print(own_diff(arguments[1], arguments[2]))
+        return 0
     if len(arguments) == 2 and arguments[0] == 'decide':
         verdict = load(arguments[1])
         action = decide(verdict, holds=False, required='passed', second_opinion='ran')
