@@ -3,8 +3,8 @@
 A reply rules file (`replies.rules`) can end every final reply with one turn block: a line
 of JSON in an HTML comment, which T3 hides from the user. `hooks/turn_block.py` parses it,
 `hooks/merge-gate.py` reads which option a key picked, and tools such as Prefrontal read
-the rest. `replies.turnBlock` no longer changes anything: it chose the Stop hooks that
-checked the block, which the kit removed.
+the rest. `hooks/card-check.py` sends a reply back once when a `stop:push` or `stop:merge`
+option isn't a go its gate takes. `replies.turnBlock` no longer changes anything.
 `turn_block.py`'s docstring holds the parser's exact limits: which code blocks and spans
 hide an example block, and which replies' picks count as a merge go.
 

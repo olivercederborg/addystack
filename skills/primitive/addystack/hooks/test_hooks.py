@@ -4948,6 +4948,45 @@ class PushGate(unittest.TestCase):
                                                               "`git push`, outside quotes for the gate to check\n"))
 
 
+class CardCheck(unittest.TestCase):
+    """card-check.py on the stop:push and stop:merge options of real cards."""
+
+    def run_hook(self, *options, active=False):
+        reply = "Push?\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
+                                      "options": [{"key": key, "class": cls, "text": text}
+                                                  for key, (cls, text) in zip("ab", options)]})
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
+        return json.loads(out)["reason"] if out else None
+
+    def test_sends_back_an_option_the_gate_would_refuse(self):
+        # Real options from Nov 18 to 26, 2026, names replaced: each a pick the gate refuses.
+        for cls, text in [("stop:push", "fix both gaps, push (dismisses the reviewer's approvals), re-verify"),
+                          ("stop:push", "push 837dc2fa0d now, which dismisses the reviewer's approvals on #5805 and #5806"),
+                          ("stop:push", "you merge #6110 and #6076; then I restack #6091 (dismisses the reviewer's approval)"),
+                          ("stop:merge", "merge #99, #102, and #103"), ("stop:merge", "merge only #6080")]:
+            with self.subTest(text=text):
+                reason = self.run_hook((cls, text), ("decision", "no: hold it"))
+                self.assertIn(f'option a, "{text}", is {cls}, but the gate would refuse it', reason)
+                self.assertIn("Send your whole reply again", reason)
+                self.assertIsNone(self.run_hook((cls, text), active=True))  # once per stop
+
+    def test_passes_an_option_the_gate_takes_or_cant_judge(self):
+        for cls, text in [("stop:push", "yes: push all five PRs, dismissing the reviewer's approvals on #6179 and #6213"),
+                          ("stop:push", "push #6153, #6179, #6213, #6225 and #6248 (dismisses the reviewer's approval)"),
+                          # No dismissal named: whether one is live is the gate's call, from GitHub.
+                          ("stop:push", "push both PRs, re-request the reviewer"), ("stop:push", "force-push the branch"),
+                          ("stop:merge", "merge #12 and #13"), ("stop:merge", "mark #12 ready"),
+                          ("stop:post", "push #6091 and post the reply, which dismisses the approval"),
+                          ("routine", "merge only #6080")]:
+            with self.subTest(text=text):
+                self.assertIsNone(self.run_hook((cls, text)))
+        for payload in ("", "not json", json.dumps({"last_assistant_message": "no block"})):
+            with self.subTest(payload=payload):
+                self.assertEqual(subprocess.run([str(HOOKS / "card-check.py")], input=payload, capture_output=True,
+                                                text=True, check=True).stdout, "")
+
+
 class VerdictStamp(unittest.TestCase):
     HOOK = "verdict-stamp.py"
 
