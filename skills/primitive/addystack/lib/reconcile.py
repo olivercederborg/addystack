@@ -6,11 +6,13 @@ accepts that install or a maintainer's linked checkout.
 
 Skill links: a maintainer links skills from the checkout, so once the kit drops a skill,
 its links stay in each host's skill folder, dangling or at a folder that only untracked
-files such as __pycache__ keep. So in each enabled host's skill folder, install removes a
-link with no SKILL.md behind it that resolves, itself or through another link, into the kit
-checkout's skills/<layer>/ (or the checkout the last build recorded, when it moved), when
-the kit has no skill of that name, once each when one host's folder links to the other's.
-Any other link stays. In an npx skills install, update removes a skill the release no longer
+files such as __pycache__ keep. So in both hosts' skill folders, enabled or not, since one
+host's link can lead through the other's, install removes a link with no SKILL.md behind it
+that resolves, itself or through another link, into the kit checkout's skills/<layer>/ (or
+the checkout the last build recorded, when it moved), when the kit has no skill of that
+name, once each when one host's folder is the other's. Any other link stays, a link into a
+previous checkout that still has the skill's SKILL.md too: that checkout can be another
+repo the user still links skills from, as the workshop was before the kit moved out. In an npx skills install, update removes a skill the release no longer
 lists as core (_update_skills); one that was never core stays.
 
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
@@ -136,17 +138,19 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
 
 
 def _skill_links(resolved: Resolved) -> List[Change]:
-    """The removal of each enabled host's link to a skill the kit's checkout dropped; see
-    Skill links above."""
+    """The removal of each host's link to a skill the kit's checkout dropped; see Skill
+    links above."""
     kit = Path(resolved["kit"])
     trees = {os.path.realpath(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
     changes, seen = [], set()
     for host in ("claude", "codex"):
         folder = skills_cli.folder(host)
-        if not resolved["hosts"].get(host) or not folder.is_dir():
+        if not folder.is_dir():
             continue
+        # The folder's identity, since a path string can differ in case or links for one folder.
+        identity = (folder.stat().st_dev, folder.stat().st_ino)
         for link in sorted(folder.iterdir()):
-            entry = os.path.join(os.path.realpath(folder), link.name)
+            entry = (*identity, link.name)
             if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
                     or skill_layer.folder(kit, link.name):
                 continue

@@ -422,16 +422,32 @@ class SkillLinks(Home):
         self.assertFalse(os.path.lexists(self.claude / "dropped"))
         self.assertFalse(os.path.lexists(self.agents / "dropped"))
 
-    def test_leaves_a_kit_skill_a_users_link_and_a_disabled_hosts_folder(self):
-        # A kit skill linked at an old layer's path is doctor's to name, not install's to drop.
+    def test_leaves_a_kit_skill_and_a_users_link(self):
+        # A kit skill linked at an old layer's path is the kit's still, not install's to drop.
         (self.claude / "correct").unlink()
         (self.claude / "correct").symlink_to(KIT.parents[1] / "optional/correct")
         (self.claude / "mine").symlink_to(self.home / "my-skills/gone")
-        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
-        self.write(self.config, json.dumps({"hosts": {"codex": False}}))
         self.assertNotIn("(skill-link)", self.cli("install").stdout)
-        for link in (self.claude / "correct", self.claude / "mine", self.agents / "dropped"):
+        for link in (self.claude / "correct", self.claude / "mine"):
             self.assertTrue(link.is_symlink(), link)
+
+    def test_a_disabled_hosts_link_goes_too_so_none_is_left_through_a_removed_one(self):
+        self.drop("dropped", KIT.parent / "dropped")
+        self.write(self.config, json.dumps({"hosts": {"claude": False}}))
+        self.ok("install")
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_claude_skill_folder_naming_the_shared_one_in_another_case_removes_the_link_once(self):
+        if not (self.home / ".AGENTS").exists():
+            self.skipTest("the file system tells case apart")
+        other = self.home / "custom-claude"
+        other.mkdir()
+        (other / "skills").symlink_to("../.AGENTS/skills")
+        self.env["CLAUDE_CONFIG_DIR"] = str(other)
+        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
+        self.assertEqual(self.ok("install").stdout.count("(skill-link)"), 1)
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
 
     def test_a_claude_skill_folder_that_links_to_the_shared_one_removes_the_link_once(self):
         shutil.rmtree(self.claude)
