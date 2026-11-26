@@ -835,6 +835,17 @@ class CleanestAsk(CleanestAskCase):
                 self.assertEqual(self.stop((self.ASK, card()), env=env), [])
         self.assertEqual(self.log(), [])
 
+    def test_sends_through_t3_on_path_where_t3_sets_no_cli_path(self):
+        # A linked machine's T3 server sets T3CODE_THREAD_ID and T3CODE_HOME, and puts t3 on PATH (Nov 26, 2026).
+        linked = {"T3CODE_CLI_PATH": "", "T3CODE_HOME": str(self.dir), "PATH": f"{self.dir}:{os.environ['PATH']}"}
+        self.assertEqual(self.stop((self.ASK, card()), env=linked), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
+        self.assertEqual(self.log()[-1]["sent"], True)
+        self.fresh()
+        without_t3 = os.pathsep.join(folder for folder in os.environ["PATH"].split(os.pathsep)
+                                     if not os.access(os.path.join(folder, "t3"), os.X_OK))
+        self.assertEqual(self.stop((self.ASK, card()), env={**linked, "PATH": without_t3}), [])
+        self.assertEqual(self.log()[-1]["reason"], "no T3 CLI (T3CODE_CLI_PATH, or t3 on PATH)")
+
     def test_stays_silent_when_it_cant_send(self):
         self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
         self.assertEqual(self.log()[-1]["reason"], "t3 thread send failed: thread busy")
