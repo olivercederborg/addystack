@@ -24,6 +24,13 @@ It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?},
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
 push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed.
+
+    post-review.py N --carry APPROVED_SHA
+
+re-approves, with no review run, a PR this App approved at APPROVED_SHA whose own diff is
+byte-identical now (gates.own_diff), once its required checks pass on the head. Run it in the
+repository's checkout. Its Outcome is approved (with carried_from), not-carried with why (the
+caller reviews instead), pending (the checks haven't finished; try again later), or superseded.
 """
 import argparse
 import json
@@ -60,8 +67,8 @@ def github(*arguments) -> str:
     return result.stdout
 
 
-def pr(number: int) -> dict:
-    result = subprocess.run(['gh', 'pr', 'view', str(number), '--json', 'body,headRefOid'], capture_output=True,
+def pr(number: int, fields: str = 'body,headRefOid') -> dict:
+    result = subprocess.run(['gh', 'pr', 'view', str(number), '--json', fields], capture_output=True,
                             text=True, timeout=120)
     if result.returncode:
         raise ValueError(f'gh pr view {number} failed: {_error(result.stderr)}')
@@ -207,20 +214,64 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     return outcome
 
 
-def carry(number: int, approved: str, now=time.monotonic, sleep=time.sleep) -> dict:
+def fetch(base: str, number: int, approved: str) -> None:
+    """The base branch, the PR's head and the approved commit, into the checkout this runs in."""
+    result = subprocess.run(['git', 'fetch', '--quiet', 'origin', base, f'pull/{number}/head', approved],
+                            capture_output=True, text=True, timeout=600)
+    if result.returncode:
+        raise ValueError(f'git fetch failed: {_error(result.stderr)}')
+
+
+def carry(number: int, approved: str) -> dict:
     """Re-approve a PR whose own diff is byte-identical to the one this App approved at `approved`:
     re-proves the approval and the identical diff, re-reads the PR, head and required checks, then
-    approves with no review run. Anything that doesn't hold posts nothing."""
-    raise NotImplementedError
+    approves with no review run. Anything that doesn't hold posts nothing: not-carried says why, so
+    the caller reviews instead, and pending means the checks haven't finished, so the caller tries
+    again later."""
+    viewer = github('viewer').strip()
+    if not viewer.endswith('[bot]'):
+        raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
+    current = pr(number, 'headRefOid,baseRefName,state,isDraft')
+    head = current['headRefOid']
+    if current['state'] != 'OPEN' or current['isDraft']:
+        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR is closed or a draft'}
+    earlier = github('reviewed', number).strip()
+    approval = json.loads(earlier).get('approved') if earlier else None
+    if not approval or approval['commit_id'] != approved:
+        return {'outcome': 'not-carried', 'head': head, 'why': f'this App has no approval at {approved[:7]}'}
+    base = f"origin/{current['baseRefName']}"
+    fetch(current['baseRefName'], number, approved)
+    if gates.own_diff(base, approved) != gates.own_diff(base, head):
+        return {'outcome': 'not-carried', 'head': head, 'why': "the PR's own diff changed"}
+    state, checks = required(number)
+    if state == 'pending':
+        return {'outcome': 'pending', 'head': head, 'checks': checks}
+    if state == 'failed':
+        return {'outcome': 'not-carried', 'head': head, 'why': 'required checks did not pass', 'checks': checks}
+    # Right before the write: a push since the head was read starts its own review.
+    moved = github('head', number).strip()
+    if moved != head:
+        return {'outcome': 'superseded', 'head': moved}
+    with tempfile.TemporaryDirectory() as scratch:
+        body = Path(scratch) / 'body.md'
+        body.write_text('<sub>`AGENT`</sub><br>\n'
+                        f"Same change as the approval at `{approved[:7]}`: after the rebase the PR's own diff is "
+                        'byte-identical, file modes and binary files included, and the required checks pass on '
+                        'this head, so the approval carries over without a review run.\n')
+        review = github('approve', number, head, '', body).strip()
+    return {'outcome': 'approved', 'head': head, 'review': review, 'carried_from': approved}
 
 
 def main(arguments) -> int:
     parser = argparse.ArgumentParser(description='Post an unattended review outcome as the App.')
     parser.add_argument('number', type=int)
-    parser.add_argument('review', type=Path)
+    parser.add_argument('review', type=Path, nargs='?')
     parser.add_argument('--wait', type=int, default=0, help='seconds to wait for pending required checks')
+    parser.add_argument('--carry', metavar='APPROVED_SHA', help="re-approve an unchanged diff this App approved")
     args = parser.parse_args(arguments)
-    outcome = post(args.number, args.review, args.wait)
+    if (args.review is None) == (args.carry is None):
+        parser.error('give REVIEW.json or --carry APPROVED_SHA')
+    outcome = carry(args.number, args.carry) if args.carry else post(args.number, args.review, args.wait)
     print(json.dumps(outcome))
     return 3 if outcome['outcome'] == 'superseded' else 0
 
