@@ -207,6 +207,13 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     return outcome
 
 
+def carry(number: int, approved: str, now=time.monotonic, sleep=time.sleep) -> dict:
+    """Re-approve a PR whose own diff is byte-identical to the one this App approved at `approved`:
+    re-proves the approval and the identical diff, re-reads the PR, head and required checks, then
+    approves with no review run. Anything that doesn't hold posts nothing."""
+    raise NotImplementedError
+
+
 def main(arguments) -> int:
     parser = argparse.ArgumentParser(description='Post an unattended review outcome as the App.')
     parser.add_argument('number', type=int)

@@ -73,6 +73,12 @@ def check(verdict: dict, pr_body: str, head: str) -> list:
     return problems
 
 
+def own_diff(base: str, head: str, cwd: str = '.') -> str:
+    """A fingerprint of the PR's own diff, from the merge base of base and head to head: equal
+    fingerprints mean byte-identical diffs, file modes and binary files included."""
+    raise NotImplementedError
+
+
 def gated(verdict: dict) -> list:
     """The decisions that need a human."""
     return [decision for decision in verdict['decisions'] if decision['gate']]
