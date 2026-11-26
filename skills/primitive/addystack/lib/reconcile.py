@@ -9,8 +9,9 @@ its links stay in each host's skill folder, dangling or at a folder that only un
 files such as __pycache__ keep. So in each enabled host's skill folder, install removes a
 link with no SKILL.md behind it that resolves, itself or through another link, into the kit
 checkout's skills/<layer>/ (or the checkout the last build recorded, when it moved), when
-the kit has no skill of that name; one it still has is doctor's to name. Any other link
-stays. An npx skills install's dropped skills are update's to remove (_update_skills).
+the kit has no skill of that name, once each when one host's folder links to the other's.
+One it still has is doctor's to name. Any other link stays. An npx skills install's dropped
+skills are update's to remove (_update_skills).
 
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
 hookset.merge into Claude Code's settings.json `hooks` key and Codex's
@@ -139,14 +140,17 @@ def _skill_links(resolved: Resolved) -> List[Change]:
     Skill links above."""
     kit = Path(resolved["kit"])
     trees = {os.path.realpath(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
-    changes = []
+    changes, seen = [], set()
     for host in ("claude", "codex"):
         folder = skills_cli.folder(host)
         if not resolved["hosts"].get(host) or not folder.is_dir():
             continue
         for link in sorted(folder.iterdir()):
-            if not link.is_symlink() or (link / "SKILL.md").is_file() or skill_layer.folder(kit, link.name):
+            entry = os.path.join(os.path.realpath(folder), link.name)
+            if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
+                    or skill_layer.folder(kit, link.name):
                 continue
+            seen.add(entry)
             gone = Path(os.path.realpath(link))
             if os.path.realpath(gone.parent.parent) in trees:
                 changes.append(Change("skill-link", link, f"removes it: the kit has no {link.name} skill at "

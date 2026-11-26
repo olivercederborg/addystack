@@ -433,6 +433,14 @@ class SkillLinks(Home):
         for link in (self.claude / "correct", self.claude / "mine", self.agents / "dropped"):
             self.assertTrue(link.is_symlink(), link)
 
+    def test_a_claude_skill_folder_that_links_to_the_shared_one_removes_the_link_once(self):
+        shutil.rmtree(self.claude)
+        self.claude.symlink_to("../.agents/skills")
+        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
+        out = self.ok("install").stdout
+        self.assertEqual(out.count("(skill-link)"), 1, out)
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
     def test_dry_run_previews_the_removal_and_writes_nothing(self):
         self.drop("dropped", KIT.parent / "dropped")
         before = self.snapshot()
