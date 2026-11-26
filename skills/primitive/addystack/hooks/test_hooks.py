@@ -390,8 +390,14 @@ class ChildFastModeOff(unittest.TestCase):
                 self.assertEqual(set(out), {"hookEventName", "updatedInput"})
 
     def test_outside_t3_nothing_happens(self):
-        env = {k: v for k, v in self.env.items() if k != "T3CODE_CLI_PATH"}
+        env = {k: v for k, v in self.env.items() if k not in ("T3CODE_CLI_PATH", "T3CODE_THREAD_ID")}
         self.assertIsNone(self.run_on("delegate_task", {"task": "t"}, env=env))
+
+    def test_runs_where_t3_names_the_thread_but_sets_no_cli_path(self):
+        # A linked machine's T3 server, on Nov 26, 2026.
+        env = {**{k: v for k, v in self.env.items() if k != "T3CODE_CLI_PATH"}, "T3CODE_THREAD_ID": "thread-parent"}
+        self.assertEqual(self.updated("delegate_task", {"task": "t"}, env=env),
+                         {"task": "t", "target": {"options": {"fastMode": False}}})
 
     def test_never_crashes(self):
         for tool, tool_input in (("delegate_task", {"task": "t", "target": {"options": [{"id": "effort", "value": "x"}]}}),
