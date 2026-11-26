@@ -1011,15 +1011,20 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(self.stop(*turns, ("a", self.card(needs=[queued]))), [])
         self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[queued, (13, "raise the Typecheck limit")])))), 1)
 
-    def test_reads_a_decision_by_its_name_not_its_id(self):
+    def test_reads_a_decision_by_its_id_and_name(self):
         # Outside a coordinator, need 1 is often a new decision: 197 of the week's 362 replayed sends
-        # shared an id with a checked card, 58 a name. A need renumbered keeps its name.
+        # shared an id with a checked card, 55 its id and name. A need re-queued under a new id may
+        # have changed, as a stack rebased since its check, and the user asked again there.
         turns = [(self.ASK, self.card(needs=[(1, "merge the four approved PRs")])),
-                 (self.COMMAND, self.card(needs=[(2, "start building the lint rules PR")]))]
+                 (self.COMMAND, self.card(needs=[(9, "open the stack for review")]))]
         self.set_run("run-1", "completed")
-        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "push #6136 fixes and reply to the reviewer")])))), 1)
+        for need in ((1, "push #6136 fixes and reply to the reviewer"), (12, "open the stack for review")):
+            with self.subTest(need=need):
+                self.fresh()
+                self.set_run("run-1", "completed")
+                self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[need])))), 1)
         self.fresh()
-        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(6, "start building the lint rules PR")]))), [])
+        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(9, "open the stack for review")]))), [])
         self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
 
     def test_skips_a_card_that_asks_again_for_a_go_the_user_gave(self):
@@ -1036,6 +1041,11 @@ class CleanestAskImplementation(CleanestAskCase):
                 self.fresh()
                 self.assertEqual(self.stop((self.ASK, first), (go, self.card("running")), (self.RESULT, card)), [])
                 self.assertEqual(self.log()[-1]["reason"], went)
+        # A new push a worker's result brings in the go's run reads the same, and is skipped too.
+        self.fresh()
+        later = self.card(needs=[(15, "push the lint-script check before #5581 goes ready")], classes=("stop:push", "decision"))
+        self.assertEqual(self.stop((self.ASK, first), ("a", self.card("running")), (self.RESULT, later)), [])
+        self.assertEqual(self.log()[-1]["reason"], went)
         # A go for another gate, a go the user typed for a pick that isn't one, or a new run still asks.
         merge = self.card(needs=[(73, "merge the five PRs")], classes=("stop:merge", "decision"))
         for turns in ([(self.ASK, first), ("a", merge)], [(self.ASK, self.card()), ("a", first)],

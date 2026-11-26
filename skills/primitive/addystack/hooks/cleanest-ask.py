@@ -30,8 +30,8 @@ It sends only when all of these hold:
   prompt started, such as a scheduled task's, doesn't ask;
 - in the implementation scope, the card names a `review` or `decide` need the session hasn't
   checked (checked), since a follow-up question the user types about a card starts a new run,
-  and a coordinator shows its queued needs for many turns; and option `a` doesn't ask again
-  for a push or merge go the user gave in this run (go, GATES);
+  and a coordinator shows its queued needs for many turns; and option `a` isn't a push or
+  merge after the user's go for that gate in this run (go, GATES);
 - no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
   `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
 - `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
@@ -63,8 +63,10 @@ REVIEW_TITLE = re.compile(r"◎ #\d")
 # the 47 cards the user asked on in implementation and coordinator threads; a routine step or a
 # post to a person was option a on the other 7, and on 438 cards they didn't ask on (R188).
 IMPLEMENTATION_CLASSES = ("decision", "stop:merge", "stop:push")
-# The ship gates a go grants: a card whose option a asks for one again in the run the user's go
-# started has nothing new to check, such as a push re-asked after push-gate refused its wording.
+# The ship gates a go grants. A card whose option a asks for one after the user's go for it in
+# the run is skipped: in ◆ ox-migration on Nov 26, 2026, a coordinator re-asked a push four
+# times after push-gate refused its wording. A new push a worker's result brings in that run
+# reads the same and is skipped too: the user asked on 2 of the 25 such cards that week (R189).
 GATES = ("stop:merge", "stop:push")
 # The user's own quality-bar ask: it matches 129 of the 131 messages R183's broader count found
 # (Nov 18-25, 2026), and not the 2 audit requests, nor "long-term" naming a feature. The run
@@ -153,11 +155,12 @@ def asks(prompt):
 
 
 def decision(need):
-    """What names a need's decision across cards: its name. Ids mislead: in the week to Nov 25,
-    2026, 197 of the implementation scope's 362 replayed sends shared a need id with a card a
-    /cleanest or the user's ask had checked, but only 58 its name; most of the rest reused id 1
-    for another decision. Three needs kept their name under a new id (R189)."""
-    return " ".join(need.name.split()).casefold()
+    """What names a need's decision across cards: its id and its name. An id alone misleads: in
+    the week to Nov 25, 2026, 197 of the implementation scope's 362 replayed sends shared a need
+    id with a card a /cleanest or the user's ask had checked, but only 55 its id and name; most
+    of the rest reused id 1 for another decision. A name alone matched 3 more, needs re-queued
+    under a new id, one after a rebase changed it, and the user asked again there (R189)."""
+    return need.id, " ".join(need.name.split()).casefold()
 
 
 def checked(found):
