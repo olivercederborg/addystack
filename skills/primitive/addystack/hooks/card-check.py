@@ -44,12 +44,13 @@ SHAPE = ("the push first, naming each PR, then the dismissal, as in \"push #12 a
          "takes as the user's go")
 
 
-def refused(turn):
-    """Each option of turn that asks for a push dismissing an approval that push-gate wouldn't take."""
+def refused(offered):
+    """Each of offered, a turn block's options, that asks for a push dismissing an approval
+    that push-gate wouldn't take."""
     import push_go
     declines = re.compile(rf"{DECLINES}{push_go.VERB}\b", re.I)
     text = lambda option: option.text.replace("’", "'")  # as push_go.read reads it
-    return [option for option in turn.options if option.cls == "stop:push" and DISMISS.search(option.text)
+    return [option for option in offered if option.cls == "stop:push" and DISMISS.search(option.text)
             and push_go.STEPS.search(declines.sub("", text(option)))
             and not push_go.literal_go(option.text)]
 
@@ -216,17 +217,22 @@ def main():
         if event.get("stop_hook_active"):
             return
         import turn_block
-        turn = turn_block.parse(event.get("last_assistant_message") or "")
-        found = refused(turn)
-    except Exception:  # Malformed included: no block, nothing to check
+        reply = event.get("last_assistant_message") or ""
+        found = refused(turn_block.options(reply))
+    except Exception:  # Malformed included: no block, or no options to read, nothing to check
         return
     try:
+        turn = turn_block.parse(reply)  # wake_gap reads state and eta, which options doesn't
+    except turn_block.Malformed:
+        turn = None  # as before options: a block parse rejects gets no wake check
+    try:
         import t3_child
-        gap = wake_gap(turn, event["last_assistant_message"], os.environ.get("T3CODE_THREAD_ID", ""), time.time()) \
-            if t3_child.in_t3() else None
+        gap = wake_gap(turn, reply, os.environ.get("T3CODE_THREAD_ID", ""), time.time()) \
+            if turn and t3_child.in_t3() else None
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None
-    # A running block carries no options (turn_block.parse), so at most one of these holds.
+    # A running block that parses carries no options, and one that doesn't gets no wake check, so at most
+    # one of these holds.
     if gap:
         reason, step = gap[0].upper() + gap[1:], "with the wake set"
     elif found:

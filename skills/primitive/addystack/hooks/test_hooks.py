@@ -546,6 +546,11 @@ class UnwatchGate(unittest.TestCase):
         self.assertTrue(run.stdout.endswith("would deny\n"), run.stdout)
 
 
+    def test_a_key_reads_a_card_whose_standing_name_runs_long(self):
+        card = claude_wrote("🟡 **Stop watching #6226?**\n\n" + block({"state": "stop", "options": [
+            {"key": "a", "class": "routine", "text": "stop watching #6226"}], "standing": [{"id": 4, "kind": "do", "name": LONG_NAME}]}))
+        self.assertIsNone(self.reason(said=("fix it", card, "a")))
+
 class WatchReminder(unittest.TestCase):
     """watch-reminder.py, replaying the review request on a work repo's #6215 on Nov 25,
     2026, after which the agent ended its turn with no watch."""
@@ -2399,6 +2404,18 @@ class MergeGate(unittest.TestCase):
     def card(self, options, text=CARD):
         return claude_wrote(text + block({"state": "stop", "needs": [{"id": 1, "kind": "review", "name": "merge #12"}],
                                           "options": options, "project": "suite-audit"}))
+
+    def test_merges_on_a_pick_of_a_card_that_fails_only_on_fields_the_gate_doesnt_read(self):
+        # Nov 23, 2026: 9 merge picks answered cards with a standing name over 80 characters or
+        # no needs, which parse rejects; only their options decide the go.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for shape in UNREAD:
+            with self.subTest(shape=shape):
+                card = claude_wrote("✅ Verified.\n\n" + block(unread({"state": "stop", "needs": [
+                    {"id": 1, "kind": "review", "name": "merge #12"}], "options": [
+                    {"key": "a", "class": "stop:merge", "text": "merge #12"}]}, shape)))
+                self.assertIsNone(self.reason("gh pr merge 12", said=("fix it", card, "a")))
 
     def test_merges_on_a_pick_of_a_card_a_scheduled_wake_posted(self):
         # skills#257: the card names its worker's thread as an autolink, which isn't raw HTML.
@@ -5116,6 +5133,23 @@ class PushGate(unittest.TestCase):
                                                               "`git push`, outside quotes for the gate to check\n"))
 
 
+    def test_a_pick_reads_a_block_that_fails_only_on_fields_the_gate_doesnt_read(self):
+        # Nov 26, 2026 08:21: the user's "a" picked a push from a card with no needs, and the
+        # gate read it as no pick. It now reads the option and checks it as a go.
+        go = {"key": "a", "class": "stop:push", "text": "push #6119 (dismisses teammate's approval)"}
+        plain = {"key": "a", "class": "stop:push", "text": "push the cleanup"}
+        for shape in UNREAD:
+            with self.subTest(shape=shape):
+                card = lambda option: claude_wrote(self.CARD + block(unread({"state": "stop", "needs": [
+                    {"id": 15, "kind": "review", "name": "push #6119"}], "options": [option]}, shape)))
+                self.assertIsNone(self.reason(self.COORDINATOR, said=("fix it", card(go), "a"), cwd=self.dir))
+                reason = self.reason(self.COORDINATOR, said=("fix it", card(plain), "a"), cwd=self.dir)
+                self.assertIn('picks "push the cleanup", a stop:push option of your reply before it, which isn\'t a plain '
+                              "request to push that says it dismisses an approval", reason)
+        bad = claude_wrote(self.CARD + block({"state": "stop", "options": [{**go, "class": "push"}]}))
+        self.assertIn('picks nothing: your reply before it has no valid turn block (options[0].class "push" is not one of',
+                      self.reason(self.COORDINATOR, said=("fix it", bad, "a"), cwd=self.dir))
+
 class CardCheck(unittest.TestCase):
     """card-check.py on the stop:push options of real cards."""
 
@@ -5169,6 +5203,17 @@ class CardCheck(unittest.TestCase):
                                                 text=True, check=True).stdout, "")
 
 
+    def test_reads_the_options_of_a_block_parse_rejects(self):
+        # Nov 23, 2026: a card's standing name over 80 characters failed parse, so card-check
+        # saw no options and passed a push option push-gate refuses.
+        text = "push #6090 now (dismisses the reviewer's approval)"
+        reply = "Push?\n\n" + block({"state": "stop", "options": [{"key": "a", "class": "stop:push", "text": text}],
+                                      "standing": [{"id": 2, "kind": "do", "name": LONG_NAME}]})
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply})).stdout
+        self.assertIn(f'option a, "{text}", is stop:push', json.loads(out)["hookSpecificOutput"]["additionalContext"])
+
+
 class CardCheckWakes(unittest.TestCase):
     """card-check.py on a `running` reply, against T3's record of what will wake its thread."""
     THREAD = "thread-coordinator"
@@ -5206,11 +5251,12 @@ class CardCheckWakes(unittest.TestCase):
             db.executemany("insert into scheduled_tasks (thread_id, thread_mode, enabled, next_run_at) values (?, ?, ?, ?)", [(self.THREAD, *timer) for timer in timers])
         return str(path)
 
-    def run_hook(self, db, state="running", eta=None, active=False, env=None, options=(), said="CI is running on #6153."):
+    def run_hook(self, db, state="running", eta=None, active=False, env=None, options=(), said="CI is running on #6153.",
+                 extra=None):
         value = {"state": state, "elapsed": "3 min", **({"eta": eta} if eta else {})} if state == "running" else {
             "state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
             "options": [{"key": key, "class": cls, "text": text} for key, (cls, text) in zip("ab", options)]}
-        reply = f"⏳ {said}\n\n" + block(value)
+        reply = f"⏳ {said}\n\n" + block({**value, **(extra or {})})
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
                "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate"), **(env or {})}
         out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
@@ -5238,6 +5284,17 @@ class CardCheckWakes(unittest.TestCase):
                 self.assertIn("`wasWatching: false`", reason)
                 self.assertIn("Send your whole reply again with the wake set.", reason)
                 self.assertIsNone(self.run_hook(db, active=True))  # once per stop
+
+    def test_a_block_parse_rejects_gets_no_wake_check_but_its_options_are_read(self):
+        # R196 on #118: refused reads the options alone, and wake_gap reads state and eta, so a
+        # block parse rejects on a field neither reads gets no wake check, as before options().
+        long_standing, db = {"standing": [{"id": 2, "kind": "do", "name": LONG_NAME}]}, self.db()
+        self.assertIn("nothing in T3 will wake this thread", self.run_hook(db))
+        self.assertIsNone(self.run_hook(db, extra=long_standing))
+        refusable = ("stop:push", "push #6090 now (dismisses the reviewer's approval)")
+        reason = self.run_hook(db, state="stop", options=(refusable,), extra=long_standing)
+        self.assertIn('option a, "push #6090 now (dismisses the reviewer\'s approval)", is stop:push', reason)
+        self.assertNotIn("wake", reason)
 
     def test_passes_each_wake_t3_holds(self):
         for name, db in (("watched PR", self.db(links=[self.WATCH])),
@@ -5394,6 +5451,24 @@ def block(value, raw=False):
     """A turn block with value as its JSON, or as its body when raw."""
     return f"<!-- turn {value if raw else json.dumps(value)} -->"
 
+
+# Block shapes that failed turn_block.parse on a field no gate reads, from 432 of 9,094 T3
+# blocks Nov 12 to 26, 2026: 299 on standing (269 a name over 80 characters, 29 an unknown
+# standing[0].state), 67 a stop with no needs, 49 done or running carrying options or needs.
+LONG_NAME = "Casper's review of the state-machine stack, which waits on the receipt export rework and its e2e run"
+UNREAD = {
+    "a standing name over 80 characters": {"standing": [{"id": 9, "kind": "do", "name": LONG_NAME}]},
+    "an unknown standing field": {"standing": [{"id": 9, "kind": "do", "name": "rotate the token", "state": "open"}]},
+    "a stop with no needs": {"needs": None},
+    "done carrying its options": {"state": "done", "needs": []},
+    "an unknown top-level field": {"note": "x"},
+}
+
+
+def unread(value, shape):
+    """value with the field shape names broken; a None drops the field."""
+    changed = {**value, **UNREAD[shape]}
+    return {key: field for key, field in changed.items() if field is not None}
 
 class TurnBlock(unittest.TestCase):
     STOP = {"state": "stop", "needs": [{"id": 3, "kind": "decide", "name": "currency column"}],
@@ -5866,6 +5941,44 @@ class TurnBlock(unittest.TestCase):
                                        self.REPLY + block(self.STOP)], cwd=HOOKS, capture_output=True, text=True, check=True)
                 self.assertEqual(read.stdout, "stop:merge merge #12 and #13\n")
 
+
+    def test_options_reads_only_the_options(self):
+        # A gate reads only the options: a block that fails parse on a field it doesn't read
+        # still gives its pick, and on every block that parses the options are the same.
+        for shape in UNREAD:
+            with self.subTest(shape=shape):
+                reply = self.REPLY + block(unread(self.STOP, shape))
+                self.reason(reply)
+                self.assertEqual(turn_block.options(reply), turn_block.parse(self.REPLY + block(self.STOP)).options)
+                self.assertEqual(turn_block.picked(reply, "a").text, "merge #12 and #13")
+                self.assertEqual(turn_block.picked(reply, "b").cls, "routine")
+        for value in [self.STOP, {**self.STOP, "needs": []}, {"state": "done"}, {"state": "running", "elapsed": "2 min"},
+                      {**self.STOP, "project": "effect-v4", "standing": [{"id": 1, "kind": "do", "name": "rotate keys"}]}]:
+            with self.subTest(value=value):
+                self.assertEqual(turn_block.options(block(value)), turn_block.parse(block(value)).options)
+
+    def test_options_refuses_a_malformed_options_list_or_block(self):
+        option = self.STOP["options"][0]
+        for bad in [{**self.STOP, "options": "a"}, {**self.STOP, "options": [option] * 4},
+                    {**self.STOP, "options": [{**option, "key": "b"}]}, {**self.STOP, "options": [{**option, "class": "merge"}]},
+                    {**self.STOP, "options": [{**option, "text": " "}]}, {**self.STOP, "options": [{**option, "text": "x" * 401}]},
+                    {**self.STOP, "options": [{**option, "why": "x"}]}, [self.STOP]]:
+            with self.subTest(bad=bad):
+                reply = self.REPLY + block(bad)
+                with self.assertRaises(turn_block.Malformed):
+                    turn_block.options(reply)
+                self.assertIsNone(turn_block.picked(reply, "a"))
+        valid = block(self.STOP)
+        for reply in ['<!-- turn {"state": "stop", "state": "done"} -->', '<!-- turn {"state": NaN} -->',
+                      "See " + valid, valid + "\nmore", valid + "\n" + valid, valid[:-4], valid.replace('"merge', '"--> merge')]:
+            with self.subTest(reply=reply):
+                with self.assertRaises(turn_block.Malformed):
+                    turn_block.options(reply)
+                self.assertIsNone(turn_block.picked(reply, "a"))
+        # Raw HTML that can hide the block still refuses a pick, though its options read.
+        hidden = "<title>\n\n" + self.REPLY + block(unread(self.STOP, "a stop with no needs"))
+        self.assertEqual(len(turn_block.options(hidden)), 2)
+        self.assertIsNone(turn_block.picked(hidden, "a"))
 
 def last_node(html):
     """html's last node in document order, past whitespace-only text, as rehype-raw parses

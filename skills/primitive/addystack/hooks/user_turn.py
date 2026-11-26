@@ -65,10 +65,10 @@ def letter_miss(reply, key):
     if reply is None:
         return "no reply of yours came before it"
     try:
-        turn = turn_block.parse(reply)
+        offered = turn_block.options(reply)
     except turn_block.Malformed as error:
         return f"your reply before it has no valid turn block ({error})"
-    if all(option.key != key for option in turn.options):
+    if all(option.key != key for option in offered):
         return f"your reply before it offers no option {key}"
     return ("the gate can't be sure your reply's turn block was hidden: it has raw HTML that can hide it, "
             "such as an open <title>, a comment, or a line that starts an HTML block and has no blank line after it, "
