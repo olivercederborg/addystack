@@ -442,7 +442,7 @@ class UnwatchGate(unittest.TestCase):
         os.makedirs(bin_dir)
         pathlib.Path(bin_dir, "gh").write_text(FAKE_WATCH_GH)
         os.chmod(os.path.join(bin_dir, "gh"), 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
         self.gh = os.path.join(self.dir, "scenario.json")
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=self.gh,
                         T3_STATE_DB="/nonexistent")
