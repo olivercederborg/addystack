@@ -7,7 +7,7 @@ accepts that install or a maintainer's linked checkout.
 Skill links: a maintainer links skills from the checkout, so once the kit drops a skill,
 its links stay in each host's skill folder, dangling or at a folder that only untracked
 files such as __pycache__ keep. So in each enabled host's skill folder, install removes a
-link with no SKILL.md behind it that leads, itself or through another link, into the kit
+link with no SKILL.md behind it that resolves, itself or through another link, into the kit
 checkout's skills/<layer>/ (or the checkout the last build recorded, when it moved), when
 the kit has no skill of that name; one it still has is doctor's to name. Any other link
 stays. An npx skills install's dropped skills are update's to remove (_update_skills).
@@ -147,8 +147,8 @@ def _skill_links(resolved: Resolved) -> List[Change]:
         for link in sorted(folder.iterdir()):
             if not link.is_symlink() or (link / "SKILL.md").is_file() or skill_layer.folder(kit, link.name):
                 continue
-            gone = next((hop for hop in _hops(link) if os.path.realpath(hop.parent.parent) in trees), None)
-            if gone:
+            gone = Path(os.path.realpath(link))
+            if os.path.realpath(gone.parent.parent) in trees:
                 changes.append(Change("skill-link", link, f"removes it: the kit has no {link.name} skill at "
                                                           f"{render._home(gone)}"))
     return changes
@@ -159,16 +159,6 @@ def _skill_tree(kit: str) -> Optional[str]:
     the skills CLI installed, whose skills it removes itself."""
     tree = Path(os.path.abspath(os.path.expanduser(kit))).parents[1]
     return str(tree) if tree.name == "skills" else None
-
-
-def _hops(link: Path) -> List[Path]:
-    """Each path link leads to, one link at a time, for at most 40 links, as the system
-    follows them."""
-    hops, path = [], link
-    while path.is_symlink() and len(hops) < 40:
-        path = Path(os.path.normpath(path.parent / os.readlink(path)))
-        hops.append(path)
-    return hops
 
 
 def _commands(resolved: Resolved) -> List[Change]:
