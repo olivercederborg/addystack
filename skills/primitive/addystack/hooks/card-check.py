@@ -8,8 +8,8 @@ refused three informed goes in a row on one push (PushGate in test_hooks.py repl
 
 It checks only what the reply can know offline. Whether a push dismisses an approval
 depends on reviews the reply can't see, so an option that names no dismissal passes, and so
-does one whose PRs the gate would find incomplete. An option that declines the push
-(DECLINES), such as "don't push #12, it dismisses the approval", passes; one with a
+does one whose PRs the gate would find incomplete. An option whose every push verb is
+declined (DECLINES), such as "don't push #12, it dismisses the approval", passes; one with a
 condition, a modal, or a `no:` lead asks for a push the gate refuses, so it goes back. A `stop:merge` option isn't checked: merge-gate reads the go only
 for a PR with no checks, which the reply can't see either.
 
@@ -22,7 +22,7 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 DISMISS = re.compile(r"\bdismiss", re.I)
-DECLINES = r"\b(?:don't|dont|do not|never|not|without)\s+(?:\w+\s+)?"  # then a push verb
+DECLINES = r"\b(?:don't|dont|do not|never|not|without|skip|hold|avoid)\s+(?:\w+\s+)?"  # then a push verb
 SHAPE = ("the push first, naming each PR, then the dismissal, as in \"push #12 and #13 (dismisses the reviewer's "
          "approval)\" or \"push the stack (dismisses the reviewer's approvals on #12 and #13)\", then only steps such as "
          "\"post the reply\", with no other step before the push, and no condition, modal, or `no:` lead, which push-gate "
@@ -35,7 +35,7 @@ def refused(turn):
     declines = re.compile(rf"{DECLINES}{push_go.VERB}\b", re.I)
     text = lambda option: option.text.replace("’", "'")  # as push_go.read reads it
     return [option for option in turn.options if option.cls == "stop:push" and DISMISS.search(option.text)
-            and push_go.STEPS.search(text(option)) and not declines.search(text(option))
+            and push_go.STEPS.search(declines.sub("", text(option)))
             and not push_go.literal_go(option.text)]
 
 

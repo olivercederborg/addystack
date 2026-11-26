@@ -30,7 +30,7 @@ def counted(push):
 
 # The branch a push goes onto, which it doesn't push: "onto develop", "restacked on develop".
 BASE = r"\s+(?:(?:restacked|rebased)\s+(?:on|onto|on top of)|onto|on top of)\s+`?[\w./-]+`?"
-STEP = (rf"(?<![\w-])(?P<verb>{VERB})"
+STEP = (rf"(?<![\w-])(?P<verb>{VERB})(?![\w-])"
         rf"(?:\s+(?:it|them|both|the (?:stack|branch)|{COUNTED}|{merge_go.REFS}))?(?:{BASE})?")
 STEPS = re.compile(STEP, re.I)
 STEP = STEP.replace("?P<verb>", "?:")  # PUSH repeats it, and a group name can't repeat
