@@ -975,7 +975,6 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(self.log()[-1]["reason"], "this run already asked")
 
     CHECKED = "a /cleanest or the user's ask already checked every decision on the card"
-    PUSH = "push #6153, #6179, #6213, #6225 and #6248"
 
     def test_asks_once_about_a_decision_until_a_new_one_appears(self):
         # ◆ ox-migration on Nov 26, 2026: a pick, the card it fired on, /cleanest's answer, then
@@ -1017,7 +1016,6 @@ class CleanestAskImplementation(CleanestAskCase):
         # have changed, as a stack rebased since its check, and the user asked again there.
         turns = [(self.ASK, self.card(needs=[(1, "merge the four approved PRs")])),
                  (self.COMMAND, self.card(needs=[(9, "open the stack for review")]))]
-        self.set_run("run-1", "completed")
         for need in ((1, "push #6136 fixes and reply to the reviewer"), (12, "open the stack for review")):
             with self.subTest(need=need):
                 self.fresh()
@@ -1026,33 +1024,6 @@ class CleanestAskImplementation(CleanestAskCase):
         self.fresh()
         self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(9, "open the stack for review")]))), [])
         self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
-
-    def test_skips_a_card_that_asks_again_for_a_go_the_user_gave(self):
-        # ◆ ox-migration on Nov 26, 2026: push-gate refused each push's wording, and the
-        # coordinator re-asked the push under a new need each time, after a pick or a typed go.
-        def push(number, name):
-            return self.card(needs=[(number, name)], classes=("stop:push", "decision"),
-                             text=f"{self.PUSH} (dismisses the reviewer's approval)")
-        first = push(70, "push all five PRs (dismisses the reviewer's approvals on #6179, #6213)")
-        went = "the user gave a stop:push go earlier in this run"
-        for go, card in (("A", push(71, "push the five PRs (dismisses the reviewer's approval on #6179 and #6213)")),
-                         (self.PUSH, push(72, "push the five PRs (dismisses the reviewer's approval)"))):
-            with self.subTest(go=go):
-                self.fresh()
-                self.assertEqual(self.stop((self.ASK, first), (go, self.card("running")), (self.RESULT, card)), [])
-                self.assertEqual(self.log()[-1]["reason"], went)
-        # A new push a worker's result brings in the go's run reads the same, and is skipped too.
-        self.fresh()
-        later = self.card(needs=[(15, "push the lint-script check before #5581 goes ready")], classes=("stop:push", "decision"))
-        self.assertEqual(self.stop((self.ASK, first), ("a", self.card("running")), (self.RESULT, later)), [])
-        self.assertEqual(self.log()[-1]["reason"], went)
-        # A go for another gate, a go the user typed for a pick that isn't one, or a new run still asks.
-        merge = self.card(needs=[(73, "merge the five PRs")], classes=("stop:merge", "decision"))
-        for turns in ([(self.ASK, first), ("a", merge)], [(self.ASK, self.card()), ("a", first)],
-                      [(self.ASK, first), ("push", first)], [(self.ASK, first), ("a", self.card()), ("now rebase it", first)]):
-            with self.subTest(turns=turns):
-                self.fresh()
-                self.assertEqual(len(self.stop(*turns)), 1)
 
     def test_dry_run_takes_the_scope(self):
         run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), *self.ARGS, "--dry-run", "--transcript",

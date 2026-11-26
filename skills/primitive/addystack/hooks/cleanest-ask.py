@@ -30,8 +30,7 @@ It sends only when all of these hold:
   prompt started, such as a scheduled task's, doesn't ask;
 - in the implementation scope, the card names a `review` or `decide` need the session hasn't
   checked (checked), since a follow-up question the user types about a card starts a new run,
-  and a coordinator shows its queued needs for many turns; and option `a` isn't a push or
-  merge after the user's go for that gate in this run (go, GATES);
+  and a coordinator shows its queued needs for many turns;
 - no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
   `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
 - `/cleanest` is the kit's: Claude Code's commands/cleanest.md holds the kit's
@@ -63,11 +62,6 @@ REVIEW_TITLE = re.compile(r"◎ #\d")
 # the 47 cards the user asked on in implementation and coordinator threads; a routine step or a
 # post to a person was option a on the other 7, and on 438 cards they didn't ask on (R188).
 IMPLEMENTATION_CLASSES = ("decision", "stop:merge", "stop:push")
-# The ship gates a go grants. A card whose option a asks for one after the user's go for it in
-# the run is skipped: in ◆ ox-migration on Nov 26, 2026, a coordinator re-asked a push four
-# times after push-gate refused its wording. A new push a worker's result brings in that run
-# reads the same and is skipped too: the user asked on 2 of the 25 such cards that week (R189).
-GATES = ("stop:merge", "stop:push")
 # The user's own quality-bar ask: it matches 129 of the 131 messages R183's broader count found
 # (Nov 18-25, 2026), and not the 2 audit requests, nor "long-term" naming a feature. The run
 # already has its answer.
@@ -166,34 +160,16 @@ def decision(need):
 def checked(found):
     """The decisions a /cleanest or the user's quality-bar ask already checked this session:
     each need on a card an ask answered, and on the card that answered the ask."""
-    names = set()
+    seen = set()
     for at, exchange in enumerate(found):
         if not asks(exchange.prompt):
             continue
         for reply in (exchange.reply, found[at + 1].reply if at + 1 < len(found) else None):
             try:
-                names |= {decision(need) for need in turn_block.parse(reply or "").needs}
+                seen |= {decision(need) for need in turn_block.parse(reply or "").needs}
             except turn_block.Malformed:
                 pass
-    return names
-
-
-def go(exchange):
-    """The option of the card it answered that the user's prompt gives a go for: a key that
-    picks it, or the start of its text typed out, such as "push #6153, #6179 and #6213" for
-    "push #6153, #6179 and #6213 (dismisses …)"; else None."""
-    if not exchange.prompt:
-        return None
-    option = turn_block.picked(exchange.reply, exchange.prompt)
-    if option is not None:
-        return option
-    try:
-        options = turn_block.parse(exchange.reply or "").options
-    except turn_block.Malformed:
-        return None
-    typed = " ".join(exchange.prompt.split()).casefold()
-    return next((option for option in options
-                 if len(typed) >= 8 and " ".join(option.text.split()).casefold().startswith(typed)), None)
+    return seen
 
 
 def ended(exchanges, scope):
@@ -227,19 +203,18 @@ def latest_raw(path):
 def check_run(found, path, thread, session, scope):
     """Raises Skip unless the latest prompt is the user's or a notice that a child or
     background task finished (CONTINUES), this run hasn't asked, the user started it in the
-    implementation scope, and nothing sent is queued; returns the run's exchanges."""
+    implementation scope, and nothing sent is queued."""
     latest = found[-1].prompt
     if not latest and not latest_raw(path).startswith(CONTINUES):
         raise Skip("the latest prompt isn't the user's: a wake, a tick, or another agent's message", thread)
     if own_command(latest):
         raise Skip(f"the latest prompt is {COMMAND}", thread)
-    typed, start = False, 0
-    for at in range(len(found) - 1, -1, -1):
-        if asks(found[at].prompt):
+    typed = False
+    for exchange in reversed(found):
+        if asks(exchange.prompt):
             raise Skip("this run already asked", thread)
-        typed = typed or bool(found[at].prompt)
-        if ended([found[at]], scope):
-            start = at
+        typed = typed or bool(exchange.prompt)
+        if ended([exchange], scope):
             break
     if scope == IMPLEMENTATION and not typed:
         raise Skip("no prompt the user typed started this run", thread)
@@ -254,7 +229,6 @@ def check_run(found, path, thread, session, scope):
             raise Skip(f"a {COMMAND} this hook sent is still queued", thread)
     except sqlite3.Error as error:
         raise Skip(f"can't read T3's state database ({error})", thread) from None
-    return found[start:]
 
 
 def decide(payload, scope):
@@ -277,10 +251,7 @@ def decide(payload, scope):
         raise Skip(f"can't tell who sent the latest prompt ({error})", thread) from None
     if not found:
         raise Skip("can't tell who sent the latest prompt", thread)
-    run = check_run(found, payload.get("transcript_path"), thread, session, scope)
-    if scope == IMPLEMENTATION and turn.recommended.cls in GATES and any(
-            (option := go(exchange)) is not None and option.cls == turn.recommended.cls for exchange in run):
-        raise Skip(f"the user gave a {turn.recommended.cls} go earlier in this run", thread)
+    check_run(found, payload.get("transcript_path"), thread, session, scope)
     if scope == IMPLEMENTATION and {decision(need) for need in turn.needs
                                     if need.kind in ("review", "decide")} <= checked(found):
         raise Skip(f"a {COMMAND} or the user's ask already checked every decision on the card", thread)
