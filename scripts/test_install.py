@@ -392,8 +392,8 @@ class Command(Home):
 
 
 class SkillLinks(Home):
-    """Install removes each enabled host's link to a skill the kit's checkout dropped, as a
-    maintainer's linked checkout leaves one after a pull, and leaves every other link."""
+    """Install removes both hosts' links to a skill the kit's checkout dropped, as a
+    maintainer's linked checkout leaves them after a pull, and leaves unrelated links."""
 
     def setUp(self):
         super().setUp()
