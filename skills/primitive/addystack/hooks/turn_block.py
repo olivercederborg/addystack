@@ -478,8 +478,8 @@ def parse(reply: str) -> Turn:
 
 
 def certain(view):
-    """view's options (options) when scan is certain of its lines and its block's options
-    read, else None. () is a block the user saw with no options."""
+    """view's turn block options, read by options(), when scan is certain of its lines and
+    they read, else None; () is a block with no options."""
     if not scan(lines_ended(view).split("\n"))[1]:
         return None
     try:
