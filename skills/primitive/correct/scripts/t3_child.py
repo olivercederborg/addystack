@@ -15,7 +15,8 @@ And it says whether T3 started this session (in_t3) and where its CLI is (cli), 
 hooks that act only in T3."""
 import json, os, pathlib, re, shutil, sqlite3
 
-STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
+# T3CODE_HOME moves T3's data directory, as T3's own CLI reads it.
+STATE_DB = os.environ.get("T3_STATE_DB") or os.path.join(os.environ.get("T3CODE_HOME") or "~/.t3", "userdata", "statev2.sqlite")
 # A coordinator's brief names it on its own line, as a link or by name: 51 Mac worker briefs
 # by Nov 25, 2026 start "Worker of: the ◆ … coordinator (t3-thread://…)".
 _WORKER_OF = re.compile(r"^Worker of: \S", re.M)
