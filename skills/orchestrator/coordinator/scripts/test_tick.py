@@ -347,6 +347,9 @@ class Tick(unittest.TestCase):
         self.assertRegex(err, r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ tick: `t3 thread show lead` exited 1: "
                               r"Thread is no longer available\.\n")
         self.assertRegex(err, r"\n\S+Z tick: can't read the coordinator's thread")
+        self.threads["lead"] = thread("completed", 40)
+        del self.prs["acme/app#7"]  # review-loop r1: a PR read names gh's reason too
+        self.assertRegex(self.tick("--send").stderr, r"\S+Z tick: `gh pr view 7 -R acme/app` exited 1: no pull requests found")
 
     def test_a_project_whose_coordinator_is_on_another_machine_is_left_to_that_machine(self):
         # Nov 23 to 26, 2026: a linked machine's timer logged "can't read the coordinator's thread" 410 times for

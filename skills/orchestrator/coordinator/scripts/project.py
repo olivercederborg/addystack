@@ -425,6 +425,8 @@ def view_pr(ref: str) -> list | None:
     """[state, isDraft] of `owner/repo#N`; None when unread."""
     repo, number = ref.split("#")
     code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "state,isDraft"])
+    if code:
+        _warn(f"tick: `gh pr view {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
     try:
         pr = json.loads(out) if code == 0 else None
         return [pr["state"], pr["isDraft"]] if pr else None
