@@ -77,7 +77,7 @@ addystack adds the two-option cap and each option's class.
     replying, in at most 200 characters, with no refusal, condition, or question, as in
     "push #6119 (dismisses the reviewer's approval), post the reply". push-gate allows that
     push on a pick of such an option, the same request typed, or the push typed without its
-    dismissal, naming each PR, right after such an option, so a push folded into a
+    dismissal, naming each PR, right after a reply that shows such an option, so a push folded into a
     `stop:post` option or "don't push #6119 yet, it would dismiss the approval" is denied.
   - `stop:post`: a message to a person.
   - `stop:prod`: a production write or a migration on shared data.

@@ -9,8 +9,8 @@ the stack, and a branch it goes onto, then last the dismissal of whose approval:
 never "push #6119 tomorrow (dismisses …)" or "push #6119 is risky, it dismisses …". The
 dismissal may name the PRs whose approval goes, each with its #: "push all five PRs,
 dismissing the teammate's approvals on #6179 and #6213". plain_go reads the same request
-without the dismissal, which push-gate.py takes only right after a reply whose stop:push
-option is a go for the same dismissals."""
+without the dismissal, which push-gate.py takes only right after a reply that shows a
+stop:push option that is a go for the same dismissals."""
 import re
 from typing import NamedTuple
 

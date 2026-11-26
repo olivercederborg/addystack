@@ -4630,14 +4630,14 @@ class PushGate(unittest.TestCase):
                 (pick("push all five PRs, dismissing the teammate's approvals on #6179 and #6213", "stop:post"),
                  "only a stop:push option"),
                 # A typed push without the dismissal: only right after a reply whose stop:push option is a go.
-                ((typed,), "your reply before it offers no stop:push option that does"),
-                (pick(named, "decision")[:2] + (typed,), "offers no stop:push option that does"),
+                ((typed,), "your reply before it shows no stop:push option that does"),
+                (pick(named, "decision")[:2] + (typed,), "shows no stop:push option that does"),
                 (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)")[:2]
-                 + (typed,), "offers no stop:push option that does"),
+                 + (typed,), "shows no stop:push option that does"),
                 (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)"),
                  "doesn't name #6213"),
                 (pick(named)[:2] + ("push #6153 and #6179",), "doesn't name #6213"),
-                (pick(named)[:2] + ("hold on", claude_wrote("Holding."), typed), "offers no stop:push option"),
+                (pick(named)[:2] + ("hold on", claude_wrote("Holding."), typed), "shows no stop:push option"),
                 (pick(named)[:2] + ("push #6153, #6179, #6213, #6225 and #6248 tomorrow",), None),
                 (pick(named)[:2] + ("rebase the stack",), None)]:
             with self.subTest(said=repr(said)[-240:]):
@@ -4656,7 +4656,7 @@ class PushGate(unittest.TestCase):
         # review-loop r3: the dismissal counts only when the reply shows it, not just its turn block.
         hidden = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
                                        text="Next: a → push #6119\n\n"))
-        self.assertIn("offers no stop:push option", self.reason("gh stack push", said=hidden + ("push #6119",)))
+        self.assertIn("shows no stop:push option", self.reason("gh stack push", said=hidden + ("push #6119",)))
         self.assertIsNotNone(self.reason("gh stack push", said=card + ("rebase #6119 onto push-fixes",)))
         self.five()
         text = "push both PRs, dismissing the teammate's approvals on #6179 and #6213"

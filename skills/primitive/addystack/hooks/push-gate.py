@@ -20,7 +20,7 @@ and #6213"), then only routine steps such as "post the reply" (AFTER), with no r
 condition, question, or modal in it (push_go.py), so "no: push the cleanup only", "pushing
 #6091 dismisses the approval", or "push #6091 once the approval is dismissed" isn't one.
 The same request typed without the dismissal, naming each PR, is one right after a reply
-whose stop:push option is: that reply told the user what goes. A count ("all five PRs")
+that shows a stop:push option that is one: that reply told the user what goes. A count ("all five PRs")
 must be the number of PRs the push moves. A pick of any other class, such as
 the coordinator's `stop:post` "push the cleanup, post the reply, re-request <reviewer> on
 #6119", gives no go, nor does a T3 delegated child, or, in T3, a state database it can't
@@ -451,8 +451,8 @@ def user_go():
                 return False, f"{said} {why}"
             if offered(user_turn.answered(found)):
                 return True, None
-            return False, (f"{said} doesn't say it dismisses an approval, and your reply before it offers no "
-                           "stop:push option that does")
+            return False, (f"{said} doesn't say it dismisses an approval, and your reply before it shows no "
+                           "stop:push option that does, in its text as well as its turn block")
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
             return False, None
