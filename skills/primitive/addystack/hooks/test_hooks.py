@@ -2038,7 +2038,7 @@ class MergeGate(unittest.TestCase):
         with open(gh, "w") as f:
             f.write(FAKE_GH)
         os.chmod(gh, 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}",
                         FAKE_GH=os.path.join(self.dir, "scenario.json"), T3_STATE_DB="/nonexistent",
                         # Nothing built here, so the kit's defaults (trust draft) until a test calls trust().
@@ -2323,6 +2323,10 @@ class MergeGate(unittest.TestCase):
                 self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=("merge it",)))  # no session id to look up
         del self.env["T3CODE_CLI_PATH"]
         self.env["T3_STATE_DB"] = "/nonexistent"
+        # A linked machine's T3 server names the thread but sets no CLI path: still T3, so no go.
+        self.env["T3CODE_THREAD_ID"] = "thread:main"
+        self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=("merge it",)))
+        del self.env["T3CODE_THREAD_ID"]
         self.scenario(prs={12: "FAILURE", 13: None})
         self.assertIn("#12 checks are failure", self.reason("gh stack merge", said=("merge them",)))
         self.assertIn("#13 has no Done verdict", self.reason("gh stack merge", said=("merge them",)))
@@ -4469,7 +4473,7 @@ class PushGate(unittest.TestCase):
         os.makedirs(bin_dir)
         pathlib.Path(bin_dir, "gh").write_text(FAKE_PUSH_GH)
         os.chmod(os.path.join(bin_dir, "gh"), 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k not in ("T3CODE_CLI_PATH", "GIT_DIR", "GIT_INDEX_FILE")}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_") and k not in ("GIT_DIR", "GIT_INDEX_FILE")}
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=os.path.join(self.dir, "scenario.json"),
                         T3_STATE_DB="/nonexistent", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
