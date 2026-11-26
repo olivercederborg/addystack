@@ -4593,6 +4593,69 @@ class PushGate(unittest.TestCase):
         import merge_go
         self.assertFalse(merge_go.literal_go("yes: merge it"))
 
+    def five(self):
+        """The Nov 26, 2026 push: five PRs move, and the teammate approved #6179 and #6213."""
+        prs = {str(n): self.pull(n, self.BRANCH, self.remote_head, [self.APPROVED] if n in (6179, 6213) else [])
+               for n in (6153, 6179, 6213, 6225, 6248)}
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps({**scenario, "prs": prs}))
+
+    def test_replays_the_three_refused_goes_on_five_prs(self):
+        # Nov 26, 2026 (transcript 467a616c): the user's goes at 06:42:03 and 06:45:18 picked
+        # these options, and at 06:46:20 typed the push, answering a reply whose option a
+        # said the dismissal. The gate refused all three; only the 06:46 option's wording passed.
+        self.five()
+        named = "push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval)"
+        pick = lambda text, cls="stop:push": ("fix it", self.offer({"class": cls, "text": text}, text="Push?\n\n"), "A")
+        typed = "push #6153, #6179, #6213, #6225 and #6248"
+        for said in [pick("yes: push all five PRs, dismissing the teammate's approvals on #6179 and #6213"),
+                     pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179 and #6213)"),
+                     pick(named), pick(named)[:2] + (typed,),
+                     pick("yes: push all five PRs, dismissing the teammate's approvals on #6179 and #6213")[:2] + (typed,),
+                     pick("push the stack (dismisses the teammate's approvals on #6179 & #6213)"),
+                     pick("push #6153 (dismisses the teammate's approval on #6179 and #6213), post the reply"),
+                     (typed + " (dismisses the teammate's approval on PR #6179 and #6213)",)]:
+            with self.subTest(said=repr(said)[-240:]):
+                self.assertIsNone(self.reason("gh stack push", said=said))
+        for said, why in [
+                # A refusal, a question, or a dismissal that misses a live PR or names one the push doesn't move.
+                (pick("don't push #6179 (dismisses the teammate's approval on #6179 and #6213)"), "isn't a plain request"),
+                (pick("push #6179 and #6213 (dismisses the teammate's approval on #6179 and #6213)?"), "isn't a plain request"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179"), "doesn't name #6213"),
+                (pick("push all five PRs (dismisses the teammate's approval)"), "doesn't name #6179 and #6213"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179, #6213 and #6999"),
+                 "names #6999 in its dismissal, which this push doesn't move"),
+                (pick("push all 5 PRs, dismissing the teammate's approvals on 6179 and 6213"), "isn't a plain request"),
+                (pick("push all five PRs, dismissing the teammate's approvals on #6179 and #6213", "stop:post"),
+                 "only a stop:push option"),
+                # A typed push without the dismissal: only right after a reply whose stop:push option is a go.
+                ((typed,), "your reply before it offers no stop:push option that does"),
+                (pick(named, "decision")[:2] + (typed,), "offers no stop:push option that does"),
+                (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)")[:2]
+                 + (typed,), "offers no stop:push option that does"),
+                (pick("push #6153, #6179, #6213, #6225 and #6248 (dismisses the teammate's approval on #6179)"),
+                 "doesn't name #6213"),
+                (pick(named)[:2] + ("push #6153 and #6179",), "doesn't name #6213"),
+                (pick(named)[:2] + ("hold on", claude_wrote("Holding."), typed), "offers no stop:push option"),
+                (pick(named)[:2] + ("push #6153, #6179, #6213, #6225 and #6248 tomorrow",), None)]:
+            with self.subTest(said=repr(said)[-240:]):
+                reason = self.reason("gh stack push", said=said)
+                self.assertIn("which dismisses teammate's approval", reason)
+                if why:
+                    self.assertIn(why, reason)
+
+    def test_takes_a_push_restacked_on_its_base(self):
+        # Nov 25, 2026, 12:23 (transcript 21e564b0): the user's "a" on #6091's restack.
+        self.scenario(n=6091)
+        text = "push #6091 restacked on develop (dismisses the teammate's approval), re-request teammate"
+        self.assertIsNone(self.reason("gh stack push", said=("fix it", self.offer(
+            {"class": "stop:push", "text": text}, text="Push?\n\n"), "a")))
+        scenario = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+        scenario["prs"]["6092"] = self.pull(6092, self.BRANCH, self.remote_head, [self.APPROVED])
+        pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(scenario))
+        self.assertIn("doesn't name #6092", self.reason("gh stack push", said=(
+            "push #6091 restacked on 6092 (dismisses the teammate's approvals)",)))
+
     # The reply the user's 11:58:09 "a" answered on Nov 25, 2026 (transcript acdfd830), names
     # replaced: its reviewer-reply disclosure line, `<sub>` and `<br>`, made the gate read the
     # pick as nothing.
