@@ -6,8 +6,9 @@ user's install, init --yes, build, and doctor."""
 from __future__ import annotations
 
 import json, os, pathlib, shutil, stat, sys, unittest
+from pathlib import Path
 
-from addystack_home import KIT, SKILLS, Home
+from addystack_home import BIN, KIT, SKILLS, Home
 
 sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
 import reconcile  # noqa: E402
@@ -456,6 +457,18 @@ class SkillLinks(Home):
         out = self.ok("install").stdout
         self.assertEqual(out.count("(skill-link)"), 1, out)
         self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_a_link_or_the_kit_spelled_in_another_case_still_counts_as_the_checkout(self):
+        if not (self.home / ".AGENTS").exists():
+            self.skipTest("the file system tells case apart")
+        cased = Path(str(KIT.parent / "dropped").replace("/skills/primitive/", "/SKILLS/primitive/"))
+        cased_bin = Path(str(BIN).replace("/skills/primitive/", "/SKILLS/primitive/"))
+        for target, bin_ in ((cased, BIN), (KIT.parent / "dropped", cased_bin)):
+            with self.subTest(target=target, bin_=bin_):
+                self.drop("dropped", target)
+                self.assertIn("(skill-link)", self.ok("install", bin_=bin_).stdout)
+                self.assertFalse(os.path.lexists(self.claude / "dropped"))
+                self.assertFalse(os.path.lexists(self.agents / "dropped"))
 
     def test_dry_run_previews_the_removal_and_writes_nothing(self):
         self.drop("dropped", KIT.parent / "dropped")

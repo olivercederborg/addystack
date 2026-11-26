@@ -141,22 +141,20 @@ def _skill_links(resolved: Resolved) -> List[Change]:
     """The removal of each host's link to a skill the kit's checkout dropped; see Skill
     links above."""
     kit = Path(resolved["kit"])
-    trees = {os.path.realpath(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
+    trees = {_place(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
     changes, seen = [], set()
     for host in ("claude", "codex"):
         folder = skills_cli.folder(host)
         if not folder.is_dir():
             continue
-        # The folder's identity, since a path string can differ in case or links for one folder.
-        identity = (folder.stat().st_dev, folder.stat().st_ino)
         for link in sorted(folder.iterdir()):
-            entry = (*identity, link.name)
+            entry = (_place(str(folder)), link.name)
             if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
                     or skill_layer.folder(kit, link.name):
                 continue
             seen.add(entry)
             gone = Path(os.path.realpath(link))
-            if os.path.realpath(gone.parent.parent) in trees:
+            if _place(str(gone.parent.parent)) in trees:
                 changes.append(Change("skill-link", link, f"removes it: the kit has no {link.name} skill at "
                                                           f"{render._home(gone)}"))
     return changes
@@ -166,7 +164,17 @@ def _skill_tree(kit: str) -> Optional[str]:
     """A kit checkout's skills/ folder, the addystack skill's grandparent, or None for a kit
     the skills CLI installed, whose skills it removes itself."""
     tree = Path(os.path.abspath(os.path.expanduser(kit))).parents[1]
-    return str(tree) if tree.name == "skills" else None
+    return str(tree) if tree.name.casefold() == "skills" else None
+
+
+def _place(path: str) -> Any:
+    """What names one folder however its path is spelled, in case or through links: its
+    device and inode, or for a folder that's gone, its resolved path."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return os.path.realpath(path)
+    return info.st_dev, info.st_ino
 
 
 def _commands(resolved: Resolved) -> List[Change]:
