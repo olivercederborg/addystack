@@ -10,8 +10,8 @@ files such as __pycache__ keep. So in each enabled host's skill folder, install 
 link with no SKILL.md behind it that resolves, itself or through another link, into the kit
 checkout's skills/<layer>/ (or the checkout the last build recorded, when it moved), when
 the kit has no skill of that name, once each when one host's folder links to the other's.
-One it still has is doctor's to name. Any other link stays. An npx skills install's dropped
-skills are update's to remove (_update_skills).
+Any other link stays. In an npx skills install, update removes a skill the release no longer
+lists as core (_update_skills); one that was never core stays.
 
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
 hookset.merge into Claude Code's settings.json `hooks` key and Codex's
