@@ -78,7 +78,7 @@ def gated(verdict: dict) -> list:
     return [decision for decision in verdict['decisions'] if decision['gate']]
 
 
-def decide(verdict: dict, holds: bool, required: str, second_opinion: str = 'ran') -> str:
+def decide(verdict: dict, holds: bool, required: str, second_opinion: str) -> str:
     """The unattended reviewer's action. A finding that holds the approval requests changes; a
     gate, or a review whose second opinion didn't run, needs a human; otherwise the PR's
     required checks on its head decide."""
@@ -118,7 +118,7 @@ def main(arguments):
         return 1 if problems else 0
     if len(arguments) == 2 and arguments[0] == 'decide':
         verdict = load(arguments[1])
-        action = decide(verdict, holds=False, required='passed')
+        action = decide(verdict, holds=False, required='passed', second_opinion='ran')
         print('needs a human: ' + ', '.join(decision['id'] or decision['decision'] for decision in gated(verdict))
               if action == 'needs-human' else 'no gate: an unattended reviewer approves once nothing holds it, '
               'its second opinion ran or the PR changes no behavior, and the required checks pass on this head')

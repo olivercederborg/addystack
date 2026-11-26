@@ -67,16 +67,16 @@ class Decide(unittest.TestCase):
     def test_a_held_finding_requests_changes_whatever_else_holds(self):
         for gated in (verdict(), verdict(decision('D1', 'one-way-door'))):
             for required in gates.REQUIRED:
-                self.assertEqual(gates.decide(gated, True, required), 'request-changes')
+                self.assertEqual(gates.decide(gated, True, required, 'ran'), 'request-changes')
 
     def test_a_gate_needs_a_human_whatever_the_checks(self):
         for required in gates.REQUIRED:
-            self.assertEqual(gates.decide(verdict(decision('D1', 'product'), decision('D2')), False, required),
+            self.assertEqual(gates.decide(verdict(decision('D1', 'product'), decision('D2')), False, required, 'ran'),
                              'needs-human')
 
     def test_with_no_gate_the_required_checks_on_the_head_decide(self):
         clear = verdict(decision('D2'), sensitive=[{'area': 'auth', 'code': 'auth.ts:1'}])
-        self.assertEqual([gates.decide(clear, False, required) for required in gates.REQUIRED],
+        self.assertEqual([gates.decide(clear, False, required, 'ran') for required in gates.REQUIRED],
                          ['approve', 'wait', 'not-approved'])
 
     def test_a_missing_second_opinion_never_approves_and_a_diff_without_behavior_is_unaffected(self):
