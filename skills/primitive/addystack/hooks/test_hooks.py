@@ -219,7 +219,8 @@ class T3Session(unittest.TestCase):
         pathlib.Path(folder, "t3").write_text("#!/bin/sh\n")
         os.chmod(os.path.join(folder, "t3"), 0o755)
         rest = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
-        with unittest.mock.patch.dict(os.environ, {**rest, "PATH": folder if on_path else "/nonexistent", **env}, clear=True):
+        path = folder if on_path else "/nonexistent"
+        with unittest.mock.patch.dict(os.environ, {**rest, "PATH": path, **env}, clear=True):
             cli = t3_child.cli()
             return t3_child.in_t3(), "PATH" if cli == os.path.join(folder, "t3") else cli
 

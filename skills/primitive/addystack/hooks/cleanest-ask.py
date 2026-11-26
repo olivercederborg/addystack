@@ -41,8 +41,8 @@ note (`withMessageSenderNote`), so the agent gets the command's body, the same s
 the user types. T3's database still records the message as an agent's, and the command's
 text matches no go, so the gates that read the user's latest prompt grant nothing on it.
 
-It sends with `t3 thread send <thread> /cleanest`, through the CLI t3_child.cli finds, which
-queues it as the thread's next turn. It never blocks the reply and prints nothing: on any doubt or
+It sends with `t3 thread send <thread> /cleanest` through t3_child.cli, which queues it as
+the thread's next turn. It never blocks the reply and prints nothing: on any doubt or
 error it doesn't send; a send it records before running the CLI, so one whose answer is
 lost still counts, and then holds the thread's later runs too. Once a card that can fire
 reaches a thread in its scope, it appends its decision, a send or a skip with its reason and
