@@ -16,8 +16,23 @@ for a PR with no checks, which the reply can't see either.
 Of 1,198 cards with a push or merge stop from Nov 18 to 26, 2026, on two machines, it flags
 21 push options, 16 distinct. T3 shows a reply as it streams, so the user sees the first card too;
 the resent one comes seconds later and is the one a key answers (user_turn.answered).
-stop_hook_active keeps it to one send per stop, and any doubt or error passes."""
-import json, os, re, sys
+stop_hook_active keeps it to one send per stop, and any doubt or error passes.
+
+It also sends back a reply whose block is `running` when nothing in T3 will wake its thread
+on what it waits for (wake_gap). A user's Stop ends every PR watch on a thread without a
+word (T3 0.1.13's holdStoppedThread), and on Nov 26, 2026 a coordinator promised CI news on
+#6153 from such a watch for three hours, until the user asked "WHY DO I KEEP HAVING TO ASK
+FOR STATUS?". So it goes back when it names an open PR this thread watched and never
+unwatched that T3 no longer watches; when its coordinator's Workers table says a worker runs
+on another machine, whose end wakes nothing here, and no timer or task is pending; when no
+PR is watched, no task or child is pending, and no timer on the thread runs next; and when
+its `eta` has no timer by then or pending task, since a watch can miss a re-run that ends
+between polls. Replayed on 2,278 `running` turns from Nov 19 to 26, 2026, on two machines,
+it sends back the turn before 10 of the 12 status asks that a missing wake caused. It reads
+T3's state database, since `t3 thread show` lists no pending task while a run is active,
+and passes outside T3 or when the database can't be read."""
+import json, os, pathlib, re, sys, time
+from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -39,24 +54,150 @@ def refused(turn):
             and not push_go.literal_go(option.text)]
 
 
+# T3's work that outlives the run and wakes the thread when it ends (pendingBackgroundTurnItems).
+ACTIVE = "('pending', 'running', 'waiting')"
+UNITS = {"s": 1, "sec": 1, "second": 1, "m": 60, "min": 60, "minute": 60, "h": 3600, "hr": 3600, "hour": 3600}
+DURATION = re.compile(r"(\d+(?:\.\d+)?)\s*(s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)\b", re.I)
+
+
+def seconds(eta):
+    """The eta's duration in seconds, such as "about 6 min" or "1 h 30 min", or None for a
+    clock time, a range's words, or anything else it can't read."""
+    found = DURATION.findall(eta or "")
+    if not found or re.search(r"\d:\d", eta):
+        return None
+    unit = lambda word: UNITS.get(word.lower().rstrip("s"), UNITS.get(word.lower(), 60))
+    return sum(float(number) * unit(word) for number, word in found)
+
+
+def when(stamp):
+    return datetime.fromisoformat(stamp.replace("Z", "+00:00")).timestamp()
+
+
+def wakes(thread):
+    """What T3 holds for thread, from its state database: (watched PR numbers, the open PRs
+    whose watch this thread started and never ended, which T3 then ended, pending task kinds,
+    the next timer's epoch or None). Raises sqlite3.Error or LookupError in doubt."""
+    import t3_child
+    db = t3_child.connect()
+    try:
+        row = db.execute("select payload_json, active_provider_thread_id from orchestration_v2_projection_threads "
+                         "where thread_id = ? and deleted_at is null", (thread,)).fetchone()
+        if row is None:
+            raise LookupError(thread)
+        links = json.loads(row[0]).get("pullRequests") or []
+        # A stack-dismissed link's watch wakes nobody (T3's pullRequestWatchTasks).
+        watched = {link.get("number") for link in links if link.get("watch") and link.get("source") != "stack-dismissed"}
+        calls = {}  # each PR's last watch or unwatch call that went through
+        for name, given, output in db.execute(
+                "select json_extract(payload_json, '$.toolName'), json_extract(payload_json, '$.input'), "
+                "json_extract(payload_json, '$.output') from orchestration_v2_projection_turn_items where thread_id = ? "
+                "and type = 'dynamic_tool' and status = 'completed' and json_extract(payload_json, '$.toolName') "
+                "like '%watch_pull_request' order by ordinal", (thread,)):
+            given = json.loads(given) if given else {}
+            number = given.get("number") or (re.search(r"/pull/(\d+)", str(given.get("url"))) or [None, None])[1]
+            if number and not re.search(r'"isError": ?true|hook error', str(output)):
+                calls[int(number)] = not name.endswith("unwatch_pull_request")
+        ended = {link.get("number") for link in links if calls.get(link.get("number")) and not link.get("watch")
+                 and (link.get("snapshot") or {}).get("state") == "open"}
+        tasks = [task.get("kind") for payload, in db.execute(
+            "select payload_json from orchestration_v2_projection_provider_threads where thread_id = ?1 "
+            "and (?2 is null or provider_thread_id = ?2)", (thread, row[1]))
+            for task in json.loads(payload).get("pendingBackgroundTasks") or []]
+        tasks += [kind for kind, persistent in db.execute(
+            "select i.type, json_extract(i.payload_json, '$.input.persistent') from orchestration_v2_projection_turn_items i "
+            "left join orchestration_v2_projection_runs r on r.run_id = i.run_id "
+            f"where i.thread_id = ? and i.type in ('command_execution', 'dynamic_tool', 'subagent') and i.status in {ACTIVE} "
+            "and (r.status is null or r.status != 'rolled_back')", (thread,)) if persistent != 1]
+        timer = db.execute("select min(next_run_at) from scheduled_tasks where thread_id = ? and enabled = 1 "
+                           "and thread_mode = 'continue' and next_run_at is not null", (thread,)).fetchone()[0]
+    finally:
+        db.close()
+    return watched, ended, tasks, when(timer) if timer else None
+
+
+LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # as project.py reads a coordinator's links
+
+
+def remote_workers(thread):
+    """The Workers rows, in project.md of the coordinator project whose thread this is, that
+    say running, overdue, or unknown and link a thread on another machine: T3 here can't see
+    such a thread end, so nothing here wakes on it."""
+    found = []
+    for path in pathlib.Path(os.environ.get("ADDYSTACK_ORCHESTRATE", "~/.local/state/orchestrate")).expanduser().glob(
+            "*/project.md"):
+        lines = path.read_text().splitlines()
+        head = next((LINK.search(line) for line in lines if line.startswith("Coordinator:")), None)
+        if not head or head.group(2) != thread:
+            continue
+        start = next((at for at, line in enumerate(lines) if line.strip() == "## Workers"), len(lines))
+        stop = next((at for at in range(start + 1, len(lines)) if lines[at].startswith("## ")), len(lines))
+        rows = [line for line in lines[start:stop] if line.startswith("|")]
+        columns = [cell.strip() for cell in rows[0].strip("|").split("|")] if rows else []
+        for line in rows[2:]:
+            row = dict(zip(columns, (cell.strip() for cell in line.strip("|").split("|"))))
+            link = LINK.search(row.get("Thread", ""))
+            if link and link.group(1) != head.group(1) and re.match(r"(running|overdue|unknown)\b", row.get("State", "")):
+                found.append(row.get("Worker", "?"))
+    return found
+
+
+def wake_gap(turn, reply, thread, now):
+    """Why a `running` turn's thread has nothing to wake it on what it waits for, or None
+    when it has, the turn isn't running, or an eta it can't read leaves only a watch."""
+    if turn.state != "running":
+        return None
+    watched, ended, tasks, timer = wakes(thread)
+    named = {int(number) for number in re.findall(r"(?<![\w/])#(\d+)\b", reply[:reply.rfind("<!--")])}
+    if named & ended:
+        prs = ", ".join(f"#{number}" for number in sorted(named & ended))
+        return (f"this reply names {prs}, which this thread watched and never unwatched, but T3 no longer watches "
+                "it: a user's Stop ends every watch on a thread without a word. Call `watch_pull_request` on it again "
+                "before ending the turn")
+    if not (tasks or timer) and (away := remote_workers(thread)):
+        return (f"this reply's turn block is `running`, and Workers says {', '.join(away)} runs on another machine, "
+                "whose end wakes nothing here. Set a `once` `schedule_task` on this thread at the time you expect "
+                "its news, or read its status now")
+    if not (watched or tasks or timer):
+        return ("this reply's turn block is `running`, but nothing in T3 will wake this thread: no PR here is "
+                "watched (`watch_pull_request` returns `wasWatching: false` for one T3 ended), no background "
+                "task or child is pending, and no timer on this thread runs next. Set up the wake the reply waits "
+                "on before ending the turn: watch each PR it waits on, or set a `once` `schedule_task` on this "
+                "thread at the time it expects news. If nothing is pending, end `stop` or `done`")
+    due = seconds(turn.eta)
+    if due is None or tasks or timer is not None and timer <= now + due + max(600, due / 2):
+        return None
+    return (f"this reply's eta is {turn.eta}, but only a PR watch will wake this thread, and a watch can miss a "
+            "re-run that ends between its polls. Set a `once` `schedule_task` on this thread at the eta, or drop "
+            "the eta if it isn't measured")
+
+
 def main():
     try:
         event = json.loads(sys.stdin.read())
         if event.get("stop_hook_active"):
             return
         import turn_block
-        found = refused(turn_block.parse(event.get("last_assistant_message") or ""))
+        turn = turn_block.parse(event.get("last_assistant_message") or "")
+        found = refused(turn)
     except Exception:  # Malformed included: no block, nothing to check
         return
-    if found:
-        reason = "; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
-                           f"user picked it" for option in found)
+    reasons = ["; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
+                         f"user picked it" for option in found) + f". Write it as {SHAPE}"] if found else []
+    try:
+        import t3_child
+        gap = wake_gap(turn, event["last_assistant_message"], os.environ.get("T3CODE_THREAD_ID", ""), time.time()) if t3_child.in_t3() else None
+    except Exception:  # T3's database unread: a T3 outage never holds a turn
+        gap = None
+    if gap:
+        reasons.append(gap[0].upper() + gap[1:])
+    if reasons:
+        steps = ["with the wake set"] * bool(gap) + ["with only that option reworded, or its other steps split into "
+                                                     "their own option"] * bool(found)
         # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
         # its docs keep "block" for errors.
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (
-            f"{reason}. Write it as {SHAPE}. Send your whole reply again with only that option reworded, or its "
-            "other steps split into their own option. T3 shows the turn's last message as its reply, so the resent "
-            "reply has to stand on its own. Add no note about the change.")}}))
-
+            f"{'. '.join(reasons)}. Send your whole reply again {', and '.join(steps)}. T3 shows the turn's last "
+            "message as its reply, so the resent reply has to stand on its own. Add no note about the change.")}}))
 
 main()
