@@ -247,12 +247,14 @@ class Carry(unittest.TestCase):
 
     APPROVED = 'd' * 40
 
-    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False):
+    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('main',)):
         diffs = diffs or {self.APPROVED: 'same', head: 'same'}
+        bases = list(bases)
+        def pr(number, fields=''):
+            return {'headRefOid': head, 'baseRefName': bases.pop(0) if len(bases) > 1 else bases[0], 'state': state, 'isDraft': draft}
         with patch.object(post_review, 'github', fake.github), \
                 patch.object(post_review, 'retargeted', lambda number, since: retargeted), \
-                patch.object(post_review, 'pr', lambda number, fields='': {'headRefOid': head, 'baseRefName': 'main',
-                                                                            'state': state, 'isDraft': draft}), \
+                patch.object(post_review, 'pr', pr), \
                 patch.object(post_review, 'fetch', lambda *arguments: None), \
                 patch.object(post_review.gates, 'own_diff', lambda base, commit: diffs[commit]):
             return post_review.carry(7, self.APPROVED)
@@ -278,6 +280,7 @@ class Carry(unittest.TestCase):
             'this App reviewed again after its approval at ': dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED}),
             'the PR moved to another base branch after the approval': dict(retargeted=True),
             'the head is the approved commit': dict(head=APPROVED),
+            'the PR changed while the carry was proved': dict(bases=('main', 'release')),
             'the PR is closed or a draft': dict(draft=True),
             'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
         }
@@ -286,7 +289,7 @@ class Carry(unittest.TestCase):
                 fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
                 outcome = self.carry(fake, head=case.get('head', HEAD), draft=case.get('draft', False), diffs=case.get('diffs'),
-                                     retargeted=case.get('retargeted', False))
+                                     retargeted=case.get('retargeted', False), bases=case.get('bases', ('main',)))
                 self.assertEqual(outcome['outcome'], 'not-carried')
                 self.assertIn(why.strip(), outcome['why'])
                 self.assertEqual(fake.writes, [])

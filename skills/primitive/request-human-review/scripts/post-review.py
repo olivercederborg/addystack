@@ -272,10 +272,13 @@ def carry(number: int, approved: str) -> dict:
         return {'outcome': 'pending', 'head': head, 'checks': checks}
     if state == 'failed':
         return {'outcome': 'not-carried', 'head': head, 'why': 'required checks did not pass', 'checks': checks}
-    # Right before the write: a push since the head was read starts its own review.
+    # Right before the write: a push since the head was read starts its own review, and a PR
+    # retargeted, closed or turned draft meanwhile no longer matches what was proved.
     moved = github('head', number).strip()
     if moved != head:
         return {'outcome': 'superseded', 'head': moved}
+    if pr(number, 'headRefOid,baseRefName,state,isDraft') != current:
+        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR changed while the carry was proved'}
     with tempfile.TemporaryDirectory() as scratch:
         body = Path(scratch) / 'body.md'
         body.write_text('<sub>`AGENT`</sub><br>\n'
