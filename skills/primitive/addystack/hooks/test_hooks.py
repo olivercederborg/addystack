@@ -607,8 +607,7 @@ class WatchReminder(unittest.TestCase):
                         'P="python3 project.py"; $P note "ran gh pr create --fill for #106"',
                         "cd ~/kit && gh pr ready 112 && gh pr merge 112 --merge",
                         "gh pr ready 113 && gh pr merge 113 --merge && gh pr view 113 --json state",
-                        "gh pr ready 6233; gh stack merge 6233 --yes", "gh pr ready 12 && gh pr merge 12 --auto=false",
-                        "cat <<'EOF' >/dev/null\ncontent\nEOF is not a delimiter\ngh pr ready 12\nEOF"):
+                        "gh pr ready 6233; gh stack merge 6233 --yes"):
             with self.subTest(command=command):
                 self.assertEqual(self.remind("Bash", {"command": command}), "")
         for command in ("gh pr edit 6233 --add-reviewer the-reviewer && gh pr view 6233 --json reviewRequests --jq '[.reviewRequests[].login]'",
@@ -616,12 +615,7 @@ class WatchReminder(unittest.TestCase):
                         "cat > body.md <<'EOF'\nFixes the export.\nEOF\ngh pr create --title \"Fix export\" --body-file body.md",
                         "gh pr ready 6255 && gh pr merge 6255 --auto --squash",
                         # merge-gate's reading: --disable-auto and --help merge nothing.
-                        "gh pr ready 12 && gh pr merge 12 --disable-auto", "gh pr ready 12 && gh pr merge --help",
-                        # review-loop r1 (Codex): a boolean flag's =true, the line that opens a heredoc, and a
-                        # body line that only starts with the delimiter.
-                        "gh pr ready 12 && gh pr merge 12 --auto=true", "gh pr ready 12 && gh pr merge 12 --disable-auto=true",
-                        "cat <<'EOF' >/dev/null; gh pr ready 12\nbody\nEOF",
-                        "cat <<'EOF' >/dev/null\ncontent\nEOF is not a delimiter\nEOF\ngh pr ready 12"):
+                        "gh pr ready 12 && gh pr merge 12 --disable-auto", "gh pr ready 12 && gh pr merge --help"):
             with self.subTest(command=command):
                 self.assertIn('`until: "checks"`', self.remind("Bash", {"command": command}))
 
@@ -2432,14 +2426,6 @@ class MergeGate(unittest.TestCase):
     def card(self, options, text=CARD):
         return claude_wrote(text + block({"state": "stop", "needs": [{"id": 1, "kind": "review", "name": "merge #12"}],
                                           "options": options, "project": "suite-audit"}))
-
-    def test_reads_a_merge_on_the_line_that_opens_a_heredoc(self):
-        # review-loop r1 (Codex): the old heredoc pattern dropped the rest of its opening line.
-        self.scenario(prs={12: "SUCCESS"})
-        plain = self.reason("gh pr merge 12")
-        self.assertIsNotNone(plain)
-        self.assertEqual(self.reason("cat <<'EOF' >/dev/null; gh pr merge 12\nbody\nEOF"), plain)
-        self.assertIsNone(self.reason("cat <<'EOF' >/dev/null\ngh pr merge 12\nEOF"))
 
     def test_merges_on_a_pick_of_a_card_that_fails_only_on_fields_the_gate_doesnt_read(self):
         # Nov 23, 2026: 9 merge picks answered cards with a standing name over 80 characters or

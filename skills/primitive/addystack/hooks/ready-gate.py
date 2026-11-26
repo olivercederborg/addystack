@@ -26,7 +26,7 @@ through `workdir`, and a hook timeout, which Codex lets through. `gh stack submi
 without a terminal, which opens drafts."""
 import json, os, re, signal, subprocess, sys
 
-from shell_dirs import ASSIGNMENT, BRANCH_MOVES, LEADS, QUOTED, Walk, heredocs_removed, unreadable
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, HEREDOC, LEADS, QUOTED, Walk, unreadable
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 RECORD = os.path.join(HERE, "verdicts.py").replace(os.path.expanduser("~"), "~", 1)
@@ -39,7 +39,7 @@ command = (payload.get("tool_input") or {}).get("command", "")
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
 # quoted single word ("12", 'feat/x') is an argument, so it keeps its value, unless it starts
 # with #, which would then read as a comment.
-code = heredocs_removed(command)
+code = HEREDOC.sub("", command)
 code = re.sub(r"'((?!#)[^'\s;&|<>$]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
               lambda m: m.group(1) or m.group(2) or "''", code)  # a quoted "$n" stays a variable
 code = QUOTED.sub("''", code)

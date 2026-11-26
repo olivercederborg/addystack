@@ -39,7 +39,7 @@ checks from the current directory and prints the PRs it resolves, then each reas
 that would merge."""
 import json, os, re, subprocess, sys
 
-from shell_dirs import MERGE, NOT_A_MERGE, QUOTED, Walk, heredocs_removed, switches
+from shell_dirs import HEREDOC, MERGE, NOT_A_MERGE, QUOTED, Walk
 
 DRY_RUN = sys.argv[1:2] == ["--dry-run"]
 # Where the deny reasons send an agent that merged from the wrong checkout.
@@ -55,11 +55,11 @@ command = (payload.get("tool_input") or {}).get("command", "")
 cwd = payload.get("cwd") or os.getcwd()
 
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands.
-code = QUOTED.sub("''", heredocs_removed(command))
+code = QUOTED.sub("''", HEREDOC.sub("", command))
 # Redirections aren't arguments: `gh stack merge --yes 2>&1` merges the current stack.
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)
 # Every merge the command would run.
-merges = [found for found in MERGE.finditer(code) if not NOT_A_MERGE & switches(found.group(2).split())]
+merges = [found for found in MERGE.finditer(code) if not NOT_A_MERGE & set(found.group(2).split())]
 match = merges[0] if merges else None
 kind, args = (match.group(1), match.group(2).split()) if match else (None, [])
 if not match:
