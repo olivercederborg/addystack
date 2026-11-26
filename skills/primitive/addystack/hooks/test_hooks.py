@@ -4645,6 +4645,20 @@ class PushGate(unittest.TestCase):
                 if why:
                     self.assertIn(why, reason)
 
+    def test_takes_a_typed_push_only_with_its_prs_and_a_true_count(self):
+        # review-loop r1 on 7a90b85: a typed push without its dismissal names each PR itself,
+        # its verb, not a branch name, pushes, and a count matches the PRs the push moves.
+        card = ("fix it", self.offer({"class": "stop:push", "text": "push #6119 (dismisses the teammate's approval)"},
+                                     text="Push?\n\n"))
+        self.assertIsNone(self.reason("gh stack push", said=card + ("push #6119",)))
+        self.assertIn("doesn't name #6119", self.reason("gh stack push", said=card + ("push it",)))
+        self.assertIsNotNone(self.reason("gh stack push", said=card + ("rebase #6119 onto push-fixes",)))
+        self.five()
+        text = "push both PRs, dismissing the teammate's approvals on #6179 and #6213"
+        for said in [(text,), ("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a")]:
+            with self.subTest(said=said[-1]):
+                self.assertIn("says 2 PRs, but this push moves 5", self.reason("gh stack push", said=said))
+
     def test_takes_a_push_restacked_on_its_base(self):
         # Nov 25, 2026, 12:23 (transcript 21e564b0): the user's "a" on #6091's restack.
         self.scenario(n=6091)

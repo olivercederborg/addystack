@@ -19,8 +19,9 @@ instead list each PR whose approval goes and only PRs the push moves ("… appro
 and #6213"), then only routine steps such as "post the reply" (AFTER), with no refusal,
 condition, question, or modal in it (push_go.py), so "no: push the cleanup only", "pushing
 #6091 dismisses the approval", or "push #6091 once the approval is dismissed" isn't one.
-The same request typed without the dismissal is one right after a reply whose stop:push
-option is: that reply told the user what goes. A pick of any other class, such as
+The same request typed without the dismissal, naming each PR, is one right after a reply
+whose stop:push option is: that reply told the user what goes. A count ("all five PRs")
+must be the number of PRs the push moves. A pick of any other class, such as
 the coordinator's `stop:post` "push the cleanup, post the reply, re-request <reviewer> on
 #6119", gives no go, nor does a T3 delegated child, or, in T3, a state database it can't
 read or a session no T3 thread owns.
@@ -354,7 +355,7 @@ if not live:
 
 # A go's grammar: push_go.py.
 import merge_go
-from push_go import BASE, COUNTED, Go, literal_go, plain_go
+from push_go import BASE, COUNTED, Go, counted, literal_go, plain_go
 
 
 def slug(pr):
@@ -368,11 +369,12 @@ def label(pr):
     return f"{slug(pr)[1]} #{pr['number']}" if len({slug(each) for each, *_ in live.values()}) > 1 else f"#{pr['number']}"
 
 
-def unnamed(go):
+def unnamed(go, explicit=False):
     """The PRs of live that a Go doesn't name, as "#N" words: merge_go.names. A dismissal
     that lists PRs says which approvals go, so it names each live one. Otherwise the push
     steps do, and a push that names no PR, such as "push it", names the one PR with a live
-    approval, as merge-gate.py takes a go that names none, but not two. The steps after it
+    approval, as merge-gate.py takes a go that names none, but not two, nor any when
+    explicit, as for a typed push without its dismissal. The steps after it
     (AFTER), whose approval (WHOSE), a count such as "all 5 PRs", and a base it goes onto
     name no PR."""
     pushed = re.sub(COUNTED, "", re.sub(BASE, "", go.push, flags=re.I), flags=re.I)  # a base isn't pushed
@@ -382,7 +384,7 @@ def unnamed(go):
     named = lambda text, pr: merge_go.names(text, pr["number"], *slug(pr), numbers) and (
         shared.count(pr["number"]) == 1 or bool(merge_go.REPO_NAMED.search(text)))
     missing = [label(pr) for pr, *_ in live.values() if (not named(go.dismissed, pr) if go.dismissed
-               else not read and len(live) > 1 or not named(pushed, pr))]
+               else not read and (explicit or len(live) > 1) or not named(pushed, pr))]
     return " and ".join(missing)
 
 
@@ -398,11 +400,17 @@ def strays(go):
                         if not any(pr["number"] == low[1] and here(low, pr) for pr in moved.values()))
 
 
-def unmet(go):
-    """Why a Go isn't one for every live approval, or None when it is."""
-    missing, stray = unnamed(go), strays(go)
-    return f"doesn't name {missing}" if missing else f"names {stray} in its dismissal, which this push doesn't move" \
-        if stray else None
+def unmet(go, explicit=False):
+    """Why a Go isn't one for every live approval, or None when it is. A count of PRs, as in
+    "all five PRs", must be the number the push moves, so it can't understate the push."""
+    missing, stray, count = unnamed(go, explicit), strays(go), counted(go.push)
+    if missing:
+        return f"doesn't name {missing}"
+    if stray:
+        return f"names {stray} in its dismissal, which this push doesn't move"
+    if count is not None and count != len(moved):
+        return f"says {count} PRs, but this push moves {len(moved)}"
+    return None
 
 
 def offered(reply):
@@ -434,7 +442,7 @@ def user_go():
             return (True, None) if not why else (False, f"{said} {why}")
         plain = plain_go(prompt)
         if plain:
-            why = unmet(Go(plain, ""))
+            why = unmet(Go(plain, ""), explicit=True)
             if why:
                 return False, f"{said} {why}"
             if offered(user_turn.answered(found)):

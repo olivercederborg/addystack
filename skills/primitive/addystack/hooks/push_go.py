@@ -18,10 +18,21 @@ import merge_go
 
 # A count of PRs names none of them: "all five PRs", "both PRs".
 COUNTED = r"(?:all(?: the)?(?: (?:\d{1,2}|two|three|four|five|six|seven|eight|nine|ten))?|both|the) prs"
+COUNTS = {"both": 2, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+
+
+def counted(push):
+    """How many PRs push steps' count says ("all five PRs", "both PRs"), or None for none."""
+    found = re.search(r"\b(both|two|three|four|five|six|seven|eight|nine|ten|\d{1,2}) prs\b", push, re.I)
+    return None if not found else COUNTS.get(found.group(1).lower()) or int(found.group(1))
+
+
 # The branch a push goes onto, which it doesn't push: "onto develop", "restacked on develop".
 BASE = r"\s+(?:(?:restacked|rebased)\s+(?:on|onto|on top of)|onto|on top of)\s+`?[\w./-]+`?"
-STEP = (rf"(?:force-?push|push|restack|re-stack|rebase|sync|submit)"
+STEP = (rf"(?P<verb>force-?push|push|restack|re-stack|rebase|sync|submit)"
         rf"(?:\s+(?:it|them|both|the (?:stack|branch)|{COUNTED}|{merge_go.REFS}))?(?:{BASE})?")
+STEPS = re.compile(STEP, re.I)
+STEP = STEP.replace("?P<verb>", "?:")  # PUSH repeats it, and a group name can't repeat
 # Whose approval: logins and words, a login may hold a digit (reviewer2) but no word is a PR
 # (PR 6215, pr6215, #6215), and a count is at most two digits ("2 approvals").
 WHOSE = r"(?:(?:the|their|its|both)\s+)?(?:(?:(?!pr\W?\d)[A-Za-z@][\w.@-]*|\d{1,2})(?:'s)?,?\s+(?:and\s+)?){0,5}"
@@ -70,7 +81,9 @@ def literal_go(text):
 
 
 def plain_go(text):
-    """The push steps of text when it is literal_go's request without the dismissal, and says
-    push or submit, else None: a typed "rebase the stack" may mean only the local rebase."""
+    """The push steps of text when it is literal_go's request without the dismissal, and a
+    step's verb is push or submit, else None: a typed "rebase the stack" may mean only the
+    local rebase, and "rebase #6119 onto push-fixes" pushes nothing."""
     found = read(PLAIN, text)
-    return found.group("push") if found and re.search(r"\bpush\b|\bsubmit\b", found.group("push"), re.I) else None
+    verbs = [step.group("verb").lower() for step in STEPS.finditer(found.group("push"))] if found else []
+    return found.group("push") if {"push", "force-push", "forcepush", "submit"} & set(verbs) else None
