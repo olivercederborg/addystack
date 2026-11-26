@@ -79,6 +79,19 @@ class Decide(unittest.TestCase):
         self.assertEqual([gates.decide(clear, False, required) for required in gates.REQUIRED],
                          ['approve', 'wait', 'not-approved'])
 
+    def test_a_missing_second_opinion_never_approves_and_a_diff_without_behavior_is_unaffected(self):
+        clear = verdict(decision('D2'))
+        self.assertEqual(gates.decide(clear, False, 'passed', 'ran'), 'approve')
+        self.assertEqual(gates.decide(clear, False, 'passed', 'not-needed'), 'approve')
+        for required in gates.REQUIRED:
+            self.assertEqual(gates.decide(clear, False, required, 'missing'), 'needs-human')
+        self.assertEqual(gates.decide(clear, True, 'passed', 'missing'), 'request-changes')
+        with self.assertRaises(ValueError):
+            gates.decide(clear, False, 'passed', 'skipped')
+        text = gates.section(clear, 'Codex is not signed in')
+        self.assertIn('**Needs a human.** A person approves this PR:', text)
+        self.assertIn("- **Second opinion** · the other provider's review didn't run (Codex is not signed in)", text)
+
     def test_section_names_each_gated_decision_with_its_gate_and_code(self):
         text = gates.section(verdict(decision('D1', 'interface', 'db/schema.ts:12'), decision(None, 'pattern'), decision('D2')))
         self.assertIn('- **D1** · architectural or interface decision: D1 call · `db/schema.ts:12` · adds a column', text)

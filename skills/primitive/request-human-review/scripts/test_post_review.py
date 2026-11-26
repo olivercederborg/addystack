@@ -65,9 +65,12 @@ class Post(unittest.TestCase):
             'decisions': [{'id': 'D1', 'decision': 'Add a totals column', 'code': 'db/schema.ts:12', 'gate': gate,
                            'why': 'a schema change' if gate else 'follows db/schema.ts:4'}]}))
 
-    def post(self, fake, *findings, head=HEAD, wait=0):
-        (self.folder / 'REVIEW.json').write_text(json.dumps({'pr': 7, 'head': HEAD, 'gates': 'GATES.json',
-                                                              'body': 'BODY.md', 'findings': list(findings)}))
+    def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None):
+        review = {'pr': 7, 'head': HEAD, 'gates': 'GATES.json', 'body': 'BODY.md', 'findings': list(findings),
+                  'second_opinion': {'status': 'ran'} if second_opinion is None else second_opinion}
+        if second_opinion == 'absent':
+            del review['second_opinion']
+        (self.folder / 'REVIEW.json').write_text(json.dumps(review))
         clock = iter(range(0, 10_000, 60))
         with patch.object(post_review, 'github', fake.github), \
                 patch.object(post_review, 'pr', lambda number: {'body': BODY, 'headRefOid': head}):
@@ -171,6 +174,20 @@ class Post(unittest.TestCase):
         fake = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': HEAD})
         self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
         self.assertEqual([(command, arguments[:2]) for command, arguments, _ in fake.writes][0], ('dismiss', ['7', '40']))
+
+    def test_a_review_without_its_second_opinion_goes_to_a_person_and_says_why(self):
+        for second, why in (({'status': 'missing', 'why': 'Codex is not signed in'}, 'Codex is not signed in'),
+                            ('absent', "the review didn't say whether it ran")):
+            with self.subTest(second=second):
+                fake = Fake(required=lambda: self.fail("a review that can't approve never reads its checks"))
+                outcome = self.post(fake, second_opinion=second)
+                self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['second opinion']))
+                (command, arguments, files), = fake.writes
+                self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
+                self.assertIn(f"- **Second opinion** · the other provider's review didn't run ({why})", files['body.md'])
+
+    def test_a_diff_that_needs_no_second_opinion_is_approved_as_before(self):
+        self.assertEqual(self.post(Fake(), second_opinion={'status': 'not-needed'})['outcome'], 'approved')
 
     def test_pending_checks_are_waited_on_then_approved(self):
         answers = iter(['ci\tpending\nrequired: not all passed\n', 'ci\tpass\nrequired: all passed\n'])

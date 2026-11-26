@@ -18,6 +18,8 @@ established pattern, so it needs no human. A sensitive area gets a deeper review
     gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head
     gates.py decide GATES.json    what an unattended reviewer would do with no held finding
 """
+from __future__ import annotations
+
 import json
 import re
 import subprocess
@@ -30,6 +32,9 @@ AREAS = ('money-movement', 'auth', 'tenancy', 'concurrency', 'dependencies')
 # What an unattended reviewer does, from the most to the least blocking.
 ACTIONS = ('request-changes', 'needs-human', 'not-approved', 'wait', 'approve')
 REQUIRED = ('passed', 'pending', 'failed')
+# Whether the review's read-only pass by the other provider ran: not-needed is review-code's
+# skip for a diff that changes no behavior; missing is any other reason it didn't run.
+SECOND_OPINION = ('ran', 'not-needed', 'missing')
 SHA = re.compile(r'[0-9a-f]{40}')
 TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
 
@@ -73,26 +78,33 @@ def gated(verdict: dict) -> list:
     return [decision for decision in verdict['decisions'] if decision['gate']]
 
 
-def decide(verdict: dict, holds: bool, required: str) -> str:
+def decide(verdict: dict, holds: bool, required: str, second_opinion: str = 'ran') -> str:
     """The unattended reviewer's action. A finding that holds the approval requests changes; a
-    gate needs a human; otherwise the PR's required checks on its head decide."""
+    gate, or a review whose second opinion didn't run, needs a human; otherwise the PR's
+    required checks on its head decide."""
     if required not in REQUIRED:
         raise ValueError(f'required is one of {", ".join(REQUIRED)}')
+    if second_opinion not in SECOND_OPINION:
+        raise ValueError(f'second_opinion is one of {", ".join(SECOND_OPINION)}')
     if holds:
         return 'request-changes'
-    if gated(verdict):
+    if gated(verdict) or second_opinion == 'missing':
         return 'needs-human'
     return {'passed': 'approve', 'pending': 'wait', 'failed': 'not-approved'}[required]
 
 
-def section(verdict: dict) -> str:
-    """The review's "Needs a human" Markdown, naming each gated decision."""
-    lines = ['**Needs a human.** These decisions need a person\'s approval; the rest of the PR follows '
-             'established patterns:', '']
+def section(verdict: dict, no_second_opinion: str | None = None) -> str:
+    """The review's "Needs a human" Markdown, naming each gated decision, and, given why, that
+    the review's second opinion didn't run."""
+    lines = ['**Needs a human.** ' + ("These decisions need a person's approval; the rest of the PR follows "
+                                     'established patterns:' if gated(verdict) else 'A person approves this PR:'), '']
     for decision in gated(verdict):
         label = decision['id'] or 'Not in the Decisions table'
         lines.append(f'- **{label}** · {GATES[decision["gate"]]}: {decision["decision"]} · `{decision["code"]}` · '
                      f'{decision["why"]}')
+    if no_second_opinion is not None:
+        lines.append(f"- **Second opinion** · the other provider's review didn't run ({no_second_opinion}), "
+                     'so a person reviews in its place')
     return '\n'.join(lines) + '\n'
 
 

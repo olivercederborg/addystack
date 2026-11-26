@@ -10,10 +10,13 @@ REVIEW.json, written by the reviewing agent, with paths relative to its own fold
      "body": "BODY.md",
      "findings": [{"call": "blocking" | "non-blocking" | "question", "holds": true | false,
                    "title": "one line",
-                   "draft": {"path", "line", "side"?, "start_line"?, "start_side"?, "body_file"}?}]}
+                   "draft": {"path", "line", "side"?, "start_line"?, "start_side"?, "body_file"}?}],
+     "second_opinion": {"status": "ran" | "not-needed" | "missing", "why": "when missing"}}
 
 BODY.md is the review's summary and starts with the agent disclosure. `holds` is
-review-code's rule for a finding that holds the approval.
+review-code's rule for a finding that holds the approval. `second_opinion` says whether the
+review's pass by the other provider ran; a missing one, or a REVIEW.json without it, never
+approves: the PR goes to a person.
 
     post-review.py N REVIEW.json [--wait SECONDS]
 
@@ -125,8 +128,12 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
         raise ValueError('; '.join(problems))
     findings = review['findings']
     holds = any(finding['holds'] for finding in findings)
+    second = review.get('second_opinion') or {'status': 'missing', 'why': "the review didn't say whether it ran"}
+    if second.get('status') not in gates.SECOND_OPINION:
+        raise ValueError(f'second_opinion.status is one of {", ".join(gates.SECOND_OPINION)}')
+    no_second_opinion = (second.get('why') or 'no reason given') if second['status'] == 'missing' else None
     deadline = now() + wait_seconds
-    may_approve = not holds and not gates.gated(verdict)
+    may_approve = not holds and not gates.gated(verdict) and no_second_opinion is None
     while True:
         # What the write acts on, then the head, read last, right before the write: the App's
         # review that still counts, its open threads an approval resolves, and the checks. A
@@ -141,7 +148,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
-        action = gates.decide(verdict, holds, state)
+        action = gates.decide(verdict, holds, state, second['status'])
         if action != 'wait':
             break
         if now() >= deadline:
@@ -178,9 +185,10 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                     github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
                 drafts = [finding['draft'] for finding in findings if finding.get('draft')]
                 body += _notes([finding for finding in findings if not finding.get('draft')], 'Findings', folder)
-                if gates.gated(verdict):
-                    body += '\n' + gates.section(verdict)
-                    outcome['gated'] = [decision['id'] or decision['decision'] for decision in gates.gated(verdict)]
+                if gates.gated(verdict) or no_second_opinion is not None:
+                    body += '\n' + gates.section(verdict, no_second_opinion)
+                    outcome['gated'] = [decision['id'] or decision['decision'] for decision in gates.gated(verdict)] + \
+                        (['second opinion'] if no_second_opinion is not None else [])
                 if action == 'not-approved':
                     body += '\n**Not approved:** these required checks did not pass on this head:\n\n' + \
                             '\n'.join(f'- {line}' for line in checks) + '\n'

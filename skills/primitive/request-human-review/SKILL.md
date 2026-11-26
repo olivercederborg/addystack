@@ -65,7 +65,9 @@ findings, with `holds` set by the review's rule.
 
 **Unattended reviewer** (review-code's unattended mode, signed in as an App): write
 `REVIEW.json` beside `GATES.json`, in the shape `scripts/post-review.py` documents, with
-the review's findings and step 2's, and the review's summary as its body. Run it in the
+the review's findings and step 2's, the review's summary as its body, and whether its
+second opinion, the other provider's pass, ran: `ran`, `not-needed` for a diff that changes
+no behavior, or `missing` with why. Run it in the
 background, since it waits for pending required checks:
 
 ```sh
@@ -77,7 +79,7 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 | Outcome | When | It posts |
 |---|---|---|
 | `changes-requested` | a finding holds the approval | a request for changes with the inline comments |
-| `needs-human` | a gate fires | the findings and a **Needs a human** list of the gated decisions |
+| `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run |
 | `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body |
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
 | `superseded` | the head moved | nothing: the push starts its own review |
