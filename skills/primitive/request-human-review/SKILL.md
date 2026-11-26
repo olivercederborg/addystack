@@ -91,8 +91,9 @@ posting, so only an approval outcome leaves one in place, and a request for chan
 its replacement posted, so a failed post never lifts the block. It needs the App to be
 allowed to dismiss its own reviews. End with its Outcome line.
 
-**A rebase that changes nothing**: when this App approved a head and a push since left the
-PR's own diff byte-identical, the approval carries over without a review run.
+**A rebase that changes nothing**: when this App's latest review approved a head, the base
+branch is the same, and a push since left the PR's own diff byte-identical, the approval
+carries over without a review run.
 `scripts/post-review.py <PR> --carry <approved sha>`, run in the repository's checkout,
 re-proves both, waits for nothing, and approves once the required checks pass on the
 head. Otherwise it posts nothing and says why (`not-carried`, then review as usual) or
