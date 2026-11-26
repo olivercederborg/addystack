@@ -4957,7 +4957,7 @@ class CardCheck(unittest.TestCase):
                                                   for key, (cls, text) in zip("ab", options)]})
         out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
             {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
-        return json.loads(out)["reason"] if out else None
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
 
     def test_sends_back_an_option_the_gate_would_refuse(self):
         # Real options from Nov 18 to 26, 2026, names replaced: each a pick the gate refuses.

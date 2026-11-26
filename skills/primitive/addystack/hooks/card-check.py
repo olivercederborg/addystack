@@ -55,10 +55,12 @@ def main():
     if found:
         reason = "; ".join(f'option {option.key}, "{option.text}", is {option.cls}, but the gate would refuse it if the '
                            f"user picked it: write it as {shape}" for option, shape in found)
-        print(json.dumps({"decision": "block", "reason": (
+        # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
+        # its docs keep "block" for errors.
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (
             f"{reason}. Send your whole reply again with only that option reworded, or split into its own step. "
             "T3 shows the turn's last message as its reply, so the resent reply has to stand on its own. "
-            "Add no note about the change.")}))
+            "Add no note about the change.")}}))
 
 
 main()
