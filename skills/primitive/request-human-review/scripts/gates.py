@@ -120,8 +120,8 @@ def main(arguments):
         verdict = load(arguments[1])
         action = decide(verdict, holds=False, required='passed')
         print('needs a human: ' + ', '.join(decision['id'] or decision['decision'] for decision in gated(verdict))
-              if action == 'needs-human' else 'no gate: an unattended reviewer approves once nothing holds it '
-              'and the required checks pass on this head')
+              if action == 'needs-human' else 'no gate: an unattended reviewer approves once nothing holds it, '
+              'its second opinion ran or the PR changes no behavior, and the required checks pass on this head')
         return 0
     print(__doc__, file=sys.stderr)
     return 2

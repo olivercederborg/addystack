@@ -66,8 +66,8 @@ findings, with `holds` set by the review's rule.
 **Unattended reviewer** (review-code's unattended mode, signed in as an App): write
 `REVIEW.json` beside `GATES.json`, in the shape `scripts/post-review.py` documents, with
 the review's findings and step 2's, the review's summary as its body, and whether its
-second opinion, the other provider's pass, ran: `ran`, `not-needed` for a diff that changes
-no behavior, or `missing` with why. Run it in the
+second opinion, the other provider's pass over the whole PR, ran: `ran`, `not-needed` for a
+PR that changes no behavior, or `missing` with why. Run it in the
 background, since it waits for pending required checks:
 
 ```sh
