@@ -246,6 +246,8 @@ def carry(number: int, approved: str) -> dict:
     head = current['headRefOid']
     if current['state'] != 'OPEN' or current['isDraft']:
         return {'outcome': 'not-carried', 'head': head, 'why': 'the PR is closed or a draft'}
+    if head == approved:
+        return {'outcome': 'not-carried', 'head': head, 'why': 'the head is the approved commit, so nothing moved'}
     earlier = github('reviewed', number).strip()
     approval = json.loads(earlier).get('approved') if earlier else None
     if not approval or approval['commit_id'] != approved:

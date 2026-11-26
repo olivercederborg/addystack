@@ -277,6 +277,7 @@ class Carry(unittest.TestCase):
             'this App reviewed again after its approval at': dict(latest={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED}),
             'this App reviewed again after its approval at ': dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED}),
             'the PR moved to another base branch after the approval': dict(retargeted=True),
+            'the head is the approved commit': dict(head=APPROVED),
             'the PR is closed or a draft': dict(draft=True),
             'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
         }
@@ -284,7 +285,8 @@ class Carry(unittest.TestCase):
             with self.subTest(why=why):
                 fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
-                outcome = self.carry(fake, draft=case.get('draft', False), diffs=case.get('diffs'), retargeted=case.get('retargeted', False))
+                outcome = self.carry(fake, head=case.get('head', HEAD), draft=case.get('draft', False), diffs=case.get('diffs'),
+                                     retargeted=case.get('retargeted', False))
                 self.assertEqual(outcome['outcome'], 'not-carried')
                 self.assertIn(why.strip(), outcome['why'])
                 self.assertEqual(fake.writes, [])
