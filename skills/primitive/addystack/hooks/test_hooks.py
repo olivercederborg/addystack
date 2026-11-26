@@ -4655,7 +4655,10 @@ class PushGate(unittest.TestCase):
         self.assertIsNotNone(self.reason("gh stack push", said=card + ("rebase #6119 onto push-fixes",)))
         self.five()
         text = "push both PRs, dismissing the teammate's approvals on #6179 and #6213"
-        for said in [(text,), ("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a")]:
+        for said in [(text,), ("fix it", self.offer({"class": "stop:push", "text": text}, text="Push?\n\n"), "a"),
+                     # verify-work and review-loop r2 on 5aa419e: "both" alone, and a second count.
+                     ("push both (dismisses the teammate's approvals on #6179 and #6213)",),
+                     ("restack all five PRs and push both PRs (dismisses the teammate's approvals on #6179 and #6213)",)]:
             with self.subTest(said=said[-1]):
                 self.assertIn("says 2 PRs, but this push moves 5", self.reason("gh stack push", said=said))
 
@@ -4978,7 +4981,11 @@ class CardCheck(unittest.TestCase):
         # Real options from Nov 18 to 26, 2026, names replaced: each a pick push-gate refuses.
         for text in ("fix both gaps, push (dismisses the reviewer's approvals), re-verify",
                      "push 837dc2fa0d now, which dismisses the reviewer's approvals on #5805 and #5806",
-                     "you merge #6110 and #6076; then I restack #6091 (dismisses the reviewer's approval)"):
+                     "you merge #6110 and #6076; then I restack #6091 (dismisses the reviewer's approval)",
+                     # verify-work on 5aa419e: a condition, a modal, or a no: lead asks for a push the gate refuses.
+                     "push #12 and #13 once CI is green (dismisses the reviewer's approval)",
+                     "push #12 (this will dismiss the reviewer's approval)",
+                     "no: restack #6110 and #6076 again (dismisses the reviewer's approvals)"):
             with self.subTest(text=text):
                 reason = self.run_hook(("stop:push", text), ("decision", "no: hold it"))
                 self.assertIn(f'option a, "{text}", is stop:push, but push-gate would refuse it', reason)
@@ -4993,6 +5000,9 @@ class CardCheck(unittest.TestCase):
                           # review-loop r1 on 7a90b85: a refusal, or an option that asks for no push.
                           ("stop:push", "don't push #6179 (dismisses the reviewer's approval on #6179)"),
                           ("stop:push", "report only the details, which dismisses approvals on #5805 and #5806"),
+                          # review-loop r2: a curly apostrophe, and a verb inside a word.
+                          ("stop:push", "don’t push #12 (dismisses the reviewer's approval)"),
+                          ("stop:push", "report the Firebase approval dismissal"),
                           # merge-gate reads a merge go only for a PR with no checks, which a reply can't see.
                           ("stop:merge", "merge only #6080"), ("stop:merge", "mark #12 ready, but do not merge"),
                           ("stop:post", "push #6091 and post the reply, which dismisses the approval")]:
