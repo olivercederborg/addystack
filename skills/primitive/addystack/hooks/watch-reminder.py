@@ -13,8 +13,9 @@ so the reminder asks for a watch on each open, ready PR of the user's it left. O
 no watch, and the user had to say "watch it"; the reply rules asked for a watch only
 after a push or a new PR. unwatch-gate.py keeps such a watch on afterwards.
 
-It reads the command as text, so a `gh pr ready` inside quotes or a heredoc reminds too,
-which costs a line of context. A T3 delegated child gets no reminder: the thread it
+It reads the command as text with heredoc bodies and quoted strings taken out, so a `gh pr
+ready` the shell only writes or prints doesn't remind, nor does one the same command merges
+(`gh pr merge` without `--auto`, or `gh stack merge`). A `bash -c '...'` it runs is missed. A T3 delegated child gets no reminder: the thread it
 reports to owns the watch. It never blocks: on any input it doesn't expect, it adds
 nothing."""
 import json, pathlib, re, sys
@@ -25,6 +26,13 @@ BASH = re.compile(r"\bgh\s+pr\s+(?:ready\b(?![^\n;&|]*--undo)|reopen\b)"
                   r"|\bgh\s+pr\s+edit\b[^\n;&|]*--add-reviewer\b"
                   r"|\bgh\s+pr\s+create\b(?![^\n;&|]*(?:--draft\b(?!=false)|\s-d\b))"
                   r"|\bgh\s+stack\s+submit\b[^\n;&|]*--open\b")
+# Text the shell doesn't run as a command: a heredoc's body and a quoted string. Of 22 Mac
+# reminders Nov 25-26, 2026, 5 matched a `gh pr ready` inside one, such as a project.md edit.
+HEREDOC = re.compile(r"<<-?[ \t]*(['\"]?)(\w+)\1[^\n]*\n.*?\n[ \t]*\2[ \t]*(?=\n|$)", re.S)
+QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+# A merge in the same command leaves nothing waiting: 4 more were `gh pr ready N && gh pr
+# merge N`. `--auto` merges only once the PR's checks and reviews allow it, so it still waits.
+MERGES = re.compile(r"\bgh\s+(?:pr\s+merge\b(?![^\n;&|]*--auto\b)|stack\s+merge\b)")
 # The call alone can't tell a draft, another author's PR, or a PR that already existed, and
 # `gh stack submit --open` readies a whole stack, so the agent checks which PRs it left waiting.
 REMINDER = ("This call may have left PRs waiting on reviewers. Before ending the turn, call "
@@ -41,7 +49,10 @@ def waits_on_reviewers(tool, tool_input):
     if tool == "mcp__t3-code__pull_request_create":
         return tool_input.get("draft") is not True
     if tool == "Bash":
-        return isinstance(tool_input.get("command"), str) and bool(BASH.search(tool_input["command"]))
+        if not isinstance(tool_input.get("command"), str):
+            return False
+        run = QUOTED.sub("''", HEREDOC.sub("", tool_input["command"]))
+        return bool(BASH.search(run)) and not MERGES.search(run)
     return False
 
 

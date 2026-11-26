@@ -597,6 +597,26 @@ class WatchReminder(unittest.TestCase):
             with self.subTest(tool=tool, tool_input=tool_input):
                 self.assertEqual(self.remind(tool, tool_input), "")
 
+    def test_replays_the_reminders_for_text_the_shell_only_writes_or_a_merged_pr(self):
+        # Nov 25-26, 2026: 9 of 24 reminders came from a command that left no PR waiting, and
+        # the 2 that caught an unwatched PR must still fire. Commands cut down, paths replaced.
+        for command in ("cd ~ && python3 -I - project.md <<'EOF'\ns = s.replace('watch', 'gh pr ready 106, then watch')\nEOF",
+                        "cat > brief-fix-100.md <<'EOF'\nOpen the fix as PR #100, then gh pr ready 100 and\n"
+                        "gh pr edit 100 --add-reviewer the-reviewer.\nEOF\ngit add brief-fix-100.md",
+                        "printf '\\n- %s: \"yes: gh pr ready the fix, then request the reviewer\" (a)\\n' \"$(date)\" >> log.md",
+                        'P="python3 project.py"; $P note "ran gh pr create --fill for #106"',
+                        "cd ~/kit && gh pr ready 112 && gh pr merge 112 --merge",
+                        "gh pr ready 113 && gh pr merge 113 --merge && gh pr view 113 --json state",
+                        "gh pr ready 6233; gh stack merge 6233 --yes"):
+            with self.subTest(command=command):
+                self.assertEqual(self.remind("Bash", {"command": command}), "")
+        for command in ("gh pr edit 6233 --add-reviewer the-reviewer && gh pr view 6233 --json reviewRequests --jq '[.reviewRequests[].login]'",
+                        "cd /repo && for n in 6089 6090; do gh pr edit $n --add-reviewer \"the-reviewer\"; done",
+                        "cat > body.md <<'EOF'\nFixes the export.\nEOF\ngh pr create --title \"Fix export\" --body-file body.md",
+                        "gh pr ready 6255 && gh pr merge 6255 --auto --squash"):
+            with self.subTest(command=command):
+                self.assertIn('`until: "checks"`', self.remind("Bash", {"command": command}))
+
     def test_a_delegated_child_gets_no_reminder(self):
         with tempfile.TemporaryDirectory() as folder:
             db = state_db(folder, "thread:delegated-task:abc", "Fix it.")
