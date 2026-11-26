@@ -122,8 +122,9 @@ fill = lambda v: {k: fill(x) for k, x in v.items()} if isinstance(v, dict) else 
 sys.stdout.buffer.write(plistlib.dumps(fill(plistlib.load(open("hooks/agent-memory-guard.plist", "rb")))))' "$PWD" "$HOME" \
   > ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
-# in ~/.zshenv: fork fails past 3,000 user processes in agent shells; GUI apps keep 8,000
-[[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH ]] && ulimit -Su 3000
+# in ~/.zshenv: fork fails past 3,000 user processes in agent shells (T3 names a Codex
+# session's thread but sets no CLI path); GUI apps keep 8,000
+[[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH || -n $T3CODE_THREAD_ID ]] && ulimit -Su 3000
 ```
 
 Kills go to `~/Library/Logs/agent-memory-guard.log`, a notification, and, through
