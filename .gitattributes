@@ -37,7 +37,6 @@
 /skills/orchestrator/coordinator/scripts/stack.sh linguist-generated
 /skills/orchestrator/coordinator/scripts/turn_block.py linguist-generated
 /skills/orchestrator/coordinator/scripts/verdicts.py linguist-generated
-/skills/preferences/chief/scripts/turn_block.py linguist-generated
 /skills/preferences/coding-standards/references/taste.md linguist-generated
 /skills/primitive/address-review/references/disclosure.md linguist-generated
 /skills/primitive/address-review/references/format.md linguist-generated
@@ -72,12 +71,6 @@
 /skills/primitive/open-pr/scripts/check-mermaid.mjs linguist-generated
 /skills/primitive/open-pr/scripts/decisions-table.sh linguist-generated
 /skills/primitive/orchestrate/references/t3-delegation.md linguist-generated
-/skills/primitive/reflect/references/format.md linguist-generated
-/skills/primitive/reflect/references/t3-delegation.md linguist-generated
-/skills/primitive/reflect/references/taste.md linguist-generated
-/skills/primitive/reflect/references/views.md linguist-generated
-/skills/primitive/reflect/scripts/t3_child.py linguist-generated
-/skills/primitive/reflect/scripts/transcripts.py linguist-generated
 /skills/primitive/review-loop/references/format.md linguist-generated
 /skills/primitive/review-loop/references/grounding.md linguist-generated
 /skills/primitive/review-loop/references/review-lenses.md linguist-generated

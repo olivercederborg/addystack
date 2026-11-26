@@ -1,6 +1,0 @@
-interface:
-  display_name: "Reflect"
-  short_description: "Turn this session's corrections into approved skill edits"
-  default_prompt: "Use $reflect to find what this session should change in my skills."
-policy:
-  allow_implicit_invocation: false
