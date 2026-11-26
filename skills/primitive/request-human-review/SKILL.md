@@ -94,10 +94,11 @@ allowed to dismiss its own reviews. End with its Outcome line.
 **A rebase that changes nothing**: when this App's latest review approved a head, the base
 branch is the same, and a push since left the PR's own diff byte-identical, the approval
 carries over without a review run.
-`scripts/post-review.py <PR> --carry <approved sha>`, run in the repository's checkout,
-re-proves both, waits for nothing, and approves once the required checks pass on the
-head. Otherwise it posts nothing and says why (`not-carried`, then review as usual) or
-`pending` (try again once the checks finish).
+`scripts/post-review.py <PR> --carry <approved sha> --head <head sha>`, run in the
+repository's checkout, re-proves both, waits for nothing, and approves that head once the
+required checks pass on it. Otherwise it posts nothing and says why (`not-carried`, then
+review as usual), `pending` (try again once the checks finish), or `superseded` (a newer
+push decides).
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a

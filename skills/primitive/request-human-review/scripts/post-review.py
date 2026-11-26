@@ -25,12 +25,13 @@ outcome is approved, changes-requested, needs-human, not-approved (required chec
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
 push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed.
 
-    post-review.py N --carry APPROVED_SHA
+    post-review.py N --carry APPROVED_SHA [--head HEAD_SHA]
 
 re-approves, with no review run, a PR this App approved at APPROVED_SHA whose own diff is
 byte-identical now (gates.own_diff), once its required checks pass on the head. Run it in the
 repository's checkout. Its Outcome is approved (with carried_from), not-carried with why (the
-caller reviews instead), pending (the checks haven't finished; try again later), or superseded.
+caller reviews instead), pending (the checks haven't finished; try again later), or superseded
+(the head isn't HEAD_SHA, or moved before the write; that push decides).
 """
 import argparse
 from datetime import datetime
@@ -239,18 +240,21 @@ def retargeted(number: int, since: str) -> bool:
     return any(at >= datetime.fromisoformat(since.replace('Z', '+00:00')) for at in changed)
 
 
-def carry(number: int, approved: str) -> dict:
+def carry(number: int, approved: str, expected: str | None = None) -> dict:
     """Re-approve a PR whose own diff is byte-identical to the one this App approved at `approved`:
     re-proves the approval and the identical diff, re-reads the PR, head and required checks, then
     approves with no review run. Anything that doesn't hold posts nothing: not-carried says why, so
     the caller reviews instead, and pending means the checks haven't finished, so the caller tries
-    again later."""
+    again later. With `expected`, only that head is carried: a newer one is superseded, so its own
+    push, and its wait, decide what happens to it."""
     viewer = github('viewer').strip()
     if not viewer.endswith('[bot]'):
         raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
     # The base's commit, not only its name: the fingerprints are proved against that one commit.
     current = pr(number, SNAPSHOT)
     head = current['headRefOid']
+    if expected and head != expected:
+        return {'outcome': 'superseded', 'head': head}
     if current['state'] != 'OPEN' or current['isDraft']:
         return {'outcome': 'not-carried', 'head': head, 'why': 'the PR is closed or a draft'}
     if head == approved:
@@ -299,10 +303,13 @@ def main(arguments) -> int:
     parser.add_argument('review', type=Path, nargs='?')
     parser.add_argument('--wait', type=int, default=0, help='seconds to wait for pending required checks')
     parser.add_argument('--carry', metavar='APPROVED_SHA', help="re-approve an unchanged diff this App approved")
+    parser.add_argument('--head', metavar='HEAD_SHA', help='with --carry: carry only onto this head')
     args = parser.parse_args(arguments)
     if (args.review is None) == (args.carry is None):
         parser.error('give REVIEW.json or --carry APPROVED_SHA')
-    outcome = carry(args.number, args.carry) if args.carry else post(args.number, args.review, args.wait)
+    if args.head and not args.carry:
+        parser.error('--head goes with --carry')
+    outcome = carry(args.number, args.carry, args.head) if args.carry else post(args.number, args.review, args.wait)
     print(json.dumps(outcome))
     return 3 if outcome['outcome'] == 'superseded' else 0
 

@@ -247,11 +247,9 @@ class Carry(unittest.TestCase):
 
     APPROVED = 'd' * 40
 
-    compared = []
-
-    def carry(self, fake, *, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('b' * 40,)):
+    def carry(self, fake, *, expected=None, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('b' * 40,)):
         diffs = diffs or {self.APPROVED: 'same', head: 'same'}
-        bases = list(bases)
+        bases, self.compared = list(bases), []
         def pr(number, fields=''):
             return {'headRefOid': head, 'baseRefName': 'main', 'baseRefOid': bases.pop(0) if len(bases) > 1 else bases[0],
                     'state': state, 'isDraft': draft}
@@ -260,7 +258,7 @@ class Carry(unittest.TestCase):
                 patch.object(post_review, 'pr', pr), \
                 patch.object(post_review, 'fetch', lambda *arguments: None), \
                 patch.object(post_review.gates, 'own_diff', lambda base, commit: self.compared.append(base) or diffs[commit]):
-            return post_review.carry(7, self.APPROVED)
+            return post_review.carry(7, self.APPROVED, expected)
 
     def approved_at(self, sha):
         return {'id': 40, 'state': 'DISMISSED', 'commit_id': sha, 'submitted_at': '2026-11-26T10:00:00Z'}
@@ -309,6 +307,12 @@ class Carry(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[3], 'repos/{owner}/{repo}/issues/7/events')
         self.assertIn('automatic_base_change_succeeded', command[5])
+
+    def test_a_head_newer_than_the_caller_expects_is_left_to_its_own_push(self):
+        fake = Fake(approved=self.approved_at(self.APPROVED))
+        self.assertEqual(self.carry(fake, expected=NEWER), {'outcome': 'superseded', 'head': HEAD})
+        self.assertEqual((fake.writes, fake.commands), ([], ['viewer']))
+        self.assertEqual(self.carry(Fake(approved=self.approved_at(self.APPROVED)), expected=HEAD)['outcome'], 'approved')
 
     def test_pending_checks_and_a_moved_head_post_nothing(self):
         pending = Fake(approved=self.approved_at(self.APPROVED), required='ci\tpending\nrequired: not all passed\n')
