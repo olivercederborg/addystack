@@ -34,7 +34,7 @@ def exchanges(payload):
     latest, or None when no prompt of this session can be a go: a T3 delegated child, or in
     T3, a state database it can't read or a session no T3 thread owns. Raises what
     transcripts raises in T3 when it can't tell who sent a message."""
-    in_t3 = bool(os.environ.get("T3CODE_CLI_PATH"))  # where only T3's database tells another agent from the user
+    in_t3 = t3_child.in_t3()  # where only T3's database tells another agent from the user
     try:
         with contextlib.closing(t3_child.connect()) as db:
             owners = t3_child.threads(db, payload.get("session_id"))

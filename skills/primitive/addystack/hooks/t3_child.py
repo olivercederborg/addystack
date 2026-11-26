@@ -8,8 +8,11 @@ Any doubt, such as a missing, locked, or changed database, reads as "not a child
 
 It also lists the messages agents sent into a session's thread, such as an owner's
 `t3_thread_send` report, which a transcript records like a message the user typed;
-transcripts.py drops them."""
-import json, os, pathlib, re, sqlite3
+transcripts.py drops them.
+
+And it says whether T3 started this session (in_t3) and where its CLI is (cli), for the
+hooks that act only in T3."""
+import json, os, pathlib, re, shutil, sqlite3
 
 STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
 # A coordinator's brief names it on its own line, as a link or by name: 51 Mac worker briefs
@@ -17,6 +20,23 @@ STATE_DB = os.environ.get("T3_STATE_DB", "~/.t3/userdata/statev2.sqlite")
 _WORKER_OF = re.compile(r"^Worker of: \S", re.M)
 # A brief line that asks for the user's reply rules, as an eval player that plays their session does.
 OPT_IN = "Reply rules: on"
+
+
+def in_t3():
+    """True when T3 started this session. On Nov 26, 2026 (t3 v0.1.13), T3's desktop app set
+    T3CODE_CLI_PATH on what it starts, Codex's app-server included, and T3CODE_THREAD_ID on
+    each Claude Code session; a linked machine's T3 server set only T3CODE_THREAD_ID there,
+    and Codex passes only T3CODE_THREAD_ID to a thread's commands, through its per-thread
+    shell config. T3's terminal panel sets neither."""
+    return bool(os.environ.get("T3CODE_CLI_PATH") or os.environ.get("T3CODE_THREAD_ID"))
+
+
+def cli():
+    """The path of the T3 CLI to run, or None: T3CODE_CLI_PATH, or, in a session T3 started
+    without it, `t3` on PATH, where a linked machine installs it."""
+    if not in_t3():
+        return None
+    return os.environ.get("T3CODE_CLI_PATH") or shutil.which("t3")
 
 
 def rules_on(brief):

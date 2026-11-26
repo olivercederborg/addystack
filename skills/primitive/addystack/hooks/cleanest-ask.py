@@ -41,7 +41,7 @@ note (`withMessageSenderNote`), so the agent gets the command's body, the same s
 the user types. T3's database still records the message as an agent's, and the command's
 text matches no go, so the gates that read the user's latest prompt grant nothing on it.
 
-It sends with `t3 thread send <thread> /cleanest` (T3CODE_CLI_PATH), which queues it as
+It sends with `t3 thread send <thread> /cleanest` through t3_child.cli, which queues it as
 the thread's next turn. It never blocks the reply and prints nothing: on any doubt or
 error it doesn't send; a send it records before running the CLI, so one whose answer is
 lost still counts, and then holds the thread's later runs too. Once a card that can fire
@@ -248,7 +248,8 @@ def check_run(found, path, thread, session, scope):
 
 
 def decide(payload, scope):
-    """The thread to send /cleanest to, and how many prompts the session holds; raises Skip."""
+    """The thread to send /cleanest to, how many prompts the session holds, and the T3 CLI to
+    send it with; raises Skip."""
     try:
         turn = turn_block.parse(payload.get("last_assistant_message") or "")
     except turn_block.Malformed as error:
@@ -278,9 +279,10 @@ def decide(payload, scope):
         raise Skip(f"{COMMAND} isn't installed; run addystack install", thread) from None
     if not installed:
         raise Skip(f"commands/cleanest.md in {home} isn't the kit's {COMMAND}", thread)
-    if not os.environ.get("T3CODE_CLI_PATH"):
-        raise Skip("no T3 CLI (T3CODE_CLI_PATH)", thread)
-    return thread, len(found)
+    cli = t3_child.cli()
+    if not cli:
+        raise Skip("no T3 CLI (T3CODE_CLI_PATH, or t3 on PATH)", thread)
+    return thread, len(found), cli
 
 
 def run_id(output):
@@ -332,13 +334,13 @@ def main():
     payload = {}
     try:
         payload = json.load(sys.stdin)
-        thread, prompts = decide(payload, scope)
+        thread, prompts, cli = decide(payload, scope)
         send = {"session": payload.get("session_id"), "thread": thread, "send": uuid.uuid4().hex, "prompts": prompts}
         # Recorded first, so a send whose answer is lost still counts; none without a record.
         if not log({**send, "sent": True, "run": None}, scope):
             return
         try:
-            sent = subprocess.run([os.environ["T3CODE_CLI_PATH"], "thread", "send", "--json", thread, COMMAND],
+            sent = subprocess.run([cli, "thread", "send", "--json", thread, COMMAND],
                                   capture_output=True, text=True, timeout=20)
         except subprocess.TimeoutExpired:
             log({**send, "sent": True, "run": None, "reason": "t3 thread send timed out; counted as sent"}, scope)

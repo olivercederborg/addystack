@@ -2,7 +2,7 @@
 check whether it denies."""
 import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
 
-import hook_parity, merge_go, resolved, transcripts, turn_block, verdicts, workflow_triggers
+import hook_parity, merge_go, resolved, t3_child, transcripts, turn_block, verdicts, workflow_triggers
 
 try:
     from markdown_it import MarkdownIt
@@ -208,6 +208,39 @@ class KeychainHomeGuard(unittest.TestCase):
                 subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"tool_input": {"command": command}}),
                                capture_output=True, text=True, timeout=2, check=True)
 
+class T3Session(unittest.TestCase):
+    """t3_child.in_t3 and cli, from the variables T3 set on each machine on Nov 26, 2026."""
+    DESKTOP_CLI = "/Applications/T3.app/bin/t3"
+
+    def session(self, env, on_path=True):
+        """(in_t3, cli) with env's T3 variables, "PATH" for a cli that's `t3` on PATH."""
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        pathlib.Path(folder, "t3").write_text("#!/bin/sh\n")
+        os.chmod(os.path.join(folder, "t3"), 0o755)
+        rest = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
+        path = folder if on_path else "/nonexistent"
+        with unittest.mock.patch.dict(os.environ, {**rest, "PATH": path, **env}, clear=True):
+            cli = t3_child.cli()
+            return t3_child.in_t3(), "PATH" if cli == os.path.join(folder, "t3") else cli
+
+    def test_finds_t3_and_its_cli_where_t3_started_the_session(self):
+        thread = {"T3CODE_THREAD_ID": "mcp:launch:a"}
+        cases = [
+            ("the Mac's desktop app, whose CLI wins over PATH", {**thread, "T3CODE_CLI_PATH": self.DESKTOP_CLI},
+             True, (True, self.DESKTOP_CLI)),
+            ("a linked machine's T3 server", {**thread, "T3CODE_HOME": "/home/u/.t3"}, True, (True, "PATH")),
+            ("a linked machine without t3 on PATH", {**thread, "T3CODE_HOME": "/home/u/.t3"}, False, (True, None)),
+            ("the Mac's Codex app-server", {"T3CODE_CLI_PATH": self.DESKTOP_CLI}, True, (True, self.DESKTOP_CLI)),
+            ("a Codex thread's commands", {**thread, "T3CODE_PROJECT_ROOT": "/p"}, True, (True, "PATH")),
+            ("a terminal, T3's panel included", {}, True, (False, None)),
+            ("T3's own server processes", {"T3CODE_HOME": "/home/u/.t3"}, True, (False, None)),
+        ]
+        for name, env, on_path, expected in cases:
+            with self.subTest(name):
+                self.assertEqual(self.session(env, on_path), expected)
+
+
 class ChildFastModeOff(unittest.TestCase):
     HOOK = "child-fast-mode-off.py"
     SESSION = "sess-parent"
@@ -359,8 +392,14 @@ class ChildFastModeOff(unittest.TestCase):
                 self.assertEqual(set(out), {"hookEventName", "updatedInput"})
 
     def test_outside_t3_nothing_happens(self):
-        env = {k: v for k, v in self.env.items() if k != "T3CODE_CLI_PATH"}
+        env = {k: v for k, v in self.env.items() if k not in ("T3CODE_CLI_PATH", "T3CODE_THREAD_ID")}
         self.assertIsNone(self.run_on("delegate_task", {"task": "t"}, env=env))
+
+    def test_runs_where_t3_names_the_thread_but_sets_no_cli_path(self):
+        # A linked machine's T3 server, on Nov 26, 2026.
+        env = {**{k: v for k, v in self.env.items() if k != "T3CODE_CLI_PATH"}, "T3CODE_THREAD_ID": "thread-parent"}
+        self.assertEqual(self.updated("delegate_task", {"task": "t"}, env=env),
+                         {"task": "t", "target": {"options": {"fastMode": False}}})
 
     def test_never_crashes(self):
         for tool, tool_input in (("delegate_task", {"task": "t", "target": {"options": [{"id": "effort", "value": "x"}]}}),
@@ -404,7 +443,7 @@ class UnwatchGate(unittest.TestCase):
         os.makedirs(bin_dir)
         pathlib.Path(bin_dir, "gh").write_text(FAKE_WATCH_GH)
         os.chmod(os.path.join(bin_dir, "gh"), 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
         self.gh = os.path.join(self.dir, "scenario.json")
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=self.gh,
                         T3_STATE_DB="/nonexistent")
@@ -803,6 +842,17 @@ class CleanestAsk(CleanestAskCase):
             with self.subTest(name):
                 self.assertEqual(self.stop((self.ASK, card()), env=env), [])
         self.assertEqual(self.log(), [])
+
+    def test_sends_through_t3_on_path_where_t3_sets_no_cli_path(self):
+        # A linked machine's T3 server sets T3CODE_THREAD_ID and T3CODE_HOME, and puts t3 on PATH (Nov 26, 2026).
+        linked = {"T3CODE_CLI_PATH": "", "T3CODE_HOME": str(self.dir), "PATH": f"{self.dir}:{os.environ['PATH']}"}
+        self.assertEqual(self.stop((self.ASK, card()), env=linked), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
+        self.assertEqual(self.log()[-1]["sent"], True)
+        self.fresh()
+        without_t3 = os.pathsep.join(folder for folder in os.environ["PATH"].split(os.pathsep)
+                                     if not os.access(os.path.join(folder, "t3"), os.X_OK))
+        self.assertEqual(self.stop((self.ASK, card()), env={**linked, "PATH": without_t3}), [])
+        self.assertEqual(self.log()[-1]["reason"], "no T3 CLI (T3CODE_CLI_PATH, or t3 on PATH)")
 
     def test_stays_silent_when_it_cant_send(self):
         self.assertEqual(self.stop((self.ASK, card()), env={"T3_FAIL": "1"}), [f"thread|send|--json|{self.THREAD}|/cleanest|"])
@@ -1990,7 +2040,7 @@ class MergeGate(unittest.TestCase):
         with open(gh, "w") as f:
             f.write(FAKE_GH)
         os.chmod(gh, 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k != "T3CODE_CLI_PATH"}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}",
                         FAKE_GH=os.path.join(self.dir, "scenario.json"), T3_STATE_DB="/nonexistent",
                         # Nothing built here, so the kit's defaults (trust draft) until a test calls trust().
@@ -2275,6 +2325,10 @@ class MergeGate(unittest.TestCase):
                 self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=("merge it",)))  # no session id to look up
         del self.env["T3CODE_CLI_PATH"]
         self.env["T3_STATE_DB"] = "/nonexistent"
+        # A linked machine's T3 server names the thread but sets no CLI path: still T3, so no go.
+        self.env["T3CODE_THREAD_ID"] = "thread:main"
+        self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=("merge it",)))
+        del self.env["T3CODE_THREAD_ID"]
         self.scenario(prs={12: "FAILURE", 13: None})
         self.assertIn("#12 checks are failure", self.reason("gh stack merge", said=("merge them",)))
         self.assertIn("#13 has no Done verdict", self.reason("gh stack merge", said=("merge them",)))
@@ -4421,7 +4475,7 @@ class PushGate(unittest.TestCase):
         os.makedirs(bin_dir)
         pathlib.Path(bin_dir, "gh").write_text(FAKE_PUSH_GH)
         os.chmod(os.path.join(bin_dir, "gh"), 0o755)
-        outside_t3 = {k: v for k, v in os.environ.items() if k not in ("T3CODE_CLI_PATH", "GIT_DIR", "GIT_INDEX_FILE")}
+        outside_t3 = {k: v for k, v in os.environ.items() if not k.startswith("T3CODE_") and k not in ("GIT_DIR", "GIT_INDEX_FILE")}
         self.env = dict(outside_t3, PATH=f"{bin_dir}:{os.environ['PATH']}", FAKE_GH=os.path.join(self.dir, "scenario.json"),
                         T3_STATE_DB="/nonexistent", GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t",
                         GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")

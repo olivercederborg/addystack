@@ -161,7 +161,7 @@ def rewrite(tool, tool_input, session_id):
 
 def main():
     # Outside T3 Code there are no T3 threads to start.
-    if not os.environ.get("T3CODE_CLI_PATH"):
+    if not t3_child.in_t3():
         return
     payload = json.load(sys.stdin)
     tool, tool_input = payload.get("tool_name"), payload.get("tool_input")
