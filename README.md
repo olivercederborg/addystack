@@ -69,7 +69,8 @@ flags notes whose skill changed.
 In a git checkout of the kit, `update` fast-forwards the branch you're on. It leaves the
 checkout as it is, says why, and still installs when it can't: uncommitted changes, no
 upstream, or commits the upstream lacks. A checkout detached at a release tag moves to
-the newest tag, and `--to TAG` checks out that `v*` tag.
+the newest tag, and `--to TAG` checks out that `v*` tag. Skills linked from the checkout
+whose folder the kit dropped lose their links when `install` runs.
 
 ## Working on the kit
 

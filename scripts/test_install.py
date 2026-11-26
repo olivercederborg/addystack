@@ -390,6 +390,56 @@ class Command(Home):
         self.assertEqual(self.snapshot(), before)
 
 
+class SkillLinks(Home):
+    """Install removes each enabled host's link to a skill the kit's checkout dropped, as a
+    maintainer's linked checkout leaves one after a pull, and leaves every other link."""
+
+    def setUp(self):
+        super().setUp()
+        self.claude, self.agents = self.home / ".claude/skills", self.home / ".agents/skills"
+
+    def drop(self, name, target):
+        """Links name as a maintainer does: the skills CLI's folder at target, and Claude Code's
+        folder through it."""
+        (self.agents / name).symlink_to(target)
+        (self.claude / name).symlink_to(f"../../.agents/skills/{name}")
+
+    def test_removes_both_links_to_a_dropped_skill_and_a_second_install_changes_none(self):
+        gone = KIT.parent / "dropped"
+        self.drop("dropped", gone)
+        out = self.ok("install").stdout
+        for link in (self.claude / "dropped", self.agents / "dropped"):
+            self.assertIn(f"changed {link} (skill-link)\n  removes it: the kit has no dropped skill at", out)
+            self.assertFalse(os.path.lexists(link))
+        self.assertNotIn("(skill-link)", self.ok("install").stdout)
+
+    def test_removes_a_link_to_a_folder_only_untracked_files_keep_in_the_checkout_the_last_build_recorded(self):
+        old = self.home / "old/skills"
+        (old / "primitive/dropped/scripts/__pycache__").mkdir(parents=True)
+        self.write(self.state / "resolved.json", json.dumps({"kit": str(old / "primitive/addystack")}))
+        self.drop("dropped", old / "primitive/dropped")
+        self.ok("install")
+        self.assertFalse(os.path.lexists(self.claude / "dropped"))
+        self.assertFalse(os.path.lexists(self.agents / "dropped"))
+
+    def test_leaves_a_kit_skill_a_users_link_and_a_disabled_hosts_folder(self):
+        # A kit skill linked at an old layer's path is doctor's to name, not install's to drop.
+        (self.claude / "correct").unlink()
+        (self.claude / "correct").symlink_to(KIT.parents[1] / "optional/correct")
+        (self.claude / "mine").symlink_to(self.home / "my-skills/gone")
+        (self.agents / "dropped").symlink_to(KIT.parent / "dropped")
+        self.write(self.config, json.dumps({"hosts": {"codex": False}}))
+        self.assertNotIn("(skill-link)", self.cli("install").stdout)
+        for link in (self.claude / "correct", self.claude / "mine", self.agents / "dropped"):
+            self.assertTrue(link.is_symlink(), link)
+
+    def test_dry_run_previews_the_removal_and_writes_nothing(self):
+        self.drop("dropped", KIT.parent / "dropped")
+        before = self.snapshot()
+        self.assertIn(f"would change {self.claude / 'dropped'} (skill-link)", self.ok("install", "--dry-run").stdout)
+        self.assertEqual(self.snapshot(), before)
+
+
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so
     install writes Claude Code's hooks, agent link, and CLAUDE.md there; unset or blank,

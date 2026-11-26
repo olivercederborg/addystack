@@ -4,6 +4,14 @@
 It never installs or links a skill: skills install with `npx skills add`, and doctor
 accepts that install or a maintainer's linked checkout.
 
+Skill links: a maintainer links skills from the checkout, so once the kit drops a skill,
+its links stay in each host's skill folder, dangling or at a folder that only untracked
+files such as __pycache__ keep. So in each enabled host's skill folder, install removes a
+link with no SKILL.md behind it that leads, itself or through another link, into the kit
+checkout's skills/<layer>/ (or the checkout the last build recorded, when it moved), when
+the kit has no skill of that name; one it still has is doctor's to name. Any other link
+stays. An npx skills install's dropped skills are update's to remove (_update_skills).
+
 Hooks: each enabled host's settings get the hooks hookset.select picks, merged with
 hookset.merge into Claude Code's settings.json `hooks` key and Codex's
 ~/.codex/hooks.json (hookset.settings_path), so every hook addystack didn't install stays where it
@@ -53,6 +61,7 @@ import config
 import hookset
 import render
 import resolved as _resolved
+import skill_layer
 import skills_cli
 from config import Resolved
 
@@ -81,7 +90,7 @@ _GLOBAL = config.GLOBAL
 class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
-    kind: Literal["hooks", "adopt-instructions", "agent", "command"]
+    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link"]
     target: Path
     detail: str
     left: bool = False
@@ -100,7 +109,7 @@ def run(resolved: Resolved) -> List[Change]:
             _link(change.target, agent_source())
         elif change.kind == "command" and not change.left and change.source:
             _link(change.target, change.source)
-        elif change.kind == "command" and not change.left:
+        elif change.kind in ("command", "skill-link") and not change.left:
             os.unlink(change.target)
     return changes
 
@@ -122,7 +131,44 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
-    return changes + ([agent] if agent else []) + _commands(resolved), writes
+    return changes + ([agent] if agent else []) + _commands(resolved) + _skill_links(resolved), writes
+
+
+def _skill_links(resolved: Resolved) -> List[Change]:
+    """The removal of each enabled host's link to a skill the kit's checkout dropped; see
+    Skill links above."""
+    kit = Path(resolved["kit"])
+    trees = {os.path.realpath(tree) for tree in map(_skill_tree, [str(kit), *_moved_kits(resolved)]) if tree}
+    changes = []
+    for host in ("claude", "codex"):
+        folder = skills_cli.folder(host)
+        if not resolved["hosts"].get(host) or not folder.is_dir():
+            continue
+        for link in sorted(folder.iterdir()):
+            if not link.is_symlink() or (link / "SKILL.md").is_file() or skill_layer.folder(kit, link.name):
+                continue
+            gone = next((hop for hop in _hops(link) if os.path.realpath(hop.parent.parent) in trees), None)
+            if gone:
+                changes.append(Change("skill-link", link, f"removes it: the kit has no {link.name} skill at "
+                                                          f"{render._home(gone)}"))
+    return changes
+
+
+def _skill_tree(kit: str) -> Optional[str]:
+    """A kit checkout's skills/ folder, the addystack skill's grandparent, or None for a kit
+    the skills CLI installed, whose skills it removes itself."""
+    tree = Path(os.path.abspath(os.path.expanduser(kit))).parents[1]
+    return str(tree) if tree.name == "skills" else None
+
+
+def _hops(link: Path) -> List[Path]:
+    """Each path link leads to, one link at a time, for at most 40 links, as the system
+    follows them."""
+    hops, path = [], link
+    while path.is_symlink() and len(hops) < 40:
+        path = Path(os.path.normpath(path.parent / os.readlink(path)))
+        hops.append(path)
+    return hops
 
 
 def _commands(resolved: Resolved) -> List[Change]:
