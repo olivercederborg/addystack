@@ -16,13 +16,14 @@ after a push or a new PR. unwatch-gate.py keeps such a watch on afterwards.
 It reads the command as the gates do, with heredoc bodies and quoted strings taken out
 (shell_dirs), so a `gh pr ready` the shell only writes or prints doesn't remind, nor does a
 command that also merges (`gh pr merge` without `--auto`, or `gh stack merge`), whichever
-PR it merges. A `bash -c '...'` or `ssh host '...'` it runs is missed. A T3 delegated child
-gets no reminder: the thread it reports to owns the watch. It never blocks: on any input it
-doesn't expect, it adds nothing."""
+PR it merges. Known limits, which no command Nov 12-26, 2026 hit: a `bash -c '...'`, an `ssh
+host '...'`, or a `"$(...)"` it runs is missed, and a merge that may not run, as after
+`false &&`, still silences it. A T3 delegated child gets no reminder: the thread it
+reports to owns the watch. It never blocks: on any input it doesn't expect, it adds nothing."""
 import json, pathlib, re, sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from shell_dirs import HEREDOC, MERGE, NOT_A_MERGE, QUOTED  # noqa: E402
+from shell_dirs import MERGE, NOT_A_MERGE, QUOTED, heredocs_removed, switches  # noqa: E402
 
 BASH = re.compile(r"\bgh\s+pr\s+(?:ready\b(?![^\n;&|]*--undo)|reopen\b)"
                   r"|\bgh\s+pr\s+edit\b[^\n;&|]*--add-reviewer\b"
@@ -52,8 +53,8 @@ def waits_on_reviewers(tool, tool_input):
     if tool == "Bash":
         if not isinstance(tool_input.get("command"), str):
             return False
-        run = QUOTED.sub("''", HEREDOC.sub("", tool_input["command"]))
-        merges = any(not WAITS & set(found.group(2).split()) for found in MERGE.finditer(run))
+        run = QUOTED.sub("''", heredocs_removed(tool_input["command"]))
+        merges = any(not WAITS & switches(found.group(2).split()) for found in MERGE.finditer(run))
         return bool(BASH.search(run)) and not merges
     return False
 

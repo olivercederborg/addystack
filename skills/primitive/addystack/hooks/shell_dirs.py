@@ -20,13 +20,27 @@ ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 MOVES = ("cd", "pushd", "popd")
 OPAQUE = ("eval", "source", ".")  # run code in this shell that the gate doesn't read, which may cd
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands: a hook
-# drops HEREDOC and puts '' for QUOTED, which reads as unreadable().
-HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", re.S)
+# reads a command through heredocs_removed and puts '' for QUOTED, which reads as unreadable().
+# A heredoc's body ends at a line holding only its delimiter, and the rest of the line that
+# opens it is still the command.
+HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?(?P<rest>[^\n]*)\n(?:.*?\n)??[ \t]*\1[ \t]*(?=\n|$)", re.S)
 QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
 # Each merge a command runs, its arguments in group 2, except with NOT_A_MERGE's flags: --help
 # only prints, and --disable-auto only turns auto-merge off.
 MERGE = re.compile(r"\bgh\s+(pr|stack)\s+merge\b([^;&|\n]*)")
 NOT_A_MERGE = {"-h", "--help", "--disable-auto"}
+TRUE = {"1", "t", "T", "true", "TRUE", "True"}  # what gh's pflag reads as a boolean flag's true
+
+
+def heredocs_removed(command):
+    """command with each heredoc's body taken out, keeping the line that opens it."""
+    return HEREDOC.sub(r"\g<rest>", command)
+
+
+def switches(args):
+    """The flags args turns on, as pflag reads a boolean: `--auto` and `--auto=true` are on,
+    `--auto=false` isn't."""
+    return {name for name, equals, value in (arg.partition("=") for arg in args) if not equals or value in TRUE}
 # A piece that may move a branch or a PR's head, so a gate that read the heads before the
 # command ran can't trust them past it (ready-gate.py, push-gate.py).
 BRANCH_MOVES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:commit|push|pull|rebase|reset|merge|cherry-pick|am|revert|checkout|switch)\b"

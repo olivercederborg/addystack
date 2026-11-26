@@ -83,12 +83,12 @@ PUSHY = re.compile(r"\bpush\b|\bsubmit\b|\bsync\b")
 if not PUSHY.search(command):  # most commands: no parse, no gh
     passes(NO_PUSH)
 
-from shell_dirs import ASSIGNMENT, BRANCH_MOVES, HEREDOC, QUOTED, Walk
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, QUOTED, Walk, heredocs_removed
 
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
 # quoted single word ('feat/x') is an argument, so it keeps its value, unless it starts with
 # #, which would then read as a comment.
-code = HEREDOC.sub("", command)
+code = heredocs_removed(command)
 code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*)\"", lambda m: m.group(1) or m.group(2) or "''", code)
 code = QUOTED.sub("''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
