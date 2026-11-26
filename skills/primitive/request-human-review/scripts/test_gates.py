@@ -145,6 +145,14 @@ class OwnDiff(unittest.TestCase):
         # The approved head reads the same against the moved base, since its merge base is still the old one.
         self.assertEqual(gates.own_diff(self.rev('main'), self.approved, str(self.repo)), before)
 
+    def test_paths_that_differ_only_by_a_carriage_return_or_newline_differ(self):
+        fingerprints = []
+        for name, path in (('cr', 'one\rname'), ('lf', 'one\nname')):
+            self.git('switch', '-q', '-c', name, self.base)
+            self.commit(path, 'same\n')
+            fingerprints.append(gates.own_diff(self.base, self.rev('HEAD'), str(self.repo)))
+        self.assertNotEqual(*fingerprints)
+
     def test_a_mode_or_a_binary_byte_changes_it(self):
         before = gates.own_diff(self.base, self.approved, str(self.repo))
         self.git('update-index', '--chmod=+x', 'feature.txt')

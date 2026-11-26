@@ -81,11 +81,11 @@ def own_diff(base: str, head: str, cwd: str = '.') -> str:
     raw tree diff, where each changed path carries both modes and both blob ids, and a blob id is
     the hash of the file's bytes, so no file needs reading."""
     def git(*arguments):
-        return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
-                              timeout=120).stdout
-    fork = git('merge-base', base, head).strip()
+        # Bytes: text mode would turn a path's carriage return into a newline before hashing.
+        return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, check=True, timeout=120).stdout
+    fork = git('merge-base', base, head).decode().strip()
     raw = git('diff-tree', '-r', '--no-renames', '--no-abbrev', '--full-index', '-z', fork, head)
-    return hashlib.sha256(raw.encode()).hexdigest()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def gated(verdict: dict) -> list:
