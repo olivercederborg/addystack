@@ -193,7 +193,7 @@ elif a.startswith("api graphql") and "viewer" in a and os.environ.get("VIEWER_FA
 elif a.startswith("api graphql") and "viewer" in a:
     print("reviewer-app[bot]")
 elif a.startswith("api --paginate repos/o/r/issues/7/timeline") and "review_dismissed" in a:
-    print('{"review_id":4,"state":"approved"}')
+    print('{"review_id":"4","state":"approved"}')
     print('{"review_id":5,"state":"changes_requested"}')
 elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"reviewer-app[bot]"' in a and '"PENDING"' in a:
     print('{"id":1,"state":"APPROVED","commit_id":"abc"}')

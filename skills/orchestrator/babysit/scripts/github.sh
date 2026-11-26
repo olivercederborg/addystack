@@ -349,11 +349,12 @@ PY
       | python3 -c '
 import json, sys
 reviews = [json.loads(line) for line in sys.stdin if line.strip()]
-was = {entry["review_id"]: entry["state"] for entry in map(json.loads, filter(str.strip, open(sys.argv[1])))}
+# GitHub documents a dismissal'"'"'s review_id as a string and a review'"'"'s id as a number.
+was = {str(entry["review_id"]): entry["state"] for entry in map(json.loads, filter(str.strip, open(sys.argv[1])))}
 decisive = [review for review in reviews if review["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
 active = decisive[-1] if decisive and decisive[-1]["state"] != "DISMISSED" else None
 approvals = [review for review in reviews if review["state"] == "APPROVED"
-             or review["state"] == "DISMISSED" and was.get(review["id"]) == "approved"]
+             or review["state"] == "DISMISSED" and was.get(str(review["id"])) == "approved"]
 if reviews:
     print(json.dumps({**reviews[-1], "active": active, "approved": approvals[-1] if approvals else None}))' "$dismissed"
     rm -f "$dismissed"
