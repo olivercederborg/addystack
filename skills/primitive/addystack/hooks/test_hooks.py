@@ -566,14 +566,14 @@ class WatchReminder(unittest.TestCase):
                 self.assertEqual((out.returncode, out.stdout), (0, ""))
 
 
-def card(state="stop", kinds=("review",), classes=("stop:post", "routine"), needs=None, text="Post the review"):
+def card(state="stop", kinds=("review",), classes=("stop:post", "routine"), needs=None):
     """A reply ending on a turn block in this state, with a need of each kind, or a decide need
-    for each (id, name) in needs, and an option of each class, option a's text being text."""
+    for each (id, name) in needs, and an option of each class."""
     needs = needs or [(n + 1, "Review the drafted comments") for n in range(len(kinds))]
     kinds = kinds if len(kinds) == len(needs) else ("decide",) * len(needs)
     block = {"state": state} if state == "done" else {
         "state": state, "needs": [{"id": number, "kind": kind, "name": name} for (number, name), kind in zip(needs, kinds)],
-        "options": [{"key": "abc"[n], "class": cls, "text": text if n == 0 else "Hold it"} for n, cls in enumerate(classes)]}
+        "options": [{"key": "abc"[n], "class": cls, "text": "Post the review"} for n, cls in enumerate(classes)]}
     if state == "running":
         block = {"state": "running", "elapsed": "2m"}
     return f"Here's the review.\n\n<!-- turn {json.dumps(block)} -->"
@@ -870,8 +870,8 @@ class CleanestAskImplementation(CleanestAskCase):
     RESULT = "Delegated task node:delegated-task:w1 (token store) [completed]:\nPushed #6110."
     SENT = "thread|send|--json|mcp:launch:coord-effect|/cleanest|"
 
-    def card(self, state="stop", kinds=("decide",), classes=("decision", "decision"), needs=None, text="Post the review"):
-        return card(state, kinds, classes, needs, text)
+    def card(self, state="stop", kinds=("decide",), classes=("decision", "decision"), needs=None):
+        return card(state, kinds, classes, needs)
 
     def test_sends_where_option_a_decides_merges_or_pushes(self):
         for cls in IMPLEMENTATION_CLASSES:
