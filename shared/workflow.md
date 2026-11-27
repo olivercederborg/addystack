@@ -121,8 +121,13 @@ review at once, since it may have posted before the watch, and again on each wak
 - **Needs a human**: its latest review's body, in `scripts/github.sh feedback <N>`,
   carries **Needs a human**. That's the App's handoff: a person approves in its place.
   Report the decisions it names to the user, and don't request a reviewer; that stays a
-  stop. Then wait for that person's approval of the head (`gh pr view <N> --json
-  reviewDecision` reads `APPROVED`), which leads to the merge line as the App's would.
+  stop. Then wait for a person's approval of the head: `scripts/github.sh reviewed <N>
+  <login>`, for a login `gh pr view <N> --json latestReviews` lists, has an `active`
+  approval whose `commit_id` is the head. It leads to the merge line as the App's would.
+- **Not approved**: the body names required checks that failed or didn't finish. Fix
+  them as any failed check; the push starts the App's re-review. When they pass without
+  a push, such as on a rerun, the App doesn't review again: tell the user it needs a new
+  review, and keep waiting.
 - **Pushed since**: a push can dismiss the App's approval and starts its re-review, so
   wait for its review of the new head.
 
