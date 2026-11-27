@@ -1035,9 +1035,9 @@ class CheckQueue(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             q = Queue(self, cap=1, state="/dev/null/nowhere/check-queue.json")
             q.tick(q.check(1), q.check(2))
-        self.assertEqual(q.sent, [])
-        self.assertIn("couldn't save a held unit", stderr.getvalue())
-        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+            self.assertEqual(q.sent, [])
+            self.assertIn("couldn't save a held unit", stderr.getvalue())
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
         self.assertEqual(q.sent, [])  # the file still can't be written, so check 3 runs too
 
     def test_a_failed_write_after_a_resume_never_strands_the_unit(self):
