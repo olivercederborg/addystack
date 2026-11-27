@@ -557,8 +557,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     if busy:
         return [], {**state, "threads": threads}
     events = []
+    saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
     for ref in sorted(refs):
-        known = state.get("prs", {}).get(ref)
+        known = saved.get(ref)
         prs[ref] = view(ref) or known
         if prs[ref] is known:
             _warn(f"tick: can't read PR {ref}")
@@ -571,7 +572,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
-    kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
+    kept = {**saved, **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 

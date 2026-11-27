@@ -343,6 +343,16 @@ class Tick(unittest.TestCase):
         self.assertIn("the tick timer hasn't run in 20 minutes", result.stdout)
         self.assertIn("- remote: its thread is on another machine", result.stdout)
 
+    def test_a_pr_saved_in_mixed_case_keeps_its_news(self):
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none"})
+        self.tick("--send")
+        state = self.state()
+        state["prs"] = {key.replace("acme/app", "Acme/App"): value for key, value in state["prs"].items()}
+        (self.dir / "tick.json").write_text(json.dumps(state))
+        self.prs["acme/app#12"]["state"] = "MERGED"
+        self.tick("--send")
+        self.assertIn("- acme/app#12: merged\n", self.sent()[0]["message"], "a tick.json from before lowercase refs")
+
     def test_failed_reads_are_named_on_stderr(self):
         del self.prs["acme/app#12"]
         self.assertIn("tick: can't read PR acme/app#12", self.tick("--send").stderr)

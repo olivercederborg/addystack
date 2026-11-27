@@ -158,7 +158,8 @@ class Pulls(unittest.TestCase):
                  # Review round 1: a link by its destination, and one repo whatever its case.
                  ("[Review fixes](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
                  ("[#109](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
-                 ("Acme/Box#20 acme/box#21", ("acme/box#20", "acme/box#21"))]
+                 ("Acme/Box#20 acme/box#21", ("acme/box#20", "acme/box#21")),
+                 ('[#109](https://github.com/acme/tools/pull/109 "tools PR")', ("acme/tools#109",))]  # a titled link
         for text, refs in cases:
             with self.subTest(text):
                 self.assertEqual(project_md.pulls(text, "acme/box"), project_md.Pulls(refs, ()))

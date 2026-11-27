@@ -24,7 +24,7 @@ def ranges(text):
 
 
 UNREAD = re.compile(r"(?<![\w/.#-])[\w.-]*[^\W_][\w./-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")  # `web #20`, `acme/web #20–#22`
-LINKED = re.compile(r"\[[^\]\n]*\]\(([^()\s]*)\)")  # a Markdown link names its destination, not its label
+LINKED = re.compile(r"\[[^\]\n]*\]\(<?([^()\s<>]*)>?(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\)")  # a link names its destination
 
 
 class Pulls(NamedTuple):
