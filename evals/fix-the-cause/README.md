@@ -24,8 +24,8 @@ Each arm loads the kit text a live session loads: the router and principles inde
 arms from addystack revisions, then start each trial with its arm's folder:
 
 ```sh
-evals/fix-the-cause/arms.py ~/Developer/personal/addystack --check
-evals/fix-the-cause/arms.py ~/Developer/personal/addystack /tmp/skill-evals/<change> current=origin/main new=<branch>
+evals/fix-the-cause/arms.py . --check
+evals/fix-the-cause/arms.py . /tmp/skill-evals/<change> current=origin/main new=<branch>
 maintainer/evals.py start fix-the-cause-in-scope <id> /tmp/skill-evals/<change>/<arm>/t1 --variant /tmp/skill-evals/<change>/variants/<arm>
 ```
 

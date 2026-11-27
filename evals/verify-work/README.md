@@ -77,7 +77,7 @@ that state folder in place of `~/.local/state/addystack`.
 
 ## Calibration
 
-Regression cases for the calibration in [`agents/work-verifier.md`](../../agents/work-verifier.md),
+Regression cases for the calibration in [`agents/work-verifier.md`](../../skills/primitive/verify-work/agents/work-verifier.md),
 each from a past T3 claim that a later message contradicted, mined read-only from the
 T3 database; each scenario's `source` names the thread, date, and message ids.
 `./setup-calibration.sh <case> /tmp/vw-calib-<case>` builds one repo with `ISSUE.md`

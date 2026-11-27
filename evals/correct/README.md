@@ -35,7 +35,7 @@ corrected.
 `/tmp/correct-eval-t3.sqlite` holds T3's three tables with the two spacing corrections, a
 one-off branch rename, and rows that must be dropped: agent-sent notes (two about named
 exports), an assistant reply, a task notification, injected AGENTS.md text, and another
-project's message. `"$(python3 maintainer/kit_path.py)/skills/primitive/correct/scripts/corrections.py" --db`, run from the workshop root, reads it.
+project's message. `"$(python3 maintainer/kit_path.py)/skills/primitive/correct/scripts/corrections.py" --db`, run from the repo root, reads it.
 
 `/tmp/correct-eval-exception` is the repo after the class-A rule shipped on main (its own
 origin), with its AGENTS.md ratchet bullets, on `feature/sync-retry`, which adds one new

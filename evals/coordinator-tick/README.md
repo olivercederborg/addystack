@@ -20,7 +20,7 @@ python3 dbdump.py ~/.t3/userdata/statev2.sqlite < $OUT/refs_mac.json > $OUT/hist
 ssh devbox 'cat > /tmp/dbdump.py' < dbdump.py
 ssh devbox 'python3 /tmp/dbdump.py ~/.t3/userdata/statev2.sqlite' < $OUT/refs_devbox.json > $OUT/hist_devbox.json
 python3 timelines.py $OUT
-python3 replay.py $OUT ~/Developer/personal/addystack/skills/orchestrator/coordinator/scripts 2>/dev/null
+python3 replay.py $OUT ../../skills/orchestrator/coordinator/scripts 2>/dev/null
 python3 analyze.py $OUT
 python3 designs.py $OUT
 ```

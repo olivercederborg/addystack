@@ -45,7 +45,7 @@ decide its pick: a build-now pick for an A case, a hold for a B case.
 Build the arms as `fix-the-cause` does, under neutral names, then start each trial:
 
 ```sh
-evals/fix-the-cause/arms.py ~/Developer/personal/addystack /tmp/skill-evals/<change> X=origin/main Y=<branch>
+evals/fix-the-cause/arms.py . /tmp/skill-evals/<change> X=origin/main Y=<branch>
 maintainer/evals.py start build-now <id> /tmp/skill-evals/<change>/<arm>/t1 --variant /tmp/skill-evals/<change>/variants/<arm>
 ```
 
