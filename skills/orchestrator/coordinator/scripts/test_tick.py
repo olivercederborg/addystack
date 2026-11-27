@@ -55,7 +55,8 @@ with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
     out.write(json.dumps({"key": key}) + "\n")
 if key not in prs:
     sys.exit("no pull requests found")
-print(json.dumps(prs[key]))
+pr = {"headRefOid": "c0ffee1234", **prs[key]}  # a head that never moves, unless a test sets one
+print(json.dumps({field: pr[field] for field in args[args.index("--json") + 1].split(",")}))
 """
 
 
@@ -189,6 +190,13 @@ class Tick(unittest.TestCase):
         self.assertIn("- acme/app#7: turned draft\n", sent["message"])
         self.tick("--send")
         self.assertEqual(self.sent(), [])
+
+    def test_a_push_to_a_draft_is_no_pr_event(self):
+        self.tick("--send")
+        self.prs["acme/app#12"]["headRefOid"] = "d00d"
+        self.tick("--send")
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(self.state()["prs"]["acme/app#12"], ["OPEN", True], "tick.json keeps [state, draft]")
 
     def test_an_open_worker_pr_t3_isnt_watching_repeats_until_watched(self):
         # Nov 26-27, 2026: a user's Stop ended a coordinator's watches on 4 open PRs, twice, and a

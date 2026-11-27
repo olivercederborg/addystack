@@ -447,15 +447,15 @@ class Pull(NamedTuple):
     head: str  # the head commit's SHA
 
 
-def view_pr(ref: str) -> list | None:
-    """[state, isDraft] of `owner/repo#N`; None when unread."""
+def view_pr(ref: str) -> Pull | None:
+    """The state, draft flag, and head of `owner/repo#N`; None when unread."""
     repo, number = ref.split("#")
-    code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "state,isDraft"])
+    code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "state,isDraft,headRefOid"])
     if code:
         _warn(f"tick: `gh pr view {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
     try:
         pr = json.loads(out) if code == 0 else None
-        return [pr["state"], pr["isDraft"]] if pr else None
+        return Pull(pr["state"], pr["isDraft"], pr["headRefOid"]) if pr else None
     except (ValueError, KeyError, TypeError):
         return None
 
@@ -598,14 +598,14 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if known and known[0] == "MERGED":  # a merged PR can't reopen; a closed one can
             prs[ref] = known
             continue
-        fresh = view(ref)
-        prs[ref] = fresh or known
-        if not fresh:  # judge nothing on a saved state, and keep a finding's repeat clock
+        pull = view(ref)
+        prs[ref] = [pull.state, pull.draft] if pull else known  # tick.json keeps [state, draft], so a push isn't news
+        if not pull:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
             unread.add(f"unwatched:{ref}")
-        if fresh and fresh[0] != "OPEN":  # seen closed, so a reopening is judged anew
+        if pull and pull.state != "OPEN":  # seen closed, so a reopening is judged anew
             unread.discard(f"unwatched:{ref}")
-        if wakes is not None and fresh and fresh[0] == "OPEN" and ref.lower() not in wakes:
+        if wakes is not None and pull and pull.state == "OPEN" and ref.lower() not in wakes:
             found.append((f"unwatched:{ref}", f"{ref}: open, and T3 isn't watching it for this thread, so call "
                                               "`watch_pull_request` on it"))
         if known and prs[ref] != known:
