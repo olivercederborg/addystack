@@ -3,6 +3,7 @@ thread links, its PR references, and its Workers table. coordinator/scripts/proj
 which writes the file, and card-check.py, which reads it at Stop, share this module;
 scripts/copies.txt copies it into coordinator/scripts."""
 import re
+from typing import NamedTuple
 
 CELL = re.compile(r"(?<!\\)\|")  # a cell ends at a | that isn't escaped
 LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # bare, in <…>, or a Markdown link's (…)
@@ -20,6 +21,20 @@ def ranges(text):
     """text with each range `#20–#22`, up to 20 apart, written out as `#20 #21 #22`."""
     return re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
+
+
+class Pulls(NamedTuple):
+    refs: tuple  # each PR the text names, as "owner/repo#N", once, in order
+    unread: tuple  # each piece that reads as a PR but resolves to no repo, as written
+
+
+def pulls(text, origin):
+    """The PRs a Workers cell names, resolved against origin, the checkout's `owner/repo`.
+    `#N`, and `repo#N` when repo is origin's own name, are origin's; `owner/repo#N` and a
+    github.com PR URL name their own; a range `#20–#22` names each. A parenthesised note
+    and a backticked branch name no PR. Unread: a word then `#N` (`web #20`), `repo#N`
+    for another repo, since its owner is a guess, and `#N` when origin is ""."""
+    raise NotImplementedError
 
 
 def workers(lines, start, end):
