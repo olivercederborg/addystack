@@ -116,6 +116,14 @@ class Snapshot(Folders, unittest.TestCase):
         self.tick(folder, {**TICK, "threads": threads, "prsAt": {"acme/app#12": now - 3600, "acme/app#13": now - 60}})
         self.assertEqual(project.snapshot(folder)["asOf"]["tick"], now - 3600)
 
+    def test_a_live_row_the_tick_holds_no_look_for_leaves_the_card_with_no_tick_data(self):
+        folder = self.write()
+        now = time.time()
+        # The tick's first read of w1 failed, so it wrote no thread, though it read #12.
+        self.tick(folder, {"threads": {}, "prs": TICK["prs"], "prsAt": {"acme/app#12": now, "acme/app#13": now},
+                           "sent": {}})
+        self.assertIsNone(project.snapshot(folder)["asOf"]["tick"])
+
     def test_the_tick_keeps_each_reads_time_and_an_older_one_for_a_pr_it_couldnt_read(self):
         lines = PROJECT.format(checkout=self.checkout).split("\n")
         show = lambda thread: {"status": "running", "runCount": 1, "itemCount": 3, "updatedAt": None}

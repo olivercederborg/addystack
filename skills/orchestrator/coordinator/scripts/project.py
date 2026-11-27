@@ -685,24 +685,30 @@ def snapshot(folder: Path) -> dict:
             (threads, prs, prs_at), as_of["tick"] = ({}, {}, {}), None
         # When the tick last read each state shown: one it kept from an earlier look, as it
         # does for a failed read or a PR while the coordinator runs, keeps that look's time.
-        # A look from before the tick kept times is undated, so the card has no tick data.
-        read = []
+        # A look from before the tick kept times is undated, and so is one the tick should
+        # hold but doesn't, such as a live row's thread whose first read failed: either way
+        # the card has no tick data.
+        read, here = [], this_environment()
         for unit in (unit for group in data["groups"] for unit in group["units"]):
             link = LINK.search(unit["thread"] or "")
             seen = threads.get(link.group(2)) if link and not FINAL.match(unit["state"]) else None
             if isinstance(seen, dict) and seen.get("status"):
                 unit["thread_status"] = seen["status"]
                 read.append(seen.get("at"))
+            elif link and THREAD_ROW.match(unit["state"]) and link.group(1) == here:
+                read.append(None)
             for pr in unit["prs"]:
                 state = prs.get(pr["ref"])
                 if isinstance(state, list) and len(state) == 2:
                     pr["state"], pr["draft"] = state
                     read.append(prs_at.get(pr["ref"]))
+                elif PR_ROW.match(unit["state"]) and pr["url"] is not None:
+                    read.append(None)
         if read:
             as_of["tick"] = None if None in read else min(read)
         lead = LINK.search(_header(lines, "Coordinator"))
         ticking = ("## Listening" in lines and _listened(lines, "Heartbeat") == "tick" and lead is not None
-                   and lead.group(1) == this_environment())
+                   and lead.group(1) == here)
         return {"folder": folder.name, "state": "ok", "data": data, "phase": _phase(lines, data), "asOf": as_of,
                 "tickOn": ticking}
     except Exception as error:  # whatever a file holds, the page gets a card that says so
