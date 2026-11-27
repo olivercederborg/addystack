@@ -148,23 +148,30 @@ class Snapshot(Folders, unittest.TestCase):
         card = project.snapshot(folder)
         self.assertEqual((card["state"], card["phase"], card["data"]["queue"]), ("ok", "active", None))
 
-    def test_a_file_it_cant_read_or_parse_gives_an_unknown_card_with_the_reason(self):
+    def test_a_project_md_it_cant_read_gives_an_unknown_card_with_the_reason(self):
         unreadable = self.write("unreadable")
         (unreadable / "project.md").write_bytes(b"# \xff\xfe not text\n")
-        broken_tick = self.write("broken-tick")
-        (broken_tick / "tick.json").write_text("{not json")
-        odd_tick = self.write("odd-tick")
-        self.tick(odd_tick, {"threads": [], "prs": {}})
         missing = self.orchestrate / "missing"
         missing.mkdir()
-        for folder in (unreadable, broken_tick, odd_tick, missing):
+        for folder in (unreadable, missing):
             with self.subTest(folder.name):
                 card = project.snapshot(folder)
                 self.assertEqual(set(card), {"folder", "state", "error", "asOf"})
                 self.assertEqual((card["folder"], card["state"]), (folder.name, "unknown"))
                 self.assertTrue(card["error"])
         self.assertIsNone(project.snapshot(missing)["asOf"]["project"])
-        self.assertIsNotNone(project.snapshot(broken_tick)["asOf"]["tick"])
+
+    def test_a_tick_json_it_cant_read_still_shows_the_queue_with_no_tick_data(self):
+        broken_tick = self.write("broken-tick")
+        (broken_tick / "tick.json").write_text("{not json")
+        odd_tick = self.write("odd-tick")
+        self.tick(odd_tick, {"threads": [], "prs": {}})
+        for folder in (broken_tick, odd_tick):
+            with self.subTest(folder.name):
+                card = project.snapshot(folder)
+                self.assertEqual((card["state"], card["asOf"]["tick"]), ("ok", None))
+                self.assertEqual([item["name"] for item in card["data"]["queue"]], ["pick the export format"])
+                self.assertNotIn("thread_status", self.units(card)["build"])
 
     def test_the_tick_is_on_only_while_heartbeat_is_tick_and_the_coordinator_is_on_this_machine(self):
         cases = {"on": ({}, True), "none": ({"- Heartbeat: tick": "- Heartbeat: none"}, False),

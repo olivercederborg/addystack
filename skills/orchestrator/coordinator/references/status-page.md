@@ -30,7 +30,8 @@ row's thread status and each PR's state and draft from the tick's last look
 most queue items first; parked and closed projects collapse to one line that still
 shows their queue. A project.md it can't read, a Queue it can't read, or none at all
 shows as unknown. Thread and PR states are as fresh as the tick: past 20 minutes, or
-while the project's Heartbeat isn't `tick`, the card shows stale.
+while the project's Heartbeat isn't `tick`, the card shows stale, and a `tick.json` it
+can't read shows as no tick data.
 
 ## The server
 

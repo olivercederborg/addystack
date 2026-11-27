@@ -664,8 +664,9 @@ def snapshot(folder: Path) -> dict:
     """One project's card for the live status page (status_server.py), from folder/project.md
     and folder/tick.json alone: status_data(live=False), with each unit's `thread_status`
     and each PR's `state` and `draft` filled from what the tick last saw, where it holds
-    them, and asOf.tick when the oldest of those was read. Never raises: a file it can't read
-    or parse gives an `unknown` card with the reason.
+    them, and asOf.tick when the oldest of those was read. Never raises: a project.md it
+    can't read or parse gives an `unknown` card with the reason, and a tick.json it can't,
+    a card with no tick data (asOf.tick None).
 
         Card = {folder, state: "ok", data: status_data, phase: "active" | "parked" | "closed"
                   | "unknown", asOf: {project: mtime, tick: time | None}, tickOn: bool}
@@ -677,8 +678,11 @@ def snapshot(folder: Path) -> dict:
     as_of = {"project": _mtime(folder / "project.md"), "tick": _mtime(folder / "tick.json")}
     try:
         lines = (folder / "project.md").read_text().split("\n")
-        threads, prs, prs_at = _seen(folder / "tick.json")
         data = status_data(lines, live=False)
+        try:
+            threads, prs, prs_at = _seen(folder / "tick.json")
+        except (OSError, ValueError):  # the project still shows, with no tick data
+            (threads, prs, prs_at), as_of["tick"] = ({}, {}, {}), None
         # When the tick last read each state shown: one it kept from an earlier look, as it
         # does for a failed read or a PR while the coordinator runs, keeps that look's time.
         # A look from before the tick kept times dates from the file.

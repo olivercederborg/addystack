@@ -214,7 +214,7 @@ function refreshTimes() {
 // Why a card's thread and PR states are stale, or null while its tick is fresh.
 function tickStale(card, staleAfter) {
   if (!card.tickOn) return "tick off";
-  if (card.asOf.tick === null) return "no tick yet";
+  if (card.asOf.tick === null) return "no tick data";
   return now() - card.asOf.tick > staleAfter ? "stale" : null;
 }
 
@@ -225,7 +225,7 @@ function timerStale(page) {
 function asOf(card, stale) {
   return el("div", { class: "row muted" },
     el("span", {}, card.asOf.project === null ? "project.md unread" : ["project.md ", when(card.asOf.project)]),
-    el("span", {}, "·"), el("span", {}, card.asOf.tick === null ? "no tick.json" : ["tick ", when(card.asOf.tick)]),
+    el("span", {}, "·"), el("span", {}, card.asOf.tick === null ? "no tick data" : ["tick ", when(card.asOf.tick)]),
     stale === null ? null : el("span", { class: "pill tone-warning", title: "thread and PR states are as old as the tick" },
       stale));
 }
