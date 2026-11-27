@@ -205,7 +205,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 sent = hashlib.sha256(body.encode()).hexdigest()
                 outcome['outcome'] = 'approved'
                 stands = active and active['state'] == 'APPROVED' and active['commit_id'] == head
-                if posted.get('head') == head and posted.get('outcome') == 'approved' and posted.get('sent') == sent:
+                if stands and posted.get('head') == head and posted.get('outcome') == 'approved' and posted.get('sent') == sent:
                     outcome['review'] = posted['review']
                 elif stands:
                     # A new review of a head this App already approves, such as one its author

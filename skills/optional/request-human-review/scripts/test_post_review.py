@@ -147,6 +147,12 @@ class Post(unittest.TestCase):
         (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column; re-read after the rebase.\n')
         self.post(fake, retry=True)
         self.assertEqual([command for command, _, _ in fake.writes], ['approve', 'comment'])
+        # A record alone never claims an approval: once a newer review replaced it, a retry approves again.
+        replaced = Fake()
+        self.post(replaced)
+        replaced.active = {'id': 63, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD}
+        self.assertEqual(self.post(replaced, retry=True)['review'], 'https://github.com/o/r/pull/7#approve')
+        self.assertEqual([command for command, _, _ in replaced.writes], ['approve', 'approve'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
