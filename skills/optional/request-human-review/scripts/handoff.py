@@ -148,8 +148,9 @@ def _held(handoffs: list, engaged: list) -> dict:
     held = {}
     for block in handoffs:
         for reviewer in block.get('reviewers', []):
-            held.update({name: reviewer['login'] for name in reviewer.get('domains', []) if name})
-    return {name: login for name, login in held.items() if reviewers.has(engaged, login)}
+            if reviewers.has(engaged, reviewer['login']):
+                held.update({name: reviewer['login'] for name in reviewer.get('domains', []) if name})
+    return held
 
 
 def send(number: int, plan: dict, github=github) -> dict:

@@ -79,6 +79,11 @@ class Plan(unittest.TestCase):
                           self.facts(standing=busy, handoffs=[handoff.read(first['comment'])], engaged=['dave']))
         self.assertEqual((again['post'], again['request']), (False, []))
         self.assertIn('- `dave` · not listed here, least loaded · billing', first['comment'])
+        # A later handoff named alice, but the request to alice failed: dave, still asked, keeps billing.
+        later = {**handoff.read(first['comment']), 'reviewers': [{'login': 'alice', 'role': 'chosen', 'domains': ['billing']}]}
+        kept = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                         self.facts(standing=busy, handoffs=[handoff.read(first['comment']), later], engaged=['dave']))
+        self.assertEqual(kept['request'], [])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
