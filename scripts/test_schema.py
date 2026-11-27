@@ -41,10 +41,10 @@ class PolicyFields(unittest.TestCase):
         fields = {f.name for f in dataclasses.fields(resolved.Policy)} - {"matched"}
         self.assertEqual(set(SCHEMA["definitions"]["rule"]["properties"]), fields | {"match"})
 
-    def test_a_repo_file_declares_only_the_fields_it_may_tighten(self):
+    def test_a_repo_file_declares_the_fields_it_may_tighten_and_its_review_app(self):
         properties = SCHEMA["definitions"]["repoPolicy"]["properties"]
-        self.assertEqual(set(properties), {"$schema", "planning", "trust", "pushVia"})
-        for field in ("planning", "trust", "pushVia"):
+        self.assertEqual(set(properties), {"$schema", "planning", "trust", "pushVia", "review"})
+        for field in ("planning", "trust", "pushVia", "review"):
             self.assertEqual(properties[field], {"$ref": f"#/definitions/{field}"})
 
 

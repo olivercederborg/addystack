@@ -13,7 +13,7 @@ from config import Issue, Layer  # noqa: E402
 SCHEMA = json.loads((KIT / "schema" / "v1.json").read_text())
 DEFAULTS = config.load_layers(KIT / "missing")[0]
 LOOSE = {"planning": "autonomous", "trust": "merge-on-go", "pushVia": "git", "issues": "none", "lenses": [],
-         "verifySkill": None, "decisionsSection": False}
+         "verifySkill": None, "decisionsSection": False, "review": None}
 
 
 def schema_nodes(node):
@@ -29,11 +29,12 @@ def schema_nodes(node):
 
 
 def leaves(node, path=()):
-    """(path, default) for each schema key with no properties of its own, outside arrays."""
+    """(path, default) for each schema key with no properties of its own, or whose default
+    is null, outside arrays."""
     for name, child in node.get("properties", {}).items():
         while "$ref" in child:
             child = SCHEMA["definitions"][child["$ref"].split("/")[-1]]
-        if "properties" in child:
+        if "properties" in child and child["default"] is not None:
             yield from leaves(child, (*path, name))
         else:
             yield (*path, name), child["default"]
@@ -292,14 +293,17 @@ class Merge(Workspace):
 
     def test_unresolved_takes_the_strictest_value_of_each_field(self):
         team = {"match": {"remote": "team"}, "planning": "gated", "trust": "draft", "pushVia": "gh-stack",
-                "issues": "linear", "lenses": ["team-lens"], "verifySkill": "verify-team", "decisionsSection": True}
+                "issues": "linear", "lenses": ["team-lens"], "verifySkill": "verify-team", "decisionsSection": True,
+                "review": {"app": "team-reviewer"}}
         mine = {"match": {"remote": "mine"}, "trust": "gate", "issues": "github", "lenses": ["my-lens"]}
         resolved = config.merge([self.kit({"policy": {"defaults": {**LOOSE, "lenses": ["base"]}}}),
                                 Layer("user", self.dir, {"policy": {"repos": [mine, team]}})], KIT)
         self.assertEqual(resolved["policy"]["defaults"], {**LOOSE, "lenses": ["base"]})
         self.assertEqual(resolved["policy"]["unresolved"], {
             "planning": "gated", "trust": "draft", "pushVia": "gh-stack", "issues": "linear",
-            "lenses": ["base", "my-lens", "team-lens"], "verifySkill": "verify-team", "decisionsSection": True})
+            "lenses": ["base", "my-lens", "team-lens"], "verifySkill": "verify-team", "decisionsSection": True,
+            # A rule's review App names one repo's reviewer, so a failed lookup doesn't wait for it.
+            "review": None})
 
     def test_without_rules_unresolved_is_the_defaults(self):
         resolved = self.merge(Layer("user", self.dir, {"policy": {"defaults": LOOSE}}))

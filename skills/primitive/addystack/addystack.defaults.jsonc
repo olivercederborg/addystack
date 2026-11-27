@@ -14,7 +14,8 @@
       "issues": "none",
       "lenses": [],
       "verifySkill": null,
-      "decisionsSection": false
+      "decisionsSection": false,
+      "review": null
     },
     "repos": []
   },

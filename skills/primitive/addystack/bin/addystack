@@ -466,7 +466,8 @@ def _repo_file(repo: str, matched: List[str]) -> Optional[Dict[str, object]]:
     path = Path(top) / resolved.REPO_FILE
     try:
         return {"path": str(path), "set": config.load_repo_policy(path),
-                "note": "each field takes the stricter of this value and your config's"}
+                "note": "planning, trust, and pushVia each take the stricter of this value and your config's; "
+                        "review applies when your config sets none"}
     except config.Invalid as invalid:
         return {"path": str(path), "issues": [f"{issue.path}: {issue.message}" for issue in invalid.issues]}
 

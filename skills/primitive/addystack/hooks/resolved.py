@@ -19,11 +19,12 @@ kit's defaults, and `addystack doctor` fails.
 
 A repo can commit its own policy in `.agents/addystack.jsonc` at its top level, read at
 call time and checked against schema/v1.json's `repoPolicy`. It holds only `planning`,
-`trust`, and `pushVia`, and can only make them stricter: each takes the stricter of the
+`trust`, and `pushVia`, which it can only make stricter: each takes the stricter of the
 repo's value and the user's, by the order policy.unresolved uses, so a cloned repo can't
-grant itself merging. A file that applied adds `repo-file` to `matched`. One that can't be
-read, isn't JSONC, or fails the schema gives the checkout policy.unresolved, with
-`repo-file-invalid` in `matched`.
+grant itself merging. It may also name the repo's review App in `review`, which applies
+when the user's config sets none. A file that applied adds `repo-file` to `matched`. One
+that can't be read, isn't JSONC, or fails the schema gives the checkout
+policy.unresolved, with `repo-file-invalid` in `matched`.
 
 A rule's `remote` is searched in the origin URL, so it never matches a repo with no
 remotes, while its `path` glob still can. Git runs with LC_ALL=C and no network access.
@@ -56,6 +57,13 @@ REPO_FILE = Path(".agents") / "addystack.jsonc"
 
 
 @dataclass(frozen=True)
+class Review:
+    """The GitHub App that reviews every ready PR, by its slug, when its approval is the
+    one the repo requires."""
+    app: str
+
+
+@dataclass(frozen=True)
 class Policy:
     """How agents work in one checkout. `matched` names the rules that set it, such as
     `user#0`, then `repo-file` when the repo's own policy file applied; or
@@ -68,6 +76,7 @@ class Policy:
     lenses: tuple[str, ...]
     verifySkill: Optional[str]
     decisionsSection: bool
+    review: Optional[Review]
     matched: tuple[str, ...]
 
 
@@ -152,7 +161,16 @@ def _make_policy(fields: Dict[str, Any], matched: Tuple[str, ...]) -> Policy:
                   pushVia=_one_of(fields["pushVia"], PushVia), issues=_one_of(fields["issues"], Issues),
                   lenses=tuple(_typed(lens, str) for lens in lenses),
                   verifySkill=_typed(fields["verifySkill"], str, type(None)),
-                  decisionsSection=_typed(fields["decisionsSection"], bool), matched=matched)
+                  decisionsSection=_typed(fields["decisionsSection"], bool),
+                  review=_review(fields.get("review")), matched=matched)
+
+
+def _review(value: Any) -> Optional[Review]:
+    """The review App a policy field names, or None. A resolved.json built before the
+    field existed has none, so it reads as None."""
+    if value is None:
+        return None
+    return Review(app=_typed(_typed(value, dict)["app"], str))
 
 
 def _matches(match: Dict[str, str], origin: Optional[str], roots: Set[str]) -> bool:
@@ -272,7 +290,10 @@ def _with_repo_file(policy: Policy, top: Optional[str], unresolved: Policy) -> P
         repo = config.load_repo_policy(path)
     except config.Invalid:
         return invalid
-    fields = {field: config.stricter(field, value, getattr(policy, field)) for field, value in repo.items()}
+    fields: Dict[str, Any] = {field: config.stricter(field, repo[field], getattr(policy, field))
+                              for field in config.REPO_FIELDS if field in repo}
+    if repo.get("review") is not None and policy.review is None:
+        fields["review"] = _review(repo["review"])
     return replace(policy, **fields, matched=(*policy.matched, "repo-file"))
 
 

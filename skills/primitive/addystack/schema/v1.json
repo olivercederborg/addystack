@@ -81,7 +81,8 @@
             "issues": { "$ref": "#/definitions/issues" },
             "lenses": { "$ref": "#/definitions/lenses" },
             "verifySkill": { "$ref": "#/definitions/verifySkill" },
-            "decisionsSection": { "$ref": "#/definitions/decisionsSection" }
+            "decisionsSection": { "$ref": "#/definitions/decisionsSection" },
+            "review": { "$ref": "#/definitions/review" }
           }
         },
         "repos": {
@@ -224,6 +225,20 @@
       "default": false,
       "markdownDescription": "PR descriptions carry a Decisions section."
     },
+    "review": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["app"],
+      "default": null,
+      "markdownDescription": "The GitHub App that reviews every ready PR, when its approval is the one the repo requires, or `null`. Agents then wait for its review after marking a PR ready, instead of asking a person.",
+      "properties": {
+        "app": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "The App's slug, such as `my-reviewer`; its reviews come from `my-reviewer[bot]`."
+        }
+      }
+    },
     "match": {
       "type": "object",
       "additionalProperties": false,
@@ -247,7 +262,7 @@
       "type": "object",
       "additionalProperties": false,
       "default": {},
-      "markdownDescription": "A repo's own `.agents/addystack.jsonc`, committed at its top level. It can only make the policy stricter: each field takes the stricter of this value and the user's, so a cloned repo can't loosen what a user's config enforces.",
+      "markdownDescription": "A repo's own `.agents/addystack.jsonc`, committed at its top level. Its `planning`, `trust`, and `pushVia` can only make the policy stricter: each takes the stricter of this value and the user's, so a cloned repo can't loosen what a user's config enforces. Its `review` applies when the user's config sets none.",
       "properties": {
         "$schema": {
           "type": "string",
@@ -256,7 +271,8 @@
         },
         "planning": { "$ref": "#/definitions/planning" },
         "trust": { "$ref": "#/definitions/trust" },
-        "pushVia": { "$ref": "#/definitions/pushVia" }
+        "pushVia": { "$ref": "#/definitions/pushVia" },
+        "review": { "$ref": "#/definitions/review" }
       }
     },
     "rule": {
@@ -273,7 +289,8 @@
         "issues": { "$ref": "#/definitions/issues" },
         "lenses": { "$ref": "#/definitions/lenses" },
         "verifySkill": { "$ref": "#/definitions/verifySkill" },
-        "decisionsSection": { "$ref": "#/definitions/decisionsSection" }
+        "decisionsSection": { "$ref": "#/definitions/decisionsSection" },
+        "review": { "$ref": "#/definitions/review" }
       }
     }
   }

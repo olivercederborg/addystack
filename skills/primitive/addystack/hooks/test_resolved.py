@@ -22,7 +22,8 @@ USER = """// A user's config.
       { "match": { "remote": "/(blog|site)" }, "trust": "gate" },
       { "match": { "path": "PATHS/*" }, "issues": "github" },
       { "match": { "remote": "[:/]acme-team/" }, "planning": "gated", "trust": "draft", "pushVia": "gh-stack",
-        "issues": "linear", "lenses": ["team-conventions"], "verifySkill": "verify-team", "decisionsSection": true }
+        "issues": "linear", "lenses": ["team-conventions"], "verifySkill": "verify-team", "decisionsSection": true },
+      { "match": { "remote": "[:/]reviewed/" }, "review": { "app": "my-reviewer" } }
     ]
   },
   "replies": { "style": "reply-shape", "rules": "replies.md", "next": "lettered", "turnBlock": true }
@@ -248,6 +249,27 @@ class RepoFile(Fixture):
         (path / ".agents").symlink_to(self.root / "gone")
         self.assertEqual(self.fields(path, "trust"), ("draft", ("unresolved", "repo-file-invalid")))
 
+    def test_a_repo_file_names_the_review_app_for_every_user(self):
+        path = self.with_file('{ "review": { "app": "frankie-reviewer" } }', origin="git@github.com:sam/skills.git")
+        self.assertEqual(self.fields(path, "review", "trust"),
+                         (resolved.Review("frankie-reviewer"), "merge-on-go", ("repo-file",)))
+
+    def test_the_users_review_app_wins_over_the_repo_files(self):
+        path = self.with_file('{ "review": { "app": "frankie-reviewer" } }', origin="git@github.com:reviewed/app.git")
+        self.assertEqual(self.fields(path, "review"), (resolved.Review("my-reviewer"), ("user#3", "repo-file")))
+
+    def test_without_a_review_app_anywhere_review_is_none(self):
+        path = self.with_file('{ "trust": "draft" }', origin="git@github.com:sam/skills.git")
+        self.assertEqual(self.fields(path, "review"), (None, ("repo-file",)))
+
+    def test_a_malformed_review_gives_unresolved(self):
+        for text in ['{ "review": "frankie-reviewer" }', '{ "review": {} }', '{ "review": { "app": 1 } }',
+                     '{ "review": { "app": "x", "required": true } }']:
+            with self.subTest(text=text):
+                path = self.with_file(text, origin="git@github.com:sam/skills.git")
+                self.assertEqual(self.fields(path, "review", "trust"),
+                                 (None, "draft", ("unresolved", "repo-file-invalid")))
+
     def test_without_a_file_the_policy_is_the_users(self):
         path = self.repo(origin="git@github.com:sam/skills.git")
         (path / ".agents").mkdir()
@@ -279,6 +301,14 @@ class MissingState(Fixture):
             with self.subTest(text=text):
                 self.state.write_text(text)
                 self.assertKitDefaults()
+
+    def test_a_build_from_before_review_reads_as_no_review_app(self):
+        data = json.loads(self.state.read_text())
+        for fields in (data["policy"]["defaults"], data["policy"]["unresolved"]):
+            del fields["review"]
+        self.state.write_text(json.dumps(data))
+        path = self.repo(origin="git@github.com:sam/skills.git")
+        self.assertEqual(self.fields(path, "planning", "review"), ("autonomous", None, ()))
 
     def test_a_field_of_the_wrong_type_or_value_gives_the_kit_defaults(self):
         good = self.state.read_text()

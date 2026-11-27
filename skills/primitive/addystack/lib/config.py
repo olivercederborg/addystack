@@ -10,8 +10,8 @@ The kit ships no team presets, so a config has no `extends`, and skills install 
 skills add`, so it has no `skills`: validate() reports a config that still has either, with
 what to do instead. A team's rules are `policy.repos` rules in the
 user's config; the repo's own `.agents/addystack.jsonc` holds only `planning`, `trust`,
-and `pushVia`, and can only make them stricter. Objects deep-merge, a later
-scalar wins, and arrays replace, except that `policy.repos` concatenates in layer order,
+and `pushVia`, which it can only make stricter, and `review`, which applies when the
+user's config sets none. Objects deep-merge, a later scalar wins, and arrays replace, except that `policy.repos` concatenates in layer order,
 the hooks `enable`/`disable` lists apply as set operations in layer order, and
 `judgment.principles.exclude` lists are combined. Each relative path (`replies.rules`,
 `judgment.taste`, `instructions`, a lens file) resolves against its own layer's folder
@@ -150,7 +150,8 @@ class Resolved(TypedDict):
 
 
 _KIT = Path(__file__).resolve().parent.parent
-_POLICY_FIELDS = ("planning", "trust", "pushVia", "issues", "lenses", "verifySkill", "decisionsSection")
+_POLICY_FIELDS = ("planning", "trust", "pushVia", "issues", "lenses", "verifySkill", "decisionsSection",
+                  "review")
 # How strict each value is; a higher rank is stricter.
 _RANK = {
     "planning": {"autonomous": 0, "gated": 1},
@@ -497,7 +498,7 @@ REPO_FIELDS = ("planning", "trust", "pushVia")
 
 def load_repo_policy(path: Path) -> Dict[str, Any]:
     """A repo's `.agents/addystack.jsonc`, parsed and checked against schema/v1.json's
-    `repoPolicy`: only `planning`, `trust`, and `pushVia`. Raises Invalid with every
+    `repoPolicy`: only REPO_FIELDS and `review`. Raises Invalid with every
     issue, the file's path included, when it can't be read, isn't JSONC, or fails the
     schema."""
     data = _parse(path, _read_repo_file(path))
@@ -505,7 +506,7 @@ def load_repo_policy(path: Path) -> Dict[str, Any]:
     issues = list(_check(data, schema["definitions"]["repoPolicy"], [], schema))
     if issues:
         raise Invalid([Issue(issue.path, f"{issue.message} (in {path})") for issue in issues])
-    return {key: data[key] for key in REPO_FIELDS if key in data}
+    return {key: data[key] for key in (*REPO_FIELDS, "review") if key in data}
 
 
 # A repo policy is a few lines; anything longer isn't one.
