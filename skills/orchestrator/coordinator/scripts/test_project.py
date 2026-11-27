@@ -2,7 +2,7 @@
 decisions, a Result section, notes under the Workers table, and a learning that runs
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import json, os, pathlib, subprocess, sys, tempfile, unittest
+import json, os, pathlib, subprocess, sys, tempfile, unittest, unittest.mock
 from datetime import date
 
 import project
@@ -511,8 +511,15 @@ queue:
 
     def test_a_link_label_with_escaped_brackets_still_names_only_its_urls_pr(self):
         refs: set[str] = set()
-        project._pr_refs(r"[#7, Fix \[CI\] failure](https://github.com/other/repo/pull/7)", "acme/app", refs)
-        self.assertEqual(refs, {"other/repo#7"})
+        for label in (r"#7, Fix \[CI\] failure", "#7, Fix [CI] failure"):
+            refs: set[str] = set()
+            project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7)", "acme/app", refs)
+            self.assertEqual(refs, {"other/repo#7"}, label)
+
+    def test_a_title_ending_in_a_backslash_keeps_its_link(self):
+        with unittest.mock.patch.object(project, "_pr", return_value={"title": "path\\", "state": "OPEN", "isDraft": False}), \
+             unittest.mock.patch.object(project, "_checks", return_value={}):
+            self.assertTrue(project._pr_line("acme/app#7", "acme/app").startswith("[#7, path\\\\](https://"))
 
     def test_raw_html_in_a_cell_prints_escaped_so_the_reply_keeps_its_picks(self):
         self.write(**{"the user's go": "the user's go <details>"})

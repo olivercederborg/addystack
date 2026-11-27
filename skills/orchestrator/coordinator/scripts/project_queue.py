@@ -174,5 +174,5 @@ def show(items: list[Item] | None) -> str:
                 "with a turn block naming every call still open on standard input.")
     if not items:
         return "Nothing waits on the user."
-    listed = [f"  {item.id} {item.kind} · {item.name} · {item.source} · since {item.since}" for item in items]
+    listed = [f"  {item.id} {item.kind} · {shown(item.name)} · {shown(item.source)} · since {item.since}" for item in items]
     return "\n".join([strip(items), f"needs: [{as_json(items[0].need())}]", "queue:", *listed])

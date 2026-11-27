@@ -493,7 +493,7 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-PR_LINK = re.compile(r"\[(?:\\.|[^\]\\])*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
+PR_LINK = re.compile(r"\[(?:\\.|\[[^\]]*\]|[^\]\\\[])*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
 
 
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
@@ -633,7 +633,7 @@ def status(lines: list[str]) -> str:
         items = project_queue.read(lines)
         out.append("no queue" if items is None else project_queue.show(items))
     except project_queue.QueueError as error:
-        out.append(f"unread: {error}")
+        out.append(project_queue.shown(f"unread: {error}"))
     out.append("")
     if "## Workers" in lines:
         place = _header(lines, "Checkout").split(" (")[0].strip()
@@ -645,7 +645,7 @@ def status(lines: list[str]) -> str:
             group = (match.group(1) or "replaced/absorbed") if match else "other"
             groups.setdefault(group, []).append(_unit(row, origin))
         if odd:
-            groups["unread rows"] = [f"- {(_cells(line) or ['?'])[0]}: its cells don't match the Workers header"
+            groups["unread rows"] = [project_queue.shown(f"- {(_cells(line) or ['?'])[0]}: its cells don't match the Workers header")
                                      for line in odd]
         for group in sorted(groups, key=lambda name: STATUS_ORDER.index(name)):
             out += [f"**{group}**", *groups[group], ""]
@@ -706,7 +706,7 @@ def _pr_line(ref: str, origin: str) -> str:
     pr = _pr(ref)
     if pr is None:
         return f"[{name}]({url}) unread"
-    title = str(pr["title"]).replace("[", "\\[").replace("]", "\\]")
+    title = str(pr["title"]).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
     checks = _checks(ref)
     ci = ("checks unread" if checks is None else ", ".join(
         f"{CHECK_MARKS.get(bucket, '')} {count} {bucket}".strip() for bucket, count in
