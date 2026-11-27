@@ -78,7 +78,7 @@ class Plan(unittest.TestCase):
         again = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                           self.facts(standing=busy, handoffs=[handoff.read(first['comment'])], engaged=['dave']))
         self.assertEqual((again['post'], again['request']), (False, []))
-        self.assertIn('- `dave` · not listed here, least loaded · billing', first['comment'])
+        self.assertIn('- `dave` · no priority here, least loaded · billing', first['comment'])
         # A later handoff named alice, but the request to alice failed: dave, still asked, keeps billing.
         later = {**handoff.read(first['comment']), 'reviewers': [{'login': 'alice', 'role': 'chosen', 'domains': ['billing']}]}
         kept = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),

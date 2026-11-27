@@ -48,7 +48,7 @@ GITHUB = Path(__file__).resolve().parent / 'github.sh'
 MARK, VERSION = 'addystack-handoff', 1
 SECOND_OPINION = 'second-opinion'
 BLOCK = re.compile(rf'<!-- {MARK}:v(\d+)\n(.*?)\n-->', re.S)
-ROLES = {'P1': 'P1', 'P2': 'P2', 'P3': 'P3', 'fallback': 'not listed here, least loaded',
+ROLES = {'P1': 'P1', 'P2': 'P2', 'P3': 'P3', 'fallback': 'no priority here, least loaded',
          'chosen': 'chosen by the author'}
 
 
