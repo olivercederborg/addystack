@@ -130,10 +130,12 @@ class Classify(Repo):
         self.assertEqual(self.classify({"src/api.ts": None}), {"contract": ["src/api.ts: changes or removes `export function list() {}`"]})
 
     def test_a_tsx_file_without_jsx_is_not_ui(self):
-        self.assertEqual(self.classify({"src/bot.tsx": "const skills = new Set<Skill>();\n"}), {})
+        self.assertEqual(self.classify({"src/bot.tsx": "const skills = new Set<Skill>();\n",
+                                        "src/escape.tsx": 'export const esc = (v: string) => v.replace(/>/g, "&gt;")\n'}), {})
         self.assertEqual(self.classify({"src/Upload.tsx": 'export const U = () => <input accept="image/*" />\n/* types */\n'}),
                          {"ui": ["src/Upload.tsx: UI file"]})
-        for jsx in ("<>{x}</>", "<div>x</div>", "<Icon />", "<_Card>x</_Card>", "<$Card>x</$Card>"):
+        for jsx in ("<>{x}</>", "<div>x</div>", "<Icon />", "<_Card>x</_Card>", "<$Card>x</$Card>",
+                    "<Icon onClick={() => go()} />", "<Icon\n  size={2}\n/>"):
             with self.subTest(jsx=jsx):
                 self.setUp()
                 self.assertEqual(self.classify({"src/View.jsx": f"export const View = () => {jsx}\n"}),
@@ -153,6 +155,13 @@ class Classify(Repo):
         (self.repo / "src/View.tsx").symlink_to("Middle.tsx")
         self.assertEqual(self.kinds(self.change({}, "Link the view"))["ui"],
                          ["src/Middle.tsx: UI file", "src/View.tsx: UI file"])
+
+    def test_a_component_linked_from_outside_the_tree_or_with_a_newline_counts(self):
+        outside = self.dir / "Button.tsx"
+        outside.write_text("export const Button = () => <button>Save</button>\n")
+        (self.repo / "src/Button.tsx").symlink_to(outside)
+        self.assertEqual(self.classify({"src/view\ncard.tsx": "export const Card = () => <div>Hi</div>\n"})["ui"],
+                         ["src/Button.tsx: UI file", "src/view\ncard.tsx: UI file"])
 
     def test_deleting_a_risky_file_needs_no_mutants(self):
         self.base = self.change({"src/auth/check.ts": "function check() {}\n"}, "Add the check")
