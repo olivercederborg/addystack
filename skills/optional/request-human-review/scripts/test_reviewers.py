@@ -69,6 +69,15 @@ class Domain(unittest.TestCase):
         self.assertEqual(reviewers.domain(RULES, '.agents/skills/a.md'), 'conventions')
         self.assertIsNone(reviewers.domain(RULES, 'docs/.agents/a.md'))
 
+    def test_codeowners_globs_and_inline_comments(self):
+        rules = reviewers.parse('## docs\ndocs/* @alice  # only the files directly in docs\n'
+                                '## adr\ndocs/**/adr/ @bob\n')
+        self.assertEqual(reviewers.domain(rules, 'docs/intro.md'), 'docs')
+        self.assertIsNone(reviewers.domain(rules, 'docs/guides/intro.md'))
+        self.assertEqual(reviewers.domain(rules, 'docs/adr/0001.md'), 'adr')
+        self.assertEqual(reviewers.domain(rules, 'docs/x/adr/0001.md'), 'adr')
+        self.assertEqual(rules[0]['names'], ['alice'])
+
     def test_unowned_and_unmatched_paths_have_no_domain(self):
         for path in ('docs/adr/0001-totals.md', 'packages/billing/docs/adr/0002.md', 'packages/billing/CONTEXT.md',
                      'README.md', 'package.json'):

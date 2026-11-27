@@ -29,7 +29,8 @@ def parse(text: str) -> list:
             continue
         if not line or line.startswith('#'):
             continue
-        pattern, *names = line.split()
+        # A ` #` starts an inline comment, as in CODEOWNERS.
+        pattern, *names = line.split(' #', 1)[0].split()
         if current is None:
             problems.append(f'line {number}: {pattern} comes before any `## <domain>` heading')
         elif current == UNOWNED and names:
@@ -45,15 +46,17 @@ def parse(text: str) -> list:
 
 
 def _matcher(pattern: str):
-    """CODEOWNERS' gitignore rules: a pattern with a slash before its end is anchored at the root,
-    one without matches at any depth, a trailing slash matches only a directory's contents, `*`
-    and `?` stay within one path segment, and `**` crosses them."""
+    """CODEOWNERS' rules: a pattern with a slash before its end is anchored at the root, one
+    without matches at any depth, a trailing slash matches only a directory's contents, `*` and
+    `?` stay within one path segment, `**` crosses them, and a pattern ending `/*` matches only
+    the files directly in that directory."""
     anchored = '/' in pattern.rstrip('/')
     body = pattern.strip('/')
     expression = ''
-    for token in re.split(r'(\*\*/|/\*\*|\*\*|\*|\?)', body):
-        expression += {'**/': '(?:.*/)?', '/**': '/.*', '**': '.*', '*': '[^/]*', '?': '[^/]'}.get(token, re.escape(token))
-    tail = '/.*' if pattern.endswith('/') else '(?:/.*)?'
+    for token in re.split(r'(/\*\*/|\*\*/|/\*\*|\*\*|\*|\?)', body):
+        expression += {'/**/': '/(?:.*/)?', '**/': '(?:.*/)?', '/**': '/.*', '**': '.*', '*': '[^/]*',
+                       '?': '[^/]'}.get(token, re.escape(token))
+    tail = '/.*' if pattern.endswith('/') else '' if pattern.endswith('/*') else '(?:/.*)?'
     return re.compile(('' if anchored else '(?:.*/)?') + expression + tail).fullmatch
 
 
