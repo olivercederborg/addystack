@@ -783,7 +783,7 @@ class Guard(Home):
         self.select()
         self.ok("install")
         self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout) exit 5 ;; '
-                  f'print) test -f {self.loaded} ;; esac')
+                  f'print) test -f {self.loaded} || exit 113 ;; esac')
         self.select(False)
         self.assertNotEqual(self.cli("install").returncode, 0)
         self.assertTrue(self.plist.exists())
@@ -842,10 +842,11 @@ class Guard(Home):
     def probe(self, variable):
         """A new zsh's soft limit when only variable marks it as an agent's."""
         import resource, subprocess
-        env = {k: v for k, v in self.env.items() if k not in ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID")}
+        env = {k: v for k, v in self.env.items()
+               if k not in ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID", "CODEX_THREAD_ID")}
         env[variable] = "1"
         hard = resource.getrlimit(resource.RLIMIT_NPROC)[1]
-        done = subprocess.run(["zsh", "-c", "ulimit -Su"], env=env, capture_output=True, text=True,
+        done = subprocess.run(["zsh", "-lc", "ulimit -Su"], env=env, capture_output=True, text=True,
                               preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_NPROC, (hard, hard)))
         return done.stdout.strip().splitlines()[-1]
 
@@ -854,7 +855,7 @@ class Guard(Home):
         self.ok("install")
         self.plist.write_text(self.plist.read_text().replace("agent_memory_guard.py", "old.py"))
         self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout|bootstrap) exit 5 ;; '
-                  f'print) test -f {self.loaded} ;; esac')
+                  f'print) test -f {self.loaded} || exit 113 ;; esac')
         self.assertNotEqual(self.cli("install").returncode, 0)
         self.assertFalse(self.plist.exists())
         before = len(self.calls())
@@ -882,6 +883,25 @@ class Guard(Home):
         self.ok("install")
         self.assertEqual(self.probe("CLAUDECODE"), "2000")
         self.assertEqual(self.probe("T3CODE_THREAD_ID"), "3000")
+
+    def test_a_failed_query_doesnt_pass_for_a_stopped_guard(self):
+        self.select()
+        self.ok("install")
+        self.stub("launchctl", "exit 5")  # launchd can't answer
+        self.select(False)
+        self.assertNotEqual(self.cli("install").returncode, 0)
+        self.assertTrue(self.plist.exists())
+        self.assertIn('"guard": true', (self.state / "installed.json").read_text())
+
+    def test_doctor_reports_a_zprofile_that_raises_the_limit_again(self):
+        self.select()
+        self.write(self.home / ".zprofile", "ulimit -Su 8000\n")
+        self.assertIn("a new agent shell gets no process limit", self.doctor_line(self.cli("install").stdout))
+
+    def test_a_standalone_codex_shell_is_capped(self):
+        self.select()
+        self.ok("install")
+        self.assertEqual(self.probe("CODEX_THREAD_ID"), "3000")
 
     def test_dry_run_writes_and_starts_nothing(self):
         self.select()

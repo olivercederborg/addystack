@@ -121,14 +121,16 @@ Its docstring lists the known limits.
 selected (the `machine` tag, so `hooks.preset` `all`, or `hooks.enable`): it writes
 `~/Library/LaunchAgents/addystack.agent-memory-guard.plist` from `agent-memory-guard.plist`
 with the kit's path, starts it with `launchctl`, and records it in its ledger. It then
-runs zsh as each kind of agent shell, and when one gets no process limit of 3,000 or
+runs a login zsh as each kind of agent shell, and when one gets no process limit of 3,000 or
 less, appends the kernel backstop for fork storms to the `.zshenv` zsh reads
 (`$ZDOTDIR`, else home):
 
 ```sh
 # fork fails past 3,000 user processes in agent shells (T3 names a Codex session's
-# thread but sets no CLI path); GUI apps keep 8,000; ${X-} survives `setopt nounset`
-[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] && ulimit -Su 3000
+# thread but sets no CLI path; Codex sets CODEX_THREAD_ID); GUI apps keep 8,000;
+# ${X-} survives `setopt nounset`; it only ever lowers a limit
+[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} || -n ${CODEX_THREAD_ID-} ]] &&
+  [[ $(ulimit -Su) == unlimited || $(ulimit -Su) -gt 3000 ]] && ulimit -Su 3000
 ```
 
 Once the hook is deselected, install stops a guard its ledger records, and removes the

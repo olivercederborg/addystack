@@ -34,7 +34,7 @@ class Home(unittest.TestCase):
         launchctl = str(self.stub(
             "launchctl", f'echo "$*" >> {self.launchctl_log}\n'
             f'case $1 in bootstrap) touch {loaded} ;; bootout) rm -f {loaded} ;; '
-            f'print) test -f {loaded} ;; esac'))
+            f'print) test -f {loaded} || exit 113 ;; esac'))
         # ZDOTDIR would point zsh, and the guard's .zshenv write, outside the scratch HOME.
         self.env = {key: value for key, value in os.environ.items()
                     if not key.startswith("ADDYSTACK_") and key != "ZDOTDIR"}

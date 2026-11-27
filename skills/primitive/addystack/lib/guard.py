@@ -12,8 +12,8 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
   by hand, which the ledger doesn't record, stays. A stop or start launchd refuses, or
   can't confirm, fails the install, and the next install tries again: the ledger keeps a
   guard it couldn't stop, and a plist launchd wouldn't load is removed.
-- **Limit**: whether a new agent shell gets one is probed, not read: zsh runs once with each
-  agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
+- **Limit**: whether a new agent shell gets one is probed, not read: a login zsh runs once with
+  each agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
   `alias`, `nounset`, or a `ZDOTDIR` elsewhere all count as they would in a real shell.
   Without a limit of LIMIT or less, install appends LIMIT_LINES to the .zshenv zsh reads
   (`$ZDOTDIR`, else home), once, and doctor reports a limit that still doesn't apply. A
@@ -43,7 +43,7 @@ LIMIT = 3000
 # It only ever lowers a limit, so a shell already capped lower keeps its own.
 LIMIT_LINES = (
     "# addystack: agent shells stop forking past 3,000 user processes, the backstop for fork storms.\n"
-    "[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] &&\n"
+    "[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} || -n ${CODEX_THREAD_ID-} ]] &&\n"
     "  [[ $(ulimit -Su) == unlimited || $(ulimit -Su) -gt 3000 ]] && ulimit -Su 3000\n")
 
 
@@ -82,12 +82,15 @@ def _read(path: Path) -> Optional[str]:
         raise ValueError(f"can't read {path}: {error}") from error
 
 
-def _launchctl(*args: str) -> Optional[bool]:
-    """Whether launchctl succeeded, or None when it couldn't run, so no answer passes for
-    a stopped guard."""
+# launchctl print's exit status for a service launchd doesn't have.
+_NO_SERVICE = 113
+
+
+def _launchctl(*args: str) -> Optional[int]:
+    """launchctl's exit status, or None when it couldn't run."""
     try:
         return subprocess.run([os.environ.get("ADDYSTACK_LAUNCHCTL", "launchctl"), *args], capture_output=True, timeout=10,
-                              stdin=subprocess.DEVNULL).returncode == 0
+                              stdin=subprocess.DEVNULL).returncode
     except (OSError, subprocess.SubprocessError):
         return None
 
@@ -97,8 +100,10 @@ def _domain() -> str:
 
 
 def loaded() -> Optional[bool]:
-    """Whether launchd has the guard, or None when launchctl couldn't say."""
-    return _launchctl("print", f"{_domain()}/{LABEL}")
+    """Whether launchd has the guard, or None when launchctl couldn't say: only its
+    no-such-service status counts as absent, so a failed query never passes for a stop."""
+    status = _launchctl("print", f"{_domain()}/{LABEL}")
+    return True if status == 0 else False if status == _NO_SERVICE else None
 
 
 def _uncapped() -> None:
@@ -106,8 +111,9 @@ def _uncapped() -> None:
     resource.setrlimit(resource.RLIMIT_NPROC, (hard, hard))
 
 
-# What marks a shell as an agent's: Claude Code's, T3's for Claude, and T3's for Codex.
-AGENT_VARIABLES = ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID")
+# What marks a shell as an agent's: Claude Code's, T3's for Claude, T3's for Codex, and
+# Codex's own, however it was started.
+AGENT_VARIABLES = ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID", "CODEX_THREAD_ID")
 
 
 def shell_limit() -> Optional[int]:
@@ -118,7 +124,8 @@ def shell_limit() -> Optional[int]:
         env = {key: value for key, value in os.environ.items() if key not in AGENT_VARIABLES}
         env[variable] = "1"
         try:
-            done = subprocess.run(["zsh", "-c", "ulimit -Su"], capture_output=True, text=True, timeout=10,
+            # -l, as Codex runs commands, so a .zprofile that raises the limit again counts.
+            done = subprocess.run(["zsh", "-lc", "ulimit -Su"], capture_output=True, text=True, timeout=10,
                                   env=env, stdin=subprocess.DEVNULL, preexec_fn=_uncapped)
         except (OSError, subprocess.SubprocessError):
             return None
@@ -164,7 +171,7 @@ def start(path: Path) -> None:
     load it, the plist goes too, so the next install writes it and tries again instead of
     trusting whatever guard is still running."""
     _launchctl("bootout", f"{_domain()}/{LABEL}")
-    if not _launchctl("bootstrap", _domain(), str(path)):
+    if _launchctl("bootstrap", _domain(), str(path)) != 0:
         os.unlink(path)
         raise OSError(f"launchctl couldn't load {path}; run addystack install again")
 
