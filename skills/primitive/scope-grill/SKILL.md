@@ -29,7 +29,7 @@ fine request: draw the goal, the must-haves, and the open questions out of it.
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
 work is wanted. The plan builds the must-haves. At a pilot Bar the smallest option that
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
-the goal back in the user's words in the fold. Keep the user's boundaries verbatim: on
+the goal back in the user's words. Keep the user's boundaries verbatim: on
 the plan, or copied into the fold and named on the plan when the glance can't hold them.
 
 **Milestones**: when the request holds more than one step that ships on its own, map
@@ -80,8 +80,8 @@ name, such as `+4 more in the fold`:
    `Not building:`; and `Assuming (say if wrong):`. A bullet this round changed can lead
    with `New:`, and a dropped item shows once as `Dropped: …`. Past about five built
    items, fold the older ones by name.
-4. **The fold**: each option with its change and cost line, the sources, any unchecked
-   fact, and the **For architect** list, or `none`.
+4. **The fold**: the goal in the user's words, each option with its change and cost line,
+   the sources, any unchecked fact, and the **For architect** list, or `none`.
 5. **Wait.** In the reply's Next, `a` takes every ➡️ answer, and the user overrides one
    by number, such as `2: shared`. A user's `confirm` takes them too.
 
@@ -111,6 +111,7 @@ The other option is shared components, about 8 files with one user each.
 
 <details><summary>Options, costs, sources</summary>
 
+**Goal**: clicks to the busiest pages feel instant.
 **1 · Reuse the section skeletons**: No extra scope · ≈6 files · easy to undo.
 **1 · One new skeleton**: No extra scope · ≈2 files · easy to undo.
 **2 · Inline**: No extra scope · 4 files · easy to undo.
