@@ -296,8 +296,14 @@ class Cli(unittest.TestCase):
                 patch('sys.stdout', new_callable=io.StringIO) as printed:
             path.write_text(json.dumps(verdict(decision(None, code='pay.ts:3'), sensitive=sensitive)))
             self.assertEqual(gates.main(['check', '7', str(path)]), 1)
+            # Only a one-way-door gate covers it.
+            path.write_text(json.dumps(verdict(decision(None, 'pattern', 'pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
             path.write_text(json.dumps(verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=sensitive)))
             self.assertEqual(gates.main(['check', '7', str(path)]), 0)
+            # A gated verdict for an older head still fails.
+            pr = json.dumps({'body': '', 'headRefOid': BASE, 'baseRefOid': BASE})
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
         self.assertIn('money-movement at pay.ts:3 is a one-way door by .github/PULL_REQUEST_TEMPLATE.md:36',
                       printed.getvalue())
 
