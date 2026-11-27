@@ -5390,7 +5390,11 @@ class CardCheckUnanswerable(unittest.TestCase):
                       # Review round 2: a statement, quoted option text, and a pick reported as made.
                       "The tests pass; behavior is the same as before.\n",
                       'Next:\n- **a**: "Approve the merge."\n- **b**: "Keep it open."\n',
-                      "You approved **a** yesterday. The fix is complete.\n"):
+                      "You approved **a** yesterday. The fix is complete.\n",
+                      # Review round 3: steps after a blank line, and a quoted or code-formatted example.
+                      "Follow the steps in my last reply:\n\n1. Open settings.\n2. Save.\n",
+                      "The old reply said 'say **a** or **b**' with no options; the fix now includes both.\n",
+                      "The phrase `follow the earlier App steps` was removed from the prompt.\n"):
             with self.subTest(reply=reply):
                 self.assertIsNone(self.reason(reply, options=(("decision", "merge #12"),)))
 

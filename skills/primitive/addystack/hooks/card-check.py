@@ -252,7 +252,14 @@ ASKS = re.compile(r"\b(?:say|pick|answer|choose|reply|option|call|waits?|decide|
 # A letter the reply reports as already picked, as in "you picked `a`" or "I sent your **a**": it asks nothing.
 PICKED = re.compile(r".*\b(?:picked|said|chose|took|taking|resolved as|sent your|went with|approved|accepted|answered)[ \t]+(?:\*\*)?", re.I)
 STEP = re.compile(r"[ \t>]*(?:\d{1,9}[.)]|[-*+](?![ \t]+\*\*`?[a-e]`?\*\*))[ \t]")  # a step, not an option
-QUOTED = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|“[^”\n]*\s[^”\n]*”")  # a quote of words, not a quoted "**a**"
+QUOTED = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|“[^”\n]*\s[^”\n]*”|‘[^’\n]*\s[^’\n]*’"
+                    r"|(?<!\w)'[^'\n]*\s[^'\n]*'(?!\w)")  # a quote of words, not a quoted "**a**"
+
+
+def unquoted(text, keep):
+    """text with each quote of words, and each code span of words, replaced by keep(span)."""
+    text = re.sub(r"`[^`\n]+`", lambda span: keep(span.group(0)) if " " in span.group(0) else span.group(0), text)
+    return QUOTED.sub(lambda quote: keep(quote.group(0)), text)
 # Steps or options the reply says live in an earlier one, as in "the 5 steps in my last reply"
 # or "the earlier App steps". Not "earlier" alone: "I got b wrong earlier" points nowhere.
 EARLIER = re.compile(r"\b(?:steps?|options?|instructions?)\b[^.\n]{0,40}?\b(?:in|from|of)\s+(?:my|the|your|our)\s+"
@@ -274,7 +281,7 @@ def unanswerable(reply):
     shown = re.sub(r"<!--.*?(?:-->|\Z)", "", shown, flags=re.S)  # the turn block, or any comment, shows nothing
     asked, defined = [], set()
     for line in shown.splitlines():
-        line = QUOTED.sub(lambda quote: '"' + "q" * (len(quote.group(0)) - 2) + '"', line)  # text, not letters
+        line = unquoted(line, lambda quote: '"' + "q" * (len(quote) - 2) + '"')  # text, not letters
         previous = False  # whether the line's last letter was defined
         for found in LETTER.finditer(line) if sure else ():
             letter = next(group for group in found.groups() if group)
@@ -296,9 +303,10 @@ def unanswerable(reply):
         reasons.append(f"this reply asks for {' and '.join(f'`{letter}`' for letter in missing)}, but nothing it shows "
                        f"says what {does}, so the reader can't answer. List each option the reply asks for in its Next "
                        "options, with what it does")
-    visible = QUOTED.sub("", shown).splitlines()
+    visible = unquoted(shown, lambda quote: "").splitlines()
     pointer = next((found for at, line in enumerate(visible) for found in [EARLIER.search(line)]
-                    if found and not (line.rstrip().endswith(":") and STEP.match(next(iter(visible[at + 1:]), "")))
+                    if found and not (line.rstrip().endswith(":")
+                                      and STEP.match(next((after for after in visible[at + 1:] if after.strip()), "")))
                     and (LETTER.search(line) or not found.group(0).lower().startswith("same as"))), None)
     if pointer:
         reasons.append(f"this reply points to \"{pointer.group(0)}\", which the reader may no longer see. Write those "
