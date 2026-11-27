@@ -3,6 +3,18 @@
 Each release, newest first. `/addystack update` summarizes the entries above the version
 you had.
 
+## Unreleased
+
+- **Check queue** (macOS, in the agent memory guard): at most `checkQueue.maxChecks` (4)
+  heavy checks, such as tsc, eslint, oxlint, and vitest, run at once across every Claude
+  and Codex agent, and a new one also waits while running checks use
+  `checkQueue.maxCores` (10) cores or more. A waiting check is stopped at its start and
+  resumed oldest first; one still waiting after 15 minutes is killed, and the agent is
+  told why. Agents also get a note before a Bash call while checks wait.
+  `"checkQueue": { "enabled": false }` turns it off. The note and Codex's notice are new
+  hook entries: in a git checkout you pull yourself, run `addystack install` to add them;
+  `addystack update` does it for you.
+
 ## v0.1.0
 
 The first release.
