@@ -13,6 +13,11 @@ import reviewers  # noqa: E402
 HEAD, BASE = 'a' * 40, 'b' * 40
 RULES = reviewers.parse('## billing\n/packages/billing/ @alice @bob\n\n## auth\n/packages/auth/ @dave\n')
 DISCLOSURE = '<sub>`AGENT`</sub><br>'
+SETTINGS = {'weights': {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10}, 'share_since': None}
+
+
+def standing(**asks):
+    return {login: {'asks': asks.get(login, 0), 'share': 0.0} for login in ('alice', 'bob', 'dave')}
 
 
 def decision(id_, code, gate='interface', text='Add a totals RPC'):
@@ -28,7 +33,7 @@ class Plan(unittest.TestCase):
     def facts(self, **changes):
         return {'viewer': 'reviewer-app[bot]', 'author': 'carol', 'body': '', 'base': BASE, 'head': HEAD,
                 'rules': RULES, 'changed': ['packages/billing/a.ts', 'packages/billing/rpc.ts', 'packages/auth/b.ts', 'docs/adr/1.md'],
-                'load': {}, 'engaged': [], 'handoffs': [], **changes}
+                'settings': SETTINGS, 'standing': standing(), 'engaged': [], 'handoffs': [], **changes}
 
     def plan(self, judged, facts=None, same_diff=True, **options):
         with patch.object(handoff, '_facts', lambda number: facts or self.facts()), \
@@ -65,6 +70,15 @@ class Plan(unittest.TestCase):
         # Meanwhile the P2 reviewed: the domain is covered, so nobody is asked.
         covered = self.plan(again, self.facts(handoffs=[first], engaged=['bob']))
         self.assertEqual((covered['post'], covered['request']), (False, []))
+
+    def test_a_re_review_leaves_a_domain_with_whom_it_picked_even_if_reviewers_does_not_list_them(self):
+        busy = standing(alice=4, bob=4)
+        first = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), self.facts(standing=busy))
+        self.assertEqual(first['request'], [{'login': 'dave', 'role': 'fallback', 'domains': ['billing']}])
+        again = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                          self.facts(standing=busy, handoffs=[handoff.read(first['comment'])], engaged=['dave']))
+        self.assertEqual((again['post'], again['request']), (False, []))
+        self.assertIn('- `dave` · not listed here, least loaded · billing', first['comment'])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
@@ -159,7 +173,6 @@ class Facts(unittest.TestCase):
                 {'type': 'User', 'login': 'dave', 'state': 'APPROVED', 'commit_id': BASE},
                 {'type': 'User', 'login': 'erin', 'state': 'DISMISSED', 'commit_id': HEAD},
                 {'type': 'Bot', 'login': 'reviewer-app[bot]', 'state': 'COMMENTED', 'commit_id': HEAD})),
-            'pulls?state=open': 'alice\nalice\nbob\n',
             'comments': '\n'.join(json.dumps({'login': login, 'body': body}) for login, body in
                                   (('carol', block), ('reviewer-app[bot]', block), ('reviewer-app[bot]', unreadable))),
             'files': 'packages/billing/a.ts\n',
@@ -170,8 +183,8 @@ class Facts(unittest.TestCase):
             return next(answer for name, answer in answers.items() if name in path.split('/', 3)[-1])
         with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'):
             facts = handoff._facts(7)
-        self.assertEqual((facts['author'], facts['rules'], facts['engaged'], facts['load']),
-                         ('carol', None, ['alice', 'bob'], {'alice': 2, 'bob': 1}))
+        self.assertEqual((facts['author'], facts['rules'], facts['standing'], facts['engaged']),
+                         ('carol', None, None, ['alice', 'bob']))
         self.assertEqual(len(facts['handoffs']), 1, "the author's handoff doesn't stand in for the App's own")
 
 

@@ -16,8 +16,9 @@ The lines above the first domain hold the pick's settings, one `name: value` eac
     share since: 2026-12-01  review shares count from this date, at most 14 days back
 
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
-    placed   = {**decision, 'domain': 'billing' | None}            None: no domain, the fallback
-    reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'fallback', 'domains': ['billing']}
+    placed   = {**decision, 'domain': 'billing' | None}            None: no domain
+    standing = {'asks': 1, 'share': 0.25}                          per login, lower-cased, from standing.py
+    reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'P3' | 'fallback', 'domains': ['billing']}
 """
 from __future__ import annotations
 
@@ -148,13 +149,15 @@ def has(logins, login: str) -> bool:
     return login.lower() in {other.lower() for other in logins}
 
 
-def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> list:
+def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, weights: dict,
+         held: dict) -> list:
     """The reviewers to request, from domains with the most decisions to the fewest. A domain
-    an engaged or already picked login covers, as its P1 or P2, adds nobody; otherwise its
-    P1, or its P2 when the P1 is the author. A domain that is None or lists nobody but the
-    author is covered by anyone engaged or picked, and otherwise takes the fallback: everyone
-    the file names but the author, with the fewest open requests in `load`, then by name."""
-    load = {login.lower(): count for login, count in load.items()}
+    adds nobody when an engaged or already picked login is its P1 or P2, or when `held`, from
+    earlier handoffs, names an engaged login for it. Otherwise the highest score among everyone
+    the file names, but the author and anyone engaged, takes it: `weights` points for the
+    domain's P1, P2 or P3, less `open ask` per open ask and `share` times how far their share is
+    above the lowest in standing; ties go to fewer open asks, then by name. A domain that is None
+    or lists nobody but the author gives nobody points, and anyone engaged or picked covers it."""
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
@@ -162,23 +165,31 @@ def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> l
     def listed(name):
         return bool(name) and any(login.lower() != author.lower() for login in names(rules, name)[:2])
     order = sorted(counts, key=lambda name: (not listed(name), -counts[name], name or ''))
+    everyone = [login for login in unique(n for rule in rules for n in rule['names'])
+                if login.lower() != author.lower() and not has(engaged, login)]
+    lowest = min((standing[login.lower()]['share'] for login in everyone), default=0)
     picked = []
     for name in order:
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
-        priority = names(rules, name)[:2] if name else []
-        if covering := [reviewer for reviewer in picked if has(priority, reviewer['login'])]:
+        priority = names(rules, name)[:3] if name else []
+        if covering := [reviewer for reviewer in picked if has(priority[:2], reviewer['login'])]:
             covering[0]['domains'].append(name)
             continue
-        if any(has(priority, login) for login in asked):
+        if any(has(priority[:2], login) for login in asked) or has(engaged, held.get(name, '')):
             continue
-        if candidates := [login for login in priority if login.lower() != author.lower()]:
-            role = 'P1' if candidates[0] == priority[0] else 'P2'
-            picked.append({'login': candidates[0], 'role': role, 'domains': [name]})
+        if not listed(name) and asked:
             continue
-        if asked:
+        if not everyone:
             continue
-        pool = [login for login in unique(n for rule in rules for n in rule['names']) if login.lower() != author.lower()]
-        if pool:
-            login = min(pool, key=lambda login: (load.get(login.lower(), 0), login.lower()))
-            picked.append({'login': login, 'role': 'fallback', 'domains': [name] if name else []})
+        def rank(login):
+            return next((f'P{index + 1}' for index, other in enumerate(priority) if other.lower() == login.lower()), None)
+        def score(login):
+            known = standing[login.lower()]
+            return (weights.get(rank(login), 0) - weights['open ask'] * known['asks']
+                    - weights['share'] * (known['share'] - lowest))
+        login = min(everyone, key=lambda login: (-score(login), standing[login.lower()]['asks'], login.lower()))
+        if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
+            earlier['domains'] += [name] if name else []
+            continue
+        picked.append({'login': login, 'role': rank(login) or 'fallback', 'domains': [name] if name else []})
     return picked

@@ -115,10 +115,20 @@ class Place(unittest.TestCase):
         self.assertIsNone(reviewers.place(RULES, [decision('README.md:1')], ['README.md'])[0]['domain'])
 
 
+def standing(asks=None, shares=None, rules=RULES):
+    """Everyone the file names, with these open asks and shares, whatever their case, and none otherwise."""
+    asks = {login.lower(): count for login, count in (asks or {}).items()}
+    shares = {login.lower(): share for login, share in (shares or {}).items()}
+    return {login.lower(): {'asks': asks.get(login.lower(), 0), 'share': shares.get(login.lower(), 0.0)}
+            for login in reviewers.unique(name for rule in rules for name in rule['names'])}
+
+
 class Pick(unittest.TestCase):
-    def pick(self, *domains, author='zed', engaged=(), load=None):
+    def pick(self, *domains, author='zed', engaged=(), load=None, shares=None, held=None, rules=RULES):
+        known = standing(load, shares, rules)
         return [(reviewer['login'], reviewer['role'], reviewer['domains']) for reviewer in
-                reviewers.pick(RULES, [{'domain': name} for name in domains], author, list(engaged), load or {})]
+                reviewers.pick(rules, [{'domain': name} for name in domains], author, list(engaged), known, WEIGHTS,
+                               held or {})]
 
     def test_the_domain_with_most_decisions_gets_its_p1_and_another_only_where_they_are_not_p1_or_p2(self):
         self.assertEqual(self.pick('auth', 'billing', 'billing', 'conventions'),
@@ -152,6 +162,44 @@ class Pick(unittest.TestCase):
         self.assertEqual(self.pick('web', 'web', 'billing'), [('alice', 'P1', ['billing'])])
         self.assertEqual(self.pick(None, engaged=['carol']), [])
         self.assertEqual(self.pick(None, load={'alice': 1, 'bob': 1, 'carol': 1, 'dave': 1}), [('Erin', 'fallback', [])])
+
+
+class Score(unittest.TestCase):
+    """The pick on a real repository's numbers from one day, renamed, on day 1 after `share
+    since`: every share 0, and the open asks people hadn't started yet."""
+    FILE = ('## bookkeeping\n/packages/bookkeeping/ @ann @owen\n'
+            '## transactions\n/packages/transactions/ @lee\n## rpc\n/packages/rpc/ @owen\n'
+            '## other\n/packages/other/ @Cass @jo @Cole\n')
+    ASKS = {'owen': 3, 'ann': 2, 'Cass': 1, 'jo': 1, 'Cole': 1, 'lee': 0}
+
+    def pick(self, name, asks=None, shares=None):
+        rules = reviewers.parse(self.FILE)
+        return Pick.pick(Pick(), name, author='someone', load=asks or self.ASKS, shares=shares, rules=rules)
+
+    def test_a_p1_wins_unless_their_open_asks_cancel_their_points(self):
+        self.assertEqual(self.pick('bookkeeping'), [('ann', 'P1', ['bookkeeping'])])
+        self.assertEqual(self.pick('transactions'), [('lee', 'P1', ['transactions'])])
+        # 3 points less 3 open asks ties lee's 0, and the tie goes to fewer open asks.
+        self.assertEqual(self.pick('rpc'), [('lee', 'fallback', ['rpc'])])
+
+    def test_a_share_far_above_the_lowest_outweighs_a_p1(self):
+        asks = dict.fromkeys(self.ASKS, 0)
+        self.assertEqual(self.pick('transactions', asks, {'lee': 0.45, 'Cole': 0.02}),
+                         [('ann', 'fallback', ['transactions'])])
+        self.assertEqual(self.pick('transactions', asks, {'lee': 0.2, 'Cole': 0.02}),
+                         [('lee', 'P1', ['transactions'])])
+
+    def test_a_p3_counts_and_a_winner_takes_another_domain_it_wins(self):
+        asks = {**dict.fromkeys(self.ASKS, 2), 'Cole': 0, 'owen': 4}
+        self.assertEqual(self.pick('other', asks), [('Cole', 'P3', ['other'])])
+        rules = reviewers.parse(self.FILE)
+        picked = reviewers.pick(rules, [{'domain': 'rpc'}, {'domain': 'other'}], 'someone', [],
+                                standing(asks, rules=rules), WEIGHTS, {})
+        self.assertEqual([(reviewer['login'], reviewer['domains']) for reviewer in picked], [('Cole', ['other', 'rpc'])])
+
+    def test_whom_an_earlier_handoff_picked_keeps_the_domain_while_they_are_asked(self):
+        self.assertEqual(Pick.pick(Pick(), 'billing', engaged=['carol'], held={'billing': 'carol'}), [])
+        self.assertEqual(Pick.pick(Pick(), 'billing', held={'billing': 'carol'}), [('alice', 'P1', ['billing'])])
 
 
 if __name__ == '__main__':

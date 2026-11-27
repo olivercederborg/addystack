@@ -31,6 +31,7 @@ is v2, and a reader takes the last block it trusts:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 from pathlib import Path
 import re
@@ -41,12 +42,14 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates  # noqa: E402
 import reviewers  # noqa: E402
+import standing  # noqa: E402
 
 GITHUB = Path(__file__).resolve().parent / 'github.sh'
 MARK, VERSION = 'addystack-handoff', 1
 SECOND_OPINION = 'second-opinion'
 BLOCK = re.compile(rf'<!-- {MARK}:v(\d+)\n(.*?)\n-->', re.S)
-ROLES = {'P1': 'P1', 'P2': 'P2', 'fallback': 'fewest open requests', 'chosen': 'chosen by the author'}
+ROLES = {'P1': 'P1', 'P2': 'P2', 'P3': 'P3', 'fallback': 'not listed here, least loaded',
+         'chosen': 'chosen by the author'}
 
 
 def _error(output: str) -> str:
@@ -99,7 +102,8 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
                           'ask': 'Review the whole PR in its place: is anything here wrong or risky?'})
     placed = reviewers.place(facts['rules'], decisions, facts['changed'])
     author, engaged = facts['author'], facts['engaged']
-    suggested = reviewers.pick(facts['rules'], placed, author, engaged, facts['load'])
+    weights, held = facts['settings']['weights'], _held(facts['handoffs'], engaged)
+    suggested = reviewers.pick(facts['rules'], placed, author, engaged, facts['standing'], weights, held)
     uncovered = []
     if chosen:
         # The pick's own coverage: the listed domains where it is a P1 or P2.
@@ -112,7 +116,8 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         request = [{'login': login, 'role': 'chosen', 'domains': covers(login)} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
         if with_suggested:
-            request += reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['load'])
+            request += reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['standing'], weights,
+                                      held)
     else:
         request = list(suggested)
     last = facts['handoffs'][-1] if facts['handoffs'] else None
@@ -134,6 +139,17 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
                             ('key', 'id', 'gate', 'decision', 'ask', 'why', 'code', 'domain')} for decision in placed],
              'reviewers': request, 'engaged': engaged}
     return {**result, 'comment': _render(disclosure, block, facts['rules'])}
+
+
+def _held(handoffs: list, engaged: list) -> dict:
+    """{domain: login}: whom its own earlier handoffs picked for each domain, the latest winning,
+    while that person is still requested or has reviewed. So a re-review leaves a domain with
+    the person picked for it, even one REVIEWERS doesn't list there, instead of asking another."""
+    held = {}
+    for block in handoffs:
+        for reviewer in block.get('reviewers', []):
+            held.update({name: reviewer['login'] for name in reviewer.get('domains', []) if name})
+    return {name: login for name, login in held.items() if reviewers.has(engaged, login)}
 
 
 def send(number: int, plan: dict, github=github) -> dict:
@@ -214,9 +230,9 @@ def _lines(output: str) -> list:
 
 def _facts(number: int) -> dict:
     """Every read a plan needs: {'viewer', 'author', 'body', 'base', 'head', 'rules': list | None,
-    'changed': [path], 'load': {login: open requests}, 'engaged': [login], 'handoffs': [block]},
-    where engaged is each person requested or with a standing review of the head, and handoffs are the
-    viewer's own, oldest first."""
+    'settings', 'standing': {login: standing}, 'changed': [path], 'engaged': [login],
+    'handoffs': [block]}, where engaged is each person requested or with a standing review of the head,
+    standing covers everyone REVIEWERS names, and handoffs are the viewer's own, oldest first."""
     repo = 'repos/{owner}/{repo}'
     viewer = github('viewer').strip()
     pr = json.loads(_gh('api', f'{repo}/pulls/{number}'))
@@ -230,16 +246,17 @@ def _facts(number: int) -> dict:
                                          '.[] | {type: .user.type, login: .user.login, state, commit_id} | tojson')))
     reviewed = [review['login'] for review in reviews if review['type'] == 'User' and review['commit_id'] == pr['head']['sha']
                 and review['state'] not in ('PENDING', 'DISMISSED')]
-    load = {}
-    for login in _lines(_gh('api', '--paginate', f'{repo}/pulls?state=open&per_page=100',
-                            '--jq', '.[].requested_reviewers[].login')):
-        load[login] = load.get(login, 0) + 1
+    rules = settings = people = None
+    if text is not None:
+        rules, settings = reviewers.parse(text), reviewers.settings(text)
+        everyone = reviewers.unique(name for rule in rules for name in rule['names'])
+        people = standing.read(everyone, settings['share_since'], dt.datetime.now(dt.timezone.utc), _gh)
     comments = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/issues/{number}/comments?per_page=100',
                                           '--jq', '.[] | {login: .user.login, body} | tojson')))
     return {'viewer': viewer, 'author': author, 'body': pr['body'] or '', 'base': pr['base']['sha'],
-            'head': pr['head']['sha'], 'rules': None if text is None else reviewers.parse(text),
+            'head': pr['head']['sha'], 'rules': rules, 'settings': settings, 'standing': people,
             'changed': _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/files?per_page=100', '--jq', '.[].filename')),
-            'load': load, 'engaged': [login for login in dict.fromkeys(requested + reviewed)
+            'engaged': [login for login in dict.fromkeys(requested + reviewed)
                                       if login.lower() != author.lower()],
             'handoffs': [block for block in (read(comment['body']) for comment in comments
                                              if comment['login'] == viewer) if block]}
