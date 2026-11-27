@@ -120,20 +120,24 @@ Its docstring lists the known limits.
 `addystack install` sets it up on macOS while the `agent-memory-guard-notice` hook is
 selected (the `machine` tag, so `hooks.preset` `all`, or `hooks.enable`): it writes
 `~/Library/LaunchAgents/addystack.agent-memory-guard.plist` from `agent-memory-guard.plist`
-with the kit's path, starts it with `launchctl`, and appends the kernel backstop for fork
-storms to `~/.zshenv` unless a `ulimit -Su` line is already there:
+with the kit's path, starts it with `launchctl`, and records it in its ledger. It then
+runs zsh as each kind of agent shell, and when one gets no process limit of 3,000 or
+less, appends the kernel backstop for fork storms to the `.zshenv` zsh reads
+(`$ZDOTDIR`, else home):
 
 ```sh
 # fork fails past 3,000 user processes in agent shells (T3 names a Codex session's
-# thread but sets no CLI path); GUI apps keep 8,000
-[[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH || -n $T3CODE_THREAD_ID ]] && ulimit -Su 3000
+# thread but sets no CLI path); GUI apps keep 8,000; ${X-} survives `setopt nounset`
+[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] && ulimit -Su 3000
 ```
 
-Once the hook is deselected, install stops the guard and removes its plist; the
-`~/.zshenv` line stays. `addystack doctor` fails while the plist is missing, differs from
-the kit's, or isn't loaded, or `~/.zshenv` sets no limit. An older install may run the
-guard under another label: `launchctl list | grep agent-memory-guard`, then `launchctl
-bootout gui/$(id -u)/<that label>` and remove its plist.
+Once the hook is deselected, install stops a guard its ledger records, and removes the
+plist; one you set up by hand stays, and so does the `.zshenv` line. A stop `launchctl`
+refuses fails the install, which retries it next time. `addystack doctor` fails while the
+plist is missing, differs from the kit's, or isn't loaded, or an agent shell still gets no
+limit, such as after an early `return` in `.zshenv`. An older install may run the guard
+under another label: `launchctl list | grep agent-memory-guard`, then `launchctl bootout
+gui/$(id -u)/<that label>` and remove its plist.
 
 Kills go to `~/Library/Logs/agent-memory-guard.log`, a notification, and, through
 `agent-memory-guard-notice.py`, the agent. After editing the guard, restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.

@@ -46,8 +46,9 @@ into the agent, so install does nothing, and a disabled host's link stays too. N
 entry: a link is always install's to replace and anything else never is.
 
 Guard: on macOS, while the agent-memory-guard-notice hook is selected, install writes the
-agent memory guard's launchd plist and starts it, and appends the agent-shell process
-limit to ~/.zshenv (guard.py).
+agent memory guard's launchd plist and starts it, appends the agent-shell process limit to
+.zshenv when a new agent shell has none, and records the guard in the ledger as
+`"guard": true`; once deselected, it stops only a guard the ledger records (guard.py).
 
 Commands: the hooks in COMMANDS send a Claude Code command, so while hookset selects any of
 them for Claude Code, install links that command in Claude's commands/ folder to the kit's
@@ -113,6 +114,11 @@ def run(resolved: Resolved) -> List[Change]:
     """Every change needed, made. Raises ValueError, before writing anything, when a
     settings file or the config can't be read or edited safely."""
     changes, writes = plan(resolved)
+    # A guard stop runs before the ledger that drops it is written, so a stop launchd
+    # refuses leaves the guard recorded for the next install to retry.
+    for change in changes:
+        if change.kind == "guard" and not change.source:
+            guard.stop(change.target)
     for path, text in writes.items():
         _write(path, text)
     for change in changes:
@@ -125,8 +131,8 @@ def run(resolved: Resolved) -> List[Change]:
         elif change.kind == "renamed-skill" and not change.left:
             _link(change.target.with_name(change.source.name), change.source)
             os.unlink(change.target)
-        elif change.kind == "guard":
-            guard.start(change.source) if change.source else guard.stop(change.target)
+        elif change.kind == "guard" and change.source:
+            guard.start(change.source)
     return changes
 
 
@@ -143,12 +149,15 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
         changes += [change] if change else []
         if pairs:
             recorded[runtime] = pairs
-    wanted = {"version": 1, "hooks": recorded}
-    if _read_json(LEDGER.expanduser()) != wanted:
+    ledger_data = _read_json(LEDGER.expanduser())
+    owned = isinstance(ledger_data, dict) and ledger_data.get("guard") is True
+    guard_changes, owned = guard.plan(resolved, writes, owned)
+    wanted = {"version": 1, "hooks": recorded, **({"guard": True} if owned else {})}
+    if ledger_data != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
     machine = [Change(kind, target, detail, source=target if start else None)
-               for kind, target, detail, start in guard.plan(resolved, writes)]
+               for kind, target, detail, start in guard_changes]
     return changes + ([agent] if agent else []) + _commands(resolved) + _renamed_skills(resolved) + _skill_links(resolved) + machine, writes
 
 

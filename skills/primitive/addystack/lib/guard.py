@@ -3,17 +3,28 @@ process limit (hooks/README.md, Agent memory guard).
 
 Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_wanted): the
 `machine` tag, the darwin host profile, and `hooks.enable` and `hooks.disable` by that id.
-While it's selected, install writes the launchd plist from hooks/agent-memory-guard.plist
-with the kit's absolute path, (re)starts the agent when the plist changed or it isn't
-loaded, and appends the process limit to ~/.zshenv unless a `ulimit -Su` line is already
-there. Once it's deselected, install stops the agent and removes its plist; the ~/.zshenv
-line is the user's file's, so it stays. launchctl runs by name, so tests stub it on PATH.
+
+- **Agent**: while it's selected, install writes the launchd plist from
+  hooks/agent-memory-guard.plist with the kit's absolute path, and (re)starts the agent
+  when the plist changed or it isn't loaded; from then on reconcile's ledger records the
+  guard as install's. Once it's deselected, install stops a guard the ledger records,
+  whether or not its plist is still there, and removes the plist; a guard the user set up
+  by hand, which the ledger doesn't record, stays. A stop launchd refuses fails the
+  install, and the ledger keeps the guard so the next install tries again.
+- **Limit**: whether a new agent shell gets one is probed, not read: zsh runs once with each
+  agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
+  `alias`, `nounset`, or a `ZDOTDIR` elsewhere all count as they would in a real shell.
+  Without a limit of LIMIT or less, install appends LIMIT_LINES to the .zshenv zsh reads
+  (`$ZDOTDIR`, else home), once, and doctor reports a limit that still doesn't apply. A
+  .zshenv that exists but can't be read stops the install before anything is written.
+
+launchctl and zsh run by name, so tests stub launchctl on PATH.
 """
 from __future__ import annotations
 
 import os
 import plistlib
-import re
+import resource
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -23,11 +34,13 @@ from config import Resolved
 
 LABEL = "addystack.agent-memory-guard"
 TEMPLATE = Path(__file__).resolve().parent.parent / "hooks" / "agent-memory-guard.plist"
-# Fork fails past 3,000 user processes in agent shells; GUI apps keep macOS's 8,000. T3
-# names a Codex session's thread but sets no CLI path.
-LIMIT = ("# addystack: agent shells stop forking past 3,000 user processes, the backstop for fork storms.\n"
-         "[[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH || -n $T3CODE_THREAD_ID ]] && ulimit -Su 3000\n")
-_HAS_LIMIT = re.compile(r"^[^#\n]*\bulimit\s+-Su\b", re.M)
+LIMIT = 3000
+# Fork fails past LIMIT user processes in agent shells; GUI apps keep macOS's 8,000. T3
+# names a Codex session's thread but sets no CLI path. `${X-}` keeps it working under
+# `setopt nounset`.
+LIMIT_LINES = (
+    "# addystack: agent shells stop forking past 3,000 user processes, the backstop for fork storms.\n"
+    "[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] && ulimit -Su 3000\n")
 
 
 def plist() -> Path:
@@ -35,7 +48,8 @@ def plist() -> Path:
 
 
 def zshenv() -> Path:
-    return Path.home() / ".zshenv"
+    """The .zshenv a new zsh reads."""
+    return Path(os.environ.get("ZDOTDIR") or Path.home()) / ".zshenv"
 
 
 def plist_text(resolved: Resolved) -> str:
@@ -54,10 +68,14 @@ def plist_text(resolved: Resolved) -> str:
 
 
 def _read(path: Path) -> Optional[str]:
+    """The file's text, or None when it doesn't exist. Raises ValueError when it exists but
+    can't be read, so install never replaces a file it couldn't see."""
     try:
         return path.read_text()
-    except OSError:
+    except FileNotFoundError:
         return None
+    except (OSError, UnicodeDecodeError) as error:
+        raise ValueError(f"can't read {path}: {error}") from error
 
 
 def _launchctl(*args: str) -> bool:
@@ -76,17 +94,46 @@ def loaded() -> bool:
     return _launchctl("print", f"{_domain()}/{LABEL}")
 
 
-def plan(resolved: Resolved, writes: Dict[Path, str]) -> List[Tuple[str, Path, str, bool]]:
-    """Each change as (kind, target, detail, start): kind `guard` starts the agent when
-    start is True and stops it and removes its plist when False; `shell-limit` is a write
-    only. Adds each file to write to writes."""
-    changes: List[Tuple[str, Path, str, bool]] = []
+def _uncapped() -> None:
+    soft, hard = resource.getrlimit(resource.RLIMIT_NPROC)
+    resource.setrlimit(resource.RLIMIT_NPROC, (hard, hard))
+
+
+# What marks a shell as an agent's: Claude Code's, T3's for Claude, and T3's for Codex.
+AGENT_VARIABLES = ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID")
+
+
+def shell_limit() -> Optional[int]:
+    """The highest soft process limit a new agent shell ends up with, probing a shell
+    marked by each of AGENT_VARIABLES alone, or None when one has none, or zsh can't say."""
+    limits = []
+    for variable in AGENT_VARIABLES:
+        env = {key: value for key, value in os.environ.items() if key not in AGENT_VARIABLES}
+        env[variable] = "1"
+        try:
+            done = subprocess.run(["zsh", "-c", "ulimit -Su"], capture_output=True, text=True, timeout=10,
+                                  env=env, stdin=subprocess.DEVNULL, preexec_fn=_uncapped)
+        except (OSError, subprocess.SubprocessError):
+            return None
+        value = done.stdout.strip()
+        if done.returncode != 0 or not value.isdigit():
+            return None
+        limits.append(int(value))
+    return max(limits)
+
+
+def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List[Tuple[str, Path, str, bool]], bool]:
+    """Each change as (kind, target, detail, start), and whether the ledger records the
+    guard as install's once they're made; reconcile runs a stop before writing the ledger. Kind `guard` starts the agent from its plist when start
+    is True, and stops it and removes the plist when False; `shell-limit` is a write only.
+    Adds each file to write to writes. Raises ValueError as _read does."""
     path = plist()
     if not hookset.guard_wanted(resolved):
-        if os.path.lexists(path):
-            changes.append(("guard", path, "stops the agent memory guard and removes its plist: its hook isn't "
-                            "selected", False))
-        return changes
+        if owned and (os.path.lexists(path) or loaded()):
+            return [("guard", path, "stops the agent memory guard and removes its plist: its hook isn't selected",
+                     False)], False
+        return [], False
+    changes: List[Tuple[str, Path, str, bool]] = []
     text = plist_text(resolved)
     current = _read(path)
     if current != text:
@@ -95,11 +142,13 @@ def plan(resolved: Resolved, writes: Dict[Path, str]) -> List[Tuple[str, Path, s
                         + " the agent memory guard's launchd plist and starts it", True))
     elif not loaded():
         changes.append(("guard", path, "starts the agent memory guard, which isn't loaded", True))
-    env = _read(zshenv())
-    if env is None or not _HAS_LIMIT.search(env):
-        writes[zshenv()] = (env or "") + ("\n" if env and not env.endswith("\n") else "") + LIMIT
-        changes.append(("shell-limit", zshenv(), "caps agent shells at 3,000 user processes", False))
-    return changes
+    limit = shell_limit()
+    if limit is None or limit > LIMIT:
+        env = _read(zshenv())
+        if env is None or LIMIT_LINES not in env:
+            writes[zshenv()] = (env or "") + ("\n" if env and not env.endswith("\n") else "") + LIMIT_LINES
+            changes.append(("shell-limit", zshenv(), f"caps agent shells at {LIMIT:,} user processes", False))
+    return changes, True
 
 
 def start(path: Path) -> None:
@@ -110,12 +159,19 @@ def start(path: Path) -> None:
 
 
 def stop(path: Path) -> None:
+    """Stops the agent and removes its plist. Raises OSError while launchd still has it."""
     _launchctl("bootout", f"{_domain()}/{LABEL}")
-    os.unlink(path)
+    if loaded():
+        raise OSError(f"launchctl couldn't stop {LABEL}; run addystack install again")
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 def problems(resolved: Resolved) -> List[str]:
-    """What doctor reports: one line per missing or stale piece, none when it's not wanted."""
+    """What doctor reports: one line per missing, stale, or ineffective piece; none when
+    it's not wanted."""
     if not hookset.guard_wanted(resolved):
         return []
     lines = []
@@ -126,7 +182,9 @@ def problems(resolved: Resolved) -> List[str]:
         lines.append(f"{plist()} differs from the kit's")
     elif not loaded():
         lines.append("the agent memory guard isn't loaded")
-    env = _read(zshenv())
-    if env is None or not _HAS_LIMIT.search(env):
-        lines.append(f"{zshenv()} sets no agent-shell process limit")
+    limit = shell_limit()
+    if limit is None or limit > LIMIT:
+        got = "none" if limit is None else f"{limit:,}"
+        lines.append(f"a new agent shell gets no process limit of {LIMIT:,} or less (it gets {got}); "
+                     f"check {zshenv()}")
     return lines
