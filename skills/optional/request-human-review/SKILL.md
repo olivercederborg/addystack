@@ -2,6 +2,7 @@
 name: request-human-review
 description: Decides whether a PR needs a human's approval, and acts on it. With --unattended it reviews a PR as an App with nobody in the loop and posts the outcome (approve, request changes, or name the decisions that need a human), or answers a comment; a PR's author learns which decisions need a human. Use for an App's unattended review, or when an author asks whether their PR needs a human reviewer.
 compatibility: Requires git, gh (authenticated), jq, and python3.
+disable-model-invocation: true
 metadata:
   layer: optional
 ---
