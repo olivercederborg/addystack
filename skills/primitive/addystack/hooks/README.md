@@ -143,13 +143,13 @@ limit, such as after an early `return` in `.zshenv`. An older install may run th
 under another label: `launchctl list | grep agent-memory-guard`, then `launchctl bootout
 gui/$(id -u)/<that label>` and remove its plist.
 
-It also queues heavy checks across every agent: at most `checkQueue.maxChecks` (4) tsc,
-tsgo, tsgolint, oxlint, eslint, jest, or vitest runs at once, and a new one waits while
+It also queues heavy checks across every agent: at most `checkQueue.maxChecks` (4) busy
+tsc, tsgo, tsgolint, oxlint, eslint, jest, or vitest runs at once, and a new one waits while
 running checks use `checkQueue.maxCores` (10) cores or more over 2 seconds, one admitted
 every 2 seconds. On Nov 27, 2026 five agents' type checks and turbo's eight-task lint runs
 used all 18 cores and throttled the Mac. A waiting check is stopped within a tick of its
 start, never mid-run, saved to `~/.local/state/addystack/check-queue.json` first, and
-resumed oldest first, or when its agent's shell is gone; one still waiting after 15
+resumed oldest first when one finishes or goes idle, or when its agent's shell is gone; one still waiting after 15
 minutes with the queue full is killed. A running check idle for 30 seconds (under 0.1
 cores) stops counting toward `checkQueue.maxChecks`, so a watcher misread as a check can't
 hold a slot; one that wakes counts again without being stopped, so the count can pass the

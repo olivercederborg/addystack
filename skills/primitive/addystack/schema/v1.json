@@ -190,7 +190,7 @@
       "type": "object",
       "additionalProperties": false,
       "default": { "enabled": true, "maxChecks": 4, "maxCores": 10 },
-      "markdownDescription": "The agent memory guard's check queue, on macOS where the guard runs: how many heavy checks (tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest) all agents' commands run at once. A new check waits, stopped, until one finishes, and is killed if it still waits after 15 minutes.",
+      "markdownDescription": "The agent memory guard's check queue, on macOS where the guard runs: how many busy heavy checks (tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest) all agents' commands run at once. A new check waits, stopped, until one finishes or goes idle, and is killed if it still waits after 15 minutes.",
       "properties": {
         "enabled": {
           "type": "boolean",

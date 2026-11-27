@@ -31,17 +31,19 @@ a background command, so 2 hours is a budget, not an agent's cap: in November 20
 rollout on one Mac polled one command for more than 37 minutes.
 
 It also queues heavy checks (tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest not
-watching): at most checkQueue.maxChecks run at once across every agent's commands, and a
-new one waits while running checks use checkQueue.maxCores cores or more (Governor).
+watching): at most checkQueue.maxChecks busy ones run at once across every agent's
+commands, and a new one waits while running checks use checkQueue.maxCores cores or more
+(Governor).
 Added after Nov 27, 2026: five agents' type checks and lint runs, turbo's eight lint tasks
 each, used all 18 cores and throttled the Mac. A waiting check is SIGSTOPped within a tick
 of its start, never mid-run, saved to ~/.local/state/addystack/check-queue.json first, and
-resumed oldest first; one still waiting after 15 minutes with the queue full is killed,
-and agent-memory-guard-notice.py tells the agent why, as it does for every kill here. The
-next guard start, a SIGTERM, `"checkQueue": {"enabled": false}`, or any governor error
-resumes every waiting check. A running check idle for 30 seconds (under 0.1 cores) stops
-counting toward maxChecks, so a watcher can't hold a slot; one that wakes counts again
-without being stopped, so the count can pass maxChecks for a while.
+resumed oldest first when one finishes or goes idle; one still waiting after 15 minutes
+with the queue full is killed, and agent-memory-guard-notice.py tells the agent why, as it
+does for every kill here. The next guard start, a SIGTERM,
+`"checkQueue": {"enabled": false}`, or any governor error resumes every waiting check. A
+running check idle for 30 seconds (under 0.1 cores) stops counting toward maxChecks, so a
+watcher can't hold a slot; one that wakes counts again without being stopped, so the count
+can pass maxChecks for a while.
 
 Known limits:
 - A checker started outside an agent's commands, in the user's own terminal, isn't
