@@ -739,6 +739,7 @@ class Governor:
         self.held = {}  # top -> {"members": {ident: Proc}, "since": now, "head", "text"}, oldest first
         self.cpu = {}  # top -> (last, debt, began, [(now, total ns)])
         self.last_admit = None  # monotonic time a unit last started or resumed
+        self.versions = {}  # ident -> exec version of each agent process the last tick saw
         self.error = None
         self._resume_saved()
 
@@ -778,6 +779,7 @@ class Governor:
             self.enabled = False
             self.running.clear()
             self.cpu.clear()
+            self.versions.clear()
             return
         if not self.enabled:  # re-enabled: what runs now runs on
             self.enabled, self.started = True, wall
@@ -824,8 +826,11 @@ class Governor:
         tops = {unit.top: next(proc for proc in unit.members if proc.ident == unit.top) for unit in new}
         for unit in sorted(new, key=lambda unit: tops[unit.top].start):
             top = tops[unit.top]
-            holdable = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS
-                        and self._attended(unit.top, commands[unit.head], agents))
+            # A shell that runs setup, then execs its checker (`zsh -c "bun install && tsc"`)
+            # keeps its start time, so an exec seen since the last tick also makes it new.
+            execed = self.versions.get(top.ident, top.version) != top.version
+            fresh = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS) or execed
+            holdable = fresh and self._attended(unit.top, commands[unit.head], agents)
             if not holdable:
                 self._run(unit.top, unit.members, now, wall)  # already running: never stopped
             elif not self.held and self._room(config, now):
@@ -833,6 +838,7 @@ class Governor:
                 self.last_admit = now
             else:
                 self._hold(owners, unit, commands[unit.head], now, wall)
+        self.versions = {proc.ident: proc.version for members in commands.values() for proc in members}
         # 5. Kill a unit held too long while the queue is still full. One held only by the
         # admission spacing gets its turn within GATE_WINDOW_SECONDS instead.
         full = len(self.running) >= config.maxChecks or (

@@ -917,6 +917,19 @@ class CheckQueue(unittest.TestCase):
         q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000.2), q.check(4))
         self.assertEqual(q.stopped(), {241})
 
+    def test_a_shell_that_execs_its_checker_later_is_held(self):
+        q = Queue(self, cap=1)
+        shell = proc(300, 100, argv=("/bin/zsh", "-lc", "bun install && tsc"), start=1000.0)
+        for _ in range(8):
+            q.tick(q.check(1, 1000), [shell])
+        q.tick(q.check(1, 1000), [shell._replace(argv=list(TSC), version=2)])
+        self.assertEqual(q.stopped(), {300})
+
+    def test_a_checker_execed_before_the_guard_started_runs_on(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, 990), [proc(300, 100, argv=TSC, start=990.0)._replace(version=2)])
+        self.assertEqual(q.sent, [])
+
     def test_members_that_join_a_held_unit_are_stopped(self):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))
