@@ -140,19 +140,18 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[str],
                place: Callable[[str, Optional[str]], Optional[str]]) -> Optional[str]:
     """The text a --body-file at `path` holds when the gh command at `index` reads it: the
     heredoc a `cat > path <<EOF` in the same command wrote last before it, else the file on
-    disk. None when the command names the path any other way, so it may write it."""
+    disk. None when the command names the path any other way before it, so it may write it;
+    a piece after the gh command, such as `&& rm body.md`, runs once gh has read it."""
     if path is None:
         return None
     written = None
-    for other, (words, lead, text, at) in enumerate(pieces):
-        if other == index:
-            continue
+    for other, (words, lead, text, at) in enumerate(pieces[:index]):
         writes = [(mode, place(target, at)) for mode, target in _WRITE.findall(text)]
         named = [place(re.sub(r"^\d*[<>|]+", "", word), at) for word in words]
         if path not in named and path not in [target for _, target in writes]:
             continue
         held = re.findall(r"<<\x01H(\d+)\x01", text)
-        if (other < index and words[lead:lead + 1] == ["cat"] and held
+        if (words[lead:lead + 1] == ["cat"] and held
                 and [target for mode, target in writes if mode != ">>"] == [path] and len(writes) == 1):
             written = bodies[int(held[-1])]
         else:

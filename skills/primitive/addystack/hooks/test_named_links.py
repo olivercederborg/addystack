@@ -147,6 +147,8 @@ class PostedText(unittest.TestCase):
         self.assertEqual(self.posts("Bash", bash(command)), [posted_text.Post("gh pr create", "Fresh DEV-4.")])
         self.assertEqual(self.posts("Bash", bash("cat >b.md <<EOF && gh pr create -F b.md\nFresh DEV-4.\nEOF"))[0].text,
                          "Fresh DEV-4.")
+        self.assertEqual(self.posts("Bash", bash("gh pr create -F b.md && rm b.md"))[0].text, "stale #99")
+        self.assertEqual(self.posts("Bash", bash(command + " && rm b.md"))[0].text, "Fresh DEV-4.")
         for command in ("echo hi > b.md && gh pr create -F b.md", "cat >> b.md <<EOF\nx\nEOF\ngh pr create -F b.md",
                         "cp a.md b.md; gh pr create -F b.md"):
             with self.subTest(command=command):
