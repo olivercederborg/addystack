@@ -65,13 +65,6 @@ def github(*arguments) -> str:
     return result.stdout
 
 
-def fetch(*commits: str) -> None:
-    """The commits a comparison needs, into the checkout this runs in."""
-    result = subprocess.run(['git', 'fetch', '--quiet', 'origin', *commits], capture_output=True, text=True, timeout=600)
-    if result.returncode:
-        raise ValueError(f'git fetch failed: {_error(result.stderr)}')
-
-
 def pr(number: int, fields: str = 'body,headRefOid') -> dict:
     result = subprocess.run(['gh', 'pr', 'view', str(number), '--json', fields], capture_output=True,
                             text=True, timeout=120)
@@ -139,9 +132,10 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     if problems:
         raise ValueError('; '.join(problems))
     # A PR moved to another base can change its diff with the same head: the gates judged the
-    # diff from the verdict's base, so that diff must still be the PR's.
-    fetch(verdict['base'], current['baseRefOid'], head)
-    if gates.own_diff(verdict['base'], head) != gates.own_diff(current['baseRefOid'], head):
+    # diff from the verdict's base, so that diff must still be the PR's, here and again whenever
+    # the base changes while the checks are waited on.
+    judged = current['baseRefOid']
+    if not gates.same_diff(verdict['base'], judged, head):
         raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
     findings = review['findings']
     holds = any(finding['holds'] for finding in findings)
@@ -165,6 +159,11 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
+        base = pr(number, 'baseRefOid')['baseRefOid']
+        if base != judged:
+            if not gates.same_diff(verdict['base'], base, head):
+                raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")
+            judged = base
         action = gates.decide(verdict, holds, state, second['status'])
         if action != 'wait':
             break

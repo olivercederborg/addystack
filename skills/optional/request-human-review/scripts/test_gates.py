@@ -165,6 +165,16 @@ class OwnDiff(unittest.TestCase):
             fingerprints.append(gates.own_diff(self.base, self.rev('HEAD'), str(self.repo)))
         self.assertNotEqual(*fingerprints)
 
+    def test_same_diff_holds_while_the_base_only_moves_on_and_not_against_another_base(self):
+        self.git('switch', '-q', 'main')
+        self.commit('other.txt', 'other\n')
+        moved = self.rev('HEAD')
+        self.git('switch', '-q', 'pr')
+        self.assertTrue(gates.same_diff(self.base, moved, self.approved, str(self.repo)))
+        # A base that already holds part of the PR, as a retarget can: the PR's own diff is less.
+        partway = self.rev('pr~1')
+        self.assertFalse(gates.same_diff(self.base, partway, self.approved, str(self.repo)))
+
     def test_a_mode_or_a_binary_byte_changes_it(self):
         before = gates.own_diff(self.base, self.approved, str(self.repo))
         self.git('update-index', '--chmod=+x', 'feature.txt')

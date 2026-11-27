@@ -76,6 +76,15 @@ def check(verdict: dict, pr_body: str, head: str, number: int | None = None) -> 
     return problems
 
 
+def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
+    """Whether head's own diff against base is the one judged against judged_base: a PR moved to
+    another base can change its diff with the same head, while a base that only moved on leaves
+    it. Fetches the commits it compares when it can; one still missing fails in the diff."""
+    subprocess.run(['git', '-C', cwd, 'fetch', '--quiet', 'origin', judged_base, base, head],
+                   capture_output=True, timeout=600)
+    return own_diff(judged_base, head, cwd) == own_diff(base, head, cwd)
+
+
 def own_diff(base: str, head: str, cwd: str = '.') -> str:
     """A fingerprint of the PR's own diff, from the merge base of base and head to head: equal
     fingerprints mean byte-identical diffs, file modes and binary files included. It hashes git's
@@ -128,9 +137,11 @@ def section(verdict: dict, no_second_opinion: str | None = None) -> str:
 def main(arguments):
     if len(arguments) == 3 and arguments[0] == 'check':
         verdict = load(arguments[2])
-        pr = json.loads(subprocess.run(['gh', 'pr', 'view', arguments[1], '--json', 'body,headRefOid'],
+        pr = json.loads(subprocess.run(['gh', 'pr', 'view', arguments[1], '--json', 'body,headRefOid,baseRefOid'],
                                        capture_output=True, text=True, check=True, timeout=60).stdout)
         problems = check(verdict, pr['body'], pr['headRefOid'], int(arguments[1]))
+        if not problems and not same_diff(verdict['base'], pr['baseRefOid'], pr['headRefOid']):
+            problems.append(f"the PR's diff against its base is not the one the verdict judged from {verdict['base']}")
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':

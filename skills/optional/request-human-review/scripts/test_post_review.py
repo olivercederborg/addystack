@@ -65,7 +65,7 @@ class Post(unittest.TestCase):
             'decisions': [{'id': 'D1', 'decision': 'Add a totals column', 'code': 'db/schema.ts:12', 'gate': gate,
                            'why': 'a schema change' if gate else 'follows db/schema.ts:4'}]}))
 
-    def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None, base=BASE, diffs=None, retry=False):
+    def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None, base=BASE, diffs=None, retry=False, bases=None):
         review = {'pr': 7, 'head': HEAD, 'gates': 'GATES.json', 'body': 'BODY.md', 'findings': list(findings),
                   'second_opinion': {'status': 'ran'} if second_opinion is None else second_opinion}
         if second_opinion == 'absent':
@@ -76,10 +76,13 @@ class Post(unittest.TestCase):
         if not retry:
             # Each review writes its files in a folder of its own; only a retry of the same one keeps its record.
             (self.folder / 'POSTED.json').unlink(missing_ok=True)
+        bases = list(bases or [base])
+        def pr(number, fields=''):
+            return {'body': BODY, 'headRefOid': head, 'baseRefOid': bases.pop(0) if len(bases) > 1 else bases[0]}
         with patch.object(post_review, 'github', fake.github), \
-                patch.object(post_review, 'fetch', lambda *commits: None), \
-                patch.object(post_review.gates, 'own_diff', lambda against, commit: diffs.get(against, 'same')), \
-                patch.object(post_review, 'pr', lambda number, fields='': {'body': BODY, 'headRefOid': head, 'baseRefOid': base}):
+                patch.object(post_review.gates, 'same_diff',
+                             lambda judged, against, commit: diffs.get(against, 'same') == diffs.get(judged, 'same')), \
+                patch.object(post_review, 'pr', pr):
             outcome = post_review.post(7, self.folder / 'REVIEW.json', wait, now=lambda: next(clock), sleep=lambda s: None)
         self.assertEqual(sorted(path.name for path in self.folder.iterdir() if path.name != 'POSTED.json'),
                          ['BODY.md', 'GATES.json', 'REVIEW.json', 'note.md'], 'post leaves no scratch files beside REVIEW.json')
@@ -147,9 +150,14 @@ class Post(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'the verdict is for #8, not #7'):
             self.post(fake)
         self.gate(None)
-        # Moved to another base: the same head's diff against it isn't the one the gates judged.
+        # Moved to another base: the same head's diff against it isn't the one the gates judged,
+        # before the checks are waited on or while they are.
         with self.assertRaisesRegex(ValueError, "not the one the gates judged"):
             self.post(fake, base=NEWER, diffs={NEWER: 'more'})
+        with self.assertRaisesRegex(ValueError, 'changed while the checks were waited on'):
+            self.post(fake, bases=[BASE, NEWER], diffs={NEWER: 'more'})
+        # A base that only moved on leaves the diff, and the run goes on.
+        self.assertEqual(self.post(Fake(), bases=[BASE, NEWER])['outcome'], 'approved')
         self.assertEqual(fake.writes, [])
 
     def test_a_retry_after_a_failed_withdrawal_posts_the_review_once(self):
