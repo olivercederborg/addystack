@@ -87,7 +87,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
     command = tool_input.get("command")
     if not isinstance(command, str) or not re.search(r"\bgh\b", command):
         return []
-    from shell_dirs import ASSIGNMENT, HEREDOC, QUOTED, Walk  # only a gh command pays for shutil
+    from shell_dirs import ASSIGNMENT, HEREDOC, OPAQUE, QUOTED, Walk  # only a gh command pays for shutil
     # A heredoc's body, None when the shell expands it (an unquoted delimiter and a $ or `),
     # so what it posts can't be known here.
     bodies: List[Optional[str]] = []
@@ -166,12 +166,15 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
         known = bool(cwd) and "dir" not in walk.unknown
         pieces.append((words, lead, walk.pieces[at], (walk.cwd if known else None, dict(env))))
         command_word = words[lead] if lead < len(words) else None
-        if command_word in ("eval", "source", "."):
+        if command_word in OPAQUE:
             env = dict.fromkeys(env)
         elif command_word in _SETS_VARIABLES or words[:1] in (["for"], ["select"]):
             for word in words:
                 if word.partition("=")[0] in env:
                     env[word.partition("=")[0]] = None
+        for word in words[:lead + 1]:  # S+=/b appends, so S's value is no longer the one it holds
+            if re.match(r"[A-Za-z_]\w*\+=", word) and word.partition("+=")[0] in env:
+                env[word.partition("+=")[0]] = None
         sets = words[:lead] if lead == len(words) else words[lead + 1:] if command_word == "export" else []
         for word in sets:
             if ASSIGNMENT.match(word):

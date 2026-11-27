@@ -162,6 +162,7 @@ class PostedText(unittest.TestCase):
         for command in ("B='see #13'; read -r B <<<'see #12'; gh pr comment 1 -b \"$B\"",
                         "B='see #13'; for B in x; do :; done; gh pr comment 1 -b \"$B\"",
                         "B='see #13'; eval \"$X\"; gh pr comment 1 -b \"$B\"",
+                        f"S={folder}; S+=/sub; gh pr edit 5 -F $S/b.md",
                         "gh pr edit 5 -F $UNSET/b.md", f"if x; then S={folder}; fi; gh pr edit 5 -F $S/b.md",
                         f"true || S={folder}; gh pr edit 5 -F $S/b.md", "S=$(pwd); gh pr edit 5 -F $S/b.md"):
             with self.subTest(command=command):
