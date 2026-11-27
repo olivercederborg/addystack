@@ -40,11 +40,10 @@ PLACEHOLDER = {"ui": "<capture>", "parity": "<log>", "contract": "<diff>", "muta
 
 UI_FILE = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|sass|less|html|storyboard|xib)$")
 # A .tsx or .jsx file renders only when it has JSX: a closing or self-closing tag, or a
-# fragment. A generic such as `Set<Item>()` has neither. Whole-line and block comments are
-# dropped first; a comment after code on the same line still counts, which errs toward UI.
+# fragment. A generic such as `Set<Item>()` has neither. Comments and strings aren't
+# parsed, so a tag written in one still counts, which errs toward asking for UI.
 JSX_FILE = re.compile(r"\.(tsx|jsx)$")
 JSX = re.compile(r"</[\w$>]|/>|<>")
-JS_COMMENT = re.compile(r"/\*.*?\*/|^[ \t]*//[^\n]*", re.S | re.M)
 UI_SWIFT = re.compile(r"^\s*import\s+(SwiftUI|UIKit)\b", re.M)
 SCHEMA_FILE = re.compile(r"(^|/)(openapi|swagger)[^/]*$|\.schema\.json$|\.(proto|graphql|gql)$|\.d\.ts$")
 EXPORTING_FILE = re.compile(r"\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$")
@@ -109,18 +108,16 @@ def _git(cwd: Path, *args: str) -> str:
 
 def _content(cwd: Path, base: str, head: str, path: str) -> str:
     """The file at head, or at the merge base `base...head` diffs against when the change
-    deleted it. A tracked symlink reads its target at the same revision."""
+    deleted it, following tracked symlinks to their target at that revision."""
     fork = subprocess.run(["git", "merge-base", base, head], cwd=cwd, capture_output=True, text=True).stdout.strip()
     for rev in (head, fork or base):
-        entry = subprocess.run(["git", "ls-tree", rev, "--", path], cwd=cwd, capture_output=True, text=True).stdout
-        if not entry:
-            continue
-        target = path
-        if entry.startswith("120000 "):
-            link = subprocess.run(["git", "cat-file", "-p", f"{rev}:{path}"], cwd=cwd, capture_output=True, text=True)
-            target = os.path.normpath(str(PurePosixPath(path).parent / link.stdout.strip()))
-        result = subprocess.run(["git", "cat-file", "-p", f"{rev}:{target}"], cwd=cwd, capture_output=True)
-        return "" if result.returncode else result.stdout.decode(errors="replace")
+        result = subprocess.run(["git", "cat-file", "--batch", "--follow-symlinks"], cwd=cwd, capture_output=True,
+                                input=f"{rev}:{path}\n".encode())
+        header, _, body = result.stdout.partition(b"\n")
+        kind = header.split()
+        # "<oid> blob <size>"; a missing path, a dangling link, or one leaving the tree says so instead.
+        if len(kind) == 3 and kind[1] == b"blob" and kind[2].isdigit():
+            return body[:int(kind[2])].decode(errors="replace")
     return ""
 
 
@@ -187,16 +184,17 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
     for path in files:
         name, is_test = PurePosixPath(path).name, bool(TEST_FILE.search(path))
         if not is_test and UI_FILE.search(path) and (not JSX_FILE.search(path)
-                                                     or JSX.search(JS_COMMENT.sub("", _content(cwd, base, head, path)))):
+                                                     or JSX.search(_content(cwd, base, head, path))):
             reasons["ui"].append(f"{path}: UI file")
         elif not is_test and path.endswith(".swift") and (ui := UI_SWIFT.search(_content(cwd, base, head, path))):
             reasons["ui"].append(f"{path}: imports {ui.group(1)}")
         if not is_test and SCHEMA_FILE.search(path):
             reasons["contract"].append(f"{path}: API schema")
-        if (not is_test and path not in deleted and CODE_FILE.search(path)
-                and (word := next((w for w in _words(path) if w in RISKY_WORDS), None))):
+        if is_test or path in deleted:
+            pass
+        elif CODE_FILE.search(path) and (word := next((w for w in _words(path) if w in RISKY_WORDS), None)):
             reasons["mutants"].append(f"{path}: {word} path")
-        elif not is_test and (path.endswith(".sql") or name == "schema.prisma"):
+        elif path.endswith(".sql") or name == "schema.prisma":
             reasons["mutants"].append(f"{path}: {'SQL' if path.endswith('.sql') else 'Prisma schema'}")
         if TOOLCHAIN_FILE.search(path):
             reasons["toolchain"].append(f"{path}: dev toolchain config")
