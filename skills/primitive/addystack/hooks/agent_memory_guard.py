@@ -30,7 +30,22 @@ Codex, long after their threads finished. Claude Code in a terminal sets no time
 a background command, so 2 hours is a budget, not an agent's cap: in November 2026 no Codex
 rollout on one Mac polled one command for more than 37 minutes.
 
+It also queues heavy checks (tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest not
+watching): at most checkQueue.maxChecks run at once across every agent's commands, and a
+new one waits while running checks use checkQueue.maxCores cores or more (Governor).
+Added after Nov 27, 2026: five agents' type checks and lint runs, turbo's eight lint tasks
+each, used all 18 cores and throttled the Mac. A waiting check is SIGSTOPped within a tick
+of its start, never mid-run, saved to ~/.local/state/addystack/check-queue.json first, and
+resumed oldest first; one still waiting after 15 minutes with the queue full is killed,
+and agent-memory-guard-notice.py tells the agent why, as it does for every kill here. The
+next guard start, a SIGTERM, `"checkQueue": {"enabled": false}`, or any governor error
+resumes every waiting check.
+
 Known limits:
+- A checker started outside an agent's commands, in the user's own terminal, isn't
+  queued, and its CPU doesn't count toward the gate.
+- A checker that runs under another name, or as a later argument of a script only that
+  script knows, such as `node build.js` calling tsc's API in-process, isn't queued.
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
   half-second tick escapes, since macOS hides those binaries' environment; the ulimit
   backstop caps how many there can be. Work an agent hands to launchd or XPC, or starts
@@ -62,7 +77,7 @@ Known limits:
 - When the guard starts, or a command moves between waited-on and abandoned, a worker that
   has exited but isn't reaped yet when that first scan reads it counts all its CPU once its
   parent reaps it, CPU from before the window included."""
-import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
+import ctypes, ctypes.util, hashlib, json, os, plistlib, re, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
 AGENTS = {"claude", "codex"}
@@ -601,13 +616,24 @@ def notify(title, subtitle, text):
 
 # The check queue: at most checkQueue.maxChecks heavy checks run across every agent's
 # commands, and a new one waits, stopped, until a slot frees and running checks use under
-# checkQueue.maxCores. A unit is the topmost heavy process with its descendants.
+# checkQueue.maxCores. A unit is the topmost heavy process with its descendants, so
+# turbo's eight lint tasks are eight units while oxlint's own tsgolint child shares
+# oxlint's slot: a child waiting on a slot its parent holds would deadlock.
 HOLD_SECONDS = 15 * 60  # a unit still held this long, with the queue still full, dies
 GATE_WINDOW_SECONDS = 2  # the CPU gate's window, and the least time between admissions
-NEW_UNIT_SECONDS = 2 * INTERVAL_SECONDS  # a unit first seen older than this is never held
+# A unit first seen older than this is never held: SIGSTOP mid-run turns a test's timers
+# into timeouts, and a unit started before the governor, or before it was re-enabled, is
+# never held either. Three seconds covers a scan delayed by a loaded Mac.
+NEW_UNIT_SECONDS = 3
 QUEUE = os.path.join(os.path.expanduser(os.environ.get("ADDYSTACK_STATE", "~/.local/state/addystack")),
                      "check-queue.json")
-NOT_BUILT = "check queue: contract only, not built yet"
+# A checker's binary, or the script an interpreter runs: node_modules/.bin/tsc,
+# typescript/bin/tsc, vitest.mjs, eslint.js, a native tsgolint.
+HEAVY = re.compile(r"(^|/)(tsc|tsgo|tsgolint|oxlint|eslint|vitest|jest)(\.c?m?js)?$"
+                   r"|@typescript/native-preview")
+INTERPRETERS = {"node", "bun", "bunx", "deno", "npx"}
+WATCH_FLAGS = {"--watch", "-w", "--watchAll"}
+UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finished
 
 # top: the topmost heavy process's ident, the unit's id; head: its command's head;
 # members: the top and its descendants.
@@ -617,18 +643,69 @@ Unit = namedtuple("Unit", "top head members")
 def is_heavy(argv):
     """Whether argv runs a heavy check: tsc, tsgo, tsgolint, oxlint, eslint, jest, or
     vitest not watching, by the binary or an interpreter's script, never a later
-    argument."""
-    raise NotImplementedError(NOT_BUILT)
+    argument, so `grep tsc` isn't one. A watcher (`--watch`, `-w`, `vitest watch`,
+    `vitest dev`) and tsserver are servers, not checks."""
+    if not argv or any("tsserver" in arg for arg in argv[:3]):
+        return False
+    tool, rest = argv[0], argv[1:]
+    if not HEAVY.search(tool):
+        if os.path.basename(tool) not in INTERPRETERS:
+            return False
+        index = next((i for i, arg in enumerate(rest)
+                      if not arg.startswith("-") and arg not in {"run", "x", "exec"}), None)
+        if index is None or not HEAVY.search(rest[index]):
+            return False
+        tool, rest = rest[index], rest[index + 1:]
+    watching = any(arg in WATCH_FLAGS or (arg.startswith("--watch=") and arg != "--watch=false")
+                   for arg in rest)
+    vitest_server = "vitest" in os.path.basename(tool) and rest[:1] in (["watch"], ["dev"])
+    return not (watching or vitest_server)
 
 
 def heavy_units(commands):
     """{top ident: Unit} for every heavy unit in commands ({head: [Proc]})."""
-    raise NotImplementedError(NOT_BUILT)
+    units = {}
+    for head, members in commands.items():
+        by_ident = {proc.ident: proc for proc in members}
+        hot = {proc.ident for proc in members if is_heavy(proc.argv)}
+        if not hot:
+            continue
+        children = {}
+        for proc in members:
+            children.setdefault(proc.parent_ident, []).append(proc)
+
+        def ancestors(proc):
+            seen = set()
+            while proc.parent_ident in by_ident and proc.parent_ident not in seen:
+                seen.add(proc.parent_ident)
+                proc = by_ident[proc.parent_ident]
+                yield proc.ident
+
+        for top in (by_ident[ident] for ident in hot):
+            if any(ident in hot for ident in ancestors(top)):
+                continue
+            tree, stack = [], [top]
+            while stack:
+                proc = stack.pop()
+                tree.append(proc)
+                stack.extend(child for child in children.get(proc.ident, []) if child.ident != top.ident)
+            units[top.ident] = Unit(top.ident, head, tree)
+    return units
+
+
+_settings = [None, None]  # resolved.json's mtime, and the CheckQueue read at it
 
 
 def settings():
     """resolved.check_queue(), read again only when resolved.json's mtime changes."""
-    raise NotImplementedError(NOT_BUILT)
+    import resolved  # here, so a broken config module fails only the check queue
+    try:
+        mtime = resolved.STATE.expanduser().stat().st_mtime_ns
+    except OSError:
+        mtime = None
+    if _settings[1] is None or _settings[0] != mtime:
+        _settings[:] = [mtime, resolved.check_queue()]
+    return _settings[1]
 
 
 class Governor:
@@ -644,26 +721,242 @@ class Governor:
                  record=record, notify=notify, wall=time.time):
         """Resumes what an earlier guard left stopped, where the kernel ident still
         matches, and clears `state`."""
-        raise NotImplementedError(NOT_BUILT)
+        self.settings, self.state, self.send, self.current = settings, state, send, current
+        self.record, self.notify = record, notify
+        self.started = wall()  # units that started before this are never held
+        self.enabled = True
+        self.running = {}  # top -> scans missed in a row
+        self.held = {}  # top -> {"members": {ident: Proc}, "since": now, "head", "text"}, oldest first
+        self.cpu = {}  # top -> (last, debt, began, [(now, total ns)])
+        self.last_admit = None  # monotonic time a unit last started or resumed
+        self.error = None
+        self._resume_saved()
 
     def tick(self, owners, commands, agents, now, wall):
         """One pass over commands ({head: [Proc]}) with agents ({pid: ident}), `now` on
         the monotonic clock and `wall` the epoch. Never raises: on an error it resumes
         every held unit and reports the error once."""
-        raise NotImplementedError(NOT_BUILT)
+        try:
+            self._tick(owners, commands, agents, now, wall)
+            self.error = None
+        except Exception as error:  # the memory rules must still run this tick
+            self.release(f"the check queue failed: {error!r}")
+            if repr(error) != self.error:
+                print(f"{time.strftime('%H:%M:%S')} check queue failed: {error!r}",
+                      file=sys.stderr, flush=True)
+            self.error = repr(error)
 
     def release(self, why):
         """Resumes every held unit and clears the state file: disabled, stopping, or an
         error."""
-        raise NotImplementedError(NOT_BUILT)
+        try:
+            for top, unit in list(self.held.items()):
+                signal_all(unit["members"].values(), signal.SIGCONT, self.send, self.current)
+                self._log("release", unit, why=why)
+            self.held.clear()
+            self._save()
+        except Exception as error:  # a release runs on the way out; never fail it
+            print(f"{time.strftime('%H:%M:%S')} check queue release failed: {error!r}",
+                  file=sys.stderr, flush=True)
+
+    def _tick(self, owners, commands, agents, now, wall):
+        config = self.settings()
+        if not config.enabled:
+            if self.held:
+                self.release("the check queue is off")
+            self.enabled = False
+            self.running.clear()
+            self.cpu.clear()
+            return
+        if not self.enabled:  # re-enabled: what runs now runs on
+            self.enabled, self.started = True, wall
+        units = heavy_units(commands)
+        # 1. Drop finished units.
+        for top in list(self.running):
+            if top in units:
+                self.running[top] = 0
+            else:
+                self.running[top] += 1
+                if self.running[top] >= UNIT_IDLE_TICKS:
+                    del self.running[top]
+                    self.cpu.pop(top, None)
+        for top in [top for top in self.held if top not in units]:
+            del self.held[top]  # it exited, or a memory rule killed its command
+            self._save()
+        self._measure(units, now, wall)
+        # 2. Keep held units stopped, and let go of one whose agent no longer waits.
+        for top, unit in list(self.held.items()):
+            members = units[top].members
+            if not self._attended(commands[unit["head"]], agents):
+                self._resume(top, units, now, wall, "its agent's shell is gone")
+                continue
+            joined = [proc for proc in members if proc.ident not in unit["members"]]
+            if joined:
+                unit["members"].update((proc.ident, proc) for proc in joined)
+                try:
+                    self._save()
+                except OSError:
+                    self._resume(top, units, now, wall, "its new members couldn't be saved")
+                    continue
+                signal_all(joined, signal.SIGSTOP, self.send, self.current)
+        # 3. Resume held units, oldest first, while there's room.
+        while self.held and self._room(config, now):
+            self._resume(next(iter(self.held)), units, now, wall, "a slot freed")
+        # 4. Admit new units only when none wait; hold the rest.
+        new = [unit for top, unit in units.items() if top not in self.running and top not in self.held]
+        tops = {unit.top: next(proc for proc in unit.members if proc.ident == unit.top) for unit in new}
+        for unit in sorted(new, key=lambda unit: tops[unit.top].start):
+            top = tops[unit.top]
+            holdable = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS
+                        and self._attended(commands[unit.head], agents))
+            if not holdable:
+                self._run(unit.top, now, wall)  # already running: never stopped
+            elif not self.held and self._room(config, now):
+                self._run(unit.top, now, wall)
+                self.last_admit = now
+            else:
+                self._hold(owners, unit, commands[unit.head], now, wall)
+        # 5. Kill a unit held too long while the queue is still full. One held only by the
+        # admission spacing gets its turn within GATE_WINDOW_SECONDS instead.
+        full = len(self.running) >= config.maxChecks or (
+            bool(self.running) and self._cores(now) >= config.maxCores)
+        for top, unit in list(self.held.items()):
+            if full and now - unit["since"] >= HOLD_SECONDS:
+                self._kill(owners, top, unit, len(self.running))
+
+    def _attended(self, members, agents):
+        """Whether an agent still waits on the command: its shell, or itself, is a live
+        agent's direct child."""
+        return any(agents.get(proc.ppid) == proc.parent_ident for proc in members)
+
+    def _room(self, config, now):
+        """Whether one more unit may run: under the cap, and when any unit runs, nothing
+        admitted within the gate's window and running units under maxCores over it."""
+        if len(self.running) >= config.maxChecks:
+            return False
+        if not self.running:
+            return True
+        if self.last_admit is not None and now - self.last_admit < GATE_WINDOW_SECONDS:
+            return False
+        return self._cores(now) < config.maxCores
+
+    def _measure(self, units, now, wall):
+        """Adds each running unit's CPU since the last tick to its marks."""
+        for top in self.running:
+            if top not in units:
+                continue
+            last, debt, began, marks = self.cpu.get(top) or ({}, {}, wall, [])
+            gained, last, debt = cpu_gained(units[top].members, last, debt, began)
+            total = (marks[-1][1] if marks else 0) + gained
+            marks = [mark for mark in marks if now - mark[0] <= GATE_WINDOW_SECONDS] + [(now, total)]
+            self.cpu[top] = (last, debt, began, marks)
+
+    def _cores(self, now):
+        """Cores the running units used over the last GATE_WINDOW_SECONDS. A unit tracked
+        for less than the window counts what it used, over the whole window."""
+        used = 0
+        for top in self.running:
+            marks = self.cpu.get(top, (None, None, None, []))[3]
+            inside = [mark for mark in marks if now - mark[0] <= GATE_WINDOW_SECONDS]
+            if inside:
+                used += inside[-1][1] - inside[0][1]
+        return used / 1e9 / GATE_WINDOW_SECONDS
+
+    def _run(self, top, now, wall):
+        self.running[top] = 0
+        self.cpu[top] = ({}, {}, wall, [])
+
+    def _hold(self, owners, unit, command, now, wall):
+        members = {proc.ident: proc for proc in unit.members}
+        # The notice matches a Claude kill by the agent's pid, the head's parent.
+        head = next((proc for proc in command if proc.ident == unit.head), None)
+        held = {"members": members, "since": now, "head": unit.head,
+                "agent_pid": head.ppid if head is not None and head.ppid > 1 else None,
+                "text": " ".join(os.path.basename(arg) for arg in
+                                 next(p for p in unit.members if p.ident == unit.top).argv[:4])[:70],
+                "command": command_text(owners.argv.get(unit.head) or members[unit.top].argv)[:200]}
+        self.held[unit.top] = held
+        try:
+            self._save()  # saved before it's stopped, so a crash can't strand it
+        except OSError as error:
+            del self.held[unit.top]
+            self._run(unit.top, now, wall)
+            print(f"{time.strftime('%H:%M:%S')} check queue couldn't save a held unit; it runs: "
+                  f"{error!r}", file=sys.stderr, flush=True)
+            return
+        signal_all(unit.members, signal.SIGSTOP, self.send, self.current)
+        self._log("stop", held)
+
+    def _resume(self, top, units, now, wall, why):
+        unit = self.held.pop(top)
+        members = list(unit["members"].values())
+        if top in units:
+            members += [proc for proc in units[top].members if proc.ident not in unit["members"]]
+        self._save()
+        signal_all(members, signal.SIGCONT, self.send, self.current)
+        self._run(top, now, wall)
+        self.last_admit = now
+        self._log("cont", unit, why=why, waited=round(now - unit["since"], 1))
+
+    def _kill(self, owners, top, unit, running):
+        members = list(unit["members"].values())
+        reason = (f"held {HOLD_SECONDS // 60} min while the machine's check queue stayed full "
+                  f"({running} checks running)")
+        line = entry(owners, unit["head"], members, reason, rule="queue", unit=unit["text"])
+        line["command"], line["agent_pid"] = unit["command"], unit["agent_pid"]
+        line["command_sha256"] = hashlib.sha256(unit["command"].encode()).hexdigest()
+        self.record(line)  # logged before the kill, so the notice finds it
+        signal_all(members, signal.SIGKILL, self.send, self.current)
+        del self.held[top]
+        self._save()
+        try:
+            self.notify("Killed a queued agent check", reason, unit["command"])
+        except OSError:
+            pass
+
+    def _log(self, event, unit, **more):
+        self.record({"event": event, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "at": time.time(),
+                     "unit": unit["text"], "command": unit["command"], "running": len(self.running),
+                     "held": len(self.held), **more})
+
+    def _save(self):
+        """Writes the held units, oldest first, to the state file in one rename."""
+        units = [{"unit": top, "members": [[proc.pid, proc.ident] for proc in unit["members"].values()]}
+                 for top, unit in self.held.items()]
+        os.makedirs(os.path.dirname(self.state), exist_ok=True)
+        tmp = f"{self.state}.{os.getpid()}.tmp"
+        with open(tmp, "w") as file:
+            json.dump({"held": units}, file)
+        os.replace(tmp, self.state)
+
+    def _resume_saved(self):
+        """Resumes each member an earlier guard saved and left stopped, then clears the
+        file. A pid whose kernel ident changed belongs to another process now."""
+        try:
+            with open(self.state) as file:
+                saved = json.load(file)["held"]
+        except (OSError, ValueError, KeyError, TypeError):
+            saved = []
+        for unit in saved:
+            try:
+                members = [Proc(pid, 0, 0, ident, 0, 0, 0, [], None) for pid, ident in unit["members"]]
+            except (TypeError, ValueError, KeyError):
+                continue
+            signal_all(members, signal.SIGCONT, self.send, self.current)
+        try:
+            self._save()
+        except OSError:
+            pass
 
 
-def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.time):
+def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.time, governor=None):
     procs = scan()
     commands = owners.attribute(procs)
+    agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
+    if governor is not None:
+        governor.tick(owners, commands, agents, now(), wall())  # never raises
     found = runaway(commands, owners.services)
     if not found and abandoned is not None:
-        agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
         found = abandoned.busy(commands, agents, now(), wall())
     if not found:
         return None
@@ -685,16 +978,22 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
 
 def main():
     owners, abandoned, last_error = Owners(), Abandoned(), None
-    while True:
-        try:
-            tick(owners, abandoned=abandoned)
-            last_error = None
-        except Exception as error:  # keep guarding; log each distinct failure once
-            if repr(error) != last_error:
-                print(f"{time.strftime('%H:%M:%S')} tick failed: {error!r}",
-                      file=sys.stderr, flush=True)
-            last_error = repr(error)
-        time.sleep(INTERVAL_SECONDS)
+    governor = Governor()  # resumes what an earlier guard left stopped
+    # launchd stops the guard with SIGTERM; exiting through `finally` resumes held checks.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        while True:
+            try:
+                tick(owners, abandoned=abandoned, governor=governor)
+                last_error = None
+            except Exception as error:  # keep guarding; log each distinct failure once
+                if repr(error) != last_error:
+                    print(f"{time.strftime('%H:%M:%S')} tick failed: {error!r}",
+                          file=sys.stderr, flush=True)
+                last_error = repr(error)
+            time.sleep(INTERVAL_SECONDS)
+    finally:
+        governor.release("the guard is stopping")
 
 
 if __name__ == "__main__":

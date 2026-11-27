@@ -1,6 +1,6 @@
 """Tests for agent_memory_guard.py on synthetic process snapshots and a few real processes.
 Run from hooks/: python3 -m unittest test_agent_memory_guard"""
-import contextlib, io, os, signal, subprocess, sys, time, unittest
+import contextlib, io, json, os, pathlib, shutil, signal, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
 import agent_memory_guard as guard
@@ -732,26 +732,44 @@ class Signals(unittest.TestCase):
 class HeavyChecks(unittest.TestCase):
     """Which processes the check queue counts as a heavy check."""
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_each_checker_binary_is_heavy(self):
-        pass
+        for argv in (["/x/node_modules/.bin/tsc", "--noEmit"], ["/x/tsgolint"], ["/x/node_modules/.bin/oxlint"],
+                     ["node", "/x/node_modules/eslint/bin/eslint.js", "."],
+                     ["node", "/x/node_modules/vitest/vitest.mjs", "run"], ["node", "/x/jest/bin/jest.js"],
+                     ["bun", "run", "--bun", "/x/node_modules/typescript/bin/tsc"], ["bunx", "tsc"],
+                     ["/x/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo"]):
+            with self.subTest(argv=argv):
+                self.assertTrue(guard.is_heavy(argv))
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_an_interpreters_script_is_classified_never_a_later_argument(self):
-        pass
+        for argv in (["grep", "tsc"], ["node", "server.js", "tsc"], ["node", "/x/typescript/lib/tsserver.js"],
+                     ["bun", "run", "dev"], ["node"], []):
+            with self.subTest(argv=argv):
+                self.assertFalse(guard.is_heavy(argv))
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_watch_forms_of_vitest_are_not_heavy(self):
-        pass
+        vitest = ["node", "/x/node_modules/vitest/vitest.mjs"]
+        for rest in (["--watch"], ["-w"], ["watch"], ["dev"], ["--watch=true"]):
+            with self.subTest(rest=rest):
+                self.assertFalse(guard.is_heavy(vitest + rest))
+        self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "--watch"]))
+        self.assertFalse(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll"]))
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_vitest_run_is_heavy(self):
-        pass
+        vitest = ["node", "/x/node_modules/vitest/vitest.mjs"]
+        for rest in (["run"], [], ["--watch=false"], ["run", "src/a.test.ts"]):
+            with self.subTest(rest=rest):
+                self.assertTrue(guard.is_heavy(vitest + rest))
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_units_child_shares_its_parents_slot(self):
-        pass
-
+        units = guard.heavy_units(Owners().attribute(snapshot(
+            AGENT, proc(200, 100, argv=("zsh", "-c", "bun run lint")),
+            proc(201, 200, argv=("/x/.bin/oxlint",)), proc(202, 201, argv=("/x/tsgolint",)),
+            proc(300, 100, argv=("/x/.bin/turbo", "run", "typecheck")),
+            proc(301, 300, argv=("/x/.bin/tsc",)), proc(302, 300, argv=("/x/.bin/tsc",)))))
+        self.assertEqual({top: sorted(p.pid for p in unit.members) for top, unit in units.items()},
+                         {201: [201, 202], 301: [301], 302: [302]})
+        self.assertEqual({unit.head for unit in units.values()}, {200, 300})
 
 
 class AgentCommand(unittest.TestCase):
@@ -788,97 +806,272 @@ class AgentCommand(unittest.TestCase):
                          ("pnpm typecheck", "call_1", "queue", 90))
 
 
+TSC = ("node", "/x/node_modules/typescript/bin/tsc", "--noEmit")
+
+
+class Queue:
+    """A Governor on synthetic snapshots: AGENT runs check n as shell 200+10n with tsc
+    201+10n under it. Clocks start at wall 1000, monotonic 0, and move half a second a tick."""
+
+    def __init__(self, test, cap=2, cores=100, state=None, current=None):
+        import resolved
+        folder = tempfile.mkdtemp()
+        test.addCleanup(shutil.rmtree, folder)
+        self.test, self.state = test, state or os.path.join(folder, "check-queue.json")
+        self.config = resolved.CheckQueue(True, cap, cores)
+        self.sent, self.lines, self.notified, self.saved_at_stop = [], [], [], {}
+        self.now, self.wall = 0.0, 1000.0
+        self.governor = guard.Governor(
+            settings=lambda: self.settings(), state=self.state, send=self.send,
+            current=current or (lambda pid: pid), record=self.lines.append,
+            notify=lambda *args: self.notified.append(args), wall=lambda: 1000.0)
+        self.owners = Owners()
+
+    def settings(self):
+        if isinstance(self.config, Exception):
+            raise self.config
+        return self.config
+
+    def send(self, pid, sig):
+        if sig == signal.SIGSTOP:
+            with open(self.state) as file:
+                self.saved_at_stop[pid] = file.read()
+        self.sent.append((pid, sig))
+
+    def check(self, n, born=None, cpu=0, reaped=0, tool_call=None, shell=True):
+        born = self.wall if born is None else born
+        top = guard.Proc(*proc(201 + 10 * n, 200 + 10 * n if shell else 1, argv=TSC, start=born,
+                               cpu=cpu, reaped=reaped)[:12], tool_call=tool_call)
+        return ([proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", f"check {n}"))] if shell else []) + [top]
+
+    def tick(self, *checks, seconds=0.5):
+        procs = snapshot(AGENT, *[p for check in checks for p in check])
+        commands = self.owners.attribute(procs)
+        agents = {pid: p.ident for pid, p in procs.items() if guard.is_agent(p)}
+        self.governor.tick(self.owners, commands, agents, self.now, self.wall)
+        self.now += seconds
+        self.wall += seconds
+
+    def stopped(self):
+        state = {}
+        for pid, sig in self.sent:
+            state[pid] = sig
+        return {pid for pid, sig in state.items() if sig == signal.SIGSTOP}
+
+    def killed(self):
+        return {pid for pid, sig in self.sent if sig == signal.SIGKILL}
+
+
 class CheckQueue(unittest.TestCase):
     """The Governor, on synthetic snapshots with fake signals and clocks."""
 
-    @unittest.skip("check queue: contract only, not built yet")
+    def setUp(self):
+        guard._settings[:] = [None, None]
+
     def test_a_third_unit_over_a_cap_of_two_is_held_within_a_tick(self):
-        pass
+        q = Queue(self)
+        q.tick(q.check(1), q.check(2), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})  # one starts; the gate spaces the rest
+        for _ in range(4):
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {231})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_held_unit_resumes_before_a_newer_arrival(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})
+        for _ in range(3):
+            q.tick(q.check(2, 1000), q.check(3, 1000.5))
+        self.assertEqual(q.stopped(), {231})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_unit_running_when_the_guard_starts_is_never_stopped(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, 990), q.check(2, 995), q.check(3, 999.9))
+        self.assertEqual(q.sent, [])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_unit_running_when_the_queue_is_reenabled_is_never_stopped(self):
-        pass
+        import resolved
+        q = Queue(self, cap=1)
+        q.config = resolved.CheckQueue(False, 1, 100)
+        q.tick(q.check(1), q.check(2))
+        q.config = resolved.CheckQueue(True, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000.2))
+        self.assertEqual(q.stopped(), set())
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000.2), q.check(4))
+        self.assertEqual(q.stopped(), {241})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_members_that_join_a_held_unit_are_stopped(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000) + [proc(222, 221, argv=("node", "worker.js"))])
+        self.assertEqual(q.stopped(), {221, 222})
+        self.assertIn('[222, 222]', q.saved_at_stop[222])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_held_unit_whose_agent_shell_is_gone_is_resumed(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000, shell=False))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.lines[-1]["event"], "cont")
+        self.assertEqual(q.lines[-1]["why"], "its agent's shell is gone")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_disabling_resumes_held_units_on_the_next_tick(self):
-        pass
+        import resolved
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = resolved.CheckQueue(False, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.stopped(), set())
+        self.assertNotIn((231, signal.SIGSTOP), q.sent)
+        with open(q.state) as file:
+            self.assertEqual(json.load(file), {"held": []})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_start_resumes_saved_members_whose_ident_matches_and_skips_reused_pids(self):
-        pass
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        state = os.path.join(folder, "check-queue.json")
+        with open(state, "w") as file:
+            json.dump({"held": [{"unit": 401, "members": [[401, 401], [402, 999]]}]}, file)
+        q = Queue(self, state=state)
+        self.assertEqual(q.sent, [(401, signal.SIGCONT)])
+        with open(state) as file:
+            self.assertEqual(json.load(file), {"held": []})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_unit_is_saved_before_it_is_stopped(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.assertEqual(json.loads(q.saved_at_stop[221]), {"held": [{"unit": 221, "members": [[221, 221]]}]})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_failed_state_write_leaves_the_unit_running(self):
-        pass
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            q = Queue(self, cap=1, state="/dev/null/nowhere/check-queue.json")
+            q.tick(q.check(1), q.check(2))
+        self.assertEqual(q.sent, [])
+        self.assertIn("couldn't save a held unit", stderr.getvalue())
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.sent, [])  # the file still can't be written, so check 3 runs too
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_governor_error_resumes_every_held_unit_and_reports_once(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = RuntimeError("boom")
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(stderr.getvalue().count("check queue failed"), 1)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_governor_error_never_skips_the_memory_rules(self):
-        pass
+        killed = []
+        governor = guard.Governor(settings=lambda: 1 / 0, state=os.devnull + "/x", send=lambda *a: None,
+                                  record=lambda line: None, notify=lambda *a: None)
+        with mock.patch.multiple(guard, MAX_PROCESSES=1, notify=lambda *args: None, record=lambda line: None,
+                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])), \
+                contextlib.redirect_stderr(io.StringIO()):
+            guard.tick(Owners(), lambda: snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)),
+                       governor=governor)
+        self.assertEqual(killed, [200])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_unit_held_fifteen_minutes_with_the_queue_full_is_killed_alone(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual(q.killed(), {221})
+        kill = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual(len(kill), 1)
+        self.assertEqual(q.lines.index(kill[0]), len(q.lines) - 1)  # logged, then killed
+        self.assertEqual(kill[0]["command"], "check 2")
+        self.assertEqual(len(q.notified), 1)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_unit_whose_turn_comes_at_fifteen_minutes_runs_instead(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(2, 1000))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(2, 1000))
+        self.assertEqual(q.killed(), set())
+        self.assertEqual(q.stopped(), set())
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_queue_kill_logs_its_rule_unit_and_codex_tool_call_id(self):
-        pass
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2, tool_call="call_9"))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000, tool_call="call_9"))
+        [line] = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual((line["tool_call_id"], line["unit"], line["agent_pid"]), ("call_9", "node tsc --noEmit", 100))
+        self.assertIn("check queue stayed full", line["reason"])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_gate_holds_a_unit_while_running_units_use_max_cores(self):
-        pass
+        q = Queue(self, cap=4, cores=2)
+        cpu = 0
+        for _ in range(6):
+            q.tick(q.check(1, 1000, cpu=cpu))
+            cpu += int(1.5e9)  # 3 cores
+        q.tick(q.check(1, 1000, cpu=cpu), q.check(2))
+        self.assertEqual(q.stopped(), {221})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_gate_counts_a_worker_that_exited_between_scans(self):
-        pass
+        q = Queue(self, cap=4, cores=2)
+        reaped = 0
+        for _ in range(6):
+            q.tick(q.check(1, 1000, reaped=reaped))
+            reaped += int(1.5e9)
+        q.tick(q.check(1, 1000, reaped=reaped), q.check(2))
+        self.assertEqual(q.stopped(), {221})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_gate_admits_when_no_unit_runs(self):
-        pass
+        q = Queue(self, cap=4, cores=1)
+        q.tick(q.check(1), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+        q.tick(q.check(2, 1000))
+        q.tick(q.check(2, 1000))  # check 1 is gone two scans in a row; within the spacing
+        self.assertEqual(q.stopped(), set())
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_gate_admits_at_most_one_unit_per_window(self):
-        pass
+        q = Queue(self, cap=4)
+        q.tick(q.check(1), q.check(2), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})
+        for _ in range(3):
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {221, 231})
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {231})
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_memory_rules_still_kill_the_biggest_command_with_held_units(self):
-        pass
+        q = Queue(self, cap=1)
+        killed = []
+        big = [proc(220, 100, argv=("/bin/zsh", "-lc", "check 2")),
+               proc(221, 220, argv=TSC, start=1000.0, footprint=30 * GB)]
+        scan = lambda: snapshot(AGENT, *q.check(1), *big)
+        with mock.patch.multiple(guard, notify=lambda *args: None, record=lambda line: None,
+                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])):
+            guard.tick(q.owners, scan, governor=q.governor, now=lambda: 0.0, wall=lambda: 1000.0)
+        self.assertEqual(q.stopped(), {221})
+        self.assertEqual(killed, [220])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_resolved_json_change_applies_without_a_restart(self):
-        pass
+        import resolved
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        state = folder / "resolved.json"
+        built = resolved._kit_defaults()
+        built["checkQueue"]["maxChecks"] = 2
+        state.write_text(json.dumps(built))
+        with mock.patch.object(resolved, "STATE", state):
+            self.assertEqual(guard.settings().maxChecks, 2)
+            built["checkQueue"]["maxChecks"] = 3
+            state.write_text(json.dumps(built))
+            os.utime(state, ns=(time.time_ns(), time.time_ns() + 10 ** 9))
+            self.assertEqual(guard.settings().maxChecks, 3)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_state_file_holds_one_record_per_held_unit(self):
-        pass
-
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2) + [proc(222, 221, argv=("node", "w.js"))], q.check(3))
+        with open(q.state) as file:
+            self.assertEqual(json.load(file), {"held": [
+                {"unit": 221, "members": [[221, 221], [222, 222]]}, {"unit": 231, "members": [[231, 231]]}]})
 
 
 if __name__ == "__main__":
