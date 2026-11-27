@@ -39,11 +39,11 @@ class Post(NamedTuple):
 # A body file past this is no PR body or comment gh would send (GitHub caps a body at 65,536
 # characters), so it isn't read.
 _MOST_BYTES = 512 * 1024
-# The gh options that take a value, from gh 2.103's --help for pr create, edit, and comment,
+# The gh options that take a value, from gh 2.105's --help for pr create, edit, and comment,
 # so a value is never read as a flag or an argument; short forms mean the same in all three.
 _VALUED = {"-R", "--repo", "-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-H", "--head",
            "-a", "--assignee", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer",
-           "-T", "--template", "--recover",
+           "-T", "--template", "--recover", "--attach",
            *(f"--{change}-{what}" for change in ("add", "remove") for what in ("assignee", "label", "project", "reviewer"))}
 _SUBCOMMANDS = {"create", "new", "edit", "comment"}
 # Placeholders for a heredoc body (H) and a quoted string (Q): no character Walk splits on.

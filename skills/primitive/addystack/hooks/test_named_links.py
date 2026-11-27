@@ -220,6 +220,9 @@ class PostedText(unittest.TestCase):
             self.assertEqual(self.posts("mcp__claude_ai_Linear__save_issue", fields), [])
 
     def test_the_target_names_the_destination(self):
+        self.assertEqual([post.target for n in (1, 2)
+                          for post in self.posts("Bash", bash(f"gh pr comment --attach shot.png {n} -b 'see #12'"))],
+                         ["gh pr comment 1", "gh pr comment 2"])
         self.assertEqual([post.target for command in ("gh pr comment 23 -R acme/one -b 'see #12'",
                                                        "gh pr comment 23 --repo acme/two -b 'see #12'")
                           for post in self.posts("Bash", bash(command))],
