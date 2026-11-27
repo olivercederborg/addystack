@@ -334,6 +334,17 @@ class AbandonedCommands(unittest.TestCase):
             self.assertIsNone(abandoned.busy(
                 {201: [proc(201, 90, cpu=int(cpu * 1e9))]}, {90: 90}, t))
 
+    def test_a_waited_on_command_just_over_half_a_core_lately_is_killed(self):
+        # 0.501 cores throughout: over the budget for 2 hours and for its last 30 minutes.
+        abandoned, cpu, found = guard.Abandoned(), 0.0, None
+        for tick in range(3 * 3600 * 2):
+            t = tick / 2
+            cpu += 0.501 / 2
+            found = abandoned.busy({201: [proc(201, 90, cpu=int(cpu * 1e9))]}, {90: 90}, t)
+            if found:
+                break
+        self.assertEqual(found[0], 201)
+
     def test_a_busy_agent_server_is_killed_after_two_hours(self):
         # A server's classification misfires both ways under Codex, so servers get no pass.
         found, minute = self.run_ticks(
