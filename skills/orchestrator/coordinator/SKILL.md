@@ -129,16 +129,16 @@ inputs or one of Parallel by default's three reasons.
 
 ## 4. On each wake
 
-- **The user's message**: an answer goes through step 5; a status request shows
-  `scripts/project.py <folder> status` and changes no plan ([status](references/status.md));
-  anything else updates the plan.
+- **The user's message**: an answer goes through step 5; a status request reads
+  `status --json` and shows `--html` in `html_render` ([status](references/status.md)),
+  changing no plan; anything else updates the plan.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
   `project.md`, keep only the fixes the goal needs, and log the rest under Follow-ups. Its
   decision card goes to step 5.
 - **A worker's pending question**: when a worker asks mid-run instead of returning a
-  card, T3 wakes you once your current turn ends. Read it with `t3_pending_request`
+  card, T3 wakes you after your turn. Read it with `t3_pending_request`
   (`list`, then `read`) on the worker's thread, set its State to `waiting`, so the stuck
   rule passes it over, and queue it (step 5). A worker on another machine
   wakes no one ([across machines](references/across-machines.md)).
@@ -154,7 +154,7 @@ inputs or one of Parallel by default's three reasons.
   messages this thread only with news T3 doesn't send. Its message opens
   `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
   repeats hourly. When you set `tick`, run
-  `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
+  `project.py <folder> tick` once to check the timer runs. A wait for a time, such as
   a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
