@@ -2,9 +2,12 @@
 orchestrate folder: a project.md, the tick's tick.json beside it, and the timer's .tick
 stamp above them. The server reads files only, so no fake `t3` or `gh` is needed.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import json, os, pathlib, subprocess, sys, tempfile, unittest, unittest.mock
+import http.client, json, os, pathlib, socket, subprocess, sys, tempfile, threading, time, unittest, unittest.mock
 
 import project
+import status_server
+
+HERE = pathlib.Path(__file__).resolve().parent
 
 PROJECT = """# ◆ export
 
@@ -156,6 +159,141 @@ class Snapshot(Folders, unittest.TestCase):
                 self.assertIs(project.snapshot(self.write(name, **replace))["tickOn"], on)
         with unittest.mock.patch.dict(os.environ, {"T3CODE_HOME": str(self.root / "nowhere")}):
             self.assertIs(project.snapshot(self.orchestrate / "on")["tickOn"], False)  # this machine's id unknown
+
+
+class Page(Folders, unittest.TestCase):
+    def test_the_signature_changes_with_project_md_tick_json_and_the_timer_stamp(self):
+        folder = self.write()
+        (self.orchestrate / "reports").mkdir()  # a folder with no project.md isn't a project
+        seen = status_server.signature(self.orchestrate)
+        self.assertEqual([row[0] for row in seen[:-1]], ["export"])
+        for path in (folder / "project.md", folder / "tick.json", self.orchestrate / ".tick"):
+            with self.subTest(path.name):
+                path.touch()
+                os.utime(path, ns=(10**18, 10**18 + len(seen)))
+                self.assertNotEqual(status_server.signature(self.orchestrate), seen)
+                self.assertNotEqual(status_server.tag(status_server.signature(self.orchestrate)), status_server.tag(seen))
+                seen = status_server.signature(self.orchestrate)
+        self.assertEqual(status_server.tag(seen), status_server.tag(status_server.signature(self.orchestrate)))
+
+    def test_projects_come_unknown_and_active_first_then_parked_then_closed_and_more_queue_items_first(self):
+        self.write("closed", **{"## Queue": "## Result\n\n## Queue", "| running |": "| done |"})
+        self.write("parked", **{"Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting"})
+        self.write("quiet", **{"| 1 | decide | pick the export format | coordinator | 2026-11-20 09:00 |\n": ""})
+        self.write("busy", **{"Next id: 2": "Next id: 3", "| coordinator | 2026-11-20 09:00 |":
+                              "| coordinator | 2026-11-20 09:00 |\n| 2 | do | rotate the key | coordinator | 2026-11-20 |"})
+        self.write("active")
+        broken = self.orchestrate / "broken"
+        broken.mkdir()
+        (broken / "project.md").write_bytes(b"\xff")
+        (self.orchestrate / ".tick").touch()
+        page = status_server.collect(self.orchestrate)
+        self.assertEqual([card["folder"] for card in page["projects"]],
+                         ["busy", "active", "broken", "quiet", "parked", "closed"])
+        self.assertEqual(page["staleAfter"], project.STALE)
+        self.assertEqual(page["timer"], (self.orchestrate / ".tick").stat().st_mtime)
+        self.assertTrue(page["machine"])
+        (self.orchestrate / ".tick").unlink()
+        self.assertIsNone(status_server.collect(self.orchestrate)["timer"])
+
+
+class Server(Folders, unittest.TestCase):
+    """A real server on an ephemeral port, in this process, so status.html's path can move."""
+
+    def setUp(self):
+        super().setUp()
+        self.folder = self.write()
+        self.server = status_server._Server(0, self.orchestrate)
+        self.port = self.server.server_address[1]
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def get(self, path="/overview.json", host=None, etag=None):
+        connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        self.addCleanup(connection.close)
+        headers = {"Host": host or f"localhost:{self.port}", **({"If-None-Match": etag} if etag else {})}
+        connection.request("GET", path, headers=headers)
+        response = connection.getresponse()
+        body = response.read()
+        self.assertEqual(response.getheader("Server"), status_server.SERVER)
+        self.assertFalse([name for name, _ in response.getheaders() if name.lower().startswith("access-control-")])
+        return response, body
+
+    def test_an_unchanged_poll_is_304_until_a_project_changes(self):
+        response, body = self.get()
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.getheader("Content-Type"), "application/json; charset=utf-8")
+        self.assertEqual(response.getheader("Cache-Control"), "no-cache")
+        etag = response.getheader("ETag")
+        self.assertTrue(etag.startswith('"'))
+        self.assertEqual([card["folder"] for card in json.loads(body)["projects"]], ["export"])
+        response, body = self.get(etag=etag)
+        self.assertEqual((response.status, body, response.getheader("ETag")), (304, b"", etag))
+        added = subprocess.run([sys.executable, str(HERE / "project.py"), str(self.folder), "queue", "add", "do",
+                                "rotate the export key"], capture_output=True, text=True)
+        self.assertEqual(added.returncode, 0, added.stderr)
+        response, body = self.get(etag=etag)
+        self.assertEqual(response.status, 200)
+        self.assertNotEqual(response.getheader("ETag"), etag)
+        self.assertEqual(len(json.loads(body)["projects"][0]["data"]["queue"]), 2)
+        self.assertEqual(self.get(host=f"127.0.0.1:{self.port}", etag=response.getheader("ETag"))[0].status, 304)
+
+    def test_a_foreign_host_gets_403_and_any_other_path_404(self):
+        for host in ("evil.example", f"evil.example:{self.port}", f"localhost:{self.port + 1}", f"localhost"):
+            with self.subTest(host):
+                self.assertEqual(self.get(host=host)[0].status, 403)
+        self.assertEqual(self.get("/projects")[0].status, 404)
+        self.assertEqual(self.get("/overview.json?x=1")[0].status, 200)
+
+    def test_text_holding_script_comes_out_as_text_in_the_json(self):
+        text = "check <script>alert(1)</script> & <b>"
+        self.write(**{"pick the export format": text})
+        response, body = self.get()
+        self.assertNotIn(b"<", body)
+        self.assertNotIn(b">", body)
+        self.assertNotIn(b"&", body)
+        self.assertEqual(json.loads(body)["projects"][0]["data"]["queue"][0]["name"], text)
+
+    def test_the_page_is_status_html_beside_the_script_and_503_until_it_is_there(self):
+        page = self.root / "status.html"
+        with unittest.mock.patch.object(status_server, "PAGE", page):
+            response, body = self.get("/")
+            self.assertEqual((response.status, response.getheader("Content-Type")), (503, "text/plain; charset=utf-8"))
+            page.write_text("<!doctype html><title>status</title>")
+            response, body = self.get("/")
+        self.assertEqual((response.status, response.getheader("Content-Type"), body),
+                         (200, "text/html; charset=utf-8", page.read_bytes()))
+
+
+class Main(Folders, unittest.TestCase):
+    def test_main_serves_the_root_it_is_given_on_the_port_it_is_given(self):
+        self.write()
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            port = probe.getsockname()[1]
+        process = subprocess.Popen([sys.executable, str(HERE / "status_server.py"), "--port", str(port), "--root",
+                                    str(self.orchestrate)], stderr=subprocess.PIPE)
+        self.addCleanup(process.stderr.close)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        for _ in range(100):
+            try:
+                connection = http.client.HTTPConnection("localhost", port, timeout=10)
+                connection.request("GET", "/overview.json")
+                response = connection.getresponse()
+                break
+            except ConnectionRefusedError:
+                time.sleep(0.05)
+        else:
+            self.fail(f"nothing answered on {port}: {process.stderr.read() if process.poll() is not None else ''}")
+        self.assertEqual((response.status, response.getheader("Server")), (200, status_server.SERVER))
+        self.assertEqual([card["folder"] for card in json.loads(response.read())["projects"]], ["export"])
+        connection.close()
+        busy = subprocess.run([sys.executable, str(HERE / "status_server.py"), "--port", str(port)],
+                              capture_output=True, text=True, timeout=10)
+        self.assertEqual(busy.returncode, 1)
+        self.assertIn(f"can't serve 127.0.0.1:{port}", busy.stderr)
 
 
 if __name__ == "__main__":
