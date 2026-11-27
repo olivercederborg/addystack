@@ -34,6 +34,7 @@ HOOK_MODULES = [f"{TOOL}/hooks/*.py", f"-{TOOL}/hooks/test_*.py"]
 SKILL_SUITES = {
     "skills/orchestrator/coordinator": [],
     "skills/primitive/correct": [],
+    "skills/optional/request-human-review": [],
     "skills/primitive/open-pr": [],
     "skills/primitive/review-loop": ["skills/primitive/review-loop/references/review-lenses.md"],
     # github.sh in shared/scripts runs the tool's hooks/verdicts.py, as it has no copy beside it.
@@ -303,6 +304,12 @@ class Skills:
     async def correct_tests(self, kit: skill_source("skills/primitive/correct")) -> None:
         """skills/primitive/correct/scripts/test_*.py"""
         await skill_tests(kit, "skills/primitive/correct")
+
+    @function
+    @check
+    async def request_human_review_tests(self, kit: skill_source("skills/optional/request-human-review")) -> None:
+        """skills/optional/request-human-review/scripts/test_*.py"""
+        await skill_tests(kit, "skills/optional/request-human-review")
 
     @function
     @check

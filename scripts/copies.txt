@@ -35,6 +35,7 @@ shared/scripts/github.sh                                       skills/primitive/
 shared/scripts/github.sh                                       skills/primitive/review-code/scripts/github.sh
 shared/scripts/github.sh                                       skills/primitive/verify-work/scripts/github.sh
 shared/scripts/github.sh                                       skills/orchestrator/coordinator/scripts/github.sh
+shared/scripts/github.sh                                       skills/optional/request-human-review/scripts/github.sh
 shared/scripts/probe-worktree.sh                               skills/primitive/review-code/scripts/probe-worktree.sh
 shared/scripts/stack.sh                                        skills/orchestrator/autopilot/scripts/stack.sh
 shared/scripts/stack.sh                                        skills/orchestrator/babysit/scripts/stack.sh
@@ -87,6 +88,7 @@ skills/primitive/addystack/hooks/evidence.py                   skills/primitive/
 skills/primitive/addystack/hooks/evidence.py                   skills/primitive/review-code/scripts/evidence.py
 skills/primitive/addystack/hooks/evidence.py                   skills/primitive/verify-work/scripts/evidence.py
 skills/primitive/addystack/hooks/evidence.py                   skills/orchestrator/coordinator/scripts/evidence.py
+skills/primitive/addystack/hooks/evidence.py                   skills/optional/request-human-review/scripts/evidence.py
 skills/primitive/addystack/hooks/t3_child.py                   skills/primitive/correct/scripts/t3_child.py
 skills/primitive/addystack/hooks/turn_block.py                 skills/orchestrator/coordinator/scripts/turn_block.py
 skills/primitive/addystack/hooks/project_md.py                 skills/orchestrator/coordinator/scripts/project_md.py
@@ -98,6 +100,7 @@ skills/primitive/addystack/hooks/verdicts.py                   skills/primitive/
 skills/primitive/addystack/hooks/verdicts.py                   skills/primitive/review-code/scripts/verdicts.py
 skills/primitive/addystack/hooks/verdicts.py                   skills/primitive/verify-work/scripts/verdicts.py
 skills/primitive/addystack/hooks/verdicts.py                   skills/orchestrator/coordinator/scripts/verdicts.py
+skills/primitive/addystack/hooks/verdicts.py                   skills/optional/request-human-review/scripts/verdicts.py
 skills/primitive/addystack/principles/attack-the-premise.md    skills/orchestrator/autopilot/references/attack-the-premise.md
 skills/primitive/grounding/SKILL.md                            skills/orchestrator/babysit/references/grounding.md
 skills/primitive/grounding/SKILL.md                            skills/primitive/address-review/references/grounding.md

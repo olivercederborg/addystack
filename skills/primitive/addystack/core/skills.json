@@ -18,6 +18,7 @@
     "open-pr": "primitive",
     "orchestrate": "primitive",
     "reply-shape": "optional",
+    "request-human-review": "optional",
     "review-artifact": "optional",
     "review-code": "primitive",
     "review-loop": "primitive",
