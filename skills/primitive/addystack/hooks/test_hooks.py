@@ -6484,9 +6484,10 @@ class CheckQueueNotice(unittest.TestCase):
         memory = self.kill(tool_call_ids=["call_1"], reason="700 processes, over the per-command 600")
         del memory["rule"]
         self.log(self.kill(tool_call_ids=["call_1"], seconds_ago=2), memory)
-        note = run_hook(self.HOOK, {"hook_event_name": "PostToolUse", "tool_use_id": "call_1"}, env=self.env)
+        payload = {"hook_event_name": "PostToolUse", "tool_use_id": "call_1"}
+        note = run_hook(self.HOOK, payload, env=self.env)
         self.assertLess(note.index("check queue stayed full"), note.index("700 processes"))
-        self.assertEqual(self.raw(payload), "")
+        self.assertEqual(self.raw(payload), "")  # both told, once
 
     def test_every_guard_entry_shares_one_id_and_its_selection(self):
         manifest = json.loads((HOOKS / "manifest.json").read_text())
