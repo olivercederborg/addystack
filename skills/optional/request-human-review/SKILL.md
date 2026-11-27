@@ -1,6 +1,6 @@
 ---
 name: request-human-review
-description: Decides whether a PR needs a human's approval, and acts on it. With --unattended it reviews a PR as an App with nobody in the loop and posts the outcome (approve, request changes, or hand the decisions that need a human to a reviewer it requests), or answers a comment; a PR's author learns which decisions need a human and can request one. Use for an App's unattended review, or when an author asks whether their PR needs a human reviewer.
+description: Decides whether a PR needs a human's approval, so its author learns which decisions need a human and can request one. Use when an author asks whether their PR needs a human reviewer.
 compatibility: Requires git, gh (authenticated), jq, and python3.
 disable-model-invocation: true
 metadata:
@@ -13,31 +13,6 @@ A human reviews decisions, not code. Code that follows the repo's established pa
 needs a person only when it is a one-way door; a decision does. This skill holds that rule once, for both sides of
 a PR: the unattended reviewer that approves what needs no human, and the author who wants
 to know whether a person must look.
-
-## Unattended review
-
-`--unattended` reviews as an App with nobody in the loop, and the request that starts it
-is the go to post. Run `review-code`'s steps 1, 2, 4, and 6 as written, except: a
-step that needs the user (their plan, the rename) is skipped, and the review's body says
-so; step 2's pass by the other provider reviews the whole PR, even on a re-review, and is
-skipped only when the whole PR changes no behavior; when it doesn't run, because its
-provider isn't signed in, it fails, or its wait times out, it counts as missing and the
-review hands on why, so nothing approves without it (after a wait that times out,
-`task_cancel` the pass, which the review no longer needs; that returns `cancel_requested`,
-so `t3_thread_wait` on its thread until the run ends, ending the turn when it returns
-`next`, then go on with the pass missing); the request says what happened, the event, the
-old and new heads, the last approved head, whether the base moved, and whether the PR's
-own diff changed, and step 6 decides from those facts what to read again, a rebase
-included; the review's body and drafts use the disclosure's short form without a name,
-since nobody is in the loop. Step 3 keeps each finding's recommended call and drops one
-grounding can't reproduce. In place of step 5 and its watch, go on with the steps below,
-which take the findings, write `REVIEW.json` beside `GATES.json`, and decide and post.
-
-When the request is to answer a comment, a reply to this App's comment or a mention of
-it, answer only that: read the comment, its thread and the code it points at, reply with
-`scripts/github.sh reply` on a review comment's thread or `scripts/github.sh comment` on
-the PR, and stop. An answer runs no review, no second-opinion pass, and none of the steps
-below.
 
 ## The gates
 
@@ -94,34 +69,6 @@ findings, with `holds` set by the review's rule.
 
 ## 3. Act
 
-**Unattended reviewer** (the unattended review above, signed in as an App): write
-`REVIEW.json` beside `GATES.json`, in the shape `scripts/post-review.py` documents, with
-the review's findings and step 2's, the review's summary as its body, and whether its
-second opinion, the other provider's pass over the whole PR, ran: `ran`, `not-needed` for a
-PR that changes no behavior, or `missing` with why. Run it in the
-background, since it waits for pending required checks:
-
-```sh
-scripts/post-review.py <PR> REVIEW.json --wait 2700
-```
-
-It is the only step that writes to GitHub, and it applies the rule in `gates.py` itself:
-
-| Outcome | When | It posts |
-|---|---|---|
-| `changes-requested` | a finding holds the approval | a request for changes with the inline comments |
-| `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run, then the handoff |
-| `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body. When this App's approval of the head already stands, the same body as a comment saying so |
-| `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
-| `superseded` | the head moved, or the PR moved to another base branch | nothing: the push or retarget starts its own review |
-
-It reads the head last, right before posting, and posts only as an App. Once it approves,
-it resolves the App's own open threads it read before, and names any it couldn't. For
-any other outcome it withdraws the App's review that still counts: an approval before
-posting, so only an approval outcome leaves one in place, and a request for changes after
-its replacement posted, so a failed post never lifts the block. It needs the App to be
-allowed to dismiss its own reviews.
-
 The **handoff** follows a needs-human review, through `scripts/handoff.py`: a PR comment
 that gives the agent running the human's review every gated decision in full, then a
 review request. It reads `.github/REVIEWERS` at the PR's base: each decision's domain is
@@ -132,10 +79,9 @@ names with the fewest open requests, unless someone is already requested, has re
 this head, or is picked for another domain. Someone already requested, or whose review of
 this head stands, covers the domains they're P1 or P2 of. A re-review with the same
 decisions as its own last handoff posts no new one. A base without REVIEWERS hands off
-nothing, and a handoff that fails is named in the Outcome, as a thread it couldn't resolve
-is. End with its Outcome line.
+nothing.
 
-**Author**: report each gated decision with its gate and code, and
+Report each gated decision to the author with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a
 decision the table lacks to it. When a decision needs a human, draft the handoff with
 `scripts/handoff.py <PR> GATES.json` and show its suggested reviewer and why. The author
@@ -146,5 +92,9 @@ with only their pick as the default. After their go, rerun it with `--disclosure
 disclosure line and `--send`. An unattended review still hands off on its own later, and
 may still request a domain's P1 the author's pick doesn't cover.
 
-**Done when:** the reviewer printed one Outcome, or the author has the gated decisions and,
-after their go, the handoff's comment and request.
+An App's unattended review runs the gates and steps 1 and 2 through its own skill, which
+posts its outcome with `scripts/post-review.py`, so these steps and the scripts' usage are
+its contract too.
+
+**Done when:** the author has the gated decisions and, after their go, the handoff's comment
+and request.
