@@ -118,8 +118,8 @@ review at once, since it may have posted before the watch, and again on each wak
 - **Approved**: `active` is an approval whose `commit_id` is `scripts/github.sh head <N>`.
   Go on to the merge line, as the repo's trust allows.
 - **Changes requested**: handle its threads as any reviewer's, then push.
-- **Needs a human**: its latest review's body, in `scripts/github.sh feedback <N>`,
-  carries **Needs a human**. That's the App's handoff: a person approves in its place.
+- **Needs a human**: its latest review is a comment, with no active request for changes,
+  whose body in `scripts/github.sh feedback <N>` carries **Needs a human**. That's the App's handoff: a person approves in its place.
   Report the decisions it names to the user, and don't request a reviewer; that stays a
   stop. Then wait for a person's approval of the head: `scripts/github.sh reviewed <N>
   <login>`, for a login `gh pr view <N> --json latestReviews` lists, has an `active`
