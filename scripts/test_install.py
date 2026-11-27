@@ -1107,6 +1107,27 @@ class StatusPage(Home):
         self.assertTrue(line.startswith(f"FAIL  status page: {self.url} answers, but not as the status page (Server: "
                                         "SimpleHTTP"), line)
 
+    def test_a_status_server_answering_an_error_fails_doctor(self):
+        self.page()
+        failing = self.home / "failing.py"
+        failing.write_text(
+            "import sys\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n"
+            "class Handler(BaseHTTPRequestHandler):\n"
+            "    def version_string(self): return 'addystack-coordinator-status'\n"
+            "    def do_GET(self): self.send_response(503); self.end_headers()\n"
+            "HTTPServer(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()\n")
+        other = subprocess.Popen([sys.executable, str(failing), str(self.port)], stderr=subprocess.DEVNULL)
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for _ in range(100):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", self.port)) == 0:
+                    break
+            time.sleep(0.05)
+        line = self.doctor_line(self.cli("install").stdout)
+        self.assertTrue(line.startswith(f"FAIL  status page: the status page answers 503 at {self.url}"), line)
+        self.assertEqual(self.cli("status-page").stdout, "")
+
     def test_off_stops_and_removes_the_agent_install_started_and_doctor_passes(self):
         self.page()
         self.serve()

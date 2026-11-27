@@ -85,13 +85,14 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool
             for path, detail, start in changes], owned
 
 
-def _answer() -> Optional[str]:
-    """The Server header of what answers GET url(), "" for a reply without one, or None
-    when nothing answers within two seconds."""
+def _answer() -> Optional[Tuple[int, str]]:
+    """The status and Server header of what answers GET url(), the header "" for a reply
+    without one, or None when nothing answers within two seconds."""
     connection = http.client.HTTPConnection("localhost", PORT, timeout=2)
     try:
         connection.request("GET", "/")
-        return connection.getresponse().getheader("Server") or ""
+        response = connection.getresponse()
+        return response.status, response.getheader("Server") or ""
     except (OSError, http.client.HTTPException):
         return None
     finally:
@@ -100,8 +101,8 @@ def _answer() -> Optional[str]:
 
 def problems(resolved: Resolved) -> List[str]:
     """What doctor reports while it's wanted: launchd.problems for AGENT, plus nothing
-    answering at url(), or a server there without the `Server: addystack-coordinator-status`
-    header. None when it isn't wanted."""
+    answering at url(), a server there without the `Server: addystack-coordinator-status`
+    header, or the page answering anything but 200. None when it isn't wanted."""
     if not wanted(resolved):
         return []
     text = plist_text(resolved)
@@ -113,7 +114,10 @@ def problems(resolved: Resolved) -> List[str]:
     answer = _answer()
     if answer is None:
         return [f"nothing answers at {url()}; see {Path.home() / LOG}"]
-    if answer != HEADER:
-        return [f"{url()} answers, but not as the status page (Server: {answer or 'none'}); another program has "
+    status, server = answer
+    if server != HEADER:
+        return [f"{url()} answers, but not as the status page (Server: {server or 'none'}); another program has "
                 f"port {PORT}"]
+    if status != 200:
+        return [f"the status page answers {status} at {url()}; see {Path.home() / LOG}"]
     return []
