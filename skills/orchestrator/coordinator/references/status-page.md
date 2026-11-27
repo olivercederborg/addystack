@@ -29,7 +29,7 @@ row's thread status and each PR's state and draft from the tick's last look
 (`tick.json`), and when each file last changed. Active projects come first, with the
 most queue items first; parked and closed projects collapse to one line that still
 shows their queue. Closed needs a written `## Result` and every Workers row ended; a
-Result beside a live row, or a Workers table it can't read, is unknown. A project.md it
+Result beside a live row, or a Workers table it can't read or doesn't have, is unknown. A project.md it
 can't read, a Queue it can't read, or none at all
 shows as unknown. Thread and PR states are as fresh as the tick: past 20 minutes, or
 while the project's Heartbeat isn't `tick`, the card shows stale, and a `tick.json` it

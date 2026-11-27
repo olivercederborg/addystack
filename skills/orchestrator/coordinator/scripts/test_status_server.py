@@ -157,7 +157,8 @@ class Snapshot(Folders, unittest.TestCase):
         stateless = self.write("stateless", **{**result, "| State |": "| Status |"})
         parked = self.write("parked", **{"## Queue": "## Result\n\nShipped #13.\n\n## Queue",
                                          "Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting"})
-        for folder in (empty, headless, stateless, parked):
+        workerless = self.write("workerless", **{**result, "## Workers": "## Notes"})
+        for folder in (empty, headless, stateless, parked, workerless):
             with self.subTest(folder.name):
                 self.assertEqual(project.snapshot(folder)["phase"], "unknown")
 
