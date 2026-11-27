@@ -74,14 +74,19 @@ function link(label, url) {
   return SAFE.test(url) ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, label) : label;
 }
 
-// project.md text as nodes: a Markdown link `[label](url)` or an autolink `<url>` becomes a
-// link when its scheme is safe, a bare thread link labelled `thread`; the rest stays text.
+// project.md text as nodes: a Markdown link `[label](url)`, an autolink `<url>`, or a bare
+// URL becomes a link when its scheme is safe, a bare thread link labelled `thread`; the
+// rest stays text.
 function rich(text) {
-  const nodes = [], pattern = /\[((?:\\.|[^\]\\])*)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)|<((?:https?|t3-thread):[^>\s]+)>/g;
+  const nodes = [], pattern = new RegExp([
+    String.raw`\[((?:\\.|\[[^\]]*\]|[^\]\\\[])*)\]\(<?((?:[^()\s<>]|\([^()\s]*\))+)>?[^)]*\)`,
+    String.raw`<((?:https?|t3-thread):[^>\s]+)>`,
+    String.raw`((?:https?|t3-thread):\/\/[^\s<>]*[^\s<>.,;:!?'")\]])`].join("|"), "g");
   let at = 0;
   for (const match of String(text).matchAll(pattern)) {
+    const bare = match[3] || match[4];
     nodes.push(text.slice(at, match.index));
-    nodes.push(match[3] ? link(/^t3-thread:/i.test(match[3]) ? "thread" : match[3], match[3]) : link(match[1].replace(/\\(.)/g, "$1"), match[2]));
+    nodes.push(bare ? link(/^t3-thread:/i.test(bare) ? "thread" : bare, bare) : link(match[1].replace(/\\(.)/g, "$1"), match[2]));
     at = match.index + match[0].length;
   }
   nodes.push(text.slice(at));
@@ -126,10 +131,13 @@ function pr(pull) {
     el("span", { class: `pill tone-${tone}` }, pull.draft ? `${state} draft` : state), checks);
 }
 
-function unit(worker) {
+// A Workers row as a card. Its State shows when it says more than the group's name, such as
+// `done: #12 MERGED` or `replaced by build-2`.
+function unit(worker, group) {
   const head = el("div", { class: "row" },
     el("span", { class: "name" }, worker.thread ? link(worker.worker, worker.thread) : worker.worker),
-    "thread_status" in worker ? el("span", { class: "pill tone-muted" }, `thread ${worker.thread_status}`) : null);
+    "thread_status" in worker ? el("span", { class: "pill tone-muted" }, `thread ${worker.thread_status}`) : null,
+    worker.state.trim() === group ? null : el("span", { class: "muted" }, rich(worker.state)));
   const meta = el("div", { class: "meta" }, worker.prs.map(pr),
     worker.issue === null ? null : el("div", {}, el("span", { class: "muted" }, "issue "), rich(worker.issue)),
     worker.waits_on === null ? null : el("div", {}, el("span", { class: "muted" }, "waits on "), rich(worker.waits_on)));
@@ -149,7 +157,7 @@ function draw(data) {
                  needsYou(data)];
   for (const group of data.groups) {
     const dot = el("span", { class: `dot tone-${TONE[group.state] || "muted"}` });
-    parts.push(section([dot, group.state], group.units.length, el("ul", {}, group.units.map(unit))));
+    parts.push(section([dot, group.state], group.units.length, el("ul", {}, group.units.map((worker) => unit(worker, group.state)))));
   }
   if (data.unread_rows.length)
     parts.push(section("Unread rows", data.unread_rows.length, el("div", { class: "note warning" },
