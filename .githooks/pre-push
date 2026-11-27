@@ -116,6 +116,10 @@ elif $hooks_staged && [ "$(uname -s)" = Darwin ]; then
               test_agent_memory_guard.CommandLine.test_cpu_time_is_in_nanoseconds
               test_agent_memory_guard.CommandLine.test_cpu_includes_reaped_children_and_start_is_wall_clock)
   (cd skills/primitive/addystack/hooks && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only[@]}")
+  # The scripts/ tests that need macOS, such as the memory guard's install; the same test
+  # keeps this list complete.
+  macos_only_scripts=(test_install.Guard)
+  (cd scripts && PYTHONDONTWRITEBYTECODE=1 python3 -m unittest -q "${macos_only_scripts[@]}")
 fi
 }
 

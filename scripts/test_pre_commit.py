@@ -1,8 +1,8 @@
 """Tests for .githooks/pre-push: it runs the test suites as dagger check when Dagger
 reaches an engine, blocks the push when a check fails, when the module doesn't load, or
 when a pattern matches no check, and runs them on the host when dagger or its engine is
-missing; its macos_only list names every hook test that skips off macOS, since only that
-list runs on the Mac; and for .githooks/pre-commit: it runs only the touched folders'
+missing; its macos_only and macos_only_scripts lists name every hook and scripts/ test
+that skips off macOS, since only those lists run on the Mac; and for .githooks/pre-commit: it runs only the touched folders'
 suites on the host, and never Dagger."""
 import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
 
@@ -23,10 +23,10 @@ def darwin_only(decorator, names):
             and "darwin" in ast.unparse(decorator.args[0]))
 
 
-def macos_tests():
-    """Each test class or method in hooks/test_*.py that only runs on macOS, as a unittest name."""
+def macos_tests(folder=KIT / "skills" / "primitive" / "addystack" / "hooks"):
+    """Each test class or method in folder's test_*.py that only runs on macOS, as a unittest name."""
     found = set()
-    for path in sorted((KIT / "skills" / "primitive" / "addystack" / "hooks").glob("test_*.py")):
+    for path in sorted(folder.glob("test_*.py")):
         tree = ast.parse(path.read_text())
         names = {target.id for node in tree.body if isinstance(node, ast.Assign)
                  for target in node.targets if isinstance(target, ast.Name) and darwin_only(node.value, ())}
@@ -416,6 +416,11 @@ class MacosOnly(unittest.TestCase):
     def test_the_hook_runs_every_macos_only_hook_test(self):
         listed = re.search(r"macos_only=\(([^)]*)\)", HOOK.read_text()).group(1).split()
         self.assertEqual(sorted(listed), sorted(macos_tests()))
+
+    def test_the_hook_runs_every_macos_only_scripts_test(self):
+        listed = re.search(r"macos_only_scripts=\(([^)]*)\)", HOOK.read_text()).group(1).split()
+        self.assertIn("test_install.Guard", listed)
+        self.assertEqual(sorted(listed), sorted(macos_tests(KIT / "scripts")))
 
 
 if __name__ == "__main__":

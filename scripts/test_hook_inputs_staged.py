@@ -8,6 +8,8 @@ ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
 
 
 KIT = "skills/primitive/addystack"
+# The files of pre-push's macos_only_scripts tests, which run on the Mac only when they change.
+MACOS_SCRIPTS = ["scripts/test_install.py", "scripts/addystack_home.py"]
 
 
 def outside_inputs():
@@ -57,7 +59,7 @@ class HookInputsStaged(unittest.TestCase):
         self.assertIn("skills/optional/reply-shape/SKILL.md", outside_inputs())
 
     def test_runs_for_each_input(self):
-        for path in [f"{KIT}/hooks/a.py", f"{KIT}/hooks/new.py", *outside_inputs()]:
+        for path in [f"{KIT}/hooks/a.py", f"{KIT}/hooks/new.py", *outside_inputs(), *MACOS_SCRIPTS]:
             with self.subTest(path=path):
                 self.write(path, "changed\n")
                 self.git("add", path)
