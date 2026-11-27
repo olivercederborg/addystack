@@ -863,7 +863,7 @@ class Governor:
         full = busy >= config.maxChecks or (bool(self.running) and self._cores(now) >= config.maxCores)
         for top, unit in list(self.held.items()):
             if full and now - unit["since"] >= HOLD_SECONDS:
-                self._kill(owners, top, unit, busy)
+                self._kill(owners, top, unit, len(self.running))
 
     def _attended(self, top, members, agents):
         """Whether an agent still waits on the unit: its parents, up from its top, still

@@ -1119,6 +1119,7 @@ class CheckQueue(unittest.TestCase):
         [line] = [line for line in q.lines if line.get("rule") == "queue"]
         self.assertEqual((line["tool_call_ids"], line["unit"], line["agent_pid"]), (["call_9"], "node tsc --noEmit", 100))
         self.assertIn("check queue stayed full", line["reason"])
+        self.assertIn("(1 check running)", line["reason"])
 
     def test_a_queue_kill_hashes_the_whole_command(self):
         import hashlib
