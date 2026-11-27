@@ -79,8 +79,7 @@ def ancestors():
 
 def notice(entry):
     if entry.get("rule") == "queue":
-        what = (f"agent-memory-guard killed this command's check after it waited {HOLD_MINUTES} min "
-                f"while the machine's check queue stayed full ({entry['reason']}).")
+        what = f"agent-memory-guard killed this command's check: it was {entry['reason']}."
     else:
         what = f"agent-memory-guard killed this command ({entry['reason']}) so it wouldn't freeze the Mac."
     return f"{what} {ADVICE.get(entry.get('rule'), ADVICE[None])}"

@@ -919,7 +919,7 @@ class Governor:
     def _kill(self, owners, top, unit, running):
         members = list(unit["members"].values())
         reason = (f"held {HOLD_SECONDS // 60} min while the machine's check queue stayed full "
-                  f"({running} checks running)")
+                  f"({running} {'check' if running == 1 else 'checks'} running)")
         line = entry(owners, unit["head"], members, reason, rule="queue", unit=unit["text"])
         line["command"], line["agent_pid"] = unit["command"][:500], unit["agent_pid"]
         line["command_sha256"] = hashlib.sha256(unit["command"].encode()).hexdigest()
