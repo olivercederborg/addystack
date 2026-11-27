@@ -108,6 +108,22 @@ class Snapshot(Folders, unittest.TestCase):
         self.assertEqual((units["probe"]["prs"][0]["state"], units["probe"]["prs"][0]["draft"]), ("MERGED", False))
         self.assertEqual(card["asOf"]["tick"], (folder / "tick.json").stat().st_mtime)
 
+    def test_a_state_the_tick_kept_from_an_older_look_dates_the_card(self):
+        folder = self.write()
+        now = time.time()
+        threads = {key: {**value, "at": now - 60} for key, value in TICK["threads"].items()}
+        # #12 wasn't read for an hour, as while the coordinator runs, though the tick rewrote the file.
+        self.tick(folder, {**TICK, "threads": threads, "prsAt": {"acme/app#12": now - 3600, "acme/app#13": now - 60}})
+        self.assertEqual(project.snapshot(folder)["asOf"]["tick"], now - 3600)
+
+    def test_the_tick_keeps_each_reads_time_and_an_older_one_for_a_pr_it_couldnt_read(self):
+        lines = PROJECT.format(checkout=self.checkout).split("\n")
+        show = lambda thread: {"status": "running", "runCount": 1, "itemCount": 3, "updatedAt": None}
+        _, first = project.tick(lines, {}, 100.0, show=show, view=lambda ref: ["OPEN", False], hold=False)
+        _, second = project.tick(lines, first, 200.0, show=show, view=lambda ref: None, hold=False)
+        self.assertEqual((first["threads"]["w1"]["at"], first["prsAt"]), (100.0, {"acme/app#12": 100.0}))
+        self.assertEqual((second["threads"]["w1"]["at"], second["prsAt"]), (200.0, {"acme/app#12": 100.0}))
+
     def test_a_parked_project_is_parked(self):
         folder = self.write(**{"Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting on the API"})
         self.assertEqual(project.snapshot(folder)["phase"], "parked")
