@@ -693,9 +693,6 @@ class FreshUser(Home):
                 self.assertTrue(pathlib.Path(command.split()[0]).is_file(), command)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 @unittest.skipUnless(sys.platform == "darwin", "the guard is macOS-only")
 class Guard(Home):
@@ -842,6 +839,50 @@ class Guard(Home):
         self.assertEqual(self.zshenv.read_text(), "export EDITOR=vim\n")
         self.assertFalse(self.plist.exists())
 
+    def probe(self, variable):
+        """A new zsh's soft limit when only variable marks it as an agent's."""
+        import resource, subprocess
+        env = {k: v for k, v in self.env.items() if k not in ("CLAUDECODE", "T3CODE_CLI_PATH", "T3CODE_THREAD_ID")}
+        env[variable] = "1"
+        hard = resource.getrlimit(resource.RLIMIT_NPROC)[1]
+        done = subprocess.run(["zsh", "-c", "ulimit -Su"], env=env, capture_output=True, text=True,
+                              preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_NPROC, (hard, hard)))
+        return done.stdout.strip().splitlines()[-1]
+
+    def test_a_failed_restart_removes_the_new_plist_so_the_next_install_retries(self):
+        self.select()
+        self.ok("install")
+        self.plist.write_text(self.plist.read_text().replace("agent_memory_guard.py", "old.py"))
+        self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout|bootstrap) exit 5 ;; '
+                  f'print) test -f {self.loaded} ;; esac')
+        self.assertNotEqual(self.cli("install").returncode, 0)
+        self.assertFalse(self.plist.exists())
+        before = len(self.calls())
+        self.assertNotEqual(self.cli("install").returncode, 0)
+        self.assertTrue(any(c.startswith("bootstrap") for c in self.calls()[before:]))
+
+    def test_deselecting_keeps_ownership_while_launchctl_cant_answer(self):
+        self.select()
+        self.ok("install")
+        self.env["ADDYSTACK_LAUNCHCTL"] = str(self.home / "no-such-launchctl")  # can't run
+        self.select(False)
+        self.assertNotEqual(self.cli("install").returncode, 0)
+        self.assertIn('"guard": true', (self.state / "installed.json").read_text())
+
+    def test_startup_output_doesnt_hide_a_users_limit(self):
+        self.select()
+        self.write(self.zshenv, "echo welcome\nulimit -Su 2000\n")
+        out = self.ok("install").stdout
+        self.assertEqual(self.zshenv.read_text(), "echo welcome\nulimit -Su 2000\n")
+        self.assertIn("capped at 2,000", self.doctor_line(out))
+
+    def test_the_limit_never_raises_a_shells_lower_one(self):
+        self.select()
+        self.write(self.zshenv, "[[ -n ${CLAUDECODE-} ]] && ulimit -Su 2000\n")
+        self.ok("install")
+        self.assertEqual(self.probe("CLAUDECODE"), "2000")
+        self.assertEqual(self.probe("T3CODE_THREAD_ID"), "3000")
+
     def test_dry_run_writes_and_starts_nothing(self):
         self.select()
         before = self.snapshot()
@@ -849,3 +890,7 @@ class Guard(Home):
         self.assertEqual({k: v for k, v in self.snapshot().items() if k != self.launchctl_log},
                          {k: v for k, v in before.items() if k != self.launchctl_log})
         self.assertFalse(self.starts())
+
+
+if __name__ == "__main__":
+    unittest.main()

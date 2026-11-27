@@ -9,8 +9,9 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
   when the plist changed or it isn't loaded; from then on reconcile's ledger records the
   guard as install's. Once it's deselected, install stops a guard the ledger records,
   whether or not its plist is still there, and removes the plist; a guard the user set up
-  by hand, which the ledger doesn't record, stays. A stop launchd refuses fails the
-  install, and the ledger keeps the guard so the next install tries again.
+  by hand, which the ledger doesn't record, stays. A stop or start launchd refuses, or
+  can't confirm, fails the install, and the next install tries again: the ledger keeps a
+  guard it couldn't stop, and a plist launchd wouldn't load is removed.
 - **Limit**: whether a new agent shell gets one is probed, not read: zsh runs once with each
   agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
   `alias`, `nounset`, or a `ZDOTDIR` elsewhere all count as they would in a real shell.
@@ -18,7 +19,8 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
   (`$ZDOTDIR`, else home), once, and doctor reports a limit that still doesn't apply. A
   .zshenv that exists but can't be read stops the install before anything is written.
 
-launchctl and zsh run by name, so tests stub launchctl on PATH.
+`ADDYSTACK_LAUNCHCTL` overrides the launchctl it runs, so tests use a stub by absolute
+path and a broken stub can never fall through to the real one on PATH.
 """
 from __future__ import annotations
 
@@ -38,9 +40,11 @@ LIMIT = 3000
 # Fork fails past LIMIT user processes in agent shells; GUI apps keep macOS's 8,000. T3
 # names a Codex session's thread but sets no CLI path. `${X-}` keeps it working under
 # `setopt nounset`.
+# It only ever lowers a limit, so a shell already capped lower keeps its own.
 LIMIT_LINES = (
     "# addystack: agent shells stop forking past 3,000 user processes, the backstop for fork storms.\n"
-    "[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] && ulimit -Su 3000\n")
+    "[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} ]] &&\n"
+    "  [[ $(ulimit -Su) == unlimited || $(ulimit -Su) -gt 3000 ]] && ulimit -Su 3000\n")
 
 
 def plist() -> Path:
@@ -78,19 +82,22 @@ def _read(path: Path) -> Optional[str]:
         raise ValueError(f"can't read {path}: {error}") from error
 
 
-def _launchctl(*args: str) -> bool:
+def _launchctl(*args: str) -> Optional[bool]:
+    """Whether launchctl succeeded, or None when it couldn't run, so no answer passes for
+    a stopped guard."""
     try:
-        return subprocess.run(["launchctl", *args], capture_output=True, timeout=10,
+        return subprocess.run([os.environ.get("ADDYSTACK_LAUNCHCTL", "launchctl"), *args], capture_output=True, timeout=10,
                               stdin=subprocess.DEVNULL).returncode == 0
     except (OSError, subprocess.SubprocessError):
-        return False
+        return None
 
 
 def _domain() -> str:
     return f"gui/{os.getuid()}"
 
 
-def loaded() -> bool:
+def loaded() -> Optional[bool]:
+    """Whether launchd has the guard, or None when launchctl couldn't say."""
     return _launchctl("print", f"{_domain()}/{LABEL}")
 
 
@@ -115,7 +122,8 @@ def shell_limit() -> Optional[int]:
                                   env=env, stdin=subprocess.DEVNULL, preexec_fn=_uncapped)
         except (OSError, subprocess.SubprocessError):
             return None
-        value = done.stdout.strip()
+        # The last line is the probe's: .zshenv may print first.
+        value = (done.stdout.strip().splitlines() or [""])[-1].strip()
         if done.returncode != 0 or not value.isdigit():
             return None
         limits.append(int(value))
@@ -129,7 +137,7 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List
     Adds each file to write to writes. Raises ValueError as _read does."""
     path = plist()
     if not hookset.guard_wanted(resolved):
-        if owned and (os.path.lexists(path) or loaded()):
+        if owned:
             return [("guard", path, "stops the agent memory guard and removes its plist: its hook isn't selected",
                      False)], False
         return [], False
@@ -152,17 +160,20 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List
 
 
 def start(path: Path) -> None:
-    """(Re)loads the agent from path, so a changed plist takes effect."""
+    """(Re)loads the agent from path, so a changed plist takes effect. When launchd won't
+    load it, the plist goes too, so the next install writes it and tries again instead of
+    trusting whatever guard is still running."""
     _launchctl("bootout", f"{_domain()}/{LABEL}")
     if not _launchctl("bootstrap", _domain(), str(path)):
-        raise OSError(f"launchctl couldn't load {path}")
+        os.unlink(path)
+        raise OSError(f"launchctl couldn't load {path}; run addystack install again")
 
 
 def stop(path: Path) -> None:
     """Stops the agent and removes its plist. Raises OSError while launchd still has it."""
     _launchctl("bootout", f"{_domain()}/{LABEL}")
-    if loaded():
-        raise OSError(f"launchctl couldn't stop {LABEL}; run addystack install again")
+    if loaded() is not False:
+        raise OSError(f"launchctl couldn't stop {LABEL}, or couldn't say; run addystack install again")
     try:
         os.unlink(path)
     except FileNotFoundError:

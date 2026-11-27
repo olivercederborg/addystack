@@ -26,6 +26,7 @@ Private overrides, for tests and dry runs; each defaults to the value after it:
     ADDYSTACK_CODEX_MD   Codex's file          ~/.codex/AGENTS.md
     ADDYSTACK_SKILLS_CLI update's skills CLI   npx -y skills
     ADDYSTACK_SCHEMA_URL init's schema URL     none until the kit's repo is public
+    ADDYSTACK_LAUNCHCTL  the guard's launchctl launchctl on PATH
 
 `install` also keeps a ledger of the hooks it wrote, installed.json in the state folder.
 """
