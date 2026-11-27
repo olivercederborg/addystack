@@ -653,7 +653,8 @@ def status_markdown(data: dict) -> str:
     """status_data's overview as the Markdown `project.py DIR status` prints: the header, the
     Queue as `queue show` prints it, each group's units, then the Decisions and Phases lines.
     Free text goes through project_queue.shown, so the reply keeps its picks."""
-    out = [project_queue.shown(f"◆ {data['project'] or '?'} · {data['goal'] or '?'}"), "", "**Needs you**"]
+    name, goal = ("?" if data[key] is None else data[key] for key in ("project", "goal"))  # "" prints as ""
+    out = [project_queue.shown(f"◆ {name} · {goal}"), "", "**Needs you**"]
     if data["queue_unread"] is not None:
         out.append(project_queue.shown(f"unread: {data['queue_unread']}"))
     else:
