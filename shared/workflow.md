@@ -111,15 +111,18 @@ own `.agents/addystack.jsonc` can only make it stricter.
 A repo whose policy sets `review`, as `"review": {"app": "<slug>"}` from the repo's own
 `.agents/addystack.jsonc`, is reviewed by that GitHub App: it reviews every ready PR, and
 its approval is the one the repo requires. After a PR is marked ready, the next wait is
-that App's review, never a person's. On each wake, read it with
+that App's review, never a person's. Watch the PR, then read the App's review at once,
+since it may have posted before the watch, and again on each wake, with
 `scripts/github.sh reviewed <N> '<slug>[bot]'`:
 
 - **Approved**: `active` is an approval whose `commit_id` is `scripts/github.sh head <N>`.
   Go on to the merge line, as the repo's trust allows.
 - **Changes requested**: handle its threads as any reviewer's, then push.
 - **Needs a human**: its latest review's body, in `scripts/github.sh feedback <N>`,
-  carries **Needs a human**. That's the App's handoff: report the decisions it names to
-  the user and keep waiting. Don't request a reviewer; that stays a stop.
+  carries **Needs a human**. That's the App's handoff: a person approves in its place.
+  Report the decisions it names to the user, and don't request a reviewer; that stays a
+  stop. Then wait for that person's approval of the head (`gh pr view <N> --json
+  reviewDecision` reads `APPROVED`), which leads to the merge line as the App's would.
 - **Pushed since**: a push can dismiss the App's approval and starts its re-review, so
   wait for its review of the new head.
 
