@@ -14,6 +14,7 @@ transcripts.py drops them.
 And it says whether T3 started this session (in_t3) and where its CLI is (cli), for the
 hooks that act only in T3."""
 import json, os, pathlib, re, shutil, sqlite3
+from typing import NamedTuple
 
 # T3CODE_HOME moves T3's data directory, as T3's own CLI reads it.
 STATE_DB = os.environ.get("T3_STATE_DB") or os.path.join(os.environ.get("T3CODE_HOME") or "~/.t3", "userdata", "statev2.sqlite")
@@ -49,6 +50,27 @@ def rules_on(brief):
 def connect():
     uri = pathlib.Path(STATE_DB).expanduser().resolve().as_uri() + "?mode=ro"
     return sqlite3.connect(uri, uri=True, timeout=1)
+
+
+class Link(NamedTuple):
+    repository: str  # "owner/repo", lowercased
+    number: int
+    watched: bool  # T3's watch flag is on
+    source: str  # "agent", "created", "stack", or "stack-dismissed"
+    open: bool  # T3's last snapshot says open
+
+    @property
+    def wakes(self):
+        """Whether T3 wakes the thread on this PR: watched, and not stack-dismissed
+        (T3's pullRequestWatchTasks skips those)."""
+        raise NotImplementedError
+
+
+def pull_requests(thread, db=None):
+    """The thread's PR links, from its projection's payload. Opens and closes its own
+    connection unless given one. Raises sqlite3.Error when the database can't be read and
+    LookupError when it has no such thread."""
+    raise NotImplementedError
 
 
 def threads(db, session_id):

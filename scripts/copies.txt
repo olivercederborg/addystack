@@ -90,6 +90,7 @@ skills/primitive/addystack/hooks/evidence.py                   skills/primitive/
 skills/primitive/addystack/hooks/evidence.py                   skills/orchestrator/coordinator/scripts/evidence.py
 skills/primitive/addystack/hooks/evidence.py                   skills/optional/request-human-review/scripts/evidence.py
 skills/primitive/addystack/hooks/t3_child.py                   skills/primitive/correct/scripts/t3_child.py
+skills/primitive/addystack/hooks/t3_child.py                   skills/orchestrator/coordinator/scripts/t3_child.py
 skills/primitive/addystack/hooks/turn_block.py                 skills/orchestrator/coordinator/scripts/turn_block.py
 skills/primitive/addystack/hooks/project_md.py                 skills/orchestrator/coordinator/scripts/project_md.py
 skills/primitive/addystack/hooks/transcripts.py                skills/primitive/correct/scripts/transcripts.py
