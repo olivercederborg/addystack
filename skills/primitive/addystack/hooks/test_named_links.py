@@ -6,7 +6,7 @@ next prompt only as a queue-operation before the hook runs; Codex 0.169 writes i
 answer, then token counts and task_complete."""
 import json, os, pathlib, subprocess, tempfile, unittest
 
-import merge_go, named_links, transcripts, turn_block
+import merge_go, named_links, push_go, transcripts, turn_block
 from test_hooks import HOOKS, block, claude_said, codex_said, codex_wrote, state_db
 
 HOOK = "named-links-notice.py"
@@ -235,6 +235,41 @@ class MergeGoStillReadsTheOption(unittest.TestCase):
         self.assertEqual(option.cls, "stop:merge")
         self.assertTrue(merge_go.literal_go(option.text))
         self.assertTrue(merge_go.names(option.text, 124, "acme", "app", [124]))
+
+
+class PushGoStillMatchesTheNextLine(unittest.TestCase):
+    """push-gate takes a picked push option only when the reply shows its text word for word,
+    so the Next line repeats `push #105` bare; naming #105 once in the table covers it."""
+
+    REPLY = ("🟡 **Push the rebased PR?**\n\n"
+             "| [#105, Tell agents which ids their last reply left unnamed](https://github.com/acme/app/pull/105) "
+             "| ready |\n|---|---|\n\n---\n\n**Next**\n\n- `a` → push #105 (dismisses the reviewer's approval)\n\n"
+             + block({"state": "stop", "needs": [], "options": [
+                 {"key": "a", "class": "stop:push", "text": "push #105 (dismisses the reviewer's approval)"}]}))
+
+    def test_the_reply_is_clean_and_shows_the_option_word_for_word(self):
+        self.assertEqual(named_links.unnamed(self.REPLY), [])
+        option = turn_block.picked(self.REPLY, "a")
+        self.assertIn(turn_block.lines_ended(option.text), turn_block.lines_ended(turn_block.before_block(self.REPLY)))
+        self.assertTrue(push_go.literal_go(option.text))
+
+
+class NoticeInstall(unittest.TestCase):
+    def test_only_an_enable_by_id_installs_it(self):
+        import sys
+        if str(HOOKS.parent / "lib") not in sys.path:
+            sys.path.append(str(HOOKS.parent / "lib"))
+        import config, hookset
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(__import__("shutil").rmtree, folder)
+        for hooks, on in (({"preset": "recommended"}, False), ({"preset": "all"}, False),
+                          ({"preset": "recommended", "enable": ["named-links-notice"]}, True)):
+            user = folder / "addystack.jsonc"
+            user.write_text(json.dumps({"hooks": hooks, "replies": {"style": "reply-shape"}}))
+            for runtime in ("claude", "codex"):
+                with self.subTest(hooks=hooks, runtime=runtime):
+                    selected = [entry.id for entry in hookset.select(config.resolve(user), runtime, "linux")]
+                    self.assertEqual("named-links-notice" in selected, on)
 
 
 if __name__ == "__main__":

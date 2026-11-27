@@ -26,8 +26,9 @@ def notice(ids: List[str]) -> str:
             "looking the title up rather than guessing it. Don't repost or rewrite the earlier "
             "reply, and don't bring these ids into an answer they're unrelated to. Keep a turn "
             "block's option text, such as `merge #124` or `push #N (dismisses X's approval)`, "
-            "as it is, since the merge and push gates match it word for word: the named link "
-            "goes in the visible reply.")
+            "and each Next line that shows it, exactly as written, since the merge and push "
+            "gates match it word for word: name the id once elsewhere in the reply, such as "
+            "its headline or table, which covers the bare id in that line.")
 
 
 def main() -> None:
