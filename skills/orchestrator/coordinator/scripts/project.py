@@ -681,13 +681,14 @@ def snapshot(folder: Path) -> dict:
             if isinstance(seen, dict) and seen.get("status"):
                 unit["thread_status"] = seen["status"]
             for pr in unit["prs"]:
-                if isinstance(prs.get(pr["ref"]), list) and len(prs[pr["ref"]]) == 2:
-                    pr["state"], pr["draft"] = prs[pr["ref"]]
+                state = prs.get(pr["ref"])
+                if isinstance(state, list) and len(state) == 2:
+                    pr["state"], pr["draft"] = state
         lead = LINK.search(_header(lines, "Coordinator"))
-        on = ("## Listening" in lines and _listened(lines, "Heartbeat") == "tick" and lead is not None
-              and lead.group(1) == this_environment())
+        ticking = ("## Listening" in lines and _listened(lines, "Heartbeat") == "tick" and lead is not None
+                   and lead.group(1) == this_environment())
         return {"folder": folder.name, "state": "ok", "data": data, "phase": _phase(lines, data), "asOf": as_of,
-                "tickOn": on}
+                "tickOn": ticking}
     except Exception as error:  # whatever a file holds, the page gets a card that says so
         return {"folder": folder.name, "state": "unknown", "error": str(error) or type(error).__name__, "asOf": as_of}
 

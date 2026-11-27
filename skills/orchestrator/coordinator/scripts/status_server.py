@@ -44,6 +44,20 @@ _ORDER = {"unknown": 0, "active": 0, "parked": 1, "closed": 2}
 Signature = tuple
 
 
+def signature(root: Path) -> Signature:
+    """Every project folder's file change times, by stat calls alone."""
+    try:
+        names = sorted(entry.name for entry in os.scandir(root) if entry.is_dir())
+    except OSError:
+        names = []
+    found = []
+    for name in names:
+        changed = _mtime_ns(root / name / "project.md")
+        if changed is not None:
+            found.append((name, changed, _mtime_ns(root / name / "tick.json") or 0))
+    return (*found, _mtime_ns(root / project.TIMER_STAMP) or 0)
+
+
 def _mtime_ns(path: Path) -> int | None:
     try:
         return path.stat().st_mtime_ns
@@ -51,33 +65,21 @@ def _mtime_ns(path: Path) -> int | None:
         return None
 
 
-def signature(root: Path) -> Signature:
-    """Every project folder's file change times, by stat calls alone."""
-    try:
-        names = sorted(entry.name for entry in os.scandir(root) if entry.is_dir())
-    except OSError:
-        names = []
-    found = [(name, changed, _mtime_ns(root / name / "tick.json") or 0) for name in names
-             for changed in [_mtime_ns(root / name / "project.md")] if changed is not None]
-    return (*found, _mtime_ns(root / project.TIMER_STAMP) or 0)
-
-
 def tag(seen: Signature) -> str:
     """The ETag for a signature."""
     return '"' + hashlib.sha256(repr((_STARTED, seen)).encode()).hexdigest()[:32] + '"'
 
 
-def _rank(card: dict) -> tuple:
-    queue = card.get("data", {}).get("queue") or []
-    return _ORDER[card.get("phase", "unknown")], -len(queue), card["folder"]
-
-
 def collect(root: Path) -> dict:
     """The Page: project.snapshot for each folder holding a project.md, in page order."""
     cards = [project.snapshot(root / name) for name, *_ in signature(root)[:-1]]
-    stamp = root / project.TIMER_STAMP
     return {"machine": socket.gethostname(), "staleAfter": project.STALE,
-            "timer": stamp.stat().st_mtime if stamp.exists() else None, "projects": sorted(cards, key=_rank)}
+            "timer": project._mtime(root / project.TIMER_STAMP), "projects": sorted(cards, key=_rank)}
+
+
+def _rank(card: dict) -> tuple:
+    queue = card.get("data", {}).get("queue") or []
+    return _ORDER[card.get("phase", "unknown")], -len(queue), card["folder"]
 
 
 def _json(page: dict) -> bytes:
