@@ -3,7 +3,7 @@
 # remote, a config at <dir>/config/addystack.jsonc, and `addystack build` run with every
 # path inside <dir>, so nothing outside it is read or written. <dir>/env.sh exports the
 # overrides, a HOME at <dir>/home so `install` can't touch the runner's host settings,
-# and KIT, the addystack tool's folder in the ADDYSTACK_KIT checkout (maintainer/kit_path.py).
+# and KIT, the addystack tool's folder in the kit checkout (maintainer/kit_path.py).
 # `explain` adds a rule that keeps <dir>/work/* at a draft stack, with defaults that
 # merge; `change` has only those defaults.
 # Usage: ./setup.sh <target-dir> explain | change
