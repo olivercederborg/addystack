@@ -93,7 +93,7 @@ class Post(unittest.TestCase):
                     'rules': post_review.handoff.reviewers.parse('## db\n/db/ @alice @bob\n'),
                     'changed': ['db/schema.ts', 'README.md'],
                     'settings': {'weights': {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10, 'reuse': 2}, 'share_since': None},
-                    'standing': {login: {'asks': 0, 'share': 0.0} for login in ('alice', 'bob')},
+                    'standing': {login: {'asks': 0, 'share': 0.0, 'away': None} for login in ('alice', 'bob')},
                     'engaged': [login for command, arguments, _ in writes if command == 'request' for login in arguments[1:]],
                     'handoffs': [post_review.handoff.read(files['handoff.md']) for command, _, files in writes
                                  if command == 'comment']}

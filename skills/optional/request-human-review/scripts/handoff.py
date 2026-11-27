@@ -25,7 +25,7 @@ is v2, and a reader takes the last block it trusts:
     <!-- addystack-handoff:v1
     {"pr", "base", "head", "by", "chosen_by": "rule" | "author", "second_opinion": why | null,
      "decisions": [{"key", "id", "gate", "decision", "ask", "why", "code", "domain"}],
-     "reviewers": [{"login", "role", "domains"}], "engaged": [login]}
+     "reviewers": [{"login", "role", "domains"}], "engaged": [login], "away": [{"login", "reason"}]}
     -->
 """
 from __future__ import annotations
@@ -142,6 +142,9 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     def holds(records):
         return {(reviewer['login'].lower(), name) for reviewer in records for name in reviewer['domains'] if name}
     moved = holds(request + kept) - (holds(last['reviewers']) if same else set())
+    away = [{'login': login, 'reason': facts['standing'][login.lower()]['away']}
+            for login in reviewers.unique(name for rule in facts['rules'] for name in rule['names'])
+            if login.lower() != author.lower() and facts['standing'][login.lower()]['away']]
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:
@@ -149,12 +152,12 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     else:
         why = 'new reviewer' if new else 'areas changed' if moved else 'nothing new'
     result = {'post': not same or bool(new) or bool(moved), 'why': why, 'head': facts['head'], 'decisions': placed,
-              'request': request, 'suggested': suggested, 'uncovered': uncovered}
+              'request': request, 'suggested': suggested, 'uncovered': uncovered, 'away': away}
     block = {'pr': number, 'base': facts['base'], 'head': facts['head'], 'by': facts['viewer'],
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,
              'decisions': [{field: decision.get(field) for field in
                             ('key', 'id', 'gate', 'decision', 'ask', 'why', 'code', 'domain')} for decision in placed],
-             'reviewers': request + kept, 'engaged': engaged}
+             'reviewers': request + kept, 'engaged': engaged, 'away': away}
     return {**result, 'comment': _render(disclosure, block, facts['rules'])}
 
 
@@ -226,9 +229,12 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
               + (f' · {", ".join(name for name in reviewer["domains"] if name)}' if any(reviewer['domains']) else '')
               for reviewer in block['reviewers']]
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
+    lines += ['- Away, so not asked: ' + ', '.join(f'`{person["login"]}` ({person["reason"]})'
+                                                  for person in block['away'])] if block.get('away') else []
     if not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
-                     "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
+                     '- Nobody to ask: everyone else REVIEWERS names is away. Ask someone by hand.' if block.get('away')
+                     else "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.
     payload = json.dumps(block, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e')
     return '\n'.join(lines + ['', '</details>', '', f'<!-- {MARK}:v{VERSION}', payload, '-->']) + '\n'

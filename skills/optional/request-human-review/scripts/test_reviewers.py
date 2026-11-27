@@ -116,17 +116,19 @@ class Place(unittest.TestCase):
         self.assertIsNone(reviewers.place(RULES, [decision('README.md:1')], ['README.md'])[0]['domain'])
 
 
-def standing(asks=None, shares=None, rules=RULES):
-    """Everyone the file names, with these open asks and shares, whatever their case, and none otherwise."""
+def standing(asks=None, shares=None, rules=RULES, away=()):
+    """Everyone the file names, with these open asks and shares, whatever their case, and none
+    otherwise; the logins in away are Busy."""
     asks = {login.lower(): count for login, count in (asks or {}).items()}
     shares = {login.lower(): share for login, share in (shares or {}).items()}
-    return {login.lower(): {'asks': asks.get(login.lower(), 0), 'share': shares.get(login.lower(), 0.0)}
+    return {login.lower(): {'asks': asks.get(login.lower(), 0), 'share': shares.get(login.lower(), 0.0),
+                            'away': 'Busy' if login.lower() in away else None}
             for login in reviewers.unique(name for rule in rules for name in rule['names'])}
 
 
 class Pick(unittest.TestCase):
-    def pick(self, *domains, author='zed', engaged=(), load=None, shares=None, held=None, rules=RULES):
-        known = standing(load, shares, rules)
+    def pick(self, *domains, author='zed', engaged=(), load=None, shares=None, held=None, rules=RULES, away=()):
+        known = standing(load, shares, rules, away)
         return [(reviewer['login'], reviewer['role'], reviewer['domains']) for reviewer in
                 reviewers.pick(rules, [{'domain': name} for name in domains], author, list(engaged), known, WEIGHTS,
                                held or {})]
@@ -253,6 +255,12 @@ class Score(unittest.TestCase):
         placed = [{'domain': 'ops'}] * 3 + [{'domain': 'pay'}] * 2 + [{'domain': 'ship'}]
         picked = reviewers.pick(rules, placed, 'carol', ['amy', 'derek'], known, WEIGHTS, {'ship': 'derek'})
         self.assertFalse(any('ship' in r['domains'] for r in picked), picked)
+
+    def test_someone_away_is_never_picked_but_still_covers_what_they_were_asked(self):
+        self.assertEqual(Pick.pick(Pick(), 'billing', away={'alice'}), [('bob', 'P2', ['billing'])])
+        self.assertEqual(Pick.pick(Pick(), 'billing', engaged=['alice'], away={'alice'}), [])
+        everyone = {'alice', 'bob', 'carol', 'dave', 'erin'}
+        self.assertEqual(Pick.pick(Pick(), 'billing', away=everyone), [])
 
     def test_whom_an_earlier_handoff_picked_keeps_the_domain_while_they_are_asked(self):
         self.assertEqual(Pick.pick(Pick(), 'billing', engaged=['carol'], held={'billing': 'carol'}), [])
