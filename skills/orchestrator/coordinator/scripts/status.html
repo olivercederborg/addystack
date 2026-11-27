@@ -125,12 +125,17 @@ function needsYou(data) {
       el("div", { class: "meta muted" }, el("div", {}, "from ", rich(item.source), ` · since ${item.since}`))))));
 }
 
-function pr(pull) {
-  if (pull.url === null) return el("div", { class: "pr" }, pull.name, el("span", { class: "muted" }, "repo unknown"));
-  if (!("read" in pull)) return el("div", { class: "pr" }, link(pull.name, pull.url));
-  if (!pull.read) return el("div", { class: "pr" }, link(pull.name, pull.url), el("span", { class: "muted" }, "unread"));
+function prState(pull) {
   const state = String(pull.state).toLowerCase();
   const tone = { open: "info", merged: "success", closed: "muted" }[state] || "muted";
+  return el("span", { class: `pill tone-${tone}` }, pull.draft ? `${state} draft` : state);
+}
+
+function pr(pull) {
+  if (pull.url === null) return el("div", { class: "pr" }, pull.name, el("span", { class: "muted" }, "repo unknown"));
+  // Without a live read, the live page still has the state the tick last saw.
+  if (!("read" in pull)) return el("div", { class: "pr" }, link(pull.name, pull.url), "state" in pull ? prState(pull) : null);
+  if (!pull.read) return el("div", { class: "pr" }, link(pull.name, pull.url), el("span", { class: "muted" }, "unread"));
   let checks;
   if (pull.checks === null) checks = el("span", { class: "muted" }, "checks unread");
   else if (!Object.keys(pull.checks).length) checks = el("span", { class: "muted" }, "no checks");
@@ -139,8 +144,7 @@ function pr(pull) {
     .filter(([bucket]) => pull.checks[bucket])
     .map(([bucket, mark, color]) => el("span", { class: `tone-${color}`, title: bucket },
       `${mark} ${pull.checks[bucket]} ${bucket}`.trim())));
-  return el("div", { class: "pr" }, link(`${pull.name}, ${pull.title}`, pull.url),
-    el("span", { class: `pill tone-${tone}` }, pull.draft ? `${state} draft` : state), checks);
+  return el("div", { class: "pr" }, link(`${pull.name}, ${pull.title}`, pull.url), prState(pull), checks);
 }
 
 // A Workers row as a card. Its State shows when it says more than the group's name, such as
