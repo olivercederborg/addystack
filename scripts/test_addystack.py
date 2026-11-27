@@ -113,6 +113,16 @@ class Build(Cli):
         self.assertIn("would write 5 files", result.stdout)
         self.assertFalse(self.state.exists() or self.claude.exists() or self.codex.exists())
 
+    def test_instructions_that_are_a_built_file_fail_without_writing(self):
+        self.codex.parent.mkdir()
+        self.codex.symlink_to(self.config.parent / "global.md")
+        for command in (("build",), ("doctor",)):
+            with self.subTest(command=command):
+                result = self.run_cli(*command)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("is the file build writes for hosts.codex", result.stdout + result.stderr)
+        self.assertEqual((self.config.parent / "global.md").read_text(), "# Actions\n\n- Sam's action.\n")
+
     def test_a_link_is_replaced_not_written_through(self):
         target = self.dir / "kit-built.md"
         target.write_text("the kit's file")

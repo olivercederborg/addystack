@@ -57,6 +57,9 @@ class Check:
 
 def _config(value: Optional[Resolved]) -> Check:
     fix = f"edit {config.CONFIG}, then run addystack doctor"
+    aliased = render.aliases(value) if value is not None else []
+    if aliased:
+        return Check("config", False, "; ".join(f"{issue.path}: {issue.message}" for issue in aliased), fix)
     if value is not None:
         return Check("config", True, f"valid, layers {', '.join(value['layers'])}", None)
     try:

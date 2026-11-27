@@ -6,8 +6,8 @@ a shell command word, quoted when the kit's path needs it, with no conditionals.
 is a whole generated section: the repo policy table, the principles index without its
 excluded principles, the reply rules, taste, and the user's `global.md`. Claude Code's
 file imports the built parts with `@` lines, from ~/.local/state/addystack/; Codex's
-file and ~/.agents/AGENTS.md, the fallback other agents read, have them inlined, since
-AGENTS.md has no imports.
+file and ~/.agents/AGENTS.md, a tool-neutral file other agents' own instruction files
+link to, have them inlined, since AGENTS.md has no imports.
 
 The sources, all in the kit's core/ but the user's: `global.md` holds the team's
 sections; `claude-code.md`, `codex.md`, and the tool-neutral `agents.md` add each host's preamble
@@ -171,6 +171,21 @@ def built_parts(resolved: Resolved, core: Path, values: Dict[str, str]) -> Dict[
     return parts
 
 
+def outputs(resolved: Resolved) -> Dict[str, Path]:
+    """Each enabled host's instruction file, by host."""
+    paths = {"claude": claude_md(), "codex": CODEX.expanduser(), "agents": AGENTS.expanduser()}
+    return {host: path for host, path in paths.items() if resolved["hosts"].get(host)}
+
+
+def aliases(resolved: Resolved) -> List[config.Issue]:
+    """An issue for each instructions file that is, or links to, a file build writes,
+    since build would overwrite the source with its own output."""
+    built = {os.path.realpath(path): host for host, path in outputs(resolved).items()}
+    return [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{built[real]}; "
+                                         "keep your instructions in another file")
+            for source in resolved["instructions"] for real in [os.path.realpath(source)] if real in built]
+
+
 def instructions(resolved: Resolved) -> Dict[Path, str]:
     """Each file to write, by absolute path: the hosts' instruction files and the built
     parts the Claude file imports."""
@@ -184,18 +199,18 @@ def instructions(resolved: Resolved) -> Dict[Path, str]:
     def body(host: str) -> str:
         return _merge([_fill((core / name).read_text(), values) for name in ("global.md", host)] + mine)
 
-    if resolved["hosts"]["claude"]:
+    hosts = outputs(resolved)
+    if "claude" in hosts:
         def imported(name: str) -> str:
             return f"@{_home(state / name)}"
 
-        files[claude_md()] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
+        files[hosts["claude"]] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
         for name, text in parts.items():
             files[state / name] = _expand(text, parts, imported)
     def inlined(name: str) -> str:
         return _expand(parts[name], parts, inlined).rstrip("\n")
 
-    if resolved["hosts"]["codex"]:
-        files[CODEX.expanduser()] = f"{_HEADER}\n{_expand(body('codex.md'), parts, inlined)}"
-    if resolved["hosts"].get("agents"):
-        files[AGENTS.expanduser()] = f"{_HEADER}\n{_expand(body('agents.md'), parts, inlined)}"
+    for host, template in (("codex", "codex.md"), ("agents", "agents.md")):
+        if host in hosts:
+            files[hosts[host]] = f"{_HEADER}\n{_expand(body(template), parts, inlined)}"
     return files

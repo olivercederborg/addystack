@@ -53,6 +53,7 @@ sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
 import config  # noqa: E402
 import doctor as _doctor  # noqa: E402
 import reconcile  # noqa: E402
+import render  # noqa: E402
 import resolved  # noqa: E402
 import skill_layer  # noqa: E402
 import skills_cli  # noqa: E402
@@ -376,7 +377,11 @@ def init(args: argparse.Namespace) -> int:
 def _resolve() -> Optional[config.Resolved]:
     """The resolved config, or None after printing each issue to stderr."""
     try:
-        return config.resolve()
+        value = config.resolve()
+        issues = render.aliases(value)
+        if issues:
+            raise config.Invalid(issues)
+        return value
     except config.Invalid as invalid:
         print(f"addystack: {config.CONFIG} is invalid:", file=sys.stderr)
         for issue in invalid.issues:
