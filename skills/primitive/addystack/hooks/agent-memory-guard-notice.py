@@ -129,7 +129,9 @@ def main():
             reported.writelines(key(entry) + "\n" for entry in mine)
     except OSError:
         pass  # the notice matters more than deduplicating it
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": notice(mine[0])}}))
+    # Every kill it reports, oldest first, so a queue kill isn't hidden behind a later one.
+    text = "\n".join(notice(entry) for entry in reversed(mine))
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}))
 
 
 if __name__ == "__main__":
