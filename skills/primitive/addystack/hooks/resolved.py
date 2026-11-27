@@ -22,7 +22,8 @@ call time and checked against schema/v1.json's `repoPolicy`. It holds only `plan
 `trust`, and `pushVia`, which it can only make stricter: each takes the stricter of the
 repo's value and the user's, by the order policy.unresolved uses, so a cloned repo can't
 grant itself merging. It may also name the repo's review App in `review`, which applies
-when the user's config sets none. A file that applied adds `repo-file` to `matched`. One
+when the user's config names none and no matching rule sets `review`, so a rule's
+`"review": null` turns the repo's App off. A file that applied adds `repo-file` to `matched`. One
 that can't be read, isn't JSONC, or fails the schema gives the checkout
 policy.unresolved, with `repo-file-invalid` in `matched`.
 
@@ -232,7 +233,10 @@ def _policy(table: Dict[str, Any], checkout: str | PathLike[str]) -> Policy:
         # Inside a work tree's .git folder, git finds the repo but no top level, so the
         # repo's own file can't be read: fail closed rather than skip it.
         return unresolved
-    return _with_repo_file(_user_policy(table, checkout, top, unresolved), top, unresolved)
+    user = _user_policy(table, checkout, top, unresolved)
+    rule_sets_review = any("review" in rule["set"] for rule in table["rules"]
+                           if rule["source"] in user.matched)
+    return _with_repo_file(user, top, unresolved, keep_review=rule_sets_review)
 
 
 def _toplevel(checkout: str | PathLike[str]) -> Optional[str]:
@@ -266,9 +270,10 @@ def _user_policy(table: Dict[str, Any], checkout: str | PathLike[str], top: Opti
     return _make_policy(fields, tuple(matched))
 
 
-def _with_repo_file(policy: Policy, top: Optional[str], unresolved: Policy) -> Policy:
-    """policy with each field the repo's own file sets made the stricter of the two, or
-    unresolved when the file is there but can't be used."""
+def _with_repo_file(policy: Policy, top: Optional[str], unresolved: Policy, keep_review: bool) -> Policy:
+    """policy with each field the repo's own file sets made the stricter of the two, and
+    the file's review App when policy has none and keep_review is false, or unresolved
+    when the file is there but can't be used."""
     if top is None:
         return policy
     path = Path(top) / REPO_FILE
@@ -292,7 +297,7 @@ def _with_repo_file(policy: Policy, top: Optional[str], unresolved: Policy) -> P
         return invalid
     fields: Dict[str, Any] = {field: config.stricter(field, repo[field], getattr(policy, field))
                               for field in config.REPO_FIELDS if field in repo}
-    if repo.get("review") is not None and policy.review is None:
+    if repo.get("review") is not None and policy.review is None and not keep_review:
         fields["review"] = _review(repo["review"])
     return replace(policy, **fields, matched=(*policy.matched, "repo-file"))
 

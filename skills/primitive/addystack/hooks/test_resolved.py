@@ -23,7 +23,8 @@ USER = """// A user's config.
       { "match": { "path": "PATHS/*" }, "issues": "github" },
       { "match": { "remote": "[:/]acme-team/" }, "planning": "gated", "trust": "draft", "pushVia": "gh-stack",
         "issues": "linear", "lenses": ["team-conventions"], "verifySkill": "verify-team", "decisionsSection": true },
-      { "match": { "remote": "[:/]reviewed/" }, "review": { "app": "my-reviewer" } }
+      { "match": { "remote": "[:/]reviewed/" }, "review": { "app": "my-reviewer" } },
+      { "match": { "remote": "[:/]unreviewed/" }, "review": null }
     ]
   },
   "replies": { "style": "reply-shape", "rules": "replies.md", "next": "lettered", "turnBlock": true }
@@ -257,6 +258,10 @@ class RepoFile(Fixture):
     def test_the_users_review_app_wins_over_the_repo_files(self):
         path = self.with_file('{ "review": { "app": "acme-reviewer" } }', origin="git@github.com:reviewed/app.git")
         self.assertEqual(self.fields(path, "review"), (resolved.Review("my-reviewer"), ("user#3", "repo-file")))
+
+    def test_a_users_null_review_turns_the_repo_files_app_off(self):
+        path = self.with_file('{ "review": { "app": "acme-reviewer" } }', origin="git@github.com:unreviewed/app.git")
+        self.assertEqual(self.fields(path, "review"), (None, ("user#4", "repo-file")))
 
     def test_without_a_review_app_anywhere_review_is_none(self):
         path = self.with_file('{ "trust": "draft" }', origin="git@github.com:sam/skills.git")

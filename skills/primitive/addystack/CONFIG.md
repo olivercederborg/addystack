@@ -36,7 +36,8 @@ for checkouts matched by `path` or `remote`. The first value listed is the defau
 A repo can commit `.agents/addystack.jsonc` to make these stricter, never looser. It can
 also name the GitHub App that reviews its ready PRs, such as
 `"review": { "app": "my-reviewer" }`, so every teammate's agents wait for that App's
-approval instead of a person's; your config's own `review`, when set, wins. To see why an
+approval instead of a person's; your config's own `review`, when set, wins, and a
+`policy.repos` rule's `"review": null` turns the repo's App off. To see why an
 agent stopped, run `addystack policy --repo <checkout> --explain`.
 
 ## Notes
