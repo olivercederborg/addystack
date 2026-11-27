@@ -6039,7 +6039,7 @@ class TurnBlock(unittest.TestCase):
         option_a, option_b = turn_block.parse(reply).options
         for prompt, option in [("a", option_a), (" A. ", option_a), ("`b`", option_b), ("b!", option_b),
                                ("Option A", option_a), ("option b.", option_b), ("option a?", None),
-                               ("Option A？", None), ("a ❓", None), ("¿a", None),
+                               ("Option A？", None), ("a ❓", None), ("¿a", None), ("Option A؟", None), ("**a**", option_a),
                                ("options a", None), ("a, skip 3", None), ("a and b", None), ("a?", None), ("c", None), ("", None),
                                ("ab", None), ("merge it", None), (None, None)]:
             with self.subTest(prompt=prompt):

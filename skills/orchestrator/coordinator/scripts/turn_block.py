@@ -104,10 +104,10 @@ SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")
 TICKS = re.compile(r"`+")
 BLOCK = re.compile(r"<!--\s*turn\b\s*(.*?)\s*-->\s*\Z", re.S)
-# Exactly one key and punctuation around it, which "option" may lead ("Option A"); "a?" is
-# a question, not a pick, in any script ("a？", "a ❓", "a⁇").
-NOT_PUNCT = r"[^\w?？¿⁇⁈⁉❓❔]"
-PICK = re.compile(rf"{NOT_PUNCT}*(?:option\s+)?([abc]){NOT_PUNCT}*", re.I)
+# Exactly one key, which "option" may lead ("Option A"), and only the marks a pick wears
+# around it: "a?" is a question, not a pick, and so is "a？" or "a؟" in any script.
+WRAP = r"[\s.!`*_\"'()\[\],:;~-]*"
+PICK = re.compile(rf"{WRAP}(?:option\s+)?([abc]){WRAP}", re.I)
 WORD = re.compile(r"[^\W\d_]{3}")
 # Exactly what JS trim() drops: ECMAScript WhiteSpace and LineTerminator.
 JS_SPACE = ("\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
