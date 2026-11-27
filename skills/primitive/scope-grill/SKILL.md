@@ -27,7 +27,7 @@ from, with a PR's diff against its base. A brain dump (loose thoughts in any ord
 fine request: draw the goal, the must-haves, and the open questions out of it.
 
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
-work is wanted. Building holds the must-haves. At a pilot Bar the smallest option that
+work is wanted. The plan builds the must-haves. At a pilot Bar the smallest option that
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
 the goal back in the user's words. Show the plan and questions in the first round. Keep
 the user's boundaries verbatim: on the plan, or copied into the fold and named on the
@@ -55,8 +55,7 @@ Not in scope, so a later run picks it up.
   prerequisites are settled. Recompute it after each answer.
 - **Rounds** have one to three open frontier questions, the one whose options differ
   most in size first. Ask only decisions that need the user's input; don't add a
-  question to fill the round. Each has a recommended option, and one answer can settle
-  the round: every ➡️ answer, or all but the ones it overrides by number.
+  question to fill the round.
 - **Facts are yours; decisions are the user's.** Look up what the code, config, or
   tools can answer, with parallel sub-agents when two or more lookups are independent.
   While a lookup runs, only the questions that depend on it wait.
@@ -64,21 +63,24 @@ Not in scope, so a later run picks it up.
 ## 3. Ask the round
 
 Every reply in the grill, including a clarification, is a round in this order, as plain
-text:
+text. Keep it to about 150 words above the fold, as in the example, and under 200; fold
+the rest by name, such as `+4 more in the fold`:
 
-1. **Headline**: `🟡 **Round N: <what this round decides>?**`.
+1. **Headline**: `🟡 **Round N: <what this round decides>?**`, then question 1, with only a
+   mockup page between them. A fact a question rests on goes in its sentence or the fold.
 2. **Questions**, one to three, a blank line between them. Each is `❓ **N · <question>?**`,
    worded so "yes" takes the recommendation, then one sentence naming the other option
    and its cost. Under it, the recommendation alone on a `➡️` line, with its reason and
    size.
-3. **The plan, once**: `**Plan** · <PRs> · ~<files> · <migrations>`. A change shows as a
-   trail on that line, such as `~6 → ~11 files` or `0 → 1 → 0 migrations`; start a trail
-   only from a known count, otherwise write `1 proposed migration`. Then plain bullets,
-   a sentence each: what gets built; *My suggestion:* before each item the user hasn't
-   agreed to, including an assumption that adds work, until they accept it;
+3. **The plan, once**: `**Plan** · <PRs> · ~<files> · <migrations>`. A change from the
+   last size the user saw, in this session or the request, shows as a trail on that
+   line, such as `1 → 3 PRs`; start a trail only from a known count,
+   otherwise write `1 proposed migration`. Then plain bullets, a sentence each: what
+   gets built; *My suggestion:* before each item the user hasn't agreed to, such as an
+   added check, dependency or PR split, until they accept it;
    `Not building:`; and `Assuming (say if wrong):`. A bullet this round changed can lead
    with `New:`, and a dropped item shows once as `Dropped: …`. Past about five built
-   items, fold the older ones by name, such as `+4 more in the fold`.
+   items, fold the older ones by name.
 4. **The fold**: each option with its change and cost line, the sources, any unchecked
    fact, and the **For architect** list, or `none`.
 5. **Wait.** In the reply's Next, `a` takes every ➡️ answer, and the user overrides one
@@ -122,7 +124,7 @@ section changes.
 Add a decision diagram only when the choice hinges on a fact that's easier to see as a
 branch. When `html_render` exists and a round changes what a user sees (a layout, a
 state, or a flow between screens), through an option or an assumed default, its picture
-is one mockup page under the headline: prototypes of the real screens, built as
+is one mockup page: prototypes of the real screens, built as
 [mockups](references/mockups.md) says. A round that changes no screen gets none. In the
 fold, give each option:
 
@@ -160,8 +162,7 @@ fold, give each option:
 
 ## 4. Watch the whole plan
 
-- **A wider answer** changes the plan and its size trail in the next round and shows any new
-  questions it creates.
+- **A wider answer** shows any new questions it creates in the next round.
 - **A second PR**: when the plan's size passes ~20 files or one migration plus its
   callers, say so and propose a split into vertical slices, each shipping a working part of the outcome. A
   wide rename or contract change goes expand → migrate → contract.
