@@ -2400,6 +2400,14 @@ class MergeGate(unittest.TestCase):
         }.items():
             with self.subTest(case=name):
                 self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=said))
+        # Nov 27, 2026: "A merge #139" and "Option A" answered a squash-merge card, and the
+        # agent, told only to ask for "merge #139", blamed a missing turn block.
+        squash = {**merge, "text": "squash-merge #12 now"}
+        for said in [("fix it", offer(merge), "A merge #12"), ("fix it", offer(squash), "Option A")]:
+            with self.subTest(said=said[1:]):
+                self.assertIsNone(self.reason("gh pr merge 12 --squash", said=said))
+        self.assertIn('the user\'s "a fix it and merge #12" is neither a key nor a plain request to merge, so it gives no go',
+                      self.reason("gh pr merge 12", said=("fix it", offer(merge), "a fix it and merge #12")))
         with tempfile.TemporaryDirectory() as folder:  # a delegated child's pick isn't the user's
             self.env["T3_STATE_DB"] = ReplyShapeContext.state_db(self, folder, ReplyShapeContext.CHILD, "a")
             self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=("fix it", offer(merge), "a"),
@@ -3158,6 +3166,12 @@ class MergeGo(unittest.TestCase):
         "lets get it merged if its ready": "2026-10-06 linux 01a112df",
         "a, and please merge all the PRs that are done": "2026-10-24 a1127c68",
         "just merge the rest": "2026-10-24 8c894c98",
+        # A pick and the merge with no comma between, a pick by "Option", and a squash, in a
+        # T3 thread on PR #139; the gate read none of them as a go.
+        "A merge #139": "2026-11-27 T3",
+        "Option A, merge #139": "2026-11-27 T3, as the user offered it",
+        "squash-merge #139 now": "2026-11-27 T3, the card's option a",
+        "yes squash and merge it": "2026-11-27 T3, as the user offered it",
     }
 
     NOT_GOS = {
@@ -3203,6 +3217,10 @@ class MergeGo(unittest.TestCase):
         # Talk about merging.
         "lets just let them merge it and then prepare my own follow-up with this": "2026-10-09 b20a0a92",
         "Lets just focus on merging all the ready stuff now": "2026-10-15 face613c",
+        # A pick with another step before the merge, or no merge at all.
+        "a fix it and merge #139": "2026-11-27, near miss of \"A merge #139\"",
+        "a merge conflict": "2026-11-27, near miss of \"A merge #139\"",
+        "squash the commits": "2026-11-27, near miss of \"squash-merge #139 now\"",
     }
 
     def test_reads_each_real_merge_request_as_a_go(self):
@@ -6016,7 +6034,8 @@ class TurnBlock(unittest.TestCase):
         reply = self.REPLY + block(self.STOP)
         option_a, option_b = turn_block.parse(reply).options
         for prompt, option in [("a", option_a), (" A. ", option_a), ("`b`", option_b), ("b!", option_b),
-                               ("a, skip 3", None), ("a and b", None), ("a?", None), ("c", None), ("", None),
+                               ("Option A", option_a), ("option b.", option_b), ("option a?", None),
+                               ("options a", None), ("a, skip 3", None), ("a and b", None), ("a?", None), ("c", None), ("", None),
                                ("ab", None), ("merge it", None), (None, None)]:
             with self.subTest(prompt=prompt):
                 self.assertEqual(turn_block.picked(reply, prompt), option)

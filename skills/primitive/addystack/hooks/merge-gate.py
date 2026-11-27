@@ -136,7 +136,10 @@ def user_go(numbers, owner, repo):
             return False, f"{said} isn't a merge of #{pr}"
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
-            return False, None
+            # Say why, so the agent doesn't guess: on Nov 27, 2026 one blamed a missing turn
+            # block for "A merge #139", which the gate then read as neither a pick nor a go.
+            return False, (f"{said} is neither a key nor a plain request to merge, so it gives no go"
+                           if prompt.strip() else None)
         reply = user_turn.answered(found)
         option = turn_block.picked(reply, prompt)
         if option is None:
