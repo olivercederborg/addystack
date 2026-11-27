@@ -202,6 +202,15 @@ class PostedText(unittest.TestCase):
         for fields in ({"id": "DEV-9", "relatedTo": ["DEV-4"]}, {"id": "DEV-9", "duplicateOf": "DEV-4", "state": "x"}):
             self.assertEqual(self.posts("mcp__claude_ai_Linear__save_issue", fields), [])
 
+    def test_the_target_names_the_destination(self):
+        self.assertEqual([post.target for command in ("gh pr comment 23 -R acme/one -b 'see #12'",
+                                                       "gh pr comment 23 --repo acme/two -b 'see #12'")
+                          for post in self.posts("Bash", bash(command))],
+                         ["gh pr comment 23 acme/one", "gh pr comment 23 acme/two"])
+        self.assertEqual([post.target for project in ("P-1", "P-2")
+                          for post in self.posts("mcp__linear__save_comment", {"projectId": project, "body": "DEV-12"})],
+                         ["save_comment P-1", "save_comment P-2"])
+
     def test_executor_calls_unwrap_to_linear(self):
         call = lambda path, fields: {"path": path, "input": {"accountId": "acc_1", "input": fields}}
         one = call('tools["linear-mcp"].save_comment', {"issueId": "JOK-1", "body": "See JOK-2."})

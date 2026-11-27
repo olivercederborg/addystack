@@ -149,7 +149,8 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
             body = _file_body(place(given, at), index, pieces, bodies, place)
         if body is None:
             continue
-        target = " ".join(["gh", "pr", words[lead + 2], *[value(word) or "" for word in positional[:1]]]).strip()
+        repo = [given for flag, given in flags if flag in ("-R", "--repo")][-1:]
+        target = " ".join(["gh", "pr", words[lead + 2], *[value(word) or "" for word in positional[:1] + repo]])
         found_posts.append(Post(target, body))
     return found_posts
 
@@ -256,9 +257,16 @@ def _linear(kind: str, fields: object) -> List[Post]:
             parts += [op[name] for name in ("new_string", "text") if isinstance(op.get(name), str)]
     if not parts:
         return []
-    name = fields.get("id") or fields.get("issueId")
-    where = str(name) if name else f"new {fields.get('team') or fields.get('name') or ''}".strip()
-    return [Post(f"save_{kind} {where}", "\n\n".join(parts))]
+    # Where it posts: the item it saves, or a new one's parent, team, or name, so a denial
+    # on one never lets the same text through on another.
+    where = [str(fields[key]) for key in _WHERE if isinstance(fields.get(key), (str, int))]
+    if kind != "comment" and "id" not in fields:
+        where = ["new", *where]
+    return [Post(" ".join([f"save_{kind}", *where]), "\n\n".join(parts))]
+
+
+# The fields that say which item a Linear save writes, or where a new one goes.
+_WHERE = ("id", "issueId", "projectId", "documentId", "initiativeId", "projectUpdateId", "parentId", "team", "name")
 
 
 def _direct(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]:
