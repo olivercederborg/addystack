@@ -33,6 +33,8 @@ repository's checkout. Its Outcome is approved (with carried_from), not-carried 
 caller reviews instead), pending (the checks haven't finished; try again later), or superseded
 (the head isn't HEAD_SHA, or moved before the write; that push decides).
 """
+from __future__ import annotations
+
 import argparse
 from datetime import datetime
 import json
