@@ -13,8 +13,14 @@ It reads a command as the gates do (shell_dirs): heredoc bodies and quoted strin
 data, kept aside by placeholder so the words and pieces around them read as the shell splits
 them, and `Walk` says where each piece runs, which places a relative --body-file.
 
-Known limit: a Linear patch's inserted fragments are read joined in operation order, not
-where Linear places them, so a code fence one fragment opens can hide an id in the next."""
+Known limits, each a missed or extra reminder, never a lost post:
+- A Linear patch's inserted fragments are read joined in operation order, not where Linear
+  places them, so a code fence one fragment opens can hide an id in the next.
+- A gh post's target names the repo only when -R or --repo gives it, so an identical
+  comment to the same PR number in another checkout, in one session, passes as a retry.
+- gh's -R or --repo before the pr subcommand (`gh -R o/r pr comment`) isn't read as a post.
+- A heredoc written to the body file inside an if, a loop, or after `||` is read as if it
+  ran."""
 import os, re, stat
 from typing import Callable, List, NamedTuple, Optional, Tuple
 
@@ -269,7 +275,8 @@ def _linear(kind: str, fields: object) -> List[Post]:
 
 
 # The fields that say which item a Linear save writes, or where a new one goes.
-_WHERE = ("id", "issueId", "projectId", "documentId", "initiativeId", "projectUpdateId", "parentId", "team", "name")
+_WHERE = ("id", "issueId", "projectId", "documentId", "initiativeId", "projectUpdateId", "statusUpdateId",
+          "milestoneId", "parentId", "team", "name")
 
 
 def _direct(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]:
