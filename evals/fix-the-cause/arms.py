@@ -19,7 +19,6 @@ import tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "maintainer"))
 import kit_path  # noqa: E402
 sys.path[:0] = [str(kit_path.tool() / "lib"), str(kit_path.tool() / "hooks")]
-import hookset  # noqa: E402
 import render as kit_render  # noqa: E402
 import resolved  # noqa: E402
 
@@ -45,19 +44,17 @@ def live():
 
 
 def render(repo, rev, kit, built):
-    """rev's router and principles part, filled as render.instructions fills them from
-    `built`, with {{kit}} as `kit`. The principles part is None when that build has none:
-    preset `none` without a taste file."""
-    values = {"user": built["identity"]["name"], "kit": kit, "addystack": f"{hookset._kit(built)}/bin/addystack"}
-    router = kit_render._fill(show(repo, rev, CORE + "router.md"), values)
-    judgment = built["judgment"]
-    if judgment["principles"]["preset"] != "none":
-        with tempfile.TemporaryDirectory() as core:
-            pathlib.Path(core, "principles.md").write_text(show(repo, rev, CORE + "principles.md"))
-            return router, kit_render._principles(built, pathlib.Path(core), values)
-    if judgment["taste"]:
-        return router, f"# Taste\n\nWhat good code and UI look like: `{kit_render._home(pathlib.Path(judgment['taste']))}`.\n"
-    return kit_render._expand(router, {}, str), None
+    """rev's router and principles part, built as `addystack build` builds them from
+    `built` (render.built_parts), with {{kit}} as `kit`, or the build's own when it's
+    empty. The principles part is None when that build has none."""
+    with tempfile.TemporaryDirectory() as core:
+        for name in ("router.md", "principles.md"):
+            pathlib.Path(core, name).write_text(show(repo, rev, CORE + name))
+        parts = kit_render.built_parts(built, pathlib.Path(core), kit_render.placeholders(built, kit))
+    router = parts["router.md"]
+    if "principles.md" not in parts:
+        router = kit_render._expand(router, parts, str)
+    return router, parts.get("principles.md")
 
 
 def build(repo, out, arm, rev, typed, built):
@@ -88,7 +85,7 @@ def main(argv):
     repo, built = argv[0], live()
     if argv[1:] == ["--check"]:
         state = resolved.STATE.expanduser().parent
-        router, principles = render(repo, "origin/main", kit_render._home(pathlib.Path(built["kit"])), built)
+        router, principles = render(repo, "origin/main", "", built)
         router = router.replace("@principles.md", f"@{kit_render._home(state / 'principles.md')}")
         live_principles = state / "principles.md"
         same = router == (state / "router.md").read_text() and principles == (
