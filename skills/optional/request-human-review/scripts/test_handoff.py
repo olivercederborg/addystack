@@ -91,6 +91,12 @@ class Plan(unittest.TestCase):
         reviewed = self.plan(judged, self.facts(viewer='carol', handoffs=[earlier], engaged=['alice']), chosen=('alice',))
         self.assertEqual((reviewed['post'], reviewed['request']), (False, []))
 
+    def test_when_reviewers_names_only_the_author_the_handoff_says_nobody_was_asked(self):
+        lonely = self.plan(verdict(decision('D1', 'packages/auth/a.ts:1')), self.facts(author='dave', rules=reviewers.parse(
+            '## auth\n/packages/auth/ @dave\n')))
+        self.assertEqual((lonely['post'], lonely['why'], lonely['request']), (True, 'nobody to ask', []))
+        self.assertIn("- Nobody to ask: REVIEWERS names no one here but the PR's author", lonely['comment'])
+
     def test_a_base_without_reviewers_or_a_moved_head_hands_off_nothing(self):
         judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
         self.assertEqual(self.plan(judged, self.facts(rules=None))['post'], False)

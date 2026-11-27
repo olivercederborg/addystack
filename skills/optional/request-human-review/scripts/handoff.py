@@ -119,7 +119,9 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     request += [reviewer for reviewer in (last['reviewers'] if same and not chosen else [])
                 if not reviewers.has([*engaged, *requested, author], reviewer['login'])]
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
-    if not same:
+    if not request and not engaged:
+        why = 'nobody to ask'
+    elif not same:
         why = 'decisions changed' if last else 'first handoff'
     else:
         why = 'new reviewer' if new else 'nothing new'
@@ -186,7 +188,9 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
               + (f' · {", ".join(name for name in reviewer["domains"] if name)}' if any(reviewer['domains']) else '')
               for reviewer in block['reviewers']]
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
-    lines += ['- Nobody new: the people already asked cover these decisions'] if not block['reviewers'] else []
+    if not block['reviewers']:
+        lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
+                     "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.
     payload = json.dumps(block, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e')
     return '\n'.join(lines + ['', '</details>', '', f'<!-- {MARK}:v{VERSION}', payload, '-->']) + '\n'
