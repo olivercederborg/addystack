@@ -1124,20 +1124,19 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(self.stop(*turns, ("a", self.card(needs=[queued]))), [])
         self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[queued, (13, "raise the Typecheck limit")])))), 1)
 
-    def test_reads_a_decision_by_its_id_and_name(self):
+    def test_reads_a_decision_by_its_name_whatever_its_id(self):
         # Outside a coordinator, need 1 is often a new decision: 197 of the week's 362 replayed sends
-        # shared an id with a checked card, 55 its id and name. A need re-queued under a new id may
-        # have changed, as a stack rebased since its check, and the user asked again there.
+        # shared an id with a checked card, 55 its name too. A coordinator re-queues a checked card
+        # under a new id: ◆ suite-audit got 3 asks in 30 minutes on one merge (Nov 26, 2026).
         turns = [(self.ASK, self.card(needs=[(1, "merge the four approved PRs")])),
                  (self.COMMAND, self.card(needs=[(9, "open the stack for review")]))]
-        for need in ((1, "push #6136 fixes and reply to the reviewer"), (12, "open the stack for review")):
+        self.set_run("run-1", "completed")
+        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "push #6136 fixes and reply to the reviewer")])))), 1)
+        for need in ((9, "open the stack for review"), (12, "Open the stack  for review"), (14, "merge the four approved PRs")):
             with self.subTest(need=need):
                 self.fresh()
-                self.set_run("run-1", "completed")
-                self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[need])))), 1)
-        self.fresh()
-        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(9, "open the stack for review")]))), [])
-        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+                self.assertEqual(self.stop(*turns, ("a", self.card(needs=[need]))), [])
+                self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
 
     def test_dry_run_takes_the_scope(self):
         run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), *self.ARGS, "--dry-run", "--transcript",
@@ -5187,13 +5186,72 @@ class PushGate(unittest.TestCase):
 class CardCheck(unittest.TestCase):
     """card-check.py on the stop:push options of real cards."""
 
-    def run_hook(self, *options, active=False):
+    def run_hook(self, *options, active=False, transcript=None):
         reply = "Push?\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
                                       "options": [{"key": key, "class": cls, "text": text}
                                                   for key, (cls, text) in zip("ab", options)]})
         out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
-            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active,
+             **({"transcript_path": transcript} if transcript else {})})).stdout
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    def test_checks_a_card_written_again_after_another_hooks_block(self):
+        # What Claude Code 2.1.332 writes when another Stop hook blocks: the reason as meta, then a
+        # blocking error; the card written again then stops with stop_hook_active (R200's forks).
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / "s.jsonl"
+        prompt = {"type": "user", "message": {"role": "user", "content": "Build it, then push"}}
+        card_text = {"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": "Push?"}]}}
+        asked = {"type": "user", "isMeta": True, "message": {"role": "user", "content": "Stop hook feedback:\nis this the cleanest?"}}
+        blocked = {"type": "attachment", "attachment": {"type": "hook_blocking_error", "hookEvent": "Stop"}}
+        ours = {"type": "attachment", "attachment": {"type": "hook_success", "hookEvent": "Stop", "command": "/kit/hooks/card-check.py",
+                                                     "stdout": '{"hookSpecificOutput": {}}', "toolUseID": "s1"}}
+        # Each Stop's summary: one a hook continued, and one that ended the turn (Claude Code 2.1.312 and 2.1.332).
+        # Each Stop's records share its toolUseID; a non-blocking error ends the turn (Claude Code 2.1.312).
+        context = {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop", "toolUseID": "s1"}}
+        continued = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s1", "hookErrors": [], "hookAdditionalContext": ["Push?"]}
+        ended = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s2", "hookErrors": [], "hookAdditionalContext": []}
+        failed = {"type": "attachment", "attachment": {"type": "hook_non_blocking_error", "hookEvent": "Stop", "toolUseID": "s3"}}
+        interrupt = {"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": "[Request interrupted by user]"}]}}
+        # Another hook's own send-back, its output and context under its Stop's toolUseID.
+        theirs = {"type": "attachment", "attachment": {"type": "hook_success", "hookEvent": "Stop", "command": "/kit/hooks/reply-budget.py",
+                                                       "stdout": '{"hookSpecificOutput": {}}', "toolUseID": "s5"}}
+        their_context = {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop", "toolUseID": "s5"}}
+        their_stop = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s5", "hookErrors": [], "hookAdditionalContext": ["Shorter."]}
+        # Another hook blocks a Stop after card-check's send-back in the same turn.
+        block_later = {"type": "attachment", "attachment": {"type": "hook_blocking_error", "hookEvent": "Stop", "toolUseID": "s4"}}
+        blocked_later = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s4",
+                         "hookErrors": ["is this the cleanest?"], "hookAdditionalContext": []}
+        # During a tool call Claude Code writes only the call's result.
+        tool_interrupt = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "[Request interrupted by user for tool use]"}]}}
+        ended_failed = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s3",
+                        "hookErrors": ["Failed with non-blocking status code: no such file"], "hookAdditionalContext": []}
+        notice = {"type": "user", "message": {"role": "user", "content": "<task-notification>\n<status>completed</status>\n</task-notification>"}}
+        text = "push #12 (this will dismiss the reviewer's approval)"
+        for records, sends in (([prompt, card_text, asked, blocked], True),
+                               ([prompt, card_text, theirs, their_context, their_stop, card_text], True),
+                               ([prompt, card_text, ours, context, continued, card_text], False),
+                               # A later block in that turn doesn't end it either.
+                               ([prompt, card_text, ours, context, continued, card_text, block_later, blocked_later, asked,
+                                 card_text], False),
+                               # A notice that lands in the continued turn doesn't end it.
+                               ([prompt, card_text, ours, context, continued, notice, card_text], False),
+                               # Its send-back in an earlier turn doesn't hold this one, a notice's turn included.
+                               ([prompt, card_text, ours, context, continued, card_text, ended, prompt, card_text, asked, blocked], True),
+                               ([prompt, card_text, ours, context, continued, card_text, ended, notice, card_text, asked, blocked], True),
+                               # A turn the user interrupted ends with no Stop.
+                               ([prompt, card_text, ours, context, continued, interrupt, prompt, card_text, asked, blocked], True),
+                               ([prompt, card_text, ours, context, continued, tool_interrupt, prompt, card_text, asked, blocked], True),
+                               # A hook's non-blocking error at the Stop that ended the earlier turn still ends it.
+                               ([prompt, card_text, ours, context, continued, card_text, failed, ended_failed, prompt, card_text,
+                                 asked, blocked], True)):
+            with self.subTest(records=records):
+                path.write_text("".join(json.dumps(record) + "\n" for record in records))
+                reason = self.run_hook(("stop:push", text), active=True, transcript=str(path))
+                self.assertEqual(reason is not None, sends)
+        self.assertIsNone(self.run_hook(("stop:push", text), active=True, transcript=str(path.parent / "missing.jsonl")))
 
     def test_sends_back_a_push_option_the_gate_would_refuse(self):
         # Real options from Nov 18 to 26, 2026, names replaced: each a pick push-gate refuses.
