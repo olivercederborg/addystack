@@ -210,6 +210,16 @@ class Page(Folders, unittest.TestCase):
                 seen = status_server.signature(self.orchestrate)
         self.assertEqual(status_server.tag(seen), status_server.tag(status_server.signature(self.orchestrate)))
 
+    def test_a_file_turning_readable_changes_the_signature(self):
+        folder = self.write()
+        path = folder / "project.md"
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
+        seen = status_server.signature(self.orchestrate)
+        time.sleep(0.01)
+        path.chmod(0o644)
+        self.assertNotEqual(status_server.signature(self.orchestrate), seen)
+
     def test_projects_come_unknown_and_active_first_then_parked_then_closed_and_more_queue_items_first(self):
         self.write("closed", **{"## Queue": "## Result\n\nShipped #12.\n\n## Queue", "| running |": "| done |"})
         self.write("parked", **{"Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting"})

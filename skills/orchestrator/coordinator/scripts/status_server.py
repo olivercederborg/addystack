@@ -39,8 +39,9 @@ PAGE = Path(__file__).resolve().parent / "status.html"
 _STARTED = os.urandom(8).hex()
 _ORDER = {"unknown": 0, "active": 0, "parked": 1, "closed": 2}
 
-# (folder name, project.md mtime_ns, tick.json mtime_ns or 0), one per folder holding a
-# project.md, then the timer's .tick stamp.
+# (folder name, project.md stamp, tick.json stamp or 0), one per folder holding a project.md,
+# then the timer's .tick stamp. A stamp is (mtime_ns, ctime_ns): ctime moves on a chmod too,
+# so a file that turns readable gets read again.
 Signature = tuple
 
 
@@ -52,17 +53,18 @@ def signature(root: Path) -> Signature:
         names = []
     found = []
     for name in names:
-        changed = _mtime_ns(root / name / "project.md")
+        changed = _stamp(root / name / "project.md")
         if changed is not None:
-            found.append((name, changed, _mtime_ns(root / name / "tick.json") or 0))
-    return (*found, _mtime_ns(root / project.TIMER_STAMP) or 0)
+            found.append((name, changed, _stamp(root / name / "tick.json") or 0))
+    return (*found, _stamp(root / project.TIMER_STAMP) or 0)
 
 
-def _mtime_ns(path: Path) -> int | None:
+def _stamp(path: Path) -> tuple[int, int] | None:
     try:
-        return path.stat().st_mtime_ns
+        stat = path.stat()
     except OSError:
         return None
+    return stat.st_mtime_ns, stat.st_ctime_ns
 
 
 def tag(seen: Signature) -> str:
