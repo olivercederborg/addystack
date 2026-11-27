@@ -214,6 +214,13 @@ def wake_gap(turn, reply, thread, now):
             "the eta if it isn't measured")
 
 
+def unanswerable(reply):
+    """Why the reader can't answer the reply from what it shows, or None: it asks for an
+    option letter its visible Next list doesn't define, or points to options or steps in an
+    earlier reply. Reads the text outside code fences and the turn block, never the block."""
+    raise NotImplementedError
+
+
 def sent_back(path):
     """Whether card-check already sent this turn's reply back: the transcript at path has a
     Stop hook_success record of card-check.py with output since the last Stop that ended a
