@@ -74,7 +74,9 @@ whose folder the kit dropped lose their links when `install` runs.
 
 ## Working on the kit
 
-Once per clone:
+Pushing needs [Dagger](https://docs.dagger.io/install) (`brew install dagger` on macOS)
+and a container runtime it can reach, such as Docker Desktop, OrbStack, or Colima. Once
+per clone:
 
 ```sh
 git config core.hooksPath .githooks
@@ -82,7 +84,9 @@ git config core.hooksPath .githooks
 
 The pre-commit hook runs the lints and the touched skills' tests on this machine, and
 the pre-push hook, which `gh stack push` and `submit` run, runs the kit's Dagger suites
-once per push when it can reach an engine (`dagger check -l` lists them).
+once per push (`dagger check -l` lists them). Without Dagger or an engine it can reach,
+the push stops; `PRE_COMMIT_HOST_SUITES=1 git push` runs the suites on this machine
+instead, which takes 5 to 10 minutes.
 
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run
