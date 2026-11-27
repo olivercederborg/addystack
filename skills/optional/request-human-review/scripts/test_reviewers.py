@@ -133,6 +133,7 @@ class Pick(unittest.TestCase):
         self.assertEqual(self.pick('web', load={'alice': 3, 'bob': 1, 'carol': 1, 'dave': 2, 'Erin': 1}),
                          [('bob', 'fallback', ['web'])])
         self.assertEqual(self.pick('web', 'billing'), [('alice', 'P1', ['billing'])])
+        self.assertEqual(self.pick('web', 'web', 'billing'), [('alice', 'P1', ['billing'])])
         self.assertEqual(self.pick(None, engaged=['carol']), [])
         self.assertEqual(self.pick(None, load={'alice': 1, 'bob': 1, 'carol': 1, 'dave': 1}), [('Erin', 'fallback', [])])
 

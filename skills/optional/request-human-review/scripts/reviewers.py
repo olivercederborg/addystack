@@ -115,8 +115,10 @@ def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> l
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
-    # Named domains first, so a person picked for one can cover a domain with nobody.
-    order = sorted(counts, key=lambda name: (name is None, -counts[name], name or ''))
+    # Domains with a P1 or P2 to ask first, so a person picked for one can cover a domain with nobody.
+    def listed(name):
+        return bool(name) and any(login.lower() != author.lower() for login in names(rules, name)[:2])
+    order = sorted(counts, key=lambda name: (not listed(name), -counts[name], name or ''))
     picked = []
     for name in order:
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
