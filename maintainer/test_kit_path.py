@@ -1,7 +1,7 @@
-"""Tests for kit_path.py, which finds the ADDYSTACK_KIT checkout the maintainer scripts and
-the pre-commit read."""
+"""Tests for kit_path.py, which finds the kit checkout the evals and maintainer/ read."""
 import os
 import tempfile
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -14,6 +14,11 @@ class KitPathTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as raised:
                 kit_path.repo()
         self.assertIn("ADDYSTACK_KIT", str(raised.exception))
+
+    def test_without_the_setting_it_is_the_checkout_holding_maintainer(self):
+        env = {key: value for key, value in os.environ.items() if key != "ADDYSTACK_KIT"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(kit_path.repo(), Path(__file__).resolve().parent.parent)
 
     def test_the_setting_picks_the_checkout(self):
         kit = kit_path.repo()

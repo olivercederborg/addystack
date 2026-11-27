@@ -127,7 +127,7 @@ class FakeHome:
 
     def env(self):
         env = {key: value for key, value in os.environ.items() if not key.startswith(("GIT_", "SBX_", "ADDYSTACK_"))}
-        # The kit stays the real checkout: its default sits under the real HOME.
+        # The kit stays the one these tests loaded, even with ADDYSTACK_KIT stripped above.
         return {**env, "HOME": str(self.home), "XDG_CONFIG_HOME": str(self.home / ".config"),
                 "GIT_CONFIG_NOSYSTEM": "1", "PATH": f"{self.bin}:/usr/bin:/bin", "ADDYSTACK_KIT": str(kit_path.repo())}
 

@@ -43,7 +43,6 @@ LOGIN = "olivercederborg"
 FRANKLIN = "hifranklin-tech/franklin-next"
 FRANKLIN_CLONE = "~/Developer/work/franklin/franklin-next"
 FRANKLIN_BASE = "develop"
-KIT = Path(__file__).resolve().parent.parent
 
 # --- dump: this machine's raw rows (stdlib only, Python 3.9) -------------------------------
 
@@ -451,7 +450,8 @@ def words(text):
 
 def kit_cost(rev, files, tools):
     """Metric 6 from the kit's files at `rev` ({path: text}) and the window's Claude
-    [tool calls, denials]."""
+    [tool calls, denials]. The evals and maintainer/ share the kit's repo but aren't the kit."""
+    files = {p: t for p, t in files.items() if not p.startswith(("evals/", "maintainer/"))}
     def body(text):
         return text.split("\n---\n", 1)[1] if text.startswith("---\n") and "\n---\n" in text[4:] else text
 
@@ -469,24 +469,21 @@ def kit_cost(rev, files, tools):
 
 
 def kit_rev(end, kit, runner=run):
-    """The repo holding the kit at `end` and its last origin/main commit before then: the
-    addystack checkout once it has one (plan D18), else this workshop, which held the kit
-    before the split. kit is the addystack checkout, or None when there isn't one."""
-    if kit is not None:
-        rev = runner(["git", "-C", str(kit), "rev-list", "-1", f"--before={end}", "origin/main"]).strip()
-        if rev:
-            return kit, rev
-    return KIT, runner(["git", "-C", str(KIT), "rev-list", "-1", f"--before={end}", "origin/main"]).strip()
+    """The kit checkout's last origin/main commit before `end`. Its repo starts at v0.1.0 on
+    2026-11-08; before then the kit lived in olivercederborg/skills, whose 394f6d52 still
+    holds this script to score those windows."""
+    rev = runner(["git", "-C", str(kit), "rev-list", "-1", f"--before={end}", "origin/main"]).strip()
+    if not rev:
+        raise SystemExit(f"the kit at {kit} has no origin/main commit before {end}: score a window "
+                         "before 2026-11-08 from olivercederborg/skills at 394f6d52")
+    return rev
 
 
 def kit_files(end, runner=run):
     """The kit's tracked files at the last origin/main commit before `end`."""
     import kit_path
-    try:
-        kit = kit_path.repo()
-    except SystemExit:
-        kit = None
-    repo, rev = kit_rev(end, kit, runner)
+    repo = kit_path.repo()
+    rev = kit_rev(end, repo, runner)
     archive = subprocess.run(["git", "-C", str(repo), "archive", rev], capture_output=True, check=True).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
         return rev, {m.name: tar.extractfile(m).read().decode("utf8", "replace") for m in tar.getmembers() if m.isfile()}

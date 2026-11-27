@@ -325,6 +325,13 @@ class KitCost(unittest.TestCase):
         self.assertEqual(found["6 kit code lines (no tests)"]["value"], 3)
         self.assertEqual(found["6 hook denials per 100 tool calls"]["value"], 1.5)
 
+    def test_leaves_out_the_evals_and_maintainer_folders(self):
+        files = {"hooks/a.py": "1\n", "maintainer/evals.py": "1\n2\n", "evals/x/setup.sh": "1\n",
+                 "evals/x/fixtures/SKILL.md": "seven eight"}
+        found = scorecard.kit_cost("abcdef1234567", files, [200, 3])
+        self.assertEqual(found["6 kit code lines (no tests)"]["value"], 1)
+        self.assertEqual(found["6 SKILL.md words"]["value"], 0)
+
     def test_a_kit_without_instruction_files_reports_always_loaded_words_as_not_measured(self):
         files = {"skills/optional/reply-shape/SKILL.md": "---\nname: x\n---\nfour five"}
         found = scorecard.kit_cost("abcdef1234567", files, [200, 3])["6 always-loaded words (Claude)"]
@@ -396,22 +403,18 @@ class Report(unittest.TestCase):
 
 
 class KitRev(unittest.TestCase):
-    """After the split the kit's metrics come from the addystack checkout; before it, from
-    the workshop."""
+    """The kit's metrics come from the kit checkout's origin/main as of the window's end."""
 
-    def runner(self, revs):
-        return lambda argv, **_: revs[argv[2]]
+    def runner(self, rev):
+        return lambda argv, **_: rev
 
-    def test_uses_the_kit_checkout_once_it_has_a_commit(self):
-        revs = {"/kit": "k1\n", str(scorecard.KIT): "w1\n"}
-        self.assertEqual(scorecard.kit_rev("2030-01-01", Path("/kit"), self.runner(revs)),
-                         (Path("/kit"), "k1"))
+    def test_uses_the_kit_checkouts_last_commit_before_the_end(self):
+        self.assertEqual(scorecard.kit_rev("2030-01-01", Path("/kit"), self.runner("k1\n")), "k1")
 
-    def test_falls_back_to_the_workshop_before_the_split(self):
-        revs = {"/kit": "", str(scorecard.KIT): "w1\n"}
-        self.assertEqual(scorecard.kit_rev("2026-01-01", Path("/kit"), self.runner(revs)),
-                         (scorecard.KIT, "w1"))
-        self.assertEqual(scorecard.kit_rev("2026-01-01", None, self.runner(revs)), (scorecard.KIT, "w1"))
+    def test_a_window_before_the_kits_repo_is_refused_naming_the_workshop_commit(self):
+        with self.assertRaises(SystemExit) as raised:
+            scorecard.kit_rev("2026-01-01", Path("/kit"), self.runner(""))
+        self.assertIn("olivercederborg/skills at 394f6d52", str(raised.exception))
 
 if __name__ == "__main__":
     unittest.main()

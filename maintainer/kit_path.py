@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Where the workshop finds the addystack kit, which lives in its own repo (plan D18):
-ADDYSTACK_KIT, a checkout of olivercederborg/addystack, by default
-~/Developer/personal/addystack. The evals, maintainer/, and the workshop skills' tests all
-read it here, and nowhere else names the default.
+"""Where the evals and maintainer/ find the addystack kit: the checkout this file is in,
+or ADDYSTACK_KIT, another checkout of olivercederborg/addystack, such as an older kit to
+check a machine that runs one. Nowhere else names the default.
 
   maintainer/kit_path.py         # print the checkout
   maintainer/kit_path.py --tool  # print the addystack tool's folder in it
@@ -13,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-DEFAULT = "~/Developer/personal/addystack"
+DEFAULT = Path(__file__).resolve().parent.parent
 TOOL = Path("skills", "primitive", "addystack")
 
 
@@ -21,8 +20,7 @@ def repo() -> Path:
     """The kit's checkout; exits naming the fix when it isn't one."""
     path = Path(os.environ.get("ADDYSTACK_KIT") or DEFAULT).expanduser().resolve()
     if not (path / TOOL / "bin" / "addystack").is_file():
-        raise SystemExit(f"no addystack checkout at {path}: clone olivercederborg/addystack there, "
-                         "or set ADDYSTACK_KIT to one")
+        raise SystemExit(f"no addystack checkout at {path}: set ADDYSTACK_KIT to one, or unset it")
     return path
 
 

@@ -24,7 +24,7 @@ lenient darwin and linux profiles; LENIENT_LIMITS lists what they don't see. --p
 sandbox is strict and needs --lock: every untracked or ignored entry under ~/.claude,
 ~/.agents and ~/.codex, minus RUNTIME_STATE, must be pinned by the lock, and bytecode in a
 skill is drift. A skill tree outside the kit can't hold a symlink on any profile. Hooks
-come from the manifest in the ADDYSTACK_KIT checkout (maintainer/kit_path.py), so point it
+come from the manifest in the kit checkout (maintainer/kit_path.py), so point ADDYSTACK_KIT
 at an older kit to check a machine that runs one. ~/.codex/config.toml is compared with yadm HEAD as TOML, without the
 keys the Codex app rewrites on its own (CODEX_APP_KEYS)."""
 import argparse, fnmatch, hashlib, json, os, pathlib, re, shutil, subprocess, sys
@@ -180,8 +180,8 @@ def tree_sha(path):
 
 
 def find_kit():
-    """The checkout ~/.claude/skills/reply-shape links into, else the ADDYSTACK_KIT one
-    (kit_path.py), which this script already loaded its hooks from."""
+    """The checkout ~/.claude/skills/reply-shape links into, else kit_path.py's, which this
+    script already loaded its hooks from."""
     link = home() / ".claude/skills/reply-shape"
     if link.exists():
         folder = link.resolve().parent
@@ -812,7 +812,7 @@ def main(argv=None):
     parser.add_argument("--profile", default="auto", choices=("auto", *hook_parity.PROFILES))
     parser.add_argument("--codex-trust", action="store_true", help="also ask codex app-server which hooks it trusts")
     parser.add_argument("--json", action="store_true", help="print JSON instead of text")
-    parser.add_argument("--kit", help="the kit checkout (default: where ~/.claude/skills/reply-shape links, else ADDYSTACK_KIT's)")
+    parser.add_argument("--kit", help="the kit checkout (default: where ~/.claude/skills/reply-shape links, else kit_path.py's)")
     args = parser.parse_args(argv)
     profile = hook_parity.host_profile(args.profile)
 
