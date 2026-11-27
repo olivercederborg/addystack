@@ -24,7 +24,6 @@ Known limits, each a missed or extra reminder, never a lost post:
 import os, re, stat
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
-from shell_dirs import ASSIGNMENT, HEREDOC, QUOTED, Walk
 
 # The tool names whose calls may post text, as one regex both runtimes' manifest entries
 # carry; test_named_links checks the manifest against it.
@@ -78,6 +77,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
     command = tool_input.get("command")
     if not isinstance(command, str) or not re.search(r"\bgh\b", command):
         return []
+    from shell_dirs import ASSIGNMENT, HEREDOC, QUOTED, Walk  # only a gh command pays for shutil
     # A heredoc's body, None when the shell expands it (an unquoted delimiter and a $ or `),
     # so what it posts can't be known here.
     bodies: List[Optional[str]] = []

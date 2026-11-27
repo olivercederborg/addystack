@@ -21,9 +21,13 @@ def reason(flagged: List[Tuple["posted_text.Post", List["named_links.Cited"]]]) 
 
 
 def main() -> None:
-    import denied_posts, named_links, posted_text
+    # It runs before every Bash call, so what only a post needs loads once there is one.
+    import posted_text
     event = json.load(sys.stdin)
     found = posted_text.posts(event.get("tool_name"), event.get("tool_input"), event.get("cwd"))
+    if not found:
+        return
+    import denied_posts, named_links
     flagged = [(post, cited) for post in found for cited in [named_links.unnamed(post.text)] if cited]
     fresh = [(post, cited) for post, cited in flagged
              if denied_posts.first(event.get("session_id"), post.target, post.text)]
