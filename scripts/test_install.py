@@ -898,6 +898,16 @@ class Guard(Home):
         self.write(self.home / ".zprofile", "ulimit -Su 8000\n")
         self.assertIn("a new agent shell gets no process limit", self.doctor_line(self.cli("install").stdout))
 
+    def test_doctor_probes_each_agent_shell_once(self):
+        # A probe after the first four fails, as a shell timing out would; doctor must not
+        # run it, or format its None.
+        self.select()
+        self.ok("install")
+        count = self.home / "probes"
+        self.write(self.zshenv, f"echo x >> {count}\n[[ $(wc -l < {count}) -gt 4 ]] && exit 1\nulimit -Su 2000\n")
+        self.assertIn("capped at 2,000", self.doctor_line(self.ok("doctor").stdout))
+        self.assertEqual(len(count.read_text().splitlines()), 4)
+
     def test_a_standalone_codex_shell_is_capped(self):
         self.select()
         self.ok("install")

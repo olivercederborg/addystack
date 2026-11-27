@@ -187,9 +187,9 @@ def stop(path: Path) -> None:
         pass
 
 
-def problems(resolved: Resolved) -> List[str]:
-    """What doctor reports: one line per missing, stale, or ineffective piece; none when
-    it's not wanted."""
+def problems(resolved: Resolved, limit: Optional[int]) -> List[str]:
+    """What doctor reports, given shell_limit()'s probe: one line per missing, stale, or
+    ineffective piece; none when it's not wanted."""
     if not hookset.guard_wanted(resolved):
         return []
     lines = []
@@ -200,7 +200,6 @@ def problems(resolved: Resolved) -> List[str]:
         lines.append(f"{plist()} differs from the kit's")
     elif not loaded():
         lines.append("the agent memory guard isn't loaded")
-    limit = shell_limit()
     if limit is None or limit > LIMIT:
         got = "none" if limit is None else f"{limit:,}"
         lines.append(f"a new agent shell gets no process limit of {LIMIT:,} or less (it gets {got}); "

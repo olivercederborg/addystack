@@ -281,10 +281,12 @@ def _guard(value: Optional[Resolved]) -> Check:
         return Check("memory guard", True, _SKIPPED, None)
     if not hookset.guard_wanted(value):
         return Check("memory guard", True, "not needed: its hook isn't selected on this machine", None)
-    lines = guard.problems(value)
+    # One probe: a second could disagree with the first, as a shell timing out would.
+    limit = guard.shell_limit()
+    lines = guard.problems(value, limit)
     if lines:
         return Check("memory guard", False, "; ".join(lines), "addystack install")
-    return Check("memory guard", True, f"loaded, and agent shells capped at {guard.shell_limit():,} processes", None)
+    return Check("memory guard", True, f"loaded, and agent shells capped at {limit:,} processes", None)
 
 
 def _policy_tools(value: Optional[Resolved]) -> Check:
