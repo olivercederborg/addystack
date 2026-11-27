@@ -119,8 +119,10 @@ class Render(unittest.TestCase):
         hooks = render_hooks.render("codex", "darwin")
         names = {event: [pathlib.PurePath(c.split()[0]).name for c in commands({event: groups})]
                  for event, groups in hooks.items()}
-        self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py", "push-gate.py"])
-        self.assertEqual([len(groups) for groups in hooks.values()], [1, 1])
+        # A new hook goes after the trusted ones, so their positions hold.
+        self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py", "push-gate.py",
+                                               "agent-memory-guard-notice.py"])
+        self.assertEqual([len(groups) for groups in hooks.values()], [1, 1, 1])
 
     def cli(self, *args):
         return subprocess.run([sys.executable, str(HOOKS / "render_hooks.py"), *args],
@@ -166,7 +168,7 @@ class ParityProfiles(unittest.TestCase):
         home = RenderedHome(self, "linux")
         self.assertEqual(hook_parity.drift("claude", profile="linux"), [])
         self.assertEqual(sorted(line.split()[-1] for line in hook_parity.drift("claude", profile="darwin")),
-                         sorted(map(filled, DARWIN_ONLY)))
+                         sorted(filled(e["command"]) for e in MANIFEST["claude"] if e.get("hosts") == ["darwin"]))
         self.assertTrue(all(line.startswith("claude: missing ") for line in hook_parity.drift("claude", profile="darwin")))
         home.write("claude", render_hooks.render("claude", "darwin"))  # present on linux: not extra either
         self.assertEqual(hook_parity.drift("claude", profile="linux"), [])

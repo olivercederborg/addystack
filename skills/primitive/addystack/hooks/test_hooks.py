@@ -6373,47 +6373,116 @@ class Exchanges(unittest.TestCase):
 
 class CheckQueueNotice(unittest.TestCase):
     """agent-memory-guard-notice.py's queued note and queue-kill notice, by hook_event_name."""
+    HOOK = "agent-memory-guard-notice.py"
 
-    @unittest.skip("check queue: contract only, not built yet")
+    def setUp(self):
+        self.home = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home)
+        self.logs = self.home / "Library" / "Logs"
+        self.logs.mkdir(parents=True)
+        self.state = self.home / "state"
+        self.state.mkdir()
+        self.env = {"HOME": str(self.home), "ADDYSTACK_STATE": str(self.state)}
+
+    def raw(self, payload):
+        return subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True,
+                              text=True, check=True, env={**os.environ, **self.env}).stdout
+
+    def hold(self, count):
+        (self.state / "check-queue.json").write_text(json.dumps(
+            {"held": [{"unit": n, "members": [[n, n]]} for n in range(count)]}))
+
+    def log(self, *lines):
+        (self.logs / "agent-memory-guard.log").write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+    def kill(self, command="bun run typecheck", seconds_ago=1, **more):
+        return {"time": "t", "at": time.time() - seconds_ago, "agent_pid": os.getpid(),
+                "reason": "held 15 min while the machine's check queue stayed full (4 checks running)",
+                "command_sha256": hashlib.sha256(command.encode()).hexdigest(), "command": command,
+                "tool_call_id": None, "rule": "queue", "unit": "node tsc", **more}
+
     def test_queued_note_names_the_held_count_in_claude_and_codex(self):
-        pass
+        self.hold(3)
+        for payload in ({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+                        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"},
+                         "session_id": "s", "turn_id": "t", "tool_use_id": "call_1"}):
+            with self.subTest(payload=sorted(payload)):
+                note = run_hook(self.HOOK, payload, env=self.env)
+                self.assertIn("3 checks are queued", note)
+                self.assertIn("up to 15 min", note)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_no_queued_note_when_nothing_is_held_or_the_queue_file_is_unreadable(self):
-        pass
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}
+        self.assertEqual(self.raw(payload), "")
+        self.hold(0)
+        self.assertEqual(self.raw(payload), "")
+        (self.state / "check-queue.json").write_text("{not json")
+        self.assertEqual(self.raw(payload), "")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_the_queued_note_makes_no_permission_decision(self):
-        pass
+        self.hold(1)
+        out = json.loads(self.raw({"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}))
+        self.assertEqual(set(out), {"hookSpecificOutput"})
+        self.assertEqual(set(out["hookSpecificOutput"]), {"hookEventName", "additionalContext"})
+        self.assertIn("1 check is queued", out["hookSpecificOutput"]["additionalContext"])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_queue_kill_gets_the_queue_advice(self):
-        pass
+        self.log(self.kill())
+        note = run_hook(self.HOOK, {"hook_event_name": "PostToolUseFailure", "tool_input": {"command": "bun run typecheck"},
+                                    "duration_ms": 3000}, env=self.env)
+        self.assertIn("check queue stayed full", note)
+        self.assertIn("run a narrower check", note)
+        self.assertNotIn("parallelism", note)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_a_memory_kill_keeps_todays_advice(self):
-        pass
+        line = self.kill(reason="702 processes, over the per-command 600")
+        del line["rule"], line["unit"]
+        self.log(line)
+        note = run_hook(self.HOOK, {"tool_input": {"command": "bun run typecheck"}, "duration_ms": 3000}, env=self.env)
+        self.assertIn("so it wouldn't freeze the Mac", note)
+        self.assertIn("lower its parallelism", note)
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_codex_notice_matches_by_tool_call_id(self):
-        pass
+        # Codex reports a yielded command when a later poll sees it end: no duration_ms, and
+        # the kill can be minutes old.
+        self.log(self.kill(command="node tsc", seconds_ago=600, tool_call_id="call_7", agent_pid=1))
+        out = json.loads(self.raw({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "call_7",
+                                   "tool_input": {"command": "pnpm typecheck"}, "tool_response": "..."}))
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "PostToolUse")
+        self.assertIn("check queue stayed full", out["hookSpecificOutput"]["additionalContext"])
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_codex_notice_ignores_another_tool_calls_kill(self):
-        pass
+        self.log(self.kill(tool_call_id="call_7"), self.kill(tool_call_id=None))
+        payload = {"hook_event_name": "PostToolUse", "tool_use_id": "call_8", "tool_input": {"command": "bun run typecheck"}}
+        self.assertEqual(self.raw(payload), "")
+        self.assertEqual(self.raw({**payload, "tool_use_id": ""}), "")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_notice_reads_a_bounded_log_tail(self):
-        pass
+        stops = [{"event": "stop", "time": "t", "at": time.time(), "unit": "node tsc", "command": "x" * 200}] * 1500
+        self.log(self.kill(tool_call_id="call_old"), *stops, self.kill(tool_call_id="call_new"))
+        self.assertGreater((self.logs / "agent-memory-guard.log").stat().st_size, 256 * 1024)
+        payload = {"hook_event_name": "PostToolUse", "tool_input": {"command": "x"}}
+        self.assertIn("check queue", run_hook(self.HOOK, {**payload, "tool_use_id": "call_new"}, env=self.env))
+        self.assertEqual(self.raw({**payload, "tool_use_id": "call_old"}), "")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_notice_reports_every_matching_kill_once(self):
-        pass
+        self.log(self.kill(seconds_ago=2), self.kill(seconds_ago=1))
+        payload = {"hook_event_name": "PostToolUseFailure", "tool_input": {"command": "bun run typecheck"}, "duration_ms": 5000}
+        self.assertIn("check queue", run_hook(self.HOOK, payload, env=self.env))
+        self.assertEqual(len((self.logs / "agent-memory-guard.reported").read_text().split()), 2)
+        self.assertEqual(self.raw(payload), "")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_every_guard_entry_shares_one_id_and_its_selection(self):
-        pass
-
+        manifest = json.loads((HOOKS / "manifest.json").read_text())
+        entries = [(runtime, entry) for runtime, rows in manifest.items() for entry in rows
+                   if entry["command"].endswith("/agent-memory-guard-notice.py")]
+        self.assertEqual(sorted((runtime, entry["event"]) for runtime, entry in entries), [
+            ("claude", "PostToolUseFailure"), ("claude", "PreToolUse"), ("codex", "PostToolUse"), ("codex", "PreToolUse")])
+        self.assertEqual({(entry["id"], tuple(entry["tags"]), entry.get("requires"), tuple(entry.get("hosts", ())),
+                           entry["matcher"]) for _, entry in entries},
+                         {("agent-memory-guard-notice", ("machine",), None, ("darwin",), "Bash")})
+        # hookset.guard_wanted reads the first Claude entry with the id; the set above has one
+        # element, so any of them gives the same answer.
 
 
 if __name__ == "__main__":
