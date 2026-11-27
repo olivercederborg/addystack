@@ -888,12 +888,12 @@ class Governor:
         self._log("stop", held)
 
     def _resume(self, top, units, now, wall, why):
-        unit = self.held.pop(top)
+        unit = self.held[top]
         members = list(unit["members"].values())
         if top in units:
             members += [proc for proc in units[top].members if proc.ident not in unit["members"]]
-        self._save()
         signal_all(members, signal.SIGCONT, self.send, self.current)
+        self._forget(top)  # only once it runs, so a failed write can't strand it
         self._run(top, now, wall)
         self.last_admit = now
         self._log("cont", unit, why=why, waited=round(now - unit["since"], 1))
@@ -907,8 +907,7 @@ class Governor:
         line["command_sha256"] = hashlib.sha256(unit["command"].encode()).hexdigest()
         self.record(line)  # logged before the kill, so the notice finds it
         signal_all(members, signal.SIGKILL, self.send, self.current)
-        del self.held[top]
-        self._save()
+        self._forget(top)
         try:
             self.notify("Killed a queued agent check", reason, unit["command"])
         except OSError:
@@ -918,6 +917,16 @@ class Governor:
         self.record({"event": event, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "at": time.time(),
                      "unit": unit["text"], "command": unit["command"], "running": len(self.running),
                      "held": len(self.held), **more})
+
+    def _forget(self, top):
+        """Drops a held unit once its processes ran or died. A failed write leaves its
+        record, which the next guard start resumes harmlessly."""
+        del self.held[top]
+        try:
+            self._save()
+        except OSError as error:
+            print(f"{time.strftime('%H:%M:%S')} check queue couldn't save: {error!r}",
+                  file=sys.stderr, flush=True)
 
     def _save(self):
         """Writes the held units, oldest first, to the state file in one rename."""

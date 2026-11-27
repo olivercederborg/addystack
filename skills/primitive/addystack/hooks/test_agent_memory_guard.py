@@ -952,6 +952,24 @@ class CheckQueue(unittest.TestCase):
         q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
         self.assertEqual(q.sent, [])  # the file still can't be written, so check 3 runs too
 
+    def test_a_failed_write_after_a_resume_never_strands_the_unit(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        save, failures = q.governor._save, [1]
+
+        def flaky():
+            if failures:
+                failures.pop()
+                raise OSError("disk full")
+            save()
+
+        q.governor._save = flaky
+        with contextlib.redirect_stderr(io.StringIO()):
+            q.tick(q.check(2, 1000))
+            q.tick(q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.sent[-1], (221, signal.SIGCONT))
+
     def test_a_governor_error_resumes_every_held_unit_and_reports_once(self):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))
