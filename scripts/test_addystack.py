@@ -399,8 +399,8 @@ class Policy(Cli):
     def test_prints_the_repo_files_review_app(self):
         path = self.repo("https://github.com/sam/skills.git")
         (path / ".agents").mkdir()
-        (path / ".agents" / "addystack.jsonc").write_text('{ "review": { "app": "frankie-reviewer" } }')
-        self.assertEqual(self.policy(path)["review"], {"app": "frankie-reviewer"})
+        (path / ".agents" / "addystack.jsonc").write_text('{ "review": { "app": "acme-reviewer" } }')
+        self.assertEqual(self.policy(path)["review"], {"app": "acme-reviewer"})
         self.assertIsNone(self.policy(self.repo("https://github.com/sam/other.git"))["review"])
 
     def test_explain_names_an_invalid_repo_files_issue(self):

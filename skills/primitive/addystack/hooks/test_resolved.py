@@ -250,12 +250,12 @@ class RepoFile(Fixture):
         self.assertEqual(self.fields(path, "trust"), ("draft", ("unresolved", "repo-file-invalid")))
 
     def test_a_repo_file_names_the_review_app_for_every_user(self):
-        path = self.with_file('{ "review": { "app": "frankie-reviewer" } }', origin="git@github.com:sam/skills.git")
+        path = self.with_file('{ "review": { "app": "acme-reviewer" } }', origin="git@github.com:sam/skills.git")
         self.assertEqual(self.fields(path, "review", "trust"),
-                         (resolved.Review("frankie-reviewer"), "merge-on-go", ("repo-file",)))
+                         (resolved.Review("acme-reviewer"), "merge-on-go", ("repo-file",)))
 
     def test_the_users_review_app_wins_over_the_repo_files(self):
-        path = self.with_file('{ "review": { "app": "frankie-reviewer" } }', origin="git@github.com:reviewed/app.git")
+        path = self.with_file('{ "review": { "app": "acme-reviewer" } }', origin="git@github.com:reviewed/app.git")
         self.assertEqual(self.fields(path, "review"), (resolved.Review("my-reviewer"), ("user#3", "repo-file")))
 
     def test_without_a_review_app_anywhere_review_is_none(self):
@@ -263,7 +263,7 @@ class RepoFile(Fixture):
         self.assertEqual(self.fields(path, "review"), (None, ("repo-file",)))
 
     def test_a_malformed_review_gives_unresolved(self):
-        for text in ['{ "review": "frankie-reviewer" }', '{ "review": {} }', '{ "review": { "app": 1 } }',
+        for text in ['{ "review": "acme-reviewer" }', '{ "review": {} }', '{ "review": { "app": 1 } }',
                      '{ "review": { "app": "x", "required": true } }']:
             with self.subTest(text=text):
                 path = self.with_file(text, origin="git@github.com:sam/skills.git")
