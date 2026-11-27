@@ -21,8 +21,9 @@ The list shows at most five open PRs per thread, and only an agent can read the 
 T3's `list_thread_pull_requests` tool. So when a review thread hides links and a hidden
 link could make it the holder, the script exits 3 and prints {"needLinks": [threadId, ...]}.
 The caller saves each listed thread's tool result, read with states ["open"], as one JSON
-object keyed by thread id, and runs the script again with --links FILE. Each saved list is
-merged with the fresh list entry, which wins for a PR both name.
+object keyed by thread id, and runs the script again with --links FILE. A saved list stands
+in for a thread that still hides links, and must hold every PR its fresh entry shows. A link
+swapped for another in the seconds between the two reads can't be seen.
 
 Exits 2, with a message on stderr, when T3 can't be read or the links file leaves out an
 open PR of a thread that could hold the PR, so the caller stops instead of guessing.
@@ -91,10 +92,10 @@ def best(items, repo, number, prefixes):
 
 
 def ahead(thread, other):
-    """Whether this thread wins over the other within one kind: unsettled first, then newest."""
+    """Whether this thread can win over the other within one kind: unsettled first, then newest."""
     if bool(thread.get("settled")) != bool(other.get("settled")):
         return not thread.get("settled")
-    return str(thread.get("updatedAt") or "") > str(other.get("updatedAt") or "")
+    return str(thread.get("updatedAt") or "") >= str(other.get("updatedAt") or "")  # a tie keeps list order
 
 
 def hidden_links(items, prefixes):
@@ -126,17 +127,22 @@ def read_links(path):
         pulls = result.get("pullRequests") if isinstance(result, dict) else None
         if (not isinstance(pulls, list) or result.get("nextCursor")
                 or not all(isinstance(pr, dict) and isinstance(pr.get("repository"), str)
-                           and isinstance(pr.get("number"), int) for pr in pulls)):
-            raise ValueError(f"--links for {thread_id} is not one full list_thread_pull_requests result")
+                           and isinstance(pr.get("number"), int) and isinstance(pr.get("source"), str)
+                           and isinstance(pr.get("watching"), bool)
+                           and (pr.get("state") is None or isinstance(pr.get("state"), str)) for pr in pulls)
+                or len({key(pr) for pr in pulls}) != len(pulls)):
+            raise ValueError(f"--links for {thread_id} is not one thread's full list_thread_pull_requests "
+                             "result, every page combined")
         links[thread_id] = pulls
     return links
 
 
 def with_links(thread, pulls):
-    """The thread with its saved full list, each PR once; the fresher list entry wins."""
-    merged = {key(pr): pr for pr in pulls}
-    merged.update({key(pr): pr for pr in thread.get("pullRequests") or []})
-    return {**thread, "pullRequests": list(merged.values())}
+    """The thread with its saved full list, which must hold every PR the fresh list shows."""
+    if missing := {key(pr) for pr in thread.get("pullRequests") or []} - {key(pr) for pr in pulls}:
+        raise ValueError(f"--links for {thread.get('threadId')} misses #{', #'.join(str(n) for _, n in sorted(missing))}, "
+                         "which the thread links now; read its list again")
+    return {**thread, "pullRequests": pulls}
 
 
 class NeedsLinks(Exception):
@@ -154,8 +160,10 @@ def lookup(repo, number, prefixes, project=None, list_json=None, links_json=None
         items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
     if links_json:
         links = read_links(links_json)
+        hiding = {thread.get("threadId") for thread in hidden_links(items, prefixes)}
         items = [with_links(thread, links[thread.get("threadId")])
-                 if thread.get("threadId") in links else thread for thread in items]
+                 if thread.get("threadId") in links and thread.get("threadId") in hiding else thread
+                 for thread in items]
     found = best(items, repo, number, prefixes)
     if needed := [thread.get("threadId") for thread in hidden_links(items, prefixes) if could_outrank(thread, found)]:
         if links_json:
