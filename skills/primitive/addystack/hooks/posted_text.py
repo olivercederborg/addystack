@@ -173,7 +173,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
             continue
         if name in ("-b", "--body"):
             body = value(given, at[1])
-        elif value(given) == "-":  # stdin: only a heredoc on this gh command places it
+        elif value(given, at[1]) == "-":  # stdin: only a heredoc on this gh command places it
             held = re.findall(r"<<\x01H(\d+)\x01", text)
             body = bodies[int(held[-1])] if held else None
         else:
@@ -181,8 +181,10 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
         if body is None:
             continue
         repo = [given for flag, given in flags if flag in ("-R", "--repo")][-1:]
-        target = " ".join(["gh", "pr", words[lead + 2], *[value(word) or "" for word in positional[:1] + repo]])
-        found_posts.append(Post(target, body))
+        where = [value(word, at[1]) for word in positional[:1] + repo]
+        if None in where:  # a PR or repo it can't read would key this denial on the wrong post
+            continue
+        found_posts.append(Post(" ".join(["gh", "pr", words[lead + 2], *where]), body))
     return found_posts
 
 

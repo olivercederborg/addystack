@@ -227,6 +227,12 @@ class PostedText(unittest.TestCase):
                                                        "gh pr comment 23 --repo acme/two -b 'see #12'")
                           for post in self.posts("Bash", bash(command))],
                          ["gh pr comment 23 acme/one", "gh pr comment 23 acme/two"])
+        self.assertEqual([post.target for repo in ("acme/one", "acme/two")
+                          for post in self.posts("Bash", bash(f"R={repo}; N=23; gh pr comment $N --repo \"$R\" -b 'see #12'"))],
+                         ["gh pr comment 23 acme/one", "gh pr comment 23 acme/two"])
+        self.assertEqual(self.posts("Bash", bash("gh pr comment $N -b 'see #12'")), [])
+        [post] = self.posts("Bash", bash("FILE=-; gh pr comment 1 -F \"$FILE\" <<'EOF'\nsee #12\nEOF"))
+        self.assertEqual(post.text, "see #12")
         self.assertEqual([post.target for project in ("P-1", "P-2")
                           for post in self.posts("mcp__linear__save_comment", {"projectId": project, "body": "DEV-12"})],
                          ["save_comment P-1", "save_comment P-2"])
