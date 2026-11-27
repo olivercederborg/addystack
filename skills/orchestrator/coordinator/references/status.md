@@ -24,6 +24,7 @@ prints only the data or only the path.
 - **Units**, grouped by state: stuck, waiting, overdue, unknown, running, queued, done,
   dropped, then replaced or absorbed. Each Workers row is one card:
   - its worker, linked to its thread as the row stores it;
+  - its State, when it says more than its group's name, such as `done: #12 MERGED`;
   - the thread's live status from `t3 thread show`. A row in a final state (done,
     dropped, replaced, absorbed) gets no read. A thread on another machine, or a read
     that fails, shows `unread`;
