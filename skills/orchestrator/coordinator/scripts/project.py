@@ -670,7 +670,60 @@ def snapshot(folder: Path) -> dict:
     phase is parked by _parked, closed only once `## Result` is written and no row is live,
     and unknown otherwise when the Goal can't be read. tickOn: Heartbeat is `tick` and the
     coordinator's link names this machine."""
-    raise NotImplementedError
+    as_of = {"project": _mtime(folder / "project.md"), "tick": _mtime(folder / "tick.json")}
+    try:
+        lines = (folder / "project.md").read_text().split("\n")
+        threads, prs = _seen(folder / "tick.json")
+        data = status_data(lines, live=False)
+        for unit in (unit for group in data["groups"] for unit in group["units"]):
+            link = LINK.search(unit["thread"] or "")
+            seen = threads.get(link.group(2)) if link and not FINAL.match(unit["state"]) else None
+            if isinstance(seen, dict) and seen.get("status"):
+                unit["thread_status"] = seen["status"]
+            for pr in unit["prs"]:
+                if isinstance(prs.get(pr["ref"]), list) and len(prs[pr["ref"]]) == 2:
+                    pr["state"], pr["draft"] = prs[pr["ref"]]
+        lead = LINK.search(_header(lines, "Coordinator"))
+        on = ("## Listening" in lines and _listened(lines, "Heartbeat") == "tick" and lead is not None
+              and lead.group(1) == this_environment())
+        return {"folder": folder.name, "state": "ok", "data": data, "phase": _phase(lines, data), "asOf": as_of,
+                "tickOn": on}
+    except Exception as error:  # whatever a file holds, the page gets a card that says so
+        return {"folder": folder.name, "state": "unknown", "error": str(error) or type(error).__name__, "asOf": as_of}
+
+
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _seen(path: Path) -> tuple[dict, dict]:
+    """The threads and PRs tick.json holds, each {} without a tick.json. Raises ValueError
+    when it holds something else."""
+    try:
+        state = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}, {}
+    threads, prs = (state.get(key, {}) if isinstance(state, dict) else None for key in ("threads", "prs"))
+    if not isinstance(threads, dict) or not isinstance(prs, dict):
+        raise ValueError(f"{path} doesn't hold the tick's threads and prs")
+    return threads, prs
+
+
+def _phase(lines: list[str], data: dict) -> str:
+    """snapshot's phase: a `## Result` beside a row that isn't FINAL, or one it can't read,
+    is unknown, since the project may be closing or only recording an interim result."""
+    if "## Goal" not in lines or data["goal"] is None:
+        return "unknown"
+    if _parked(lines):
+        return "parked"
+    if not any(text == "## Result" or text.startswith("## Result (") for text in lines):
+        return "active"
+    live = data["unread_rows"] or any(not FINAL.match(unit["state"])
+                                      for group in data["groups"] for unit in group["units"])
+    return "unknown" if live else "closed"
 
 
 def status_data(lines: list[str], *, live: bool = True) -> dict:
