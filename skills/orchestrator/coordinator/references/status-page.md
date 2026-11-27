@@ -8,7 +8,8 @@ in its browser and which updates itself. It reads files only, so it never calls 
 
 On start or resume (SKILL.md step 1), run `<kit>/bin/addystack status-page`:
 
-- **A URL**: the page is on and answering. Open it with `preview_open`, unless
+- **A URL**: the page is on and answering. Open it in a tab of its own with `preview_open` and
+  `reuseExistingTab: false`, so no open tab is navigated away, unless
   `t3_preview_list` already shows a tab at that URL.
 - **Nothing**: the setting is off. Leave it there; the user turns it on.
 - **Exit 1**: it's on but broken, and stderr says why. Tell the user in one line, with
