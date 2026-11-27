@@ -17,8 +17,8 @@ Your settings live in `~/.config/addystack/`, which you can keep in your dotfile
 
 ## Applying an edit
 
-Run `addystack build`. If you changed `hosts`, `hooks`, or `replies`, run
-`addystack install` instead, since those decide which hooks are installed.
+Run `addystack build`. If you changed `hosts`, `hooks`, `replies`, or `coordinator`, run
+`addystack install` instead, since those decide what install sets up.
 
 The build overwrites `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so keep your own
 instructions in the file `instructions` names. `addystack print-config` prints the merged config.
@@ -35,6 +35,14 @@ for checkouts matched by `path` or `remote`. The first value listed is the defau
 
 A repo can commit `.agents/addystack.jsonc` to make these stricter, never looser. To see
 why an agent stopped, run `addystack policy --repo <checkout> --explain`.
+
+## Status page
+
+On macOS, `"coordinator": { "statusPage": true }` keeps a page of every coordinator
+project on this machine at `http://localhost:47130/`, and the coordinator opens it as a tab
+in T3 Code. `addystack install` starts it as a launchd agent, and stops it once the
+setting is off. `addystack doctor` checks that it answers. The coordinator skill's
+`references/status-page.md` describes the page.
 
 ## Notes
 
