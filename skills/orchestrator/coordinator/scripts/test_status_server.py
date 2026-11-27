@@ -265,6 +265,16 @@ class Server(Folders, unittest.TestCase):
         self.assertEqual((response.status, response.getheader("Content-Type"), body),
                          (200, "text/html; charset=utf-8", page.read_bytes()))
 
+    def test_the_page_served_is_the_unbaked_template_which_polls_the_overview(self):
+        response, body = self.get("/")
+        self.assertEqual((response.status, body), (200, status_server.PAGE.read_bytes()))
+        page = body.decode()
+        self.assertEqual(page.count(project.STATUS_DATA), 1)  # null, so the page runs in live mode
+        for hook in ('fetch("/overview.json"', '"If-None-Match"', "setTimeout(poll, 2000)",
+                     'location.protocol === "http:"', "function draw(data, root"):
+            self.assertIn(hook, page)
+        self.assertNotRegex(page, r"setInterval|innerHTML|<(script|link)[^>]+src=")
+
 
 class Main(Folders, unittest.TestCase):
     def test_main_serves_the_root_it_is_given_on_the_port_it_is_given(self):

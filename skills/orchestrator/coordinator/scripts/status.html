@@ -6,8 +6,9 @@
 <title>Project status</title>
 <!-- The coordinator's status overview: `project.py DIR status --html` replaces the
      status-data block's `null` with status_data's JSON in base64, as a JSON string, and
-     draw(data) renders it. With null left in, nothing draws, so another feeder can call
-     draw(data) itself. Every project.md text reaches the page through textContent. -->
+     draw(data) renders it. With null left in, a page served over http(s), as
+     status_server.py serves it, polls /overview.json and draws every project's card; opened
+     any other way, nothing draws. Every project.md text reaches the page through textContent. -->
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground, CanvasText);
@@ -44,7 +45,18 @@
   .checks { font-size: 12px; display: inline-flex; gap: 8px; }
   details { border-top: 1px solid var(--border, GrayText); padding-top: 10px; }
   summary { cursor: pointer; font-weight: 600; }
-  details ul { margin-top: 8px; gap: 4px; }
+  details > ul { margin-top: 8px; gap: 4px; }
+  /* live mode: one card per project under the page's header */
+  body.live { padding: 16px; }
+  .page { display: grid; gap: 4px; }
+  .project { border-top: 1px solid var(--border, GrayText); padding-top: 16px; min-width: 0; }
+  .project > * + * { margin-top: 12px; }
+  .project-body { display: grid; gap: 20px; }
+  details.project > summary { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+                              font-weight: 400; list-style: none; }
+  details.project > summary::-webkit-details-marker { display: none; }
+  details.project > summary::before { content: "▸"; color: var(--muted-foreground, GrayText); }
+  details.project[open] > summary::before { content: "▾"; }
 </style>
 </head>
 <body>
@@ -150,8 +162,7 @@ function folded(title, lines) {
       el("p", { class: "muted" }, "none"));
 }
 
-function draw(data) {
-  const root = document.getElementById("status");
+function draw(data, root = document.getElementById("status")) {
   const parts = [el("header", {}, el("h1", {}, data.project === null ? "?" : data.project),
                     data.goal === null ? null : el("p", { class: "goal" }, rich(data.goal))),
                  needsYou(data)];
@@ -168,9 +179,154 @@ function draw(data) {
   root.replaceChildren(...parts);
 }
 
+// Live mode (references/status-page.md): status_server.py serves this page with the
+// status-data block left null, and the page polls /overview.json 2 s after each answer.
+// Each project's card is drawn by draw into its own element, and every age and staleness
+// is judged with this page's clock on every poll, a 304 included.
+const live = { page: null, etag: null, heard: null, failedSince: null, shown: null };
+
+function now() {
+  return Date.now() / 1000;
+}
+
+function ago(at) {
+  const seconds = Math.max(0, Math.round(now() - at));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds} s ago`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} h ago`;
+  return `${Math.floor(seconds / 86400)} d ago`;
+}
+
+// An age that refreshTimes keeps current; hovering it shows the local date and time.
+function when(at, attrs) {
+  return el("time", { "data-at": at, title: new Date(at * 1000).toLocaleString(), ...attrs }, ago(at));
+}
+
+function refreshTimes() {
+  for (const node of document.querySelectorAll("time[data-at]")) node.textContent = ago(Number(node.dataset.at));
+}
+
+// Why a card's thread and PR states are stale, or null while its tick is fresh.
+function tickStale(card, staleAfter) {
+  if (!card.tickOn) return "tick off";
+  if (card.asOf.tick === null) return "no tick yet";
+  return now() - card.asOf.tick > staleAfter ? "stale" : null;
+}
+
+function timerStale(page) {
+  return page.timer === null || now() - page.timer > page.staleAfter;
+}
+
+function asOf(card, stale) {
+  return el("div", { class: "row muted" },
+    el("span", {}, card.asOf.project === null ? "project.md unread" : ["project.md ", when(card.asOf.project)]),
+    el("span", {}, "·"), el("span", {}, card.asOf.tick === null ? "no tick.json" : ["tick ", when(card.asOf.tick)]),
+    stale === null ? null : el("span", { class: "pill tone-warning", title: "thread and PR states are as old as the tick" },
+      stale));
+}
+
+// A parked or closed project's one line still shows what needs you.
+function queueLine(data) {
+  if (data.queue_unread !== null || data.queue === null)
+    return el("span", { class: "pill tone-warning" }, "needs you: unknown");
+  if (!data.queue.length) return el("span", { class: "muted" }, "nothing needs you");
+  return data.queue.map((item) => el("span", { class: "row" },
+    el("span", { class: `pill tone-${item.kind === "stuck" ? "destructive" : "warning"}` }, item.kind),
+    el("span", {}, rich(item.name))));
+}
+
+function card(project, staleAfter) {
+  const folder = { "data-folder": project.folder };
+  if (project.state !== "ok")
+    return el("article", { class: "project", ...folder },
+      el("div", { class: "row" }, el("span", { class: "name" }, project.folder),
+        el("span", { class: "pill tone-warning" }, "unknown")),
+      el("div", { class: "note destructive" }, el("strong", {}, "Unknown: "),
+        "this project can't be read, so what needs you is unknown. ", el("span", { class: "muted" }, project.error)),
+      asOf(project, null));
+  const body = el("div", { class: "project-body" });
+  draw(project.data, body);
+  const meta = el("div", { class: "row" },
+    project.phase === "unknown" ? el("span", { class: "pill tone-warning" }, "phase unknown") : null,
+    asOf(project, tickStale(project, staleAfter)));
+  if (project.phase === "parked" || project.phase === "closed")
+    return el("details", { class: "project", ...folder },
+      el("summary", {}, el("span", { class: "name" }, project.data.project ?? project.folder),
+        el("span", { class: "pill tone-muted" }, project.phase), queueLine(project.data)),
+      meta, body);
+  return el("article", { class: "project", ...folder }, meta, body);
+}
+
+function pageHeader(page) {
+  return el("header", { class: "page" }, el("h1", {}, "Coordinator projects"),
+    page === null ? null : el("div", { class: "muted" }, `this machine only · ${page.machine}`),
+    page === null ? el("div", { class: "muted" }, "Waiting for the status server.") :
+      el("div", { class: "row muted" }, el("span", {}, "heard from the server ", when(live.heard, { id: "heard" })),
+        el("span", {}, "·"), el("span", {}, "tick timer ", page.timer === null ? "never ran" : ["ran ", when(page.timer)]),
+        timerStale(page) ? el("span", { class: "pill tone-warning" }, "stale") : null),
+    live.failedSince === null ? null : el("div", { class: "note destructive" },
+      `The status server isn't answering since ${new Date(live.failedSince * 1000).toLocaleTimeString()}.`,
+      page === null ? null : " This is the last data it sent."));
+}
+
+// Where a <details> sits, so a redraw can reopen it: its project and, inside draw's card, its title.
+function detailsKey(node) {
+  const project = node.closest("[data-folder]");
+  return `${project ? project.dataset.folder : ""}/${node.classList.contains("project") ? "" :
+    node.querySelector(":scope > summary").firstChild.textContent}`;
+}
+
+function render() {
+  const root = document.getElementById("status"), page = live.page;
+  const open = new Set([...root.querySelectorAll("details[open]")].map(detailsKey));
+  const parts = [pageHeader(page)];
+  if (page !== null && !page.projects.length) parts.push(el("p", { class: "muted" }, "No coordinator projects here."));
+  if (page !== null) parts.push(...page.projects.map((project) => card(project, page.staleAfter)));
+  const [x, y] = [window.scrollX, window.scrollY];
+  root.replaceChildren(...parts);
+  for (const node of root.querySelectorAll("details")) if (open.has(detailsKey(node))) node.open = true;
+  window.scrollTo(x, y);
+}
+
+// Redraws when the data or any staleness changed; otherwise only the ages move.
+function show() {
+  const page = live.page;
+  const shape = JSON.stringify([live.etag, live.failedSince, page && [timerStale(page),
+    page.projects.map((project) => project.state === "ok" ? tickStale(project, page.staleAfter) : null)]]);
+  if (shape !== live.shown) {
+    live.shown = shape;
+    return render();
+  }
+  const heard = document.getElementById("heard");
+  if (heard) heard.dataset.at = live.heard;
+  refreshTimes();
+}
+
+async function poll() {
+  try {
+    const response = await fetch("/overview.json",
+      { cache: "no-store", headers: live.etag === null ? {} : { "If-None-Match": live.etag } });
+    if (response.status === 200) [live.page, live.etag] = [await response.json(), response.headers.get("ETag")];
+    else if (response.status !== 304) throw new Error(`HTTP ${response.status}`);
+    [live.heard, live.failedSince] = [now(), null];
+  } catch {
+    if (live.failedSince === null) live.failedSince = now();
+  }
+  try {
+    show();
+  } finally {
+    setTimeout(poll, 2000);
+  }
+}
+
 const baked = JSON.parse(document.getElementById("status-data").textContent);
 if (baked !== null)
   draw(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(baked), (char) => char.charCodeAt(0)))));
+else if (location.protocol === "http:" || location.protocol === "https:") {
+  document.body.classList.add("live");
+  poll();
+}
 </script>
 </body>
 </html>
