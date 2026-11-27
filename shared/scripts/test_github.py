@@ -23,8 +23,8 @@ elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
     if s["checks"] == "unreadable" or workflows and s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
     # As the --jq prints them: type, name, app, workflow or suite, creation order and bucket. A
-    # scenario row is [name, bucket, app, order, workflow, event, suite, type] and may stop after
-    # any field; a token that can't read workflows gets the suite.
+    # scenario row is [name, bucket, app, order, workflow id, event, suite id, type] and may
+    # stop after any field; a token that can't read workflows gets the suite.
     def row(c):
         name, bucket = c[0], c[1]
         app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]

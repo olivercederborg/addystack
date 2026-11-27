@@ -112,26 +112,27 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{databaseId app{slug}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{id app{slug}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
           .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
           | if .__typename == "CheckRun"
             then ["check", .name, (.checkSuite.app.slug // ""),
-                  (if .checkSuite.workflowRun then "workflow:\(.checkSuite.workflowRun.workflow.name)/\(.checkSuite.workflowRun.event)"
-                   else "suite:\(.checkSuite.databaseId)" end),
+                  (if .checkSuite.workflowRun then "workflow:\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)"
+                   else "suite:\(.checkSuite.id)" end),
                   (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
             else ["status", .context, "", "", "0", (.state | bucket)] | join("\t") end'
     }
     # Each check counts by its newest run, by creation order, which a missing or equal start time
     # can't settle. Runs of one check share a type, a name, an app, and a workflow and event, as
     # gh pr checks groups them (aggregate.go's eliminateDuplicates), so an older pass never hides
-    # a re-run that is pending or failed. Reading a run's workflow needs the actions permission,
+    # a re-run that is pending or failed. Workflows and suites count by id: two workflows may
+    # share a name. Reading a run's workflow needs the actions permission,
     # which an App's token may lack; without it, a check suite (one workflow run and its re-runs)
     # stands in, so two runs of one workflow from two events count as two checks.
     err=$(mktemp)
-    if ! checks=$(rollup "$1" ' workflowRun{event workflow{name}}' 2>"$err"); then
+    if ! checks=$(rollup "$1" ' workflowRun{event workflow{id}}' 2>"$err"); then
       grep -q 'Resource not accessible by integration' "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
       checks=$(rollup "$1" '') || { rm -f "$err"; exit 1; }
     fi
