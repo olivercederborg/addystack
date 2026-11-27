@@ -62,7 +62,7 @@ Not in scope, so a later run picks it up.
 
 ## 3. Ask the round
 
-Every reply in the grill, including a clarification, is a round in this order, as plain
+Every grill reply, a clarification too, is a round in this order, as plain
 text. Keep it to about 150 words above the fold, as in the example, and under 200; fold
 the rest by name, such as `+4 more in the fold`:
 
@@ -71,13 +71,13 @@ the rest by name, such as `+4 more in the fold`:
 2. **Questions**, one to three, a blank line between them. Each is `❓ **N · <question>?**`,
    worded so "yes" takes the recommendation, then one sentence naming the other option
    and its cost. Under it, the recommendation alone on a `➡️` line, with its reason and
-   size.
+   size in files.
 3. **The plan, once**: `**Plan** · <PRs> · ~<files> · <migrations>`. A change from the
    last size the user saw, in this session or the request, shows as a trail on that
    line, such as `1 → 3 PRs`; start a trail only from a known count,
    otherwise write `1 proposed migration`. Then plain bullets, a sentence each: what
-   gets built; *My suggestion:* before each item the user hasn't agreed to, such as an
-   added check, dependency or PR split, until they accept it;
+   gets built; *My suggestion:* before each item the user hasn't agreed to, such as a
+   wider behavior, an added check or dependency, or a PR split, until they accept it;
    `Not building:`; and `Assuming (say if wrong):`. A bullet this round changed can lead
    with `New:`, and a dropped item shows once as `Dropped: …`. Past about five built
    items, fold the older ones by name.
@@ -97,7 +97,7 @@ skeleton, kept in step with the sections by hand.
 ➡️ Yes: export and compose them, about 6 files. They can't drift.
 
 ❓ **2 · Settings, members, top-ups, profile: an inline skeleton in each loading file?**
-The other option is shared components.
+The other option is shared components, about 8 files with one user each.
 
 ➡️ Yes, as exports and archive already do, in 4 files.
 
@@ -113,28 +113,27 @@ The other option is shared components.
 <details><summary>Options, costs, sources</summary>
 
 **1 · Reuse the section skeletons**: No extra scope · ≈6 files · easy to undo.
-**1 · One new skeleton**: No extra scope · ≈2 files · easy to undo. It drifts when a
-section changes.
+**1 · One new skeleton**: No extra scope · ≈2 files · easy to undo.
+**2 · Inline**: No extra scope · 4 files · easy to undo.
+**2 · Shared components**: Adds 4 components · ≈8 files · easy to undo.
 **Source**: `app/dashboard/sections/*.tsx`, five exported section skeletons.
 **For architect**: none.
 
 </details>
 ````
 
-Add a decision diagram only when the choice hinges on a fact that's easier to see as a
-branch. When `html_render` exists and a round changes what a user sees (a layout, a
+Add a decision diagram only when a fact is easier to see as a branch. When `html_render` exists and a round changes what a user sees (a layout, a
 state, or a flow between screens), through an option or an assumed default, its picture
 is one mockup page: prototypes of the real screens, built as
 [mockups](references/mockups.md) says. A round that changes no screen gets none. In the
 fold, give each option:
 
 - **Change**: what the option touches, named in its size, such as `1 file: export.ts`.
-  Add a small `diff` of observable behavior only when names don't show it, and fold a
-  longer one. Draw moves per [views](references/views.md). It shows scope, not design: code
+  Add a small `diff` of observable behavior only when names don't show it. Draw moves per [views](references/views.md). It shows scope, not design: code
   shape is `architect`'s call.
 - **Cost line**: after the option's name, Scope · Size · Undo, such as
   `Adds a repository method · ≈3 files · hard to undo: migration`. Use the exact
-  scope labels below for each option, even when its details are shared.
+  scope labels below for each option.
   - **Scope**: `No extra scope`, `Drops <what>`, or `Adds <what>`. Adds covers a new
     concept, module, config, migration, public API, test surface, or a seam with only
     one real implementation. A seam is real when two implementations need it now. Use
@@ -215,8 +214,9 @@ When the cross-review is settled, finish with:
 - **Cross-review**: `N points · N reopened · N dropped`, with one line for each point
   kept, or `clean`.
 
-Plan-ready uses the round's shape, with every addition the user didn't pick, including
-docs, tests and migrations, still a *My suggestion:* bullet. The user's approval accepts
+Plan-ready uses the round's shape with one question, `❓ **1 · Save this plan?**`, and every
+addition the user didn't pick, including docs, tests and migrations, still a *My
+suggestion:* bullet. The user's approval accepts
 them and saves the plan, or they drop them.
 The fold holds the exact text to save, copied verbatim from any draft the session
 already wrote, with every artifact that draft carries, such as an email. Its target is
@@ -244,8 +244,6 @@ would bring it back.
 ## Not in scope
 
 - **JSON export**: the request is CSV only. Revisit when a consumer needs JSON.
-- **Per-company time zones**: transaction dates carry no time. Revisit when dates
-  include times or month boundaries are reported wrong.
 ```
 
 To add it to a spec, ticket, or PR, show the exact section and its target, and on
