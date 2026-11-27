@@ -276,25 +276,25 @@ class Carry(unittest.TestCase):
         self.assertEqual(fake.commands[-3:-1], ['required', 'head'])
 
     def test_anything_that_does_not_hold_posts_nothing(self):
-        cases = {
-            "the PR's own diff changed": dict(diffs={APPROVED: 'old', HEAD: 'new'}),
-            'this App has no approval at': dict(approved=None),
-            'this App reviewed again after its approval at': dict(latest={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED}),
-            'this App reviewed again after its approval at ': dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED}),
-            'the PR moved to another base branch after the approval': dict(retargeted=True),
-            'the head is the approved commit': dict(head=APPROVED),
-            'the PR changed while the carry was proved': dict(bases=('b' * 40, 'e' * 40)),
-            'the PR is closed or a draft': dict(draft=True),
-            'required checks did not pass': dict(required='ci\tfail\nrequired: not all passed\n'),
-        }
-        for why, case in cases.items():
+        cases = [
+            ("the PR's own diff changed", dict(diffs={APPROVED: 'old', HEAD: 'new'})),
+            ('this App has no approval at', dict(approved=None)),
+            ('this App reviewed again after its approval at', dict(latest={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED})),
+            ('this App reviewed again after its approval at', dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED})),
+            ('the PR moved to another base branch after the approval', dict(retargeted=True)),
+            ('the head is the approved commit', dict(head=APPROVED)),
+            ('the PR changed while the carry was proved', dict(bases=('b' * 40, 'e' * 40))),
+            ('the PR is closed or a draft', dict(draft=True)),
+            ('required checks did not pass', dict(required='ci\tfail\nrequired: not all passed\n')),
+        ]
+        for why, case in cases:
             with self.subTest(why=why):
                 fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
                             required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
                 outcome = self.carry(fake, head=case.get('head', HEAD), draft=case.get('draft', False), diffs=case.get('diffs'),
                                      retargeted=case.get('retargeted', False), bases=case.get('bases', ('b' * 40,)))
                 self.assertEqual(outcome['outcome'], 'not-carried')
-                self.assertIn(why.strip(), outcome['why'])
+                self.assertIn(why, outcome['why'])
                 self.assertEqual(fake.writes, [])
 
     def test_a_base_change_counts_only_after_the_approval(self):
@@ -303,7 +303,7 @@ class Carry(unittest.TestCase):
             self.assertTrue(post_review.retargeted(7, '2026-11-26T10:00:00Z'))
             self.assertTrue(post_review.retargeted(7, '2026-11-26T11:00:00Z'), 'the same second counts')
             self.assertFalse(post_review.retargeted(7, '2026-11-26T12:00:00Z'))
-        # The issue events list, not the timeline, records base changes, GitHub's automatic ones too.
+        # The issue events list records base changes, GitHub's automatic ones too.
         command = run.call_args.args[0]
         self.assertEqual(command[3], 'repos/{owner}/{repo}/issues/7/events')
         self.assertIn('automatic_base_change_succeeded', command[5])

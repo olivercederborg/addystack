@@ -23,7 +23,8 @@ approves: the PR goes to a person.
 It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?}, where
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
-push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed.
+push starts its own review). Exit 0 decided (posted, or with --carry, posted nothing and said
+why), 3 superseded, 1 refused or failed.
 
     post-review.py N --carry APPROVED_SHA [--head HEAD_SHA]
 
@@ -231,8 +232,8 @@ def fetch(base: str, number: int, approved: str) -> None:
 
 def retargeted(number: int, since: str) -> bool:
     """Whether the PR's base branch changed at or after `since`, an ISO time: by hand, or by GitHub
-    when the base branch was merged and deleted. Only the issue events list records either; the
-    timeline doesn't. The same second counts, since GitHub's times have no finer grain."""
+    when the base branch was merged and deleted, as the issue events list records them. The same
+    second counts, since GitHub's times have no finer grain."""
     result = subprocess.run(['gh', 'api', '--paginate', f'repos/{{owner}}/{{repo}}/issues/{number}/events', '--jq',
                              '.[] | select(.event == "base_ref_changed" or .event == "automatic_base_change_succeeded") '
                              '| .created_at'], capture_output=True, text=True, timeout=120)
