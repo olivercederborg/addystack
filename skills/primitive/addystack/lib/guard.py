@@ -12,7 +12,9 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
   whether or not its plist is still there, and removes the plist; a guard the user set up
   by hand, which the ledger doesn't record, stays. A stop or start launchd refuses, or
   can't confirm, fails the install, and the next install tries again: the ledger keeps a
-  guard it couldn't stop, and a plist launchd wouldn't load is removed.
+  guard it couldn't stop, and a plist launchd wouldn't load is removed. A guard whose
+  plist changes is stopped before the plist is replaced, so an install cut off before the
+  restart leaves none loaded rather than the old one running.
 - **Limit**: whether a new agent shell gets one is probed, not read: a login zsh runs once with
   each agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
   `alias`, `nounset`, or a `ZDOTDIR` elsewhere all count as they would in a real shell.
@@ -183,11 +185,16 @@ def start(path: Path) -> None:
         raise OSError(f"launchctl couldn't load {path}; run addystack install again")
 
 
-def stop(path: Path) -> None:
-    """Stops the agent and removes its plist. Raises OSError while launchd still has it."""
+def unload() -> None:
+    """Stops the agent. Raises OSError while launchd still has it, or can't say."""
     _launchctl("bootout", f"{_domain()}/{LABEL}")
     if loaded() is not False:
         raise OSError(f"launchctl couldn't stop {LABEL}, or couldn't say; run addystack install again")
+
+
+def stop(path: Path) -> None:
+    """Stops the agent and removes its plist. Raises OSError while launchd still has it."""
+    unload()
     try:
         os.unlink(path)
     except FileNotFoundError:

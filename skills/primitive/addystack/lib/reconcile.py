@@ -115,10 +115,14 @@ def run(resolved: Resolved) -> List[Change]:
     settings file or the config can't be read or edited safely."""
     changes, writes = plan(resolved)
     # A guard stop runs before the ledger that drops it is written, so a stop launchd
-    # refuses leaves the guard recorded for the next install to retry.
+    # refuses leaves the guard recorded for the next install to retry. A guard whose plist
+    # is replaced is unloaded first too, so an install cut off before the restart leaves no
+    # guard loaded, which doctor and the next install see, not the old one still running.
     for change in changes:
         if change.kind == "guard" and not change.source:
             guard.stop(change.target)
+        elif change.kind == "guard" and change.target in writes:
+            guard.unload()
     for path, text in writes.items():
         _write(path, text)
     for change in changes:

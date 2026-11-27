@@ -766,6 +766,25 @@ class Guard(Home):
         self.assertIn(digest, self.plist.read_text())
         self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
 
+    def test_an_install_cut_off_before_the_restart_leaves_no_old_guard_passing(self):
+        # Killed between replacing an older guard's plist and restarting it, an install must
+        # leave a state doctor fails and the next install fixes, not the old guard running
+        # beside the new plist.
+        self.select()
+        self.ok("install")
+        self.plist.write_text(self.plist.read_text().replace("agent_memory_guard.py", "old.py"))
+        stub = self.stubs / "launchctl"
+        working = stub.read_text()
+        stub.write_text(working.replace("\n", "\ncase $1 in bootout|bootstrap) kill -9 $PPID; exit ;; esac\n", 1))
+        self.assertNotEqual(self.cli("install").returncode, 0)
+        stub.write_text(working)
+        self.assertNotIn("memory guard: loaded", self.cli("doctor").stdout)
+        before = len(self.calls())
+        self.ok("install")
+        self.assertIn("agent_memory_guard.py", self.plist.read_text())
+        self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
+        self.assertTrue(self.loaded.exists())
+
     def test_restarts_a_guard_that_isnt_loaded(self):
         self.select()
         self.ok("install")
@@ -876,13 +895,23 @@ class Guard(Home):
         self.select()
         self.ok("install")
         self.plist.write_text(self.plist.read_text().replace("agent_memory_guard.py", "old.py"))
-        self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout|bootstrap) exit 5 ;; '
-                  f'print) test -f {self.loaded} || exit 113 ;; esac')
+        self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout) rm -f {self.loaded} ;; '
+                  f'bootstrap) exit 5 ;; print) test -f {self.loaded} || exit 113 ;; esac')
         self.assertNotEqual(self.cli("install").returncode, 0)
         self.assertFalse(self.plist.exists())
         before = len(self.calls())
         self.assertNotEqual(self.cli("install").returncode, 0)
         self.assertTrue(any(c.startswith("bootstrap") for c in self.calls()[before:]))
+
+    def test_a_restart_launchd_wont_stop_keeps_the_old_plist_so_the_next_install_retries(self):
+        self.select()
+        self.ok("install")
+        self.plist.write_text(self.plist.read_text().replace("agent_memory_guard.py", "old.py"))
+        self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\ncase $1 in bootout|bootstrap) exit 5 ;; '
+                  f'print) test -f {self.loaded} || exit 113 ;; esac')
+        self.assertIn("couldn't stop", self.cli("install").stderr)
+        self.assertIn("old.py", self.plist.read_text())
+        self.assertIn("differs from the kit's", self.cli("doctor").stdout)
 
     def test_deselecting_keeps_ownership_while_launchctl_cant_answer(self):
         self.select()
