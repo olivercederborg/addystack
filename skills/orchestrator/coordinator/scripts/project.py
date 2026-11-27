@@ -574,6 +574,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     if busy:
         return [], {**state, "threads": threads}
     events = []
+    saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
     wakes, unread = watching(coordinator.group(2)), set()
     if wakes is None:  # unknown, not cleared: each unwatched finding keeps its repeat clock
         unread |= {key for key in state.get("sent", {}) if key.startswith("unwatched:")}
