@@ -127,7 +127,8 @@ def user_go(numbers, owner, repo):
             return False, None
         # The latest prompt itself: when the user didn't type it, an earlier go doesn't count.
         prompt = found[-1].prompt if found else ""
-        said = f'the user\'s "{prompt.strip()}"'
+        shown = prompt.strip()
+        said = f'the user\'s "{shown if len(shown) <= 80 else shown[:79] + "…"}"'  # not a pasted log in full
         if literal_go(prompt):
             # A typed go that names a PR with its repo is held to its PRs, as a pick is:
             # "merge dotfiles#12" is no go for #12 here, and a word before " #N" may be a

@@ -2407,6 +2407,8 @@ class MergeGate(unittest.TestCase):
         for said in [("fix it", offer(merge), "A merge #12"), ("fix it", offer(squash), "Option A")]:
             with self.subTest(said=said[1:]):
                 self.assertIsNone(self.reason("gh pr merge 12 --squash", said=said))
+        pasted = "Investigate this log: " + "x" * 5000  # Codex, review of #144: no pasted log in full
+        self.assertNotIn(pasted, self.reason("gh pr merge 12", said=("fix it", offer(merge), pasted)))
         self.assertIn('the user\'s "a fix it and merge #12" is neither a key nor a plain request to merge, so it gives no go',
                       self.reason("gh pr merge 12", said=("fix it", offer(merge), "a fix it and merge #12")))
         with tempfile.TemporaryDirectory() as folder:  # a delegated child's pick isn't the user's
@@ -4657,6 +4659,7 @@ class PushGate(unittest.TestCase):
             (("fix it", self.offer(restack, text="Restack?\n\n"), "hold on", claude_wrote("Holding."), "a"), "picks nothing"),
             (("fix it", self.offer(restack, text="Restack?\n\n"), "a restack it"),
              "is neither a key nor a plain request to push"),
+            (("fix it", self.offer(restack, text="Restack?\n\n"), "Investigate this log: " + "x" * 5000), "x…\""),
             (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
             (("don't push #6091, it would dismiss the teammate's approval",), None),
             (("push #6091 if it dismisses nothing",), None),
