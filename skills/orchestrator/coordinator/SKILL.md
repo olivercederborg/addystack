@@ -63,8 +63,9 @@ now, and make "regenerates on either merge order" part of its proof.
 Start each with `delegate_task`: the PR owner row of t3-delegation's Roles table as
 `target`, the title `◇ <project> · <unit>` (a review takes t3-delegation's `◎` title
 and Reviewers row), `isolation: "worktree"`, `mode: "async"`, a stable
-`clientRequestId`, and the brief below. Record its thread link and `taskId` in Workers.
-Work on another machine follows [across machines](references/across-machines.md).
+`clientRequestId`, and the brief below. Record its thread link and `taskId` in Workers,
+and issue links once known (`worker --issue`). Work on another machine follows
+[across machines](references/across-machines.md).
 
 The brief follows orchestrate's The brief, with `standing-rules.md` pasted in full and
 these lines, the `Worker of:` link bare, with no prose or brackets around it. A research
@@ -88,9 +89,9 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
 ```
 
 - **Slots**: at most two workers or subthreads on this machine (one on a smaller one) build
-  or run heavy checks at once, whatever their unit. A worker holds a slot while its task
-  runs, including while it waits on a pending question; one whose task ended holds none,
-  though it waits on a review, CI, or a call. Every later task you send a worker (an
+  or run heavy checks at once. A worker holds a slot while its task runs, including
+  while it waits on a pending question; one whose task ended holds none, though it
+  waits on a review, CI, or a call. Every later task you send a worker (an
   answer, a babysit pass, a retry, more work) goes into a free slot ahead of queued
   units, since it finishes an open PR. A task that only reads, reviews code, or drives
   an app without building takes none, and starts once Parallel by default lets it.
@@ -128,7 +129,9 @@ inputs or one of Parallel by default's three reasons.
 
 ## 4. On each wake
 
-- **The user's message**: an answer goes through step 5; anything else updates the plan.
+- **The user's message**: an answer goes through step 5; a status request shows
+  `scripts/project.py <folder> status` and changes no plan ([status](references/status.md));
+  anything else updates the plan.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
@@ -148,9 +151,9 @@ inputs or one of Parallel by default's three reasons.
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
   scheduled task's id: `delete_scheduled_task` it first. This machine's
   [tick](references/tick.md) timer then checks the project every 10 minutes, and
-  messages this thread only with news T3 doesn't send, such as a worker that stopped
-  while its row says running. Its message opens `<coordinator-tick>`: handle each line as
-  this step says and fix its row, or the line repeats hourly. When you set `tick`, run
+  messages this thread only with news T3 doesn't send. Its message opens
+  `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
+  repeats hourly. When you set `tick`, run
   `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
   a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
@@ -185,8 +188,8 @@ Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
 oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
 included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
-question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-keep the v1 export · export-v2`, and the need that leads the turn block's `needs`.
+question, strip, and Next. `queue show` prints the strip and the need that leads the
+turn block's `needs`.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"`. In
