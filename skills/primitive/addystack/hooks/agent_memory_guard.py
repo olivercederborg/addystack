@@ -46,6 +46,10 @@ Known limits:
   queued, and its CPU doesn't count toward the gate.
 - A checker that runs under another name, or as a later argument of a script only that
   script knows, such as `node build.js` calling tsc's API in-process, isn't queued.
+- A checker is the binary, or the first argument an interpreter gets that isn't an
+  option, so one after an option's own argument, as in `node --require x.cjs tsc`, isn't
+  queued. A watcher is told only by its first argument or a watch flag, so `vitest
+  --config v.ts watch` counts as a check and holds a slot until it exits.
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
   half-second tick escapes, since macOS hides those binaries' environment; the ulimit
   backstop caps how many there can be. Work an agent hands to launchd or XPC, or starts
