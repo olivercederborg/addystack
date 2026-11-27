@@ -283,6 +283,10 @@ class Reviewed(unittest.TestCase):
                          (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
                               "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "approved": {"id": 4, "state": "DISMISSED", "commit_id": "bcd"}}), reviewed.stderr)
+        # A login names whose review to read, such as a review App's, without asking for the viewer.
+        app = subprocess.run([str(SCRIPT), "reviewed", "7", "reviewer-app[bot]"], capture_output=True, text=True,
+                             env={**env, "VIEWER_FAILS": "1"})
+        self.assertEqual((app.returncode, app.stdout), (0, reviewed.stdout), app.stderr)
         # A viewer it can't read fails the command, rather than reading as no reviews at all.
         failed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env={**env, "VIEWER_FAILS": "1"})
         self.assertNotEqual(failed.returncode, 0)
