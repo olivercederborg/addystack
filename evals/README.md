@@ -1,5 +1,35 @@
 # Evals
 
+## How we improve a skill
+
+Each skill's evals live in `evals/<skill>/`: scenarios in `evals.json`, with the rubric
+and setup in its README. `maintainer/evals.py` runs them from the repo root:
+
+```sh
+maintainer/evals.py list [skill]                     # scenarios, turns, assertions
+maintainer/evals.py start <skill> <id> OUT [--variant DIR]
+maintainer/evals.py turns <skill> <id>
+maintainer/evals.py replies <skill> <id> OUT
+maintainer/evals.py grade-brief <skill> <id> --replies OUT/<skill>/<id>.replies.md
+maintainer/evals.py record OUT <skill> <id> GRADES
+maintainer/evals.py table SIDE --against BEFORE_SIDE
+```
+
+[Run with the runner](#run-with-the-runner) says who plays and who grades each step.
+
+The loop:
+
+1. **Find a weak spot in real threads**: a correction you keep making, a review miss,
+   a slow step. The `correct` skill mines your corrections.
+2. **Write or extend a scenario** that fails the way the thread did.
+3. **Set the bar before any run**: which assertions must flip, and that no control
+   regresses.
+4. **Replay before and after**, each side its own folder of trials, as in
+   [A/B a change](#ab-a-change). Name the sides `X` and `Y`, since the grader sees the
+   replies' path, so it grades blind.
+5. **Ship only on a win.** A pure speed or friction change, or a cut, ships on a tie.
+6. **Run `verify-work` and `review-loop`** on the PR before it merges.
+
 Each skill's folder holds scenario evals for that skill. Grade each assertion PASS or
 FAIL in a fresh session, and quote the evidence.
 
