@@ -33,7 +33,18 @@ its `eta` has no timer by then or pending task, since a watch can miss a re-run 
 between polls. Replayed on 2,284 `running` turns from Nov 19 to 26, 2026, on two machines,
 it sends back the turn before 10 of the 12 status asks that a missing wake caused. It reads
 T3's state database, since `t3 thread show` lists no pending task while a run is active,
-and passes outside T3 or when the database can't be read."""
+and passes outside T3 or when the database can't be read.
+
+It also sends back a reply the reader can't answer from what it shows (unanswerable): one
+that asks for an option letter, marked as **a**, `a`, or **`a`**, that no line or sentence
+it shows opens with, or that points to steps or options in an earlier reply. On Nov 26 and
+27, 2026 a coordinator re-asked open calls as "say **a** or **b**" and "following the 5
+steps in my last reply", and the user asked four times for the full question again
+(CardCheckUnanswerable replays them). It reads the text outside code fences and HTML
+comments, never the turn block, so it runs on a reply with no block or a malformed one, and
+one whose block defines a letter its visible text doesn't. A plain "a or b", an inline
+"**a** builds it, …", and "earlier" that points to no steps or options pass. When the push or
+wake check also holds, both reasons go back in one send-back."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
 
@@ -214,11 +225,45 @@ def wake_gap(turn, reply, thread, now):
             "the eta if it isn't measured")
 
 
+# An option letter as a reply marks one: **a**, `a`, or **`a`**. A plain "a or b" is prose.
+LETTER = re.compile(r"(?<![\w`])(?:\*\*`([a-e])`\*\*|\*\*([a-e])\*\*|`([a-e])`)(?![\w`])")
+# What may come before a letter that opens an option: a line's start past list and quote
+# markers, or a sentence's or table cell's start, with the option's own bold.
+OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:|]\**[ \t]+)(?:\*\*)?")
+# What follows such a letter: the option's text, not "or b" or "and b".
+STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:—–-]+[ \t]*)?(?!(?:or|and|nor)\b)\w")
+# Steps or options the reply says live in an earlier one, as in "the 5 steps in my last reply"
+# or "the earlier App steps". Not "earlier" alone: "I got b wrong earlier" points nowhere.
+EARLIER = re.compile(r"\b(?:steps?|options?|instructions?)\b[^.\n]{0,40}?\b(?:in|from|of)\s+(?:my|the|your|our)\s+"
+                     r"(?:last|earlier|previous|prior)\s+(?:reply|replies|message|card|turn|answer)\b"
+                     r"|\b(?:earlier|previous|prior)\s+(?:[\w'’-]+\s+){0,2}?(?:steps|options|instructions)\b", re.I)
+
+
 def unanswerable(reply):
     """Why the reader can't answer the reply from what it shows, or None: it asks for an
     option letter its visible Next list doesn't define, or points to options or steps in an
     earlier reply. Reads the text outside code fences and the turn block, never the block."""
-    raise NotImplementedError
+    import turn_block
+    lines = reply.splitlines()
+    shown = "\n".join(line for line, fenced in zip(lines, turn_block.in_fence(lines)) if not fenced)
+    shown = re.sub(r"<!--.*?(?:-->|\Z)", "", shown, flags=re.S)  # the turn block, or any comment, shows nothing
+    asked, defined = [], set()
+    for line in shown.splitlines():
+        for found in LETTER.finditer(line):
+            letter = next(group for group in found.groups() if group)
+            asked += [letter] if letter not in asked else []
+            if OPENS.fullmatch(line[:found.start()]) and STATES.match(line, found.end()):
+                defined.add(letter)
+    reasons = []
+    if missing := [letter for letter in asked if letter not in defined]:
+        does = "it does" if len(missing) == 1 else "each does"
+        reasons.append(f"this reply asks for {' and '.join(f'`{letter}`' for letter in missing)}, but nothing it shows "
+                       f"says what {does}, so the reader can't answer. List each option the reply asks for in its Next "
+                       "options, with what it does")
+    if pointer := EARLIER.search(shown):
+        reasons.append(f"this reply points to \"{pointer.group(0)}\", which the reader may no longer see. Write those "
+                       "steps or options out in this reply")
+    return ". ".join(reason[0].upper() + reason[1:] if at else reason for at, reason in enumerate(reasons)) or None
 
 
 def sent_back(path):
@@ -250,9 +295,16 @@ def main():
             return
         import turn_block
         reply = event.get("last_assistant_message") or ""
+    except Exception:
+        return
+    try:
+        blind = unanswerable(reply)  # what the reader sees, so it runs with no block or a malformed one
+    except Exception:
+        blind = None
+    try:
         found = refused(turn_block.options(reply))
     except Exception:  # Malformed included: no block, or no options to read, nothing to check
-        return
+        found = []
     try:
         turn = turn_block.parse(reply)  # wake_gap reads state and eta, which options doesn't
     except turn_block.Malformed:
@@ -264,15 +316,20 @@ def main():
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None
     # A running block that parses carries no options, and one that doesn't gets no wake check, so at most
-    # one of these holds.
+    # one of these holds; an unanswerable reply joins either.
+    upper = lambda reason: reason[0].upper() + reason[1:]
+    reasons, steps = [upper(blind)] if blind else [], ["with what it asks for shown"] if blind else []
     if gap:
-        reason, step = gap[0].upper() + gap[1:], "with the wake set"
+        reasons.append(upper(gap))
+        steps.append("with the wake set")
     elif found:
-        reason = "; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
-                           f"user picked it" for option in found) + f". Write it as {SHAPE}"
-        step = "with only that option reworded, or its other steps split into their own option"
-    else:
+        reasons.append("; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if '
+                                 f"the user picked it" for option in found) + f". Write it as {SHAPE}")
+        steps.append("with only that option reworded, or its other steps split into their own option")
+    if not reasons:
         return
+    reason = ". ".join(reasons)
+    step = ", and ".join(steps)
     # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
     # its docs keep "block" for errors.
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (
