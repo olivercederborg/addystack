@@ -28,15 +28,14 @@ def parse(text: str) -> list:
         if line.startswith('## '):
             current = line[3:].split(' · ')[0].strip()
             continue
-        if not line or line.startswith('#'):
+        # Lines above the first domain, such as comments or settings, aren't rules.
+        if not line or line.startswith('#') or current is None:
             continue
         # A `#` after whitespace starts an inline comment, as in CODEOWNERS.
         # A backslash escapes a space in a pattern, as in gitignore.
         pattern, *names = re.findall(r'(?:\\.|\S)+', re.split(r'\s#', line, maxsplit=1)[0])
         pattern = pattern.replace('\\ ', ' ')
-        if current is None:
-            problems.append(f'line {number}: {pattern} comes before any `## <domain>` heading')
-        elif current == UNOWNED and names:
+        if current == UNOWNED and names:
             problems.append(f'line {number}: the {UNOWNED} block names nobody, but {pattern} names {" ".join(names)}')
         elif bad := [name for name in names if not re.fullmatch(r'@[A-Za-z0-9-]+', name)]:
             problems.append(f'line {number}: {" ".join(bad)} is not an @login')

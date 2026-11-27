@@ -43,11 +43,16 @@ def decision(code, id_='D1'):
 
 class Parse(unittest.TestCase):
     def test_every_line_it_cannot_read_is_named(self):
-        bad = '/early/ @alice\n## unowned\nCONTEXT.md @alice\n## web\n/apps/web/ alice @team/web\n'
+        bad = '## unowned\nCONTEXT.md @alice\n## web\n/apps/web/ alice @team/web\n'
         with self.assertRaises(ValueError) as raised:
             reviewers.parse(bad)
-        for named in ('line 1: /early/ comes before', 'line 3: the unowned block names nobody', 'line 5: alice @team/web'):
+        for named in ('line 2: the unowned block names nobody', 'line 4: alice @team/web'):
             self.assertIn(named, str(raised.exception))
+
+    def test_lines_above_the_first_domain_are_not_rules(self):
+        rules = reviewers.parse('# settings\npriority: 3 2 1\n/early/ @alice\n\n## web\n/apps/web/ @bob\n')
+        self.assertEqual([(rule['pattern'], rule['domain'], rule['names']) for rule in rules],
+                         [('/apps/web/', 'web', ['bob'])])
 
     def test_a_pinned_heading_names_its_domain_and_comments_are_skipped(self):
         self.assertEqual([(rule['domain'], rule['names']) for rule in RULES if rule['domain'] == 'auth'],
