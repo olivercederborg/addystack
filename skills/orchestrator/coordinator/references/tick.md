@@ -26,9 +26,10 @@ the rest:
   saw it. The first look at a PR only records it.
 - **Watch left on**: a PR under Watches that's merged or closed, even at the first look,
   since its watch should go.
-- **Owner**: a `#N` or `repo#N` the tick can't resolve, since the checkout is gone or has
-  no GitHub origin. With an origin, `#N`, `repo#N`, a range `#20–#22`, and a URL all
-  resolve to one `owner/repo#N`, which needs no checkout.
+- **Owner**: a ref the tick can't resolve to one repo: a word then `#N` (`web #20`),
+  `repo#N` for a repo other than the checkout's, or a `#N` once the checkout is gone or
+  has no GitHub origin. `#N`, the checkout's own `repo#N`, and a range `#20–#22` resolve
+  through its origin; `owner/repo#N` and a URL need no checkout.
 - **Unreadable**: a row with a cell that starts with a live state but whose cells don't
   match the Workers header, or a live row with no thread link.
 
