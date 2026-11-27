@@ -137,6 +137,17 @@ class CheckReplyBudget(unittest.TestCase):
         self.assertIn("reply-shape: 8,000 of 8,000", result.stdout)
         self.assertIn("reply-shape: over the budget", result.stderr)
 
+    def test_a_file_the_hook_loads_through_two_paths_counts_each(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rules = pathlib.Path(folder, "r" * 200, "mine.md")
+            rules.parent.mkdir()
+            rules.write_text("y" * 7_850)
+            alias = pathlib.Path(folder, "a.md")
+            alias.symlink_to(rules)
+            result = run(replies=None, state=built(folder, rules), installed=str(alias))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("rules: over the budget", result.stderr)
+
     def test_checks_the_reply_shape_the_hook_loads(self):
         with tempfile.TemporaryDirectory() as folder:
             installed = pathlib.Path(folder, "SKILL.md")
