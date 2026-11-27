@@ -48,8 +48,8 @@ _WRITE = re.compile(r"(?<![<>&])\d*(>>|>\|?)\s*([^\s<>&]+)")
 # A quoted command substitution that only prints a heredoc, gh's usual --body form.
 _CAT = re.compile(r"\$\(\s*cat\s*<<\x01H(\d+)\x01\s*\)")
 # What the shell expands in a double-quoted string, an unquoted word, or an unquoted
-# heredoc: a $ or a backtick it doesn't escape.
-_EXPANDS = re.compile(r"(?<!\\)[$`]")
+# heredoc: a $ or a backtick after an even run of backslashes, which escape each other.
+_EXPANDS = re.compile(r"(?<!\\)(?:\\\\)*[$`]")
 _COMMENT = re.compile(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", re.M)
 
 

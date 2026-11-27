@@ -137,7 +137,8 @@ class PostedText(unittest.TestCase):
         for command in ('LINK=x; gh pr comment 1 --body "see #12 $LINK"', "gh pr comment 1 -b see#12$X",
                         'gh pr comment 1 -b "see #12 `date`"', "gh pr comment 1 -F - <<EOF\nsee #12 $LINK\nEOF",
                         'gh pr create --body "$(cat <<EOF\nsee #12 $LINK\nEOF\n)"',
-                        "cat > b.md <<EOF\nsee #12 $LINK\nEOF\ngh pr create -F b.md"):
+                        "cat > b.md <<EOF\nsee #12 $LINK\nEOF\ngh pr create -F b.md",
+                        'gh pr create -b "see #12 \\\\$LINK"'):
             with self.subTest(command=command):
                 self.assertEqual(self.posts("Bash", bash(command)), [])
         for command in ("gh pr comment 1 -b 'costs $5, see #12'", 'gh pr comment 1 -b "costs \\$5, see #12"',
