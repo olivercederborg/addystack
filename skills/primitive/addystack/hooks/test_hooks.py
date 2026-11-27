@@ -1124,20 +1124,19 @@ class CleanestAskImplementation(CleanestAskCase):
         self.assertEqual(self.stop(*turns, ("a", self.card(needs=[queued]))), [])
         self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[queued, (13, "raise the Typecheck limit")])))), 1)
 
-    def test_reads_a_decision_by_its_id_and_name(self):
+    def test_reads_a_decision_by_its_name_whatever_its_id(self):
         # Outside a coordinator, need 1 is often a new decision: 197 of the week's 362 replayed sends
-        # shared an id with a checked card, 55 its id and name. A need re-queued under a new id may
-        # have changed, as a stack rebased since its check, and the user asked again there.
+        # shared an id with a checked card, 55 its name too. A coordinator re-queues a checked card
+        # under a new id: ◆ suite-audit got 3 asks in 30 minutes on one merge (Nov 26, 2026).
         turns = [(self.ASK, self.card(needs=[(1, "merge the four approved PRs")])),
                  (self.COMMAND, self.card(needs=[(9, "open the stack for review")]))]
-        for need in ((1, "push #6136 fixes and reply to the reviewer"), (12, "open the stack for review")):
+        self.set_run("run-1", "completed")
+        self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[(1, "push #6136 fixes and reply to the reviewer")])))), 1)
+        for need in ((9, "open the stack for review"), (12, "Open the stack  for review"), (14, "merge the four approved PRs")):
             with self.subTest(need=need):
                 self.fresh()
-                self.set_run("run-1", "completed")
-                self.assertEqual(len(self.stop(*turns, ("a", self.card(needs=[need])))), 1)
-        self.fresh()
-        self.assertEqual(self.stop(*turns, ("a", self.card(needs=[(9, "open the stack for review")]))), [])
-        self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
+                self.assertEqual(self.stop(*turns, ("a", self.card(needs=[need]))), [])
+                self.assertEqual(self.log()[-1]["reason"], self.CHECKED)
 
     def test_dry_run_takes_the_scope(self):
         run = lambda *turns: subprocess.run([str(HOOKS / self.HOOK), *self.ARGS, "--dry-run", "--transcript",

@@ -28,8 +28,8 @@ It sends only when all of these hold:
   since the last reply whose turn block is `done`; in the implementation scope it also
   starts at the user's last typed prompt that isn't an ask, and needs one: a run an agent's
   prompt started, such as a scheduled task's, doesn't ask;
-- in the implementation scope, the card names a `review` or `decide` need the session hasn't
-  checked (checked), since a follow-up question the user types about a card starts a new run,
+- in the implementation scope, the card names a `review` or `decide` need whose name the
+  session hasn't checked (checked, decision), whatever its id, since a follow-up question the user types about a card starts a new run,
   and a coordinator shows its queued needs for many turns;
 - no `/cleanest` it sent to the thread is still queued: T3's run for it, by the run id
   `t3 thread send --json` returns, is `queued`, or T3 has no run for it;
@@ -149,12 +149,14 @@ def asks(prompt):
 
 
 def decision(need):
-    """What names a need's decision across cards: its id and its name. An id alone misleads: in
-    the week to Nov 25, 2026, 197 of the implementation scope's 362 replayed sends shared a need
-    id with a card a /cleanest or the user's ask had checked, but only 55 its id and name; most
-    of the rest reused id 1 for another decision. A name alone matched 3 more, needs re-queued
-    under a new id, one after a rebase changed it, and the user asked again there (R189)."""
-    return need.id, " ".join(need.name.split()).casefold()
+    """What names a need's decision across cards: its name, in any spacing and case. An id
+    misleads both ways: in the week to Nov 25, 2026, 197 of the implementation scope's 362
+    replayed sends shared a need id with a checked card, but only 55 its name too, since most
+    reused id 1 for another decision (R189); and a coordinator re-queues a card under a new id,
+    so keyed by id and name the hook asked ◆ suite-audit 3 times in 30 minutes on one merge
+    (Nov 26, 2026). By name it misses a need re-queued after its work changed, as 1 of R189's
+    3 was, after a rebase, where the user asked again."""
+    return " ".join(need.name.split()).casefold()
 
 
 def card_needs(reply):
