@@ -18,9 +18,9 @@
 #   github.sh approve N SHA [DRAFTS.json [BODY]]  approve the head, with any inline comments and a body
 #   github.sh dismiss N REVIEW_ID FILE    dismiss a review, with FILE as the message
 #   github.sh viewer                      the login gh posts as, such as an App's <slug>[bot]
-#   github.sh reviewed N [LOGIN]          the viewer's, or LOGIN's, latest submitted review: {id, state,
-#                                         commit_id, active, approved}: active, their approval or request for
-#                                         changes that still counts; approved, their latest, even dismissed
+#   github.sh reviewed N [LOGIN]          the viewer's, or LOGIN's, latest review but a bare thread reply:
+#                                         {id, state, commit_id, active, approved}: active, their approval or
+#                                         request for changes that counts; approved, their latest, even dismissed
 #   github.sh landed N REVIEW_ID          read back the comments a review posted
 #
 # DRAFTS.json: [{"path": "src/a.ts", "line": 42, "side": "RIGHT", "body_file": "d1.md"}],
@@ -368,7 +368,8 @@ PY
     [ $# = 1 ] || [ $# = 2 ] || usage
     # A pending review isn't submitted, so it isn't the last word on any head. A reviewer's
     # latest approval, request for changes or dismissal is what counts; a comment changes nothing.
-    # A dismissed review reads DISMISSED; the timeline's dismissal says what it was.
+    # A dismissed review reads DISMISSED; the timeline's dismissal says what it was. A reply in a
+    # thread is stored as a comment review with no body, so it isn't the latest review either.
     # One assignment per line: in a combined one, set -e sees only the last substitution's status.
     if [ $# = 2 ]; then login=$2; else login=$("$0" viewer); fi
     slug=$(repo)
@@ -376,10 +377,10 @@ PY
     gh api --paginate "repos/$slug/issues/$1/timeline" \
       --jq '.[] | select(.event == "review_dismissed") | .dismissed_review | {review_id, state} | tojson' > "$dismissed"
     gh api --paginate "repos/$slug/pulls/$1/reviews" \
-      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id} | tojson" \
+      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id, bare: (.state == \"COMMENTED\" and (.body // \"\") == \"\")} | tojson" \
       | python3 -c '
 import json, sys
-reviews = [json.loads(line) for line in sys.stdin if line.strip()]
+reviews = [review for review in (json.loads(line) for line in sys.stdin if line.strip()) if not review.pop("bare")]
 # GitHub documents a dismissal'"'"'s review_id as a string and a review'"'"'s id as a number.
 was = {str(entry["review_id"]): entry["state"] for entry in map(json.loads, filter(str.strip, open(sys.argv[1])))}
 decisive = [review for review in reviews if review["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
