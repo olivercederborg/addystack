@@ -18,11 +18,16 @@ elif a.startswith("api repos/o/r/rules/branches/main"):
     print("\n".join(s["required"]))
 elif a.startswith("api repos/o/r/branches/main --jq"):
     print("\n".join(s.get("classic", [])))
-elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a and "workflowRun" not in a:
-    if s["checks"] == "unreadable":
+elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
+    workflows = "workflowRun{" in a  # the query asks for it; the --jq filter names .workflowRun either way
+    if s["checks"] == "unreadable" or workflows and s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    # As the --jq prints them: name, app, start and bucket; a scenario row may leave out the last two.
-    print("\n".join(f"{c[0]}\t{c[2] if len(c) > 2 else ''}\t{c[3] if len(c) > 3 else ''}\t{c[1]}" for c in s["checks"]))
+    # As the --jq prints them: name, app, workflow, event, start and bucket. A scenario row is
+    # [name, bucket, app, start, workflow, event], and may stop after any field; a token that
+    # can't read workflows gets none.
+    def field(c, i):
+        return c[i] if len(c) > i and (workflows or i < 4) else ""
+    print("\n".join("\t".join([c[0], field(c, 2), field(c, 4), field(c, 5), field(c, 3), c[1]]) for c in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
 else:
@@ -41,10 +46,10 @@ class Required(unittest.TestCase):
         stub.write_text(GH)
         stub.chmod(0o755)
 
-    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",), classic=(), code=0):
+    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",), classic=(), code=0, no_actions=False):
         scenario = self.tmp / "scenario.json"
         scenario.write_text(json.dumps({"draft": draft, "required": list(required), "checks": checks,
-                                        "workflows": list(workflows), "classic": list(classic)}))
+                                        "workflows": list(workflows), "classic": list(classic), "no_actions": no_actions}))
         result = subprocess.run([str(SCRIPT), "required", "7"], capture_output=True, text=True, cwd=self.tmp,
                                 env={**os.environ, "PATH": f"{self.tmp / 'bin'}:{os.environ['PATH']}",
                                      "SCENARIO": str(scenario)})
@@ -76,14 +81,34 @@ class Required(unittest.TestCase):
                          "ci\tpending\nworkflows that skip drafts: ci.yml\nrequired: not all passed\n")
 
     def test_a_checks_newest_run_counts_not_an_older_pass(self):
-        rerun = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pending", "github-actions", "2026-11-27T10:05:00Z"]]
-        self.assertEqual(self.required(draft=False, required=["ci"], checks=rerun), "ci\tpending\nrequired: not all passed\n")
-        self.assertEqual(self.required(draft=False, required=["ci"], checks=rerun[::-1]), "ci\tpending\nrequired: not all passed\n")
-        # A pass after a failure counts; two apps' checks of one name keep the better one.
-        fixed = [["ci", "fail", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pass", "github-actions", "2026-11-27T10:05:00Z"]]
+        rerun = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
+                 ["ci", "pending", "github-actions", "2026-11-27T10:05:00Z", "CI", "pull_request"]]
+        for checks in (rerun, rerun[::-1]):
+            self.assertEqual(self.required(draft=False, required=["ci"], checks=checks), "ci\tpending\nrequired: not all passed\n")
+        # A pass after a failure counts, and a re-run not started yet is newer than any that did.
+        fixed = [["ci", "fail", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
+                 ["ci", "pass", "github-actions", "2026-11-27T10:05:00Z", "CI", "pull_request"]]
         self.assertEqual(self.required(draft=False, required=["ci"], checks=fixed), "ci\tpass\nrequired: all passed\n")
-        apps = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pending", "other-ci", "2026-11-27T09:00:00Z"]]
-        self.assertEqual(self.required(draft=False, required=["ci"], checks=apps), "ci\tpass\nrequired: all passed\n")
+        queued = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
+                  ["ci", "pending", "github-actions", "", "CI", "pull_request"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=queued), "ci\tpending\nrequired: not all passed\n")
+
+    def test_one_name_from_two_workflows_or_apps_counts_its_worst(self):
+        workflows = [["deploy", "fail", "github-actions", "2026-11-27T10:00:00Z", "Preview", "pull_request"],
+                     ["deploy", "pass", "github-actions", "2026-11-27T10:05:00Z", "Deploy", "pull_request"]]
+        self.assertEqual(self.required(draft=False, required=["deploy"], checks=workflows),
+                         "deploy\tfail\nrequired: not all passed\n")
+        apps = [["ci", "pass", "github-actions", "2026-11-27T10:05:00Z"], ["ci", "pending", "other-ci", "2026-11-27T09:00:00Z"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=apps), "ci\tpending\nrequired: not all passed\n")
+
+    def test_a_token_that_cannot_read_workflows_groups_by_name_and_app(self):
+        # An App's token without the actions permission: the newest run of the app's check counts.
+        runs = [["Linear issue", "fail", "github-actions", "2026-11-27T10:00:00Z", "Linear", "pull_request"],
+                ["Linear issue", "pass", "github-actions", "2026-11-27T10:05:00Z", "Linear", "pull_request_target"]]
+        self.assertEqual(self.required(draft=False, required=["Linear issue"], checks=runs, no_actions=True),
+                         "Linear issue\tpass\nrequired: all passed\n")
+        self.assertEqual(self.required(draft=False, required=["Linear issue"], checks=runs),
+                         "Linear issue\tfail\nrequired: not all passed\n")
 
     def test_a_ready_pr_or_a_base_that_never_skips_drafts_is_unchanged(self):
         for label, kwargs in {"ready": {"draft": False}, "no draft workflows": {"workflows": ()}}.items():
