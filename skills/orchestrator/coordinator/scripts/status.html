@@ -207,8 +207,12 @@ function when(at, attrs) {
   return el("time", { "data-at": at, title: new Date(at * 1000).toLocaleString(), ...attrs }, ago(at));
 }
 
+// Each age and its hover time, from its data-at, which show() moves for the last poll.
 function refreshTimes() {
-  for (const node of document.querySelectorAll("time[data-at]")) node.textContent = ago(Number(node.dataset.at));
+  for (const node of document.querySelectorAll("time[data-at]")) {
+    const at = Number(node.dataset.at);
+    [node.textContent, node.title] = [ago(at), new Date(at * 1000).toLocaleString()];
+  }
 }
 
 // Why a card's thread and PR states are stale, or null while its tick is fresh.
