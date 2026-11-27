@@ -51,7 +51,9 @@ Known limits:
   environment alone, since an app such as OrbStack starts its VM with the environment of whichever
   command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
-  counts toward the total.
+  counts toward the total, and like Xcode's mcpbridge falls under the 2-hour CPU rule.
+  It's one process under each Codex app-server, so killing it fails the `exec` calls of
+  every Codex thread on that app-server, not only the one that kept it busy.
 - A CPU-heavy job an agent starts dies at over half a core: after 30 minutes when the
   agent doesn't wait on it (`nohup` or `&`), after 2 hours, still busy in the last 30
   minutes, when it does, a background task it tracks included. Run a longer one in a terminal, outside the agent.
