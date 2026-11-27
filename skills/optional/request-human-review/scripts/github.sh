@@ -108,30 +108,46 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     # that is pending or failed. Read here rather than through gh pr checks, which also asks for
     # each check's workflow run, which a token without the actions permission, such as an App's,
     # may not read. Checks it can't read are an error, never none.
-    checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
+    rollup() {
+      gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion startedAt checkSuite{app{slug}}} ... on StatusContext{context state}}}}}}}}}}' \
-      --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
-        elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
-        elif . == "CANCELLED" then "cancel" else "pending" end;
-        .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
-        | if .__typename == "CheckRun"
-          then "\(.name)\t\(.checkSuite.app.slug // "")\t\(.startedAt // "")\t\((if .status == "COMPLETED" then .conclusion else .status end) | bucket)"
-          else "\(.context)\t\t\t\(.state | bucket)" end') || exit 1
-    # Rows are name, app, start and bucket; a run not started yet sorts first, as in gh.
-    checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2
-      if (!(key in at) || $3 >= at[key]) { at[key] = $3; row[key] = $1 FS $4 } }
+    nodes{__typename ... on CheckRun{name status conclusion startedAt checkSuite{'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
+        --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
+          elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
+          elif . == "CANCELLED" then "cancel" else "pending" end;
+          .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
+          | if .__typename == "CheckRun"
+            then [.name, (.checkSuite.app.slug // ""), (.checkSuite.workflowRun.workflow.name // ""),
+                  (.checkSuite.workflowRun.event // ""), (.startedAt // ""),
+                  ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
+            else [.context, "", "", "", "", (.state | bucket)] | join("\t") end'
+    }
+    # gh pr checks keeps each check's newest run by name, workflow and event (aggregate.go's
+    # eliminateDuplicates), so an older pass never hides a re-run that is pending or failed.
+    # Reading a run's workflow needs the actions permission, which an App's token may lack;
+    # without it, runs group by name and app, so one app's same-named jobs in two workflows
+    # count as one check.
+    err=$(mktemp)
+    if ! checks=$(rollup "$1" 'app{slug} workflowRun{event workflow{name}}' 2>"$err"); then
+      grep -q 'Resource not accessible by integration' "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
+      checks=$(rollup "$1" 'app{slug}') || { rm -f "$err"; exit 1; }
+    fi
+    rm -f "$err"
+    # Rows are name, app, workflow, event, start and bucket. A run not started yet is the
+    # newest of its check, as its start is still to come.
+    checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4; start = ($5 == "" ? "9999-12-31T23:59:59Z" : $5)
+      if (!(key in at) || start >= at[key]) { at[key] = start; row[key] = $1 FS $6 } }
       END { for (key in row) print row[key] }')
-    # Two apps can report a check of one name; the best of theirs counts. The required
-    # contexts count, or every reported check when the base requires none; one that failed,
-    # was cancelled, or is running shows CI ran.
+    # Two workflows or apps can report a check of one name; the worst of theirs counts. The
+    # required contexts count, or every reported check when the base requires none; one that
+    # failed, was cancelled, or is running shows CI ran.
     pending=0 ran=0
     counted=${contexts:-$(printf '%s\n' "$checks" | cut -f1 | sort -u)}
     while IFS= read -r context; do
       [ -n "$context" ] || continue
       state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" '$1 == name { seen[$2] = 1 }
-        END { split("pass skipping pending fail cancel", order, " ")
+        END { split("fail cancel pending skipping pass", order, " ")
               for (i = 1; i <= 5; i++) if (order[i] in seen) { print order[i]; exit }
               print "not reported" }')
       case $state in pending|fail|cancel) ran=1 ;; esac
