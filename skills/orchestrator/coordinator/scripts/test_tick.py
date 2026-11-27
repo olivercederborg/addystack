@@ -304,15 +304,22 @@ class Tick(unittest.TestCase):
         self.assertIn("- #12: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", message)
         self.assertNotIn("acme/app#7:", message, "a full owner/repo#N needs no checkout")
 
-    def test_a_closed_pr_is_news_once_and_isnt_read_again(self):
+    def test_a_closed_pr_that_reopens_is_news(self):
         self.tick("--send")
         self.prs["acme/app#12"] = {"state": "CLOSED", "isDraft": True}
         self.tick("--send")
         self.assertIn("- acme/app#12: closed\n", self.sent()[0]["message"])
         self.prs["acme/app#12"] = {"state": "OPEN", "isDraft": True}
+        self.tick("--send")
+        self.assertIn("- acme/app#12: reopened\n", self.sent()[0]["message"])
+
+    def test_a_merged_pr_isnt_read_again(self):
+        self.tick("--send")
+        self.prs["acme/app#12"] = {"state": "MERGED", "isDraft": False}
+        self.tick("--send")
+        self.assertIn("- acme/app#12: merged\n", self.sent()[0]["message"])
         (self.fake / "gh-calls.jsonl").unlink()
         self.tick("--send")
-        self.assertEqual(self.sent(), [])
         calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
         self.assertEqual(calls, ["acme/app#7"])
 

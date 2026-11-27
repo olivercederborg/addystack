@@ -576,7 +576,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         _warn("tick: can't tell which PRs T3 watches for the coordinator, so the tick skips its unwatched-PR check")
     for ref in sorted(refs):
         known = saved.get(ref)
-        if known and known[0] in ("MERGED", "CLOSED"):
+        if known and known[0] == "MERGED":  # a merged PR can't reopen; a closed one can
             prs[ref] = known
             continue
         prs[ref] = view(ref) or known
@@ -586,7 +586,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"unwatched:{ref}", f"{ref}: open, and T3 isn't watching it for this thread, so call "
                                               "`watch_pull_request` on it"))
         if known and prs[ref] != known:
-            change = prs[ref][0].lower() if prs[ref][0] != known[0] else "turned draft" if prs[ref][1] else "marked ready"
+            change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
+                      else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events

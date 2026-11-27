@@ -21,9 +21,9 @@ the rest:
 - **Stuck**: a running thread with no new item for an hour.
 - **Elsewhere**: a live row whose link names another machine's environment, which
   `t3 thread show` can't read: an hourly reminder to read it.
-- **PR**: a PR any Workers row names, whatever its State, merged, closed, or turned
-  ready or draft since the tick last saw it. The first look at a PR only records it, and
-  one it saw merged or closed isn't read again.
+- **PR**: a PR any Workers row names, whatever its State, merged, closed, reopened, or
+  turned ready or draft since the tick last saw it. The first look at a PR only records it,
+  and one it saw merged isn't read again.
 - **Unwatched**: an open Worker PR, draft or not, that T3 won't wake this thread on: no
   watch, or a stack-dismissed one. T3 ends a thread's watches unannounced when the user
   stops or rolls back a turn. Call `watch_pull_request` on it. When T3's state database
