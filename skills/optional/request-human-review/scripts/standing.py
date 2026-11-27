@@ -25,7 +25,7 @@ query($owner: String!, $name: String!, $after: String) {
       nodes {
         number state updatedAt
         author { login }
-        latestReviews(first: 100) { nodes { submittedAt author { __typename login } } }
+        reviews(last: 100) { nodes { submittedAt author { __typename login } } }
         reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } } } }
         timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 100) {
           nodes { ... on ReviewRequestedEvent { createdAt requestedReviewer { ... on User { login } } } }
@@ -66,8 +66,12 @@ def tally(pulls: list, logins: list, share_since: dt.date, now: dt.datetime) -> 
     asks, reviewed = {}, set()
     for pull in pulls:
         author = _login(pull.get('author'))
-        reviews = {_login(review['author']): _time(review['submittedAt']) for review in pull['latestReviews']['nodes']
-                   if review['submittedAt'] and (review['author'] or {}).get('__typename') == 'User'}
+        # Every submitted review, not latestReviews, which leaves out anyone asked to look again.
+        reviews = {}
+        for review in pull['reviews']['nodes']:
+            if review['submittedAt'] and (review['author'] or {}).get('__typename') == 'User':
+                login, at = _login(review['author']), _time(review['submittedAt'])
+                reviews[login] = max(reviews.get(login, at), at)
         reviewed |= {(login, pull['number']) for login, at in reviews.items() if login != author and at >= shared_since}
         if pull['state'] != 'OPEN':
             continue

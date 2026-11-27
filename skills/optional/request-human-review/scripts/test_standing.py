@@ -21,7 +21,7 @@ def pull(number, author='carol', state='OPEN', updated=0, reviews=(), pending=()
     """A PR node: reviews are (login, days ago, type), pending the logins still requested, and
     asked the (login, days ago) review-request events."""
     return {'number': number, 'state': state, 'updatedAt': ago(updated), 'author': {'login': author},
-            'latestReviews': {'nodes': [{'submittedAt': ago(days), 'author': {'__typename': kind, 'login': login}}
+            'reviews': {'nodes': [{'submittedAt': ago(days), 'author': {'__typename': kind, 'login': login}}
                                         for login, days, kind in reviews]},
             'reviewRequests': {'nodes': [{'requestedReviewer': {'login': login}} for login in pending]},
             'timelineItems': {'nodes': [{'createdAt': ago(days), 'requestedReviewer': {'login': login}}
@@ -45,7 +45,7 @@ class Tally(unittest.TestCase):
     def test_a_share_counts_each_reviewed_pr_once_since_the_cutoff_without_bots_or_own_prs(self):
         known = self.tally(
             pull(1, reviews=[('alice', 1, 'User'), ('bob', 2, 'User'), ('frankie-reviewer', 1, 'Bot')]),
-            pull(2, reviews=[('alice', 3, 'User')]),
+            pull(2, reviews=[('alice', 3, 'User'), ('alice', 2, 'User')]),            # reviewed twice: one PR
             pull(3, author='bob', reviews=[('bob', 1, 'User'), ('erin', 1, 'User')]),  # erin isn't in the pool
             pull(4, reviews=[('dave', 10, 'User')]))                                   # before `share since`
         self.assertEqual({login: entry['share'] for login, entry in known.items()}, {'alice': 0.5, 'bob': 0.25, 'dave': 0.0})
