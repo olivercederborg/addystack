@@ -62,8 +62,8 @@ Not in scope, so a later run picks it up.
 ## 3. Ask the round
 
 Every grill reply, a clarification too, is a round in this order, as plain
-text. Keep it to about 150 words above the fold, as in the example, and under 200; fold
-the rest by name, such as `+4 more in the fold`:
+text. Aim for about 150 words above the fold, as in the example, and fold the rest by
+name, such as `+4 more in the fold`:
 
 1. **Headline**: `🟡 **Round N: <what this round decides>?**`, then question 1, with only a
    mockup page between them. A fact a question rests on goes in its sentence or the fold.
