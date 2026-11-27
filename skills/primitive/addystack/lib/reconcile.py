@@ -398,9 +398,7 @@ def _moved_kits(resolved: Resolved) -> List[str]:
 def _adopt(resolved: Resolved, writes: Dict[Path, str]) -> List[Change]:
     """Moves each enabled host's hand-written instruction file into the user's
     instructions file, queued in writes."""
-    hosts = [(render.claude_md(), "claude"), (render.CODEX, "codex"), (render.AGENTS, "agents")]
-    found = [(path.expanduser(), text) for path, host in hosts if resolved["hosts"].get(host)
-             for text in [_hand_written(path.expanduser())] if text]
+    found = [(path, text) for path in render.outputs(resolved).values() for text in [_hand_written(path)] if text]
     if not found:
         return []
     target, named = _instructions_file()
