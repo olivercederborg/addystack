@@ -494,7 +494,7 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-PR_LINK = re.compile(r"\[(?:\\.|\[[^\]]*\]|[^\]\\\[])*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
+PR_LINK = re.compile(r"\[(?:\\.|\[[^\]]*\]|[^\]\\\[])*\]\(<?(https?://github\.com/[\w.-]+/[\w.-]+/pull/\d+)>?[^)]*\)")  # a Markdown link to a PR
 
 
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:

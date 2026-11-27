@@ -549,6 +549,10 @@ class Status(unittest.TestCase):
             refs: set[str] = set()
             project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7)", "acme/app", refs)
             self.assertEqual(refs, {"other/repo#7"}, label)
+        for url in ("<https://github.com/other/repo/pull/7>", "http://github.com/other/repo/pull/7"):
+            refs = set()
+            project._pr_refs(f"[#7, Fix it]({url})", "acme/app", refs)
+            self.assertEqual(refs, {"other/repo#7"}, url)
 
     def test_a_project_without_a_queue_or_an_issue_column_reads_and_ticks_the_same(self):
         old = STATUS.split("## Queue")[0] + "## Decisions" + STATUS.split("## Decisions")[1]
