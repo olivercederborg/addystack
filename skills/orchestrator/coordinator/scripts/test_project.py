@@ -121,7 +121,10 @@ class Project(Fixture, unittest.TestCase):
         self.assertEqual(self.text(), short)
 
     def test_listen_replaces_its_line_or_adds_one(self):
-        self.project("listen", "Watches", "#1 (owner a)\n#2 (owner b)", code=1)
+        self.project("listen", "Heartbeat", "#1 (owner a)\n#2 (owner b)", code=1)
+        refused = self.project("listen", "Watches", "#1 (owner a)", code=1)
+        self.assertIn("call `watch_pull_request` on each open Worker PR, and the tick flags one T3 isn't watching",
+                      refused.stderr)
         self.project("listen", "Heartbeat", "none")
         self.project("listen", "Startup", "scheduled-task:st")
         self.assertEqual(self.text(), PROJECT.replace("- Heartbeat: scheduled-task:hb", "- Heartbeat: none")
@@ -141,7 +144,8 @@ class Project(Fixture, unittest.TestCase):
         self.assertTrue(text.startswith("# ◆ p\n\nCoordinator: <t3-thread://v2/e/c> · Checkout: ~/p · Mode: personal,"))
         self.assertIn(f"## Decisions\n\n- {TODAY} · first\n\n## Workers", text)
         self.assertIn("|---|---|---|---|---|---|\n| a | — | — | running | — | — |\n\n## Learnings", text)
-        self.assertIn(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Heartbeat: none\n", text)
+        self.assertTrue(text.endswith(f"## Learnings\n\n- {TODAY} · first\n\n## Listening\n\n- Heartbeat: none\n"
+                                      "- Startup: none\n"), "T3 keeps the watches, not project.md")
         self.assertIn("Follow-ups: none\n\n## Queue\n\nNext id: 1\n\n| # | Kind | Name | From | Since |\n"
                       "|---|---|---|---|---|\n\n## Decisions", text)
         self.assertEqual(self.project("queue", "show").stdout, "Nothing waits on the user.\n")
