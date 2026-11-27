@@ -695,3 +695,81 @@ class FreshUser(Home):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(sys.platform == "darwin", "the guard is macOS-only")
+class Guard(Home):
+    """On macOS, while agent-memory-guard-notice is selected, install writes the guard's
+    launchd plist, starts it, and caps agent shells' processes in ~/.zshenv; once it's
+    deselected, it stops the guard and removes the plist. launchctl is Home's stub."""
+
+    def setUp(self):
+        super().setUp()
+        self.plist = self.home / "Library/LaunchAgents/addystack.agent-memory-guard.plist"
+        self.zshenv = self.home / ".zshenv"
+
+    def select(self, on=True):
+        hooks = {"preset": "all"} if on else {"preset": "all", "disable": ["agent-memory-guard-notice"]}
+        self.write(self.config, json.dumps({"hooks": hooks}))
+
+    def calls(self):
+        return self.launchctl_log.read_text().splitlines() if self.launchctl_log.exists() else []
+
+    def test_installs_and_starts_it_then_a_second_install_changes_nothing(self):
+        self.select()
+        out = self.ok("install").stdout
+        self.assertIn(f"changed {self.plist} (guard)", out)
+        self.assertIn(f"{KIT}/hooks/agent_memory_guard.py", self.plist.read_text())
+        self.assertTrue(any(call.startswith("bootstrap gui/") for call in self.calls()))
+        self.assertIn("ulimit -Su 3000", self.zshenv.read_text())
+        self.assertIn("ok    memory guard: loaded", out)
+        before = self.calls()
+        again = self.ok("install").stdout
+        self.assertNotIn("(guard)", again)
+        self.assertNotIn("(shell-limit)", again)
+        self.assertFalse([c for c in self.calls()[len(before):] if c.startswith(("bootstrap", "bootout"))])
+
+    def test_keeps_a_users_zshenv_and_its_own_limit(self):
+        self.select()
+        self.write(self.zshenv, "export EDITOR=vim\nulimit -Su 2000")
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), "export EDITOR=vim\nulimit -Su 2000")
+
+    def test_appends_the_limit_after_a_users_zshenv(self):
+        self.select()
+        self.write(self.zshenv, "export EDITOR=vim")
+        self.ok("install")
+        self.assertTrue(self.zshenv.read_text().startswith("export EDITOR=vim\n# addystack:"))
+
+    def test_restarts_a_guard_that_isnt_loaded(self):
+        self.select()
+        self.ok("install")
+        (self.home / "launchctl.loaded").unlink()
+        self.assertIn("(guard)\n  starts the agent memory guard, which isn't loaded", self.ok("install").stdout)
+
+    def test_stops_and_removes_it_once_deselected_and_keeps_the_limit(self):
+        self.select()
+        self.ok("install")
+        self.select(False)
+        out = self.ok("install").stdout
+        self.assertIn("stops the agent memory guard and removes its plist", out)
+        self.assertFalse(self.plist.exists())
+        self.assertTrue(self.calls()[-1].startswith("bootout gui/"))
+        self.assertIn("ulimit -Su 3000", self.zshenv.read_text())
+        self.assertIn("ok    memory guard: not needed", out)
+
+    def test_dry_run_writes_and_starts_nothing(self):
+        self.select()
+        before = self.snapshot()
+        self.assertIn("would change", self.ok("install", "--dry-run").stdout)
+        self.assertEqual(self.snapshot(), before)
+        self.assertFalse([c for c in self.calls() if c.startswith(("bootstrap", "bootout"))])
+
+    def test_doctor_fails_while_the_plist_is_missing(self):
+        self.select()
+        self.ok("install")
+        self.plist.unlink()
+        result = self.cli("doctor")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("memory guard", result.stdout)
+        self.assertIn("is missing", result.stdout)

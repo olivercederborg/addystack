@@ -27,6 +27,12 @@ class Home(unittest.TestCase):
         self.stubs.mkdir()
         for name in ("claude", "codex"):
             self.stub(name, "echo 1.2.3")
+        # launchctl logs each call and keeps a loaded flag, so no test touches the real launchd.
+        self.launchctl_log = self.home / "launchctl.log"
+        loaded = self.home / "launchctl.loaded"
+        self.stub("launchctl", f'echo "$*" >> {self.launchctl_log}\n'
+                  f'case $1 in bootstrap) touch {loaded} ;; bootout) rm -f {loaded} ;; '
+                  f'print) test -f {loaded} ;; esac')
         self.env = {key: value for key, value in os.environ.items() if not key.startswith("ADDYSTACK_")}
         self.env.update({"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
                          "XDG_CONFIG_HOME": str(self.home / ".config"),

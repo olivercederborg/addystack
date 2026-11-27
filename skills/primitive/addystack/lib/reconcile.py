@@ -45,6 +45,10 @@ without agent_source(), since a link to it would dangle. Without verify-work, no
 into the agent, so install does nothing, and a disabled host's link stays too. No ledger
 entry: a link is always install's to replace and anything else never is.
 
+Guard: on macOS, while the agent-memory-guard-notice hook is selected, install writes the
+agent memory guard's launchd plist and starts it, and appends the agent-shell process
+limit to ~/.zshenv (guard.py).
+
 Commands: the hooks in COMMANDS send a Claude Code command, so while hookset selects any of
 them for Claude Code, install links that command in Claude's commands/ folder to the kit's
 copy, as it links the agent, and once none is selected, removes a link to the kit's copy, or
@@ -61,6 +65,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 import config
+import guard
 import hookset
 import render
 import resolved as _resolved
@@ -93,12 +98,14 @@ _GLOBAL = config.GLOBAL
 class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
-    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link", "renamed-skill"]
+    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link", "renamed-skill", "guard",
+                  "shell-limit"]
     target: Path
     detail: str
     left: bool = False
     # For a command: what install links target to, or None to remove the link. For a
-    # renamed skill: its new folder, which a link of its new name points at.
+    # renamed skill: its new folder, which a link of its new name points at. For the
+    # guard: its plist to start the agent from, or None to stop it and remove the plist.
     source: Optional[Path] = None
 
 
@@ -118,6 +125,8 @@ def run(resolved: Resolved) -> List[Change]:
         elif change.kind == "renamed-skill" and not change.left:
             _link(change.target.with_name(change.source.name), change.source)
             os.unlink(change.target)
+        elif change.kind == "guard":
+            guard.start(change.source) if change.source else guard.stop(change.target)
     return changes
 
 
@@ -138,7 +147,9 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
-    return changes + ([agent] if agent else []) + _commands(resolved) + _renamed_skills(resolved) + _skill_links(resolved), writes
+    machine = [Change(kind, target, detail, source=target if start else None)
+               for kind, target, detail, start in guard.plan(resolved, writes)]
+    return changes + ([agent] if agent else []) + _commands(resolved) + _renamed_skills(resolved) + _skill_links(resolved) + machine, writes
 
 
 def _skill_links(resolved: Resolved) -> List[Change]:

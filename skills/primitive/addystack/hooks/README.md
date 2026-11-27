@@ -117,21 +117,23 @@ minutes: on Nov 27, 2026 two `bun` probe scripts Codex ran without a shell spun 
 11 hours under a live Codex. Run a longer CPU-heavy job in a terminal, outside the agent.
 Its docstring lists the known limits.
 
-From the kit's folder, install it, and the kernel backstop for fork storms in agent shells:
+`addystack install` sets it up on macOS while the `agent-memory-guard-notice` hook is
+selected (the `machine` tag, so `hooks.preset` `all`, or `hooks.enable`): it writes
+`~/Library/LaunchAgents/addystack.agent-memory-guard.plist` from `agent-memory-guard.plist`
+with the kit's path, starts it with `launchctl`, and appends the kernel backstop for fork
+storms to `~/.zshenv` unless a `ulimit -Su` line is already there:
 
 ```sh
-# An older install may run the guard under another label: stop it and remove its plist first.
-launchctl list | grep agent-memory-guard  # then: launchctl bootout gui/$(id -u)/<that label>
-# Fill {{kit}} and {{home}} through plistlib, so a path holding & or < stays valid.
-python3 -c 'import plistlib, sys
-fill = lambda v: {k: fill(x) for k, x in v.items()} if isinstance(v, dict) else [fill(x) for x in v] if isinstance(v, list) else v.replace("{{kit}}", sys.argv[1]).replace("{{home}}", sys.argv[2]) if isinstance(v, str) else v
-sys.stdout.buffer.write(plistlib.dumps(fill(plistlib.load(open("hooks/agent-memory-guard.plist", "rb")))))' "$PWD" "$HOME" \
-  > ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
-# in ~/.zshenv: fork fails past 3,000 user processes in agent shells (T3 names a Codex
-# session's thread but sets no CLI path); GUI apps keep 8,000
+# fork fails past 3,000 user processes in agent shells (T3 names a Codex session's
+# thread but sets no CLI path); GUI apps keep 8,000
 [[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH || -n $T3CODE_THREAD_ID ]] && ulimit -Su 3000
 ```
+
+Once the hook is deselected, install stops the guard and removes its plist; the
+`~/.zshenv` line stays. `addystack doctor` fails while the plist is missing, differs from
+the kit's, or isn't loaded, or `~/.zshenv` sets no limit. An older install may run the
+guard under another label: `launchctl list | grep agent-memory-guard`, then `launchctl
+bootout gui/$(id -u)/<that label>` and remove its plist.
 
 Kills go to `~/Library/Logs/agent-memory-guard.log`, a notification, and, through
 `agent-memory-guard-notice.py`, the agent. After editing the guard, restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.
