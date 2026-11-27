@@ -154,7 +154,11 @@ class Pulls(unittest.TestCase):
                  ("box#3, #3, acme/box#3", ("acme/box#3",)),  # the origin's own repo name, once
                  ("acme/tools#1 https://github.com/o/r/pull/4", ("acme/tools#1", "o/r#4")),
                  ("#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
-                 ("#5 (stack #6301) · `fix-#12`", ("acme/box#5",))]  # a note and a branch name no PR
+                 ("#5 (stack #6301) · `fix-#12`", ("acme/box#5",)),  # a note and a branch name no PR
+                 # Review round 1: a link by its destination, and one repo whatever its case.
+                 ("[Review fixes](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
+                 ("[#109](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
+                 ("Acme/Box#20 acme/box#21", ("acme/box#20", "acme/box#21"))]
         for text, refs in cases:
             with self.subTest(text):
                 self.assertEqual(project_md.pulls(text, "acme/box"), project_md.Pulls(refs, ()))
@@ -163,7 +167,9 @@ class Pulls(unittest.TestCase):
         cases = [("tools #109 → #110 (#108 merged)", "acme/box", ("acme/box#110",), ("tools #109",)),
                  ("web #20–#22", "acme/box", (), ("web #20–#22",)),
                  ("tools#4", "acme/box", (), ("tools#4",)),  # its owner is a guess
-                 ("#7 and box#8", "", (), ("#7", "box#8"))]
+                 ("#7 and box#8", "", (), ("#7", "box#8")),
+                 ("acme/box#20;tools #109", "acme/box", ("acme/box#20",), ("tools #109",)),  # no space after ;
+                 ("acme/tools #109", "acme/box", (), ("acme/tools #109",))]
         for text, origin, refs, unread in cases:
             with self.subTest(text):
                 self.assertEqual(project_md.pulls(text, origin), project_md.Pulls(refs, unread))
@@ -184,7 +190,7 @@ class WorkerPrs(Fixture, unittest.TestCase):
         result = self.project("worker", "review-quality", "--pr", "tools #109 → #110 → #122 (#108 merged 5adcaad);"
                               " box #20 → #21 → #27 (#28 merged)", code=1)
         self.assertEqual(result.stderr, "--pr names 'tools #109', 'box #20' with no repo to resolve it against: write"
-                         " each PR outside acme/box as owner/repo#N, and give each repo's stack its own Workers row\n")
+                         " each as owner/repo#N, or as #N for a PR in acme/box, and give each repo's stack its own Workers row\n")
         result = self.project("worker", "review-quality", "--pr", "acme/tools#1 acme/box#2", code=1)
         self.assertIn("names PRs in 2 repos (acme/tools, acme/box): give each repo's stack its own Workers row",
                       result.stderr)

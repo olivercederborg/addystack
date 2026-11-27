@@ -23,7 +23,8 @@ def ranges(text):
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
 
 
-UNREAD = re.compile(r"(?<!\S)[\w.-]*[^\W_][\w.-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")  # `web #20`, or `web #20–#22`
+UNREAD = re.compile(r"(?<![\w/.#-])[\w.-]*[^\W_][\w./-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")  # `web #20`, `acme/web #20–#22`
+LINKED = re.compile(r"\[[^\]\n]*\]\(([^()\s]*)\)")  # a Markdown link names its destination, not its label
 
 
 class Pulls(NamedTuple):
@@ -34,16 +35,17 @@ class Pulls(NamedTuple):
 def pulls(text, origin):
     """The PRs a Workers cell names, resolved against origin, the checkout's `owner/repo`.
     `#N`, and `repo#N` when repo is origin's own name, are origin's; `owner/repo#N` and a
-    github.com PR URL name their own; a range `#20–#22` names each. A parenthesised note
-    and a backticked branch name no PR. Unread: a word then `#N` (`web #20`), `repo#N`
+    github.com PR URL name their own, a Markdown link by its destination; a range `#20–#22`
+    names each. Refs are lowercased. A parenthesised note and a backticked branch name no PR. Unread: a word then `#N` (`web #20`), `repo#N`
     for another repo, since its owner is a guess, and `#N` when origin is ""."""
+    text, origin = LINKED.sub(r" \1 ", text), origin.lower()
     while (bare := re.sub(r"\([^()]*\)|`[^`]*`", " ", text)) != text:  # innermost note first
         text = bare
     unread = [m[0] for m in UNREAD.finditer(text)]
     refs = []
     for url_repo, url_n, repo, n, local in PR_REF.findall(ranges(UNREAD.sub(" ", text))):
         if url_repo or "/" in repo:
-            refs.append(f"{url_repo or repo}#{url_n or n}")
+            refs.append(f"{(url_repo or repo).lower()}#{url_n or n}")
         elif origin and (local or repo.lower() == origin.split("/")[1].lower()):
             refs.append(f"{origin}#{n or local}")
         else:

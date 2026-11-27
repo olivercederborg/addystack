@@ -210,7 +210,7 @@ def worker(lines: list[str], slug: str, *, origin: str = "", **columns: str | No
     if columns.get("pr") is not None:
         found = project_md.pulls(columns["pr"], origin)
         if found.unread:
-            fix = (f"write each PR outside {origin} as owner/repo#N" if origin else
+            fix = (f"write each as owner/repo#N, or as #N for a PR in {origin}" if origin else
                    "the checkout has no GitHub origin, so write each PR as owner/repo#N")
             raise ProjectError(f"--pr names {', '.join(map(repr, found.unread))} with no repo to resolve it"
                                f" against: {fix}, and give each repo's stack its own Workers row")
