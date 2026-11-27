@@ -43,7 +43,7 @@ it shows opens or labels (a line, a sentence, a `·` or `→` item, "Reply `a` a
 2026, it sends back 72, and about 57 of those carry an open call by its letters alone
 ("still waits on your **a** or **b**") or point to an earlier reply's steps; the rest are
 mostly one-letter code names in review findings. Known limits: a letter written plain ("say
-a or b") isn't read, one card's options also answer another call's letters, and a report
+a or b") isn't read, nor any letter in a reply with a fence a list item may hold, one card's options also answer another call's letters, and a report
 that "the earlier setup steps failed" goes back. On Nov 26 and
 27, 2026 a coordinator re-asked open calls as "say **a** or **b**" and "following the 5
 steps in my last reply", and the user asked four times for the full question again
@@ -238,7 +238,7 @@ LETTER = re.compile(r"(?<![\w`])(?:\*\*`([a-e])`\*\*|\*\*([a-e])\*\*|`([a-e])`)(
 # markers, or a sentence's or table cell's start, with the option's own bold.
 OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:;|·→]\**[ \t]+)(?:\*\*)?")
 # What follows such a letter: the option's text, not "or b" or "and b".
-STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:)*]")
+STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:()*]")
 # A letter a pick verb opens, as in "Reply `a` and I'll approve it" or "Picking **a** posts the reply".
 PICKS = re.compile(r"(?:.*[\s(]|)(?:reply|say|pick|picking|answer|choose|choosing|option)[ \t]+(?:\*\*)?", re.I)
 # A letter in parentheses after what it does, as in "approve now (**a**)".
@@ -250,7 +250,8 @@ NEXT_ONE = re.compile(r".*(?:,|\bor|\band)[ \t]*(?:\*\*)?")
 # A line that asks for a pick: a letter only in backticks elsewhere is code, as in "returns `a`".
 ASKS = re.compile(r"\b(?:say|pick|answer|choose|reply|option|call|waits?|decide|next|open)\b", re.I)
 # A letter the reply reports as already picked, as in "you picked `a`" or "I sent your **a**": it asks nothing.
-PICKED = re.compile(r".*\b(?:picked|said|chose|took|taking|resolved as|sent your|went with)[ \t]+(?:\*\*)?", re.I)
+PICKED = re.compile(r".*\b(?:picked|said|chose|took|taking|resolved as|sent your|went with|approved|accepted|answered)[ \t]+(?:\*\*)?", re.I)
+STEP = re.compile(r"[ \t>]*(?:\d{1,9}[.)]|[-*+](?![ \t]+\*\*`?[a-e]`?\*\*))[ \t]")  # a step, not an option
 QUOTED = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|“[^”\n]*\s[^”\n]*”")  # a quote of words, not a quoted "**a**"
 # Steps or options the reply says live in an earlier one, as in "the 5 steps in my last reply"
 # or "the earlier App steps". Not "earlier" alone: "I got b wrong earlier" points nowhere.
@@ -273,7 +274,7 @@ def unanswerable(reply):
     shown = re.sub(r"<!--.*?(?:-->|\Z)", "", shown, flags=re.S)  # the turn block, or any comment, shows nothing
     asked, defined = [], set()
     for line in shown.splitlines():
-        line = QUOTED.sub(lambda quote: " " * len(quote.group(0)), line)
+        line = QUOTED.sub(lambda quote: '"' + "q" * (len(quote.group(0)) - 2) + '"', line)  # text, not letters
         previous = False  # whether the line's last letter was defined
         for found in LETTER.finditer(line) if sure else ():
             letter = next(group for group in found.groups() if group)
@@ -295,8 +296,10 @@ def unanswerable(reply):
         reasons.append(f"this reply asks for {' and '.join(f'`{letter}`' for letter in missing)}, but nothing it shows "
                        f"says what {does}, so the reader can't answer. List each option the reply asks for in its Next "
                        "options, with what it does")
-    pointer = next((found for line in QUOTED.sub("", shown).splitlines() if not line.rstrip().endswith(":")
-                    for found in [EARLIER.search(line)] if found), None)  # a line ending ":" writes them out below
+    visible = QUOTED.sub("", shown).splitlines()
+    pointer = next((found for at, line in enumerate(visible) for found in [EARLIER.search(line)]
+                    if found and not (line.rstrip().endswith(":") and STEP.match(next(iter(visible[at + 1:]), "")))
+                    and (LETTER.search(line) or not found.group(0).lower().startswith("same as"))), None)
     if pointer:
         reasons.append(f"this reply points to \"{pointer.group(0)}\", which the reader may no longer see. Write those "
                        "steps or options out in this reply")

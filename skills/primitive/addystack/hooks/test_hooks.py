@@ -5386,7 +5386,11 @@ class CardCheckUnanswerable(unittest.TestCase):
                       "The function returns `a` when the cache is empty.\n",
                       "Next: **a** merges #12 and **b** keeps it open.\n",
                       "1. Run:\n    ```text\n    Use `a` as a variable\n    ```\n\nDone.\n",
-                      "Follow the steps in my last reply:\n1. Open settings.\n2. Save.\n"):
+                      "Follow the steps in my last reply:\n1. Open settings.\n2. Save.\n",
+                      # Review round 2: a statement, quoted option text, and a pick reported as made.
+                      "The tests pass; behavior is the same as before.\n",
+                      'Next:\n- **a**: "Approve the merge."\n- **b**: "Keep it open."\n',
+                      "You approved **a** yesterday. The fix is complete.\n"):
             with self.subTest(reply=reply):
                 self.assertIsNone(self.reason(reply, options=(("decision", "merge #12"),)))
 
@@ -5394,13 +5398,15 @@ class CardCheckUnanswerable(unittest.TestCase):
         # Real shapes: an open call carried in later replies by its letters alone.
         for reply in ("#12's approval still waits on your **a** or **b**.\n",
                       "Still open: choose `a` or `b` from two replies back.\n",
-                      "Reply with “**a**” or “**b**” for the App call.\n"):
+                      "Reply with “**a**” or “**b**” for the App call.\n",
+                      "Next: choose **a** (recommended) or **b** (alternative) for the App call.\n"):
             with self.subTest(reply=reply):
                 self.assertIn("asks for `a` and `b`", self.reason(reply, options=None))
 
     def test_sends_back_steps_and_options_left_in_an_earlier_reply(self):
         for reply in ("Follow the 5 steps I sent you earlier, then say done.\n",
-                      "Next:\n- **a**: same as before.\n- **b**: same as before.\n"):
+                      "Next:\n- **a**: same as before.\n- **b**: same as before.\n",
+                      "Next:\n- **a** Follow the steps in my last reply:\n- **b** Hold off.\n"):
             with self.subTest(reply=reply):
                 self.assertIn("which the reader may no longer see", self.reason(reply, options=None))
 
