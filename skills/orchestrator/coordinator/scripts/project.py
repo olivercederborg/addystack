@@ -493,13 +493,16 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
+PR_LINK = re.compile(r"\[[^\]]*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
+
+
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
     against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
     it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    text = project_md.ranges(text)
+    text = project_md.ranges(PR_LINK.sub(r"\1", text))  # a link's label `[#7, …]` names its URL's PR, not #7 here
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
         repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"

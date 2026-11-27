@@ -502,6 +502,12 @@ queue:
         self.assertIn("· #13 unresolved\n", printed)
         self.assertEqual({call["key"] for call in self.calls("gh")}, {"acme/other#5"})
 
+    def test_a_markdown_link_to_a_pr_names_only_its_urls_pr(self):
+        self.write(**{"| other#5 |": "| [#5, Their change](https://github.com/acme/other/pull/5) |"})
+        self.run_project("status")
+        self.assertNotIn("acme/app#5", {call["key"] for call in self.calls("gh")})
+        self.assertIn("acme/other#5", {call["key"] for call in self.calls("gh")})
+
     def test_a_project_without_a_queue_or_an_issue_column_prints_and_ticks_the_same(self):
         old = STATUS.split("## Queue")[0] + "## Decisions" + STATUS.split("## Decisions")[1]
         old = old.replace(" | Issue |\n|---|---|---|---|---|---|---|", " |\n|---|---|---|---|---|---|") \
