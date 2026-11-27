@@ -29,8 +29,8 @@ fine request: draw the goal, the must-haves, and the open questions out of it.
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
 work is wanted. The plan builds the must-haves. At a pilot Bar the smallest option that
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
-the goal back in the user's words in the fold. Keep the user's boundaries verbatim: on the plan, or copied into the fold and named on the
-plan when the glance can't hold them.
+the goal back in the user's words in the fold. Keep the user's boundaries verbatim: on
+the plan, or copied into the fold and named on the plan when the glance can't hold them.
 
 **Milestones**: when the request holds more than one step that ships on its own, map
 them first, in order, each with its goal and size, in the fold.
