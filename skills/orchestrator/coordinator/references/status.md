@@ -27,3 +27,12 @@ queue's top item as step 5 says, or on `no queue` for a project from before the 
 
 A project with no Workers section prints `no workers`. A read that fails is named on
 stderr, with the CLI's reason.
+
+## For a program
+
+`status --json` prints the same overview as data, from `status_data(lines, live=True)` in
+`scripts/project.py`: `project`, `goal`, `queue` (items, or null with no Queue) and
+`queue_unread`, `groups` in the order above, each `{state, units}`, then `unread_rows`,
+`decisions`, and `phases`. Text is as project.md holds it, unescaped. `--no-live` skips
+`t3` and `gh`, so a unit has no `thread_status` and a PR no `read`, `title`, `state`,
+`draft`, or `checks`; it still reads the checkout's origin from git to resolve `#N`.

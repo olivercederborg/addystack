@@ -32,8 +32,10 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
-  project.py DIR status             print the project's overview (references/status.md), reading
-                                    thread, PR, and check state live; writes nothing
+  project.py DIR status [--json] [--no-live]
+                                    print the project's overview (references/status.md), reading
+                                    thread, PR, and check state live; writes nothing. --json
+                                    prints status_data's data; --no-live skips t3 and gh
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -48,6 +50,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -614,48 +617,66 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
-def status(lines: list[str]) -> str:
-    """The project's overview in Markdown, read-only: each Workers row under its state with
-    its worker thread, PRs, and Issue links, the thread's live status on this machine and
-    each resolved PR's state and checks (`unread` when a read fails or the thread is on
-    another machine, `unresolved` for a PR whose repo isn't known); then the Queue as
-    `queue show` prints it, or `no queue`; the Decisions; and the Phases lines."""
+def status_data(lines: list[str], *, live: bool = True) -> dict:
+    """The project's overview as JSON-ready data, read-only. Text stays as project.md holds
+    it; status_markdown escapes it. Groups come in STATUS_ORDER, each Workers row a unit
+    with its worker, thread link, State, PRs, Issue, and Waits on. Live fields come from
+    `t3` and `gh`: a unit's `thread_status` and a resolved PR's `read`, `title`, `state`,
+    `draft`, and `checks`. With live=False they're absent and neither runs; the checkout's
+    origin is still read from git, since `#N` resolves against it."""
     goal = _body(lines, "Goal")
-    out = [project_queue.shown(f"◆ {lines[0].removeprefix('# ◆').strip() if lines else '?'} · {goal[0] if goal else '?'}"), "",
-           "**Needs you**"]
+    data: dict = {"project": lines[0].removeprefix("# ◆").strip() if lines else None,
+                  "goal": goal[0] if goal else None, "queue": None, "queue_unread": None,
+                  "groups": [], "unread_rows": [], "decisions": _body(lines, "Decisions"),
+                  "phases": _body(lines, "Phases")}
     try:
         items = project_queue.read(lines)
-        out.append("no queue" if items is None else project_queue.show(items))
+        data["queue"] = None if items is None else [asdict(item) for item in items]
     except project_queue.QueueError as error:
-        out.append(project_queue.shown(f"unread: {error}"))
-    out.append("")
+        data["queue_unread"] = str(error)
     if "## Workers" in lines:
         place = _header(lines, "Checkout").split(" (")[0].strip()
         origin = _origin(Path(place).expanduser() if place else None)
         rows, odd = _workers(lines)
-        groups: dict[str, list[str]] = {}
+        groups: dict[str, list[dict]] = {}
         for row in rows:
             match = STATE.match(row.get(COLUMNS["state"], ""))
             group = (match.group(1) or "replaced/absorbed") if match else "other"
-            groups.setdefault(group, []).append(_unit(row, origin))
-        if odd:
-            groups["unread rows"] = [project_queue.shown(f"- {(_cells(line) or ['?'])[0]}: its cells don't match the Workers header")
-                                     for line in odd]
-        for group in sorted(groups, key=lambda name: STATUS_ORDER.index(name)):
-            out += [f"**{group}**", *groups[group], ""]
-        if not groups:
-            out += ["no workers", ""]
+            groups.setdefault(group, []).append(_unit(row, origin, live))
+        data["groups"] = [{"state": name, "units": groups[name]}
+                          for name in sorted(groups, key=lambda name: STATUS_ORDER.index(name))]
+        data["unread_rows"] = [(_cells(line) or ["?"])[0] for line in odd]
+    return data
+
+
+def status_markdown(data: dict) -> str:
+    """status_data's overview as the Markdown `project.py DIR status` prints: the header, the
+    Queue as `queue show` prints it, each group's units, then the Decisions and Phases lines.
+    Free text goes through project_queue.shown, so the reply keeps its picks."""
+    out = [project_queue.shown(f"◆ {data['project'] or '?'} · {data['goal'] or '?'}"), "", "**Needs you**"]
+    if data["queue_unread"] is not None:
+        out.append(project_queue.shown(f"unread: {data['queue_unread']}"))
     else:
+        queue = data["queue"]
+        out.append("no queue" if queue is None else project_queue.show([project_queue.Item(**item) for item in queue]))
+    out.append("")
+    for group in data["groups"]:
+        out += [f"**{group['state']}**", *(project_queue.shown(_unit_line(unit)) for unit in group["units"]), ""]
+    if data["unread_rows"]:
+        out += ["**unread rows**", *(project_queue.shown(f"- {first}: its cells don't match the Workers header")
+                                     for first in data["unread_rows"]), ""]
+    if not data["groups"] and not data["unread_rows"]:
         out += ["no workers", ""]
     for name in ("Decisions", "Phases"):
-        out += [f"**{name}**", *([project_queue.shown(text) for text in _body(lines, name)] or ["none"]), ""]
+        out += [f"**{name}**", *([project_queue.shown(text) for text in data[name.lower()]] or ["none"]), ""]
     return "\n".join(out[:-1])
 
 
 # status's state groups, in the order the user reads them: what needs a look, then work under
-# way, then work that ended; `other` holds a State a hand edit left outside STATES.
+# way, then work that ended; `other` holds a State a hand edit left outside STATES. Unread
+# rows, whose cells don't match the header, print after them all.
 STATUS_ORDER = ["stuck", "waiting", "overdue", "unknown", "running", "queued", "done", "dropped",
-                "replaced/absorbed", "other", "unread rows"]
+                "replaced/absorbed", "other"]
 EMPTY = ("", "—", "-")  # a cell that holds nothing
 
 
@@ -667,45 +688,78 @@ def _body(lines: list[str], name: str) -> list[str]:
     return [text for text in lines[start_at + 1:end] if text.strip()]
 
 
-def _unit(row: dict[str, str], origin: str) -> str:
-    """One Workers row as status's list item: its worker thread, the thread's live status
-    unless its row is FINAL, each PR, its Issue cell, and what it waits on."""
-    slug, state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
+def _unit(row: dict[str, str], origin: str, live: bool) -> dict:
+    """One Workers row as status_data's unit. `thread_status` is there only when the thread
+    was read: live, linked, on this machine's T3 or `unread`, and its row not FINAL."""
+    state = row.get(COLUMNS["state"], "")
     link = LINK.search(row.get(COLUMNS["thread"], ""))
-    parts = [f"**[{slug}]({link.group(0)})**" if link else f"**{slug}**"]
-    if link and not FINAL.match(state):
+    unit: dict = {"worker": row.get("Worker", "?"), "thread": link.group(0) if link else None, "state": state}
+    if live and link and not FINAL.match(state):
         here = this_environment()
         seen = show_thread(link.group(2)) if here and link.group(1) == here else None
-        parts.append(f"thread {seen.get('status') or 'unread'}" if seen else "thread unread")
+        unit["thread_status"] = (seen.get("status") or "unread") if seen else "unread"
     refs: set[str] = set()
     _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
-    parts += [_pr_line(ref, origin) for ref in sorted(refs, key=lambda ref: (ref.split("#")[0], int(ref.split("#")[1])))]
-    if (issue := row.get(COLUMNS["issue"], "")) not in EMPTY:
-        parts.append(f"issue {issue}")
-    if (waits := row.get(COLUMNS["waits"], "")) not in EMPTY:
-        parts.append(f"waits on {waits}")
-    return project_queue.shown("- " + " · ".join(parts))
+    unit["prs"] = [_pr_data(ref, origin, live)
+                   for ref in sorted(refs, key=lambda ref: (ref.split("#")[0], int(ref.split("#")[1])))]
+    issue, waits = row.get(COLUMNS["issue"], ""), row.get(COLUMNS["waits"], "")
+    unit["issue"], unit["waits_on"] = (issue if issue not in EMPTY else None), (waits if waits not in EMPTY else None)
+    return unit
+
+
+def _pr_data(ref: str, origin: str, live: bool) -> dict:
+    """A PR as {ref, name, url}: url None when its repo isn't known, and name `#N` in the
+    checkout's repo, `owner/repo#N` in another. A live read of a resolved PR adds `read`,
+    and when it read, its title, state, draft, and checks: None when they didn't read."""
+    if ref.startswith("?"):
+        return {"ref": ref, "name": ref.lstrip("?/"), "url": None}
+    repo, number = ref.split("#")
+    pr: dict = {"ref": ref, "name": f"#{number}" if repo == origin else ref,
+                "url": f"https://github.com/{repo}/pull/{number}"}
+    if live:
+        seen = _pr(ref)
+        pr["read"] = seen is not None
+        if seen is not None:
+            pr.update(title=seen["title"], state=seen["state"], draft=seen["isDraft"], checks=_checks(ref))
+    return pr
+
+
+def _unit_line(unit: dict) -> str:
+    """A unit as status's list item, before escaping."""
+    parts = [f"**[{unit['worker']}]({unit['thread']})**" if unit["thread"] else f"**{unit['worker']}**"]
+    if "thread_status" in unit:
+        parts.append(f"thread {unit['thread_status']}")
+    parts += [_pr_text(pr) for pr in unit["prs"]]
+    if unit["issue"] is not None:
+        parts.append(f"issue {unit['issue']}")
+    if unit["waits_on"] is not None:
+        parts.append(f"waits on {unit['waits_on']}")
+    return "- " + " · ".join(parts)
 
 
 CHECK_MARKS = {"pass": "✅", "fail": "❌", "pending": "⏳", "skipping": "⏭️", "cancel": "🚫"}
 
 
 def _pr_line(ref: str, origin: str) -> str:
-    """A PR as `[#N, title](url)` with its state and checks; `#N unresolved` when its repo
-    isn't known, read from nowhere; a repo other than the checkout's names itself."""
-    if ref.startswith("?"):
-        return f"{ref.lstrip('?/')} unresolved"
-    repo, number = ref.split("#")
-    name, url = (f"#{number}" if repo == origin else ref), f"https://github.com/{repo}/pull/{number}"
-    pr = _pr(ref)
-    if pr is None:
-        return f"[{name}]({url}) unread"
+    """`owner/repo#N` read live and printed as status prints it."""
+    return _pr_text(_pr_data(ref, origin, True))
+
+
+def _pr_text(pr: dict) -> str:
+    """A PR as `[#N, title](url)` with its state and checks, `#N unresolved` when its repo
+    isn't known, and `[#N](url)` alone when it wasn't read."""
+    if pr["url"] is None:
+        return f"{pr['name']} unresolved"
+    if "read" not in pr:
+        return f"[{pr['name']}]({pr['url']})"
+    if not pr["read"]:
+        return f"[{pr['name']}]({pr['url']}) unread"
     title = str(pr["title"]).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-    checks = _checks(ref)
+    checks = pr["checks"]
     ci = ("checks unread" if checks is None else ", ".join(
         f"{CHECK_MARKS.get(bucket, '')} {count} {bucket}".strip() for bucket, count in
         sorted(checks.items(), key=lambda pair: [*CHECK_MARKS, pair[0]].index(pair[0]))) or "no checks")
-    return f"[{name}, {title}]({url}) {str(pr['state']).lower()}{' draft' if pr['isDraft'] else ''}, {ci}"
+    return f"[{pr['name']}, {title}]({pr['url']}) {str(pr['state']).lower()}{' draft' if pr['draft'] else ''}, {ci}"
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
@@ -790,7 +844,9 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
-    commands.add_parser("status", allow_abbrev=False)
+    showing = commands.add_parser("status", allow_abbrev=False)
+    showing.add_argument("--json", action="store_true")
+    showing.add_argument("--no-live", action="store_true")
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
     adding.add_argument("kind", choices=project_queue.KINDS)
@@ -837,7 +893,8 @@ def main(argv: list[str]) -> int:
         if args.command == "tick":
             return _tick(args.dir, lines, args.send)
         if args.command == "status":
-            print(status(lines))
+            data = status_data(lines, live=not args.no_live)
+            print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else status_markdown(data))
             return 0
         if args.command == "queue":
             answer = getattr(args, "answer", None)

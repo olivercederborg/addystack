@@ -536,6 +536,25 @@ queue:
         self.assertIn("open draft, ✅ 1 pass, ⏳ 2 pending\n", printed)
         self.assertEqual(self.run_project("tick"), ticked)
 
+    def test_no_live_reads_neither_t3_nor_gh_and_leaves_each_live_field_out(self):
+        data = json.loads(self.run_project("status", "--json", "--no-live"))
+        self.assertEqual((self.calls("t3"), self.calls("gh")), ([], []))
+        units = {unit["worker"]: unit for group in data["groups"] for unit in group["units"]}
+        self.assertEqual(units["build"], {
+            "worker": "build", "thread": "t3-thread://v2/env/w1", "state": "running", "issue":
+            "[DEV-1](https://linear.app/a/issue/DEV-1)", "waits_on": None,
+            "prs": [{"ref": "acme/app#12", "name": "#12", "url": "https://github.com/acme/app/pull/12"}]})
+        self.assertEqual([group["state"] for group in data["groups"]], ["waiting", "running", "done"])
+        self.assertEqual((data["unread_rows"], data["queue"][0]["name"]), (["odd"], "pick the export format"))
+        self.assertIn("- **[build](t3-thread://v2/env/w1)** · [#12](https://github.com/acme/app/pull/12) · issue",
+                      self.run_project("status", "--no-live"))
+
+    def test_json_holds_what_the_markdown_prints(self):
+        data = json.loads(self.run_project("status", "--json"))
+        self.assertEqual(project.status_markdown(data) + "\n", self.run_project("status"))
+        build = next(unit for group in data["groups"] for unit in group["units"] if unit["worker"] == "build")
+        self.assertEqual((build["thread_status"], build["prs"][0]["checks"]), ("running", {"pass": 1, "pending": 2}))
+
     def test_a_project_with_no_workers_decisions_or_phases_says_so(self):
         self.write("# ◆ bare\n\nCoordinator: <t3-thread://v2/env/lead> · Checkout: {checkout}\n\n## Goal\n\nShip.\n")
         self.assertEqual(self.run_project("status"), "◆ bare · Ship.\n\n**Needs you**\nno queue\n\nno workers\n\n"
