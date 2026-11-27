@@ -65,18 +65,24 @@ class Post(unittest.TestCase):
             'decisions': [{'id': 'D1', 'decision': 'Add a totals column', 'code': 'db/schema.ts:12', 'gate': gate,
                            'why': 'a schema change' if gate else 'follows db/schema.ts:4'}]}))
 
-    def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None):
+    def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None, base=BASE, diffs=None, retry=False):
         review = {'pr': 7, 'head': HEAD, 'gates': 'GATES.json', 'body': 'BODY.md', 'findings': list(findings),
                   'second_opinion': {'status': 'ran'} if second_opinion is None else second_opinion}
         if second_opinion == 'absent':
             del review['second_opinion']
         (self.folder / 'REVIEW.json').write_text(json.dumps(review))
         clock = iter(range(0, 10_000, 60))
+        diffs = diffs or {}
+        if not retry:
+            # Each review writes its files in a folder of its own; only a retry of the same one keeps its record.
+            (self.folder / 'POSTED.json').unlink(missing_ok=True)
         with patch.object(post_review, 'github', fake.github), \
-                patch.object(post_review, 'pr', lambda number: {'body': BODY, 'headRefOid': head}):
+                patch.object(post_review, 'fetch', lambda *commits: None), \
+                patch.object(post_review.gates, 'own_diff', lambda against, commit: diffs.get(against, 'same')), \
+                patch.object(post_review, 'pr', lambda number, fields='': {'body': BODY, 'headRefOid': head, 'baseRefOid': base}):
             outcome = post_review.post(7, self.folder / 'REVIEW.json', wait, now=lambda: next(clock), sleep=lambda s: None)
-        self.assertEqual(sorted(path.name for path in self.folder.iterdir()), ['BODY.md', 'GATES.json', 'REVIEW.json', 'note.md'],
-                         'post leaves no scratch files beside REVIEW.json')
+        self.assertEqual(sorted(path.name for path in self.folder.iterdir() if path.name != 'POSTED.json'),
+                         ['BODY.md', 'GATES.json', 'REVIEW.json', 'note.md'], 'post leaves no scratch files beside REVIEW.json')
         return outcome
 
     def test_a_clear_pr_with_passed_checks_is_approved_with_notes_in_the_body_and_no_inline_comments(self):
@@ -133,6 +139,18 @@ class Post(unittest.TestCase):
         with patch.object(denied, 'github', refuse), self.assertRaisesRegex(ValueError, 'HTTP 403'):
             self.post(denied)
         self.assertEqual(denied.writes, [])
+
+    def test_another_prs_verdict_or_a_diff_from_another_base_posts_nothing(self):
+        fake = Fake()
+        gates_json = json.loads((self.folder / 'GATES.json').read_text())
+        (self.folder / 'GATES.json').write_text(json.dumps({**gates_json, 'pr': 8}))
+        with self.assertRaisesRegex(ValueError, 'the verdict is for #8, not #7'):
+            self.post(fake)
+        self.gate(None)
+        # Moved to another base: the same head's diff against it isn't the one the gates judged.
+        with self.assertRaisesRegex(ValueError, "not the one the gates judged"):
+            self.post(fake, base=NEWER, diffs={NEWER: 'more'})
+        self.assertEqual(fake.writes, [])
 
     def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
         self.gate('interface')

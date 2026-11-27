@@ -65,10 +65,11 @@ def load(path) -> dict:
     return verdict
 
 
-def check(verdict: dict, pr_body: str, head: str) -> list:
-    """Problems with a loaded verdict against the PR now: a moved head, or a Decisions-table
-    row with no entry of its own."""
-    problems = [] if verdict['head'] == head else [f'the verdict judged {verdict["head"]}, but the head is {head}']
+def check(verdict: dict, pr_body: str, head: str, number: int | None = None) -> list:
+    """Problems with a loaded verdict against the PR now: another PR's verdict, a moved head, or a
+    Decisions-table row with no entry of its own."""
+    problems = [] if number is None or verdict['pr'] == number else [f'the verdict is for #{verdict["pr"]}, not #{number}']
+    problems += [] if verdict['head'] == head else [f'the verdict judged {verdict["head"]}, but the head is {head}']
     covered = {decision['id'] for decision in verdict['decisions']}
     problems += [f'{row} from the Decisions table has no entry' for row in dict.fromkeys(TABLE_ROW.findall(pr_body))
                  if row not in covered]
@@ -129,7 +130,7 @@ def main(arguments):
         verdict = load(arguments[2])
         pr = json.loads(subprocess.run(['gh', 'pr', 'view', arguments[1], '--json', 'body,headRefOid'],
                                        capture_output=True, text=True, check=True, timeout=60).stdout)
-        problems = check(verdict, pr['body'], pr['headRefOid'])
+        problems = check(verdict, pr['body'], pr['headRefOid'], int(arguments[1]))
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':

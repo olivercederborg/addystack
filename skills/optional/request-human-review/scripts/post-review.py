@@ -23,7 +23,8 @@ approves: the PR goes to a person.
 It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?}, where
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
-push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed.
+push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
+GATES.json for another PR, or for a diff the PR no longer has against its base.
 """
 from __future__ import annotations
 
@@ -60,6 +61,13 @@ def github(*arguments) -> str:
     if result.returncode:
         raise ValueError(f'github.sh {arguments[0]} failed: {_error(result.stderr or result.stdout)}')
     return result.stdout
+
+
+def fetch(*commits: str) -> None:
+    """The commits a comparison needs, into the checkout this runs in."""
+    result = subprocess.run(['git', 'fetch', '--quiet', 'origin', *commits], capture_output=True, text=True, timeout=600)
+    if result.returncode:
+        raise ValueError(f'git fetch failed: {_error(result.stderr)}')
 
 
 def pr(number: int, fields: str = 'body,headRefOid') -> dict:
@@ -121,13 +129,18 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     if not viewer.endswith('[bot]'):
         raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
     verdict = gates.load(folder / review['gates'])
-    current = pr(number)
+    current = pr(number, 'body,headRefOid,baseRefOid')
     head = review['head']
     if current['headRefOid'] != head:
         return {'outcome': 'superseded', 'head': current['headRefOid']}
-    problems = gates.check(verdict, current['body'], head)
+    problems = gates.check(verdict, current['body'], head, number)
     if problems:
         raise ValueError('; '.join(problems))
+    # A PR moved to another base can change its diff with the same head: the gates judged the
+    # diff from the verdict's base, so that diff must still be the PR's.
+    fetch(verdict['base'], current['baseRefOid'], head)
+    if gates.own_diff(verdict['base'], head) != gates.own_diff(current['baseRefOid'], head):
+        raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
     findings = review['findings']
     holds = any(finding['holds'] for finding in findings)
     second = review.get('second_opinion') or {'status': 'missing', 'why': "the review didn't say whether it ran"}
@@ -198,9 +211,9 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 # Drafts name their body files relative to REVIEW.json's folder, so they sit there too.
                 drafts_path = _write(folder, f'{scratch.name}-drafts.json', json.dumps(drafts))
                 event = 'REQUEST_CHANGES' if action == 'request-changes' else 'COMMENT'
-                outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
                 outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
                                       'not-approved': 'not-approved'}[action]
+                outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
                 if withdraw and withdraw['state'] == 'CHANGES_REQUESTED':
                     github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
         finally:
