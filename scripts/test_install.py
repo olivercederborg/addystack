@@ -502,6 +502,20 @@ class RenamedSkill(Home):
         self.assertIn("dangles, and review-code is installed already", self.ok("install").stdout)
         self.assertTrue(old.is_symlink())
 
+    def test_a_link_into_the_kits_own_checkout_is_moved_once_not_also_dropped(self):
+        # Main's skill-link planner sees links into the kit's own tree; a renamed skill is this one's.
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(KIT.parent / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to("../../.agents/skills/review-teammate-pr")
+        out = self.ok("install").stdout
+        self.assertNotIn("(skill-link)", out)
+        for folder in (claude, agents):
+            self.assertEqual((folder / "review-code").resolve(), (KIT.parent / "review-code").resolve(), folder)
+            self.assertFalse(os.path.lexists(folder / "review-teammate-pr"), folder)
+
     def test_moves_a_chain_of_host_links_in_one_install(self):
         kit_skills = self.home / "checkout/skills/primitive"
         (kit_skills / "review-code").mkdir(parents=True)

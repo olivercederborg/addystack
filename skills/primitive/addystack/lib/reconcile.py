@@ -153,8 +153,9 @@ def _skill_links(resolved: Resolved) -> List[Change]:
             continue
         for link in sorted(folder.iterdir()):
             entry = (_place(str(folder)), link.name)
+            # A renamed skill's old link is _renamed_skills' to move, not a dropped skill's.
             if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
-                    or skill_layer.folder(kit, link.name):
+                    or skill_layer.folder(kit, skill_layer.current(link.name)):
                 continue
             seen.add(entry)
             gone = Path(os.path.realpath(link))
