@@ -11,7 +11,9 @@ removed one removed; with the claude host enabled and verify-work in its skill f
 agents/work-verifier.md in Claude Code's folder is the work-verifier agent, as install links
 it (reconcile.agent()), or a file holding verify-work's copy's text; the installed hooks match the selection
 (hookset.drift), and with the codex host enabled, `codex app-server` loads, trusts, and
-enables each kit hook in its hooks.json (_codex_skips); and the tools the policy needs, `gh` and `gh stack` when the defaults or
+enables each kit hook in its hooks.json (_codex_skips); on macOS, while its hook is
+selected, the agent memory guard's plist matches the kit's and is loaded, and a new agent
+shell gets a process limit of 3,000 or less (guard.problems); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
 A check skipped because the config didn't resolve reports `skipped: …`, with ok True,
@@ -29,6 +31,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import config
+import guard
 import hookset
 import notes
 import reconcile
@@ -273,6 +276,19 @@ def _codex_skips(value: Resolved) -> List[str]:
     return lines
 
 
+def _guard(value: Optional[Resolved]) -> Check:
+    if value is None:
+        return Check("memory guard", True, _SKIPPED, None)
+    if not hookset.guard_wanted(value):
+        return Check("memory guard", True, "not needed: its hook isn't selected on this machine", None)
+    # One probe: a second could disagree with the first, as a shell timing out would.
+    limit = guard.shell_limit()
+    lines = guard.problems(value, limit)
+    if lines:
+        return Check("memory guard", False, "; ".join(lines), "addystack install")
+    return Check("memory guard", True, f"loaded, and agent shells capped at {limit:,} processes", None)
+
+
 def _policy_tools(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("policy tools", True, _SKIPPED, None)
@@ -293,4 +309,4 @@ def run(resolved: Optional[Resolved]) -> List[Check]:
     """Every check. With resolved None, the config didn't resolve, so the config check
     fails with its issues and the checks that need a resolved config are skipped."""
     return [_config(resolved), _fresh(resolved), _notes(resolved), _hosts(resolved), _skill_links(resolved),
-            _agent(resolved), _hooks(resolved), _policy_tools(resolved)]
+            _agent(resolved), _hooks(resolved), _guard(resolved), _policy_tools(resolved)]

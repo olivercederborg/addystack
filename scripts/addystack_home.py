@@ -27,13 +27,24 @@ class Home(unittest.TestCase):
         self.stubs.mkdir()
         for name in ("claude", "codex"):
             self.stub(name, "echo 1.2.3")
-        self.env = {key: value for key, value in os.environ.items() if not key.startswith("ADDYSTACK_")}
+        # launchctl logs each call and keeps a loaded flag; the guard runs it by absolute path
+        # (ADDYSTACK_LAUNCHCTL), so no test touches the real launchd.
+        self.launchctl_log = self.home / "launchctl.log"
+        loaded = self.home / "launchctl.loaded"
+        launchctl = str(self.stub(
+            "launchctl", f'echo "$*" >> {self.launchctl_log}\n'
+            f'case $1 in bootstrap) touch {loaded} ;; bootout) rm -f {loaded} ;; '
+            f'print) test -f {loaded} || exit 113 ;; esac'))
+        # ZDOTDIR would point zsh, and the guard's .zshenv write, outside the scratch HOME.
+        self.env = {key: value for key, value in os.environ.items()
+                    if not key.startswith("ADDYSTACK_") and key != "ZDOTDIR"}
         self.env.update({"HOME": str(self.home), "XDG_STATE_HOME": str(self.home / ".local/state"),
                          "XDG_CONFIG_HOME": str(self.home / ".config"),
                          "CLAUDE_CONFIG_DIR": str(self.home / ".claude"), "CODEX_HOME": str(self.home / ".codex"),
                          "PATH": f"{self.stubs}{os.pathsep}{os.environ.get('PATH', '')}",
                          "PYTHONDONTWRITEBYTECODE": "1", "GIT_CONFIG_GLOBAL": str(self.home / ".gitconfig"),
                          "GIT_CONFIG_NOSYSTEM": "1"})
+        self.env["ADDYSTACK_LAUNCHCTL"] = launchctl
         self.config = self.home / ".config/addystack/addystack.jsonc"
         self.state = self.home / ".local/state/addystack"
         self.claude_md = self.home / ".claude/CLAUDE.md"

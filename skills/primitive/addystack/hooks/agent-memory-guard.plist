@@ -11,6 +11,10 @@
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ProcessType</key><string>Interactive</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>ADDYSTACK_GUARD_SHA256</key><string>{{guard_sha256}}</string>
+  </dict>
   <key>StandardErrorPath</key><string>{{home}}/Library/Logs/agent-memory-guard.err.log</string>
 </dict>
 </plist>

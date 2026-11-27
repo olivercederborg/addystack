@@ -163,6 +163,16 @@ def owner(resolved: Resolved, earlier: Iterable[Tuple[str, str]] = (),
                                    or _moved(command, manifest, folders))
 
 
+GUARD_HOOK = "agent-memory-guard-notice"
+
+
+def guard_wanted(resolved: Resolved) -> bool:
+    """Whether this machine gets the agent memory guard (guard.py): its notice hook's
+    entry is chosen and applies to this host profile, whichever hosts are enabled."""
+    entry = next(e for e in _manifest(MANIFEST)["claude"] if e["id"] == GUARD_HOOK)
+    return _chosen(entry, resolved) and applies(entry, host_profile())
+
+
 def drift(resolved: Resolved, runtime: Runtime, path: Optional[Path] = None) -> List[str]:
     """One line per difference between the selected hooks and the addystack hooks the
     host's settings file holds. Hooks addystack didn't install aren't compared."""

@@ -117,21 +117,31 @@ minutes: on Nov 27, 2026 two `bun` probe scripts Codex ran without a shell spun 
 11 hours under a live Codex. Run a longer CPU-heavy job in a terminal, outside the agent.
 Its docstring lists the known limits.
 
-From the kit's folder, install it, and the kernel backstop for fork storms in agent shells:
+`addystack install` sets it up on macOS while the `agent-memory-guard-notice` hook is
+selected (the `machine` tag, so `hooks.preset` `all`, or `hooks.enable`): it writes
+`~/Library/LaunchAgents/addystack.agent-memory-guard.plist` from `agent-memory-guard.plist`
+with the kit's path and the guard script's SHA-256, starts it with `launchctl`, and records
+it in its ledger. The guard reads its script once, so the hash restarts it when an update
+changes the script, and doctor flags a guard still running an older one. It then
+runs a login zsh as each kind of agent shell, and when one gets no process limit of 3,000 or
+less, appends the kernel backstop for fork storms to the `.zshenv` zsh reads
+(`$ZDOTDIR`, else home):
 
 ```sh
-# An older install may run the guard under another label: stop it and remove its plist first.
-launchctl list | grep agent-memory-guard  # then: launchctl bootout gui/$(id -u)/<that label>
-# Fill {{kit}} and {{home}} through plistlib, so a path holding & or < stays valid.
-python3 -c 'import plistlib, sys
-fill = lambda v: {k: fill(x) for k, x in v.items()} if isinstance(v, dict) else [fill(x) for x in v] if isinstance(v, list) else v.replace("{{kit}}", sys.argv[1]).replace("{{home}}", sys.argv[2]) if isinstance(v, str) else v
-sys.stdout.buffer.write(plistlib.dumps(fill(plistlib.load(open("hooks/agent-memory-guard.plist", "rb")))))' "$PWD" "$HOME" \
-  > ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/addystack.agent-memory-guard.plist
-# in ~/.zshenv: fork fails past 3,000 user processes in agent shells (T3 names a Codex
-# session's thread but sets no CLI path); GUI apps keep 8,000
-[[ -n $CLAUDECODE || -n $T3CODE_CLI_PATH || -n $T3CODE_THREAD_ID ]] && ulimit -Su 3000
+# fork fails past 3,000 user processes in agent shells (T3 names a Codex session's
+# thread but sets no CLI path; Codex sets CODEX_THREAD_ID); GUI apps keep 8,000;
+# ${X-} survives `setopt nounset`; it only ever lowers a limit
+[[ -n ${CLAUDECODE-} || -n ${T3CODE_CLI_PATH-} || -n ${T3CODE_THREAD_ID-} || -n ${CODEX_THREAD_ID-} ]] &&
+  [[ $(ulimit -Su) == unlimited || $(ulimit -Su) -gt 3000 ]] && ulimit -Su 3000
 ```
 
+Once the hook is deselected, install stops a guard its ledger records, and removes the
+plist; one you set up by hand stays, and so does the `.zshenv` line. A stop `launchctl`
+refuses fails the install, which retries it next time. `addystack doctor` fails while the
+plist is missing, differs from the kit's, or isn't loaded, or an agent shell still gets no
+limit, such as after an early `return` in `.zshenv`. An older install may run the guard
+under another label: `launchctl list | grep agent-memory-guard`, then `launchctl bootout
+gui/$(id -u)/<that label>` and remove its plist.
+
 Kills go to `~/Library/Logs/agent-memory-guard.log`, a notification, and, through
-`agent-memory-guard-notice.py`, the agent. After editing the guard, restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.
+`agent-memory-guard-notice.py`, the agent. After editing the guard, run `addystack install`, or restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.
