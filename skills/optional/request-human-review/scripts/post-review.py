@@ -146,6 +146,9 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     judged = current['baseRefOid']
     if not gates.same_diff(verdict['base'], judged, head):
         raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
+    problems = gates.doors(verdict, gates.one_way_doors(verdict['base']))
+    if problems:
+        raise ValueError('; '.join(problems))
     findings = review['findings']
     # review-code's rule: a blocking call always holds. A finding that doesn't say true or false
     # is refused, never read as not holding.

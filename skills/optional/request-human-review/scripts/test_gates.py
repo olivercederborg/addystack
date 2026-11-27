@@ -99,6 +99,64 @@ class Decide(unittest.TestCase):
         self.assertNotIn('D2', text)
 
 
+class OneWayDoors(unittest.TestCase):
+    """The repository's own one-way doors, read from its PR template at the base, gate a sensitive
+    area they name even when its change follows a pattern."""
+
+    TEMPLATE = ('## Risk\n\n<!-- A one-way door is not cheap to reverse. One-way doors include migrations that drop '
+                'data, removed or changed public API, RPC, or event fields, money movement, and writes to providers. '
+                'When unsure, call it one-way. -->\n')
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+
+    def base(self, files):
+        for path, text in files.items():
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_text(text)
+        run = lambda *arguments: subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=t', '-c',
+                                                 'user.email=t@example.com', *arguments], capture_output=True,
+                                                text=True, check=True).stdout
+        run('add', '-A')
+        run('commit', '-q', '--allow-empty', '-m', 'base')
+        return run('rev-parse', 'HEAD').strip()
+
+    def problems(self, gated_verdict, files):
+        return gates.doors(gated_verdict, gates.one_way_doors(self.base(files), str(self.repo)))
+
+    def test_a_money_movement_change_that_follows_a_pattern_needs_a_human_where_the_template_lists_it(self):
+        paying = verdict(decision(None, code='pay.ts:3'), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'}])
+        self.assertEqual(self.problems(paying, {'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE}),
+                         ['money-movement at pay.ts:3 is a one-way door by .github/PULL_REQUEST_TEMPLATE.md:3: it needs '
+                          'a one-way-door decision at that code'])
+        gated = verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=paying['sensitive'])
+        self.assertEqual(self.problems(gated, {}), [])
+        self.assertEqual(gates.decide(gated, False, 'passed', 'ran'), 'needs-human')
+
+    def test_a_repo_without_such_a_list_keeps_sensitive_areas_for_blast_radius_only(self):
+        paying = verdict(decision(None), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
+                                                    {'area': 'auth', 'code': 'auth.ts:1'}])
+        for files in ({}, {'.github/pull_request_template.md': '## Risk\n\nSay what could break.\n'}):
+            self.assertEqual(self.problems(paying, files), [])
+        self.assertEqual(gates.decide(paying, False, 'passed', 'ran'), 'approve')
+        # A list that names other kinds leaves these areas alone.
+        self.assertEqual(self.problems(paying, {'docs/pull_request_template.md': 'One-way doors include sent emails.\n'}),
+                         [])
+
+    def test_the_template_github_reads_first_wins(self):
+        self.base({'docs/PULL_REQUEST_TEMPLATE.md': 'One-way doors include auth.\n',
+                   'PULL_REQUEST_TEMPLATE.md': 'One-way doors include money movement.\n'})
+        self.assertEqual(gates.one_way_doors('HEAD', str(self.repo)), ('PULL_REQUEST_TEMPLATE.md:1', 'money movement'))
+
+    def test_a_base_the_checkout_lacks_fails_loudly(self):
+        self.base({})
+        with self.assertRaises(subprocess.CalledProcessError):
+            gates.one_way_doors(BASE, str(self.repo))
+
+
 class OwnDiff(unittest.TestCase):
     """The PR's own diff after a rebase: unchanged when only the base moved, changed by a mode or
     by a binary file's bytes."""

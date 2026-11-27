@@ -13,9 +13,11 @@ GATES.json, written by the agent from the whole PR (base...head), never a re-rev
 
 Every row of the PR's Decisions table has an entry under its `D<n>` id; a decision found in
 the diff that the table lacks has `"id": null`. A decision whose gate is null follows an
-established pattern, so it needs no human. A sensitive area gets a deeper review, never a gate.
+established pattern, so it needs no human, unless the repository's own one-way doors name its
+kind. A sensitive area gets a deeper review, and a gate only when those one-way doors name it.
 
-    gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head
+    gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head,
+                                  and the one-way doors its PR template lists at the base
     gates.py decide GATES.json    what an unattended reviewer would do with no held finding
     gates.py own-diff BASE HEAD   the PR's own-diff fingerprint, run in the repository's checkout
 """
@@ -39,6 +41,10 @@ REQUIRED = ('passed', 'pending', 'failed')
 SECOND_OPINION = ('ran', 'not-needed', 'missing')
 SHA = re.compile(r'[0-9a-f]{40}')
 TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
+# A repository's own list of one-way doors, in a PR template where GitHub looks for one.
+DOORS = re.compile(r'one-way doors (?:include|are):? ([^.]+)', re.I)
+TEMPLATE = re.compile(r'(\.github/|docs/)?pull_request_template\.md', re.I)
+TEMPLATE_FOLDERS = ('.github/', '', 'docs/')
 
 
 def load(path) -> dict:
@@ -74,6 +80,35 @@ def check(verdict: dict, pr_body: str, head: str, number: int | None = None) -> 
     problems += [f'{row} from the Decisions table has no entry' for row in dict.fromkeys(TABLE_ROW.findall(pr_body))
                  if row not in covered]
     return problems
+
+
+def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
+    """The repository's own one-way doors at base, as ("path:line", "the list"): the "One-way doors
+    include …" sentence of its PR template, read from .github/, the root, then docs/, as GitHub
+    does. None when no template lists them."""
+    def git(*arguments):
+        return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
+                              timeout=60).stdout
+    templates = [path for path in git('ls-tree', '--name-only', base, '--', './', '.github/', 'docs/').splitlines()
+                 if TEMPLATE.fullmatch(path)]
+    for path in sorted(templates, key=lambda path: TEMPLATE_FOLDERS.index(path[:path.rfind('/') + 1])):
+        for number, text in enumerate(git('show', f'{base}:{path}').splitlines(), 1):
+            if match := DOORS.search(text):
+                return f'{path}:{number}', match.group(1)
+    return None
+
+
+def doors(verdict: dict, definition: tuple | None) -> list:
+    """Problems with a verdict against the repository's own one-way doors: a sensitive area they
+    name is a one-way door even when it follows a pattern, so it needs a one-way-door decision at
+    its code."""
+    if definition is None:
+        return []
+    source, listed = definition
+    covered = {decision['code'] for decision in verdict['decisions'] if decision['gate'] == 'one-way-door'}
+    return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
+            'decision at that code' for entry in verdict['sensitive']
+            if re.search(rf'\b{entry["area"].replace("-", " ")}\b', listed, re.I) and entry['code'] not in covered]
 
 
 def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
@@ -142,6 +177,8 @@ def main(arguments):
         problems = check(verdict, pr['body'], pr['headRefOid'], int(arguments[1]))
         if not problems and not same_diff(verdict['base'], pr['baseRefOid'], pr['headRefOid']):
             problems.append(f"the PR's diff against its base is not the one the verdict judged from {verdict['base']}")
+        if not problems:
+            problems = doors(verdict, one_way_doors(verdict['base']))
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':
