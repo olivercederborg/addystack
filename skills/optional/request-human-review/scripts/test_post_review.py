@@ -119,12 +119,18 @@ class Post(unittest.TestCase):
         outcome = self.post(fake)
         self.assertEqual((outcome['outcome'], outcome['review']), ('approved', f'review 61, already approving {HEAD[:7]}'))
         self.assertEqual(fake.writes, [])
+        # An approval of an older head doesn't approve this one.
+        older = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': BASE})
+        self.assertEqual(self.post(older)['review'], 'https://github.com/o/r/pull/7#approve')
+        self.assertEqual([command for command, _, _ in older.writes], ['approve'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
                {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
         fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': BASE})
-        self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
+        outcome = self.post(fake, bug)
+        # The posted review's URL, without the anchors github.sh prints before it.
+        self.assertEqual((outcome['outcome'], outcome['review']), ('changes-requested', 'https://github.com/o/r/pull/7#review'))
         self.assertEqual(len(fake.writes), 1, 'its own standing request for changes stays')
         command, arguments, files = fake.writes[0]
         self.assertEqual((command, arguments[3]), ('review', 'REQUEST_CHANGES'))
