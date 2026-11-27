@@ -1,7 +1,7 @@
 """Tests for check-reply-budget.py: each payload is checked on its own against 8,000
 characters, a reply-shape or rules payload over it fails, a rules file that can't load
-fails, and the rules file is the one the built config names, or the kit's replies.md
-without a build."""
+fails, the rules file is the one the built config names, or the kit's replies.md
+without a build, and the checkout's own copies count their path as 80 characters."""
 import json, os, pathlib, shutil, subprocess, sys, tempfile, unittest
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
@@ -21,11 +21,13 @@ def built(folder, rules):
     return folder
 
 
-def run(skill=100, replies=100, state=None, installed=None):
+def run(skill=100, replies=100, state=None, installed=None, deep=False):
     """Runs a copy of the check against rules files of these sizes; None leaves one out.
     state is the ADDYSTACK_STATE folder, a missing one by default; installed is the
-    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default."""
-    root = pathlib.Path(tempfile.mkdtemp())
+    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default; deep puts
+    the copy in a folder whose path passes 200 characters."""
+    temp = pathlib.Path(tempfile.mkdtemp())
+    root = temp / ("checkout-" + "x" * 200) if deep else temp
     try:
         for folder, names in (("scripts", [SCRIPTS / "check-reply-budget.py"]),
                               ("skills/primitive/addystack/hooks",
@@ -44,7 +46,7 @@ def run(skill=100, replies=100, state=None, installed=None):
         return subprocess.run([str(root / "scripts" / "check-reply-budget.py")],
                               capture_output=True, text=True, env=env)
     finally:
-        shutil.rmtree(root)
+        shutil.rmtree(temp)
 
 
 class CheckReplyBudget(unittest.TestCase):
@@ -112,6 +114,20 @@ class CheckReplyBudget(unittest.TestCase):
             result = run(replies=9_000, state=built(folder, rules))
         self.assertEqual(result.returncode, 1)
         self.assertIn("rules: over the budget", result.stderr)
+
+    # The hook's header is 70 characters plus the path, counted as 80 for the checkout's
+    # copies, so 7,850 characters of text come to exactly 8,000 wherever the checkout sits.
+    def test_a_long_checkout_path_counts_as_80(self):
+        result = run(skill=7_850, replies=7_850, deep=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reply-shape: 8,000 of 8,000", result.stdout)
+        self.assertIn("rules: 8,000 of 8,000", result.stdout)
+
+    def test_a_short_checkout_path_counts_as_80(self):
+        result = run(skill=7_851, replies=7_851)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("reply-shape: 8,001 of 8,000", result.stdout)
+        self.assertIn("rules: 8,001 of 8,000", result.stdout)
 
     def test_checks_the_reply_shape_the_hook_loads(self):
         with tempfile.TemporaryDirectory() as folder:
