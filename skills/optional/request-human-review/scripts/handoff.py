@@ -164,7 +164,8 @@ def read(body: str) -> dict | None:
 
 def _render(disclosure: str, block: dict, rules: list) -> str:
     """The comment: a header line for people, each decision in full for the reviewing agent, the block."""
-    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in block['reviewers']) or 'nobody new'
+    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in block['reviewers']) or \
+        ('nobody new' if block['engaged'] else 'nobody')
     count = len(block['decisions'])
     lines = [disclosure,
              f'**Needs a human** · {count} decision{"s" * (count != 1)} at `{block["head"][:7]}` · requested: {asked}'
