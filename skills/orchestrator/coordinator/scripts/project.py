@@ -6,8 +6,9 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR init --project P --coordinator LINK --checkout PATH --mode M --goal G --proof P
   project.py DIR decide TEXT        add `- <date> · TEXT` under Decisions
   project.py DIR learn TEXT         add `- <date> · TEXT` under Learnings
-  project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L]
-                                    set a Workers row's columns, adding the row if it's new
+  project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L] [--issue I]
+                                    set a Workers row's columns, adding the row if it's new;
+                                    --issue adds the Issue column to a table without it
   project.py DIR listen KEY VALUE   set `- KEY: VALUE` under Listening
   project.py DIR queue add KIND NAME [--from F]
                                     queue an item that waits on the user (KIND: stuck,
@@ -55,7 +56,8 @@ import turn_block
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
           "replaced by <worker>", "absorbed into <worker>")
 STATE = re.compile(r"(queued|overdue|unknown|running|waiting|stuck|done|dropped)\b|(replaced by|absorbed into) \S")
-COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect"}
+COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect",
+           "issue": "Issue"}  # Issue is optional: `worker --issue` adds it to a table without it
 
 SKELETON = """# ◆ {project}
 
@@ -212,6 +214,10 @@ def worker(lines: list[str], slug: str, **columns: str | None) -> None:
     if len(table) < 2:
         raise ProjectError("no Workers table")
     header = _cells(lines[table[0]])
+    if columns.get("issue") is not None and COLUMNS["issue"] not in header:  # a table from before the column
+        for i, ending in zip(table, [f" {COLUMNS['issue']} |", "---|", *["  |"] * (len(table) - 2)]):
+            lines[i] = lines[i].rstrip() + ending
+        header.append(COLUMNS["issue"])
     rows = [i for i in table[2:] if (first := _cells(lines[i])[0]) == slug or first.startswith(f"{slug} (")]
     if len(rows) > 1:
         raise ProjectError(f"{len(rows)} Workers rows match {slug!r}")

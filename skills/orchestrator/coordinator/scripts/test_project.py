@@ -119,6 +119,18 @@ class Project(Fixture, unittest.TestCase):
         self.assertEqual(result.stderr, "the 'review-quality' row has 5 cells and the header 6: fix it by hand\n")
         self.assertEqual(self.text(), short)
 
+    def test_an_issue_on_a_table_without_the_column_adds_it_and_keeps_every_other_cell(self):
+        self.project("worker", "review-quality", "--issue", "[DEV-1](https://linear.app/a/issue/DEV-1)")
+        added = PROJECT.replace("| Last side effect |\n|---|---|---|---|---|---|\n",
+                                "| Last side effect | Issue |\n|---|---|---|---|---|---|---|\n") \
+            .replace("| report written |\n", "| report written |  |\n") \
+            .replace("| launched |\n", "| launched | [DEV-1](https://linear.app/a/issue/DEV-1) |\n")
+        self.assertEqual(self.text(), added)
+        self.project("worker", "review", "--issue", "DEV-2, DEV-3")  # the column exists now
+        self.assertEqual(self.text(), added.replace("| report written |  |", "| report written | DEV-2, DEV-3 |"))
+        self.project("worker", "r5", "--state", "queued")
+        self.assertIn("| r5 | — | — | queued | — | — | — |\n", self.text())
+
     def test_listen_replaces_its_line_or_adds_one(self):
         self.project("listen", "Watches", "#1 (owner a)\n#2 (owner b)", code=1)
         self.project("listen", "Heartbeat", "none")
