@@ -647,7 +647,7 @@ WATCH_FLAGS = {"tsc": {"--watch", "-w"}, "tsgo": {"--watch", "-w"}, "vitest": {"
                "jest": {"--watch", "--watchAll"}}
 UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finished
 # A running unit that used under IDLE_CORES over the last IDLE_SECONDS, with every CPU read
-# in them answered, stops counting toward maxChecks: a watcher the argv tests misread as a
+# in them answered and the same processes throughout, stops counting toward maxChecks: a watcher the argv tests misread as a
 # check would otherwise hold a slot until it exits, and get queued checks killed. An idle
 # dev server measured under 0.05 cores (ABANDONED_CORES above); the lightest check measured,
 # a package's tsc, averaged 0.72. One that wakes counts again; it's never stopped, so the
@@ -754,7 +754,7 @@ class Governor:
         self.enabled = True
         self.running = {}  # top -> scans missed in a row
         self.held = {}  # top -> {"members": {ident: Proc}, "since": now, "head", "text"}, oldest first
-        # top -> (last, debt, began, [(now, total ns)], when a member's CPU read last failed)
+        # top -> (last, debt, began, [(now, total ns)], when its reading was last incomplete)
         self.cpu = {}
         self.last_admit = None  # monotonic time a unit last started or resumed
         self.versions = {}  # ident -> exec version of each agent process the last tick saw
@@ -899,10 +899,14 @@ class Governor:
                     self.cpu[top] = self.cpu[top][:4] + (now,)
                 continue
             last, debt, began, marks, unread = self.cpu.get(top) or ({}, {}, wall, [], None)
-            gained, last, debt = cpu_gained(units[top].members, last, debt, began)
+            members = units[top].members
+            # A reading is incomplete when a read failed, or when a member joined or left:
+            # one found late or missed for a scan has CPU no delta counts, so either could
+            # pass for idle. An idle watcher's processes stay the same.
+            if any(proc.cpu is None for proc in members) or {proc.ident for proc in members} != set(last):
+                unread = now
+            gained, last, debt = cpu_gained(members, last, debt, began)
             total = (marks[-1][1] if marks else 0) + gained
-            if any(proc.cpu is None for proc in units[top].members):
-                unread = now  # a failed read gains nothing, so it could pass for idle
             # Keep the newest mark at least the idle window old, so both windows are
             # measured whole.
             old = [i for i, mark in enumerate(marks) if now - mark[0] >= IDLE_SECONDS]
@@ -916,7 +920,8 @@ class Governor:
     def _idle(self, top, now):
         """Whether the unit, tracked at least IDLE_SECONDS, used under IDLE_CORES since its
         newest mark that old, over IDLE_SECONDS, so a late scan reads high, never low, and
-        had no failed CPU read since then."""
+        had no incomplete reading since then: no failed read, missed scan, or member that
+        joined or left."""
         if top not in self.cpu:
             return False
         _, _, _, marks, unread = self.cpu[top]

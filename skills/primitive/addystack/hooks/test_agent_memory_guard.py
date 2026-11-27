@@ -1256,6 +1256,20 @@ class CheckQueue(unittest.TestCase):
         self.assertFalse(q.governor._idle(221, 31))
         self.assertEqual(q.stopped(), {231})
 
+    def test_a_unit_whose_processes_change_keeps_its_slot_a_whole_window(self):
+        # A worker found late, or missed for a scan and found again, has CPU no delta
+        # counts; an idle watcher's processes stay the same.
+        for name, appear in (("found late", lambda tick: tick >= 1),
+                             ("missed for a scan", lambda tick: tick != 30)):
+            with self.subTest(name):
+                q = Queue(self, cap=1)
+                worker = proc(212, 211, argv=("node", "worker.js"), start=1000.0, cpu=int(4e9))
+                q.tick(q.check(1) + ([worker] if appear(0) else []), q.check(2))
+                for tick in range(1, 61):
+                    q.tick(q.check(1, 1000) + ([worker] if appear(tick) else []), q.check(2, 1000))
+                self.assertFalse(q.governor._idle(211, q.now - .5))
+                self.assertEqual(q.stopped(), {221})
+
     def test_a_late_scan_divides_by_the_idle_window(self):
         # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
         # it may be 0.117: read it as busy.
