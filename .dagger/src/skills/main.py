@@ -25,7 +25,9 @@ HOOK_INPUTS = [f"{TOOL}/hooks", "skills/optional/reply-shape/SKILL.md", "replies
                # CleanestAsk compares the installed command with the kit's.
                f"{TOOL}/commands",
                # ReadyGate records through review-loop's copy.
-               "skills/primitive/review-loop/scripts/verdicts.py"]
+               "skills/primitive/review-loop/scripts/verdicts.py",
+               # pre-push also runs scripts/' macOS-only tests on the Mac when these change.
+               "scripts/test_install.py", "scripts/addystack_home.py"]
 # The kit's Python modules other suites import, without the hook tests.
 HOOK_MODULES = [f"{TOOL}/hooks/*.py", f"-{TOOL}/hooks/test_*.py"]
 # Each kit folder whose scripts/ holds tests, a skill's as skills/<layer>/<skill>, with the files
@@ -274,11 +276,11 @@ class Skills:
     async def tool_tests(
         self,
         # test_update copies the files the tool runs from (its TOOL list) into a scratch
-        # release, and test_pre_commit runs .githooks/pre-commit and reads hooks/test_*.py.
+        # release, and test_pre_commit runs .githooks/pre-commit and reads hooks/test_*.py
+        # and scripts/test_*.py for macOS-only tests.
         kit: source(*(f"{TOOL}/{part}" for part in ("bin", "lib", "hooks", "schema", "core", "addystack.defaults.jsonc")),
                     f"-{TOOL}/hooks/README.md", ".githooks/pre-commit", ".githooks/pre-push", ".githooks/suites.sh",
-                    "scripts/addystack_home.py",
-                    *(f"scripts/{name}.py" for name in TOOL_TESTS)),
+                    "scripts/addystack_home.py", "scripts/test_*.py"),
     ) -> None:
         """scripts/test_update.py and scripts/test_pre_commit.py"""
         await scripts_unittests(kit, "tool", *TOOL_TESTS)
