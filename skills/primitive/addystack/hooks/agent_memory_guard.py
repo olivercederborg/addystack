@@ -53,7 +53,10 @@ Known limits:
   agent doesn't wait on it (`nohup` or `&`), after 2 hours when it does, a background
   task it tracks included. Run a longer one in a terminal, outside the agent.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
-  saw it."""
+  saw it.
+- When the guard starts, or a command moves between waited-on and abandoned, a worker that
+  exits while that first scan reads its command counts all its CPU once its parent reaps
+  it, CPU from before the window included."""
 import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
