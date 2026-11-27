@@ -108,44 +108,39 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
     # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go), which
     # keeps only each check's newest run, by name and app: an older pass never hides a re-run
-    # that is pending or failed. Read here rather than through gh pr checks, which also asks for
-    # each check's workflow run, which a token without the actions permission, such as an App's,
-    # may not read. Checks it can't read are an error, never none.
-    rollup() {
-      gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
+    # that is pending or failed. Read here rather than through gh pr checks, so an App's token can
+    # read them: a run's workflow needs the App's Actions: read permission, and without it the runs
+    # of one check can't be told apart, so that is an error. Checks it can't read are an error, never none.
+    err=$(mktemp)
+    if ! checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{id app{databaseId}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{app{databaseId} workflowRun{event workflow{id}}}} ... on StatusContext{context state}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
           .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
           | if .__typename == "CheckRun"
             then ["check", .name, (.checkSuite.app.databaseId // "" | tostring),
-                  (if .checkSuite.workflowRun then "workflow:\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)"
-                   else "suite:\(.checkSuite.id)" end),
+                  (if .checkSuite.workflowRun then "\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)" else "" end),
                   (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
-            else ["status", .context, "", "", "0", (.state | bucket)] | join("\t") end'
-    }
+            else ["status", .context, "", "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
+      if grep -q 'Resource not accessible by integration' "$err"; then
+        echo "github.sh required: this token can't read the checks' workflow runs; a GitHub App needs the Actions: read permission" >&2
+      else cat "$err" >&2; fi
+      rm -f "$err"; exit 1
+    fi
+    rm -f "$err"
     # Each check counts by its newest run, by creation order, which a missing or equal start time
     # can't settle. Runs of one check share a type, a name, an app, and a workflow and event, as
     # gh pr checks groups them (aggregate.go's eliminateDuplicates), so an older pass never hides
-    # a re-run that is pending or failed. Workflows and suites count by id: two workflows may
-    # share a name. Reading a run's workflow needs the actions permission,
-    # which an App's token may lack; without it, a check suite (one workflow run and its re-runs)
-    # stands in, so two runs of one workflow from two events count as two checks.
-    err=$(mktemp)
-    if ! checks=$(rollup "$1" ' workflowRun{event workflow{id}}' 2>"$err"); then
-      grep -q 'Resource not accessible by integration' "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
-      checks=$(rollup "$1" '') || { rm -f "$err"; exit 1; }
-    fi
-    rm -f "$err"
-    # Rows are type, name, app id, workflow or suite, creation order and bucket; checks keep
+    # a re-run that is pending or failed. Workflows count by id: two workflows may share a name.
+    # Rows are type, name, app id, workflow and event, creation order and bucket; checks keep
     # name, app id and bucket.
     checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4
       if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $3 FS $6 } }
       END { for (key in row) print row[key] }')
-    # Checks of one name from two workflows, apps or suites, or a check and a status, all count,
+    # Checks of one name from two workflows or apps, or a check and a status, all count,
     # so the worst of them does. The required contexts count, or every reported check when the
     # base requires none; one that failed, was cancelled, or is running shows CI ran. A context
     # that must come from one app counts only that app's checks: a commit status doesn't say

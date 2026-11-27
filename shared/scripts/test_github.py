@@ -19,16 +19,15 @@ elif a.startswith("api repos/o/r/rules/branches/main"):
 elif a.startswith("api repos/o/r/branches/main --jq"):
     print("\n".join(s.get("classic", [])))
 elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
-    workflows = "workflowRun{" in a  # the query asks for it; the --jq filter names .workflowRun either way
-    if s["checks"] == "unreadable" or workflows and s.get("no_actions"):
+    if s["checks"] == "unreadable" or s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    # As the --jq prints them: type, name, app id, workflow or suite, creation order and bucket. A
+    # As the --jq prints them: type, name, app id, workflow and event, creation order and bucket. A
     # scenario row is [name, bucket, app id, order, workflow id, event, suite id, type] and may stop
-    # after any field; a token that can't read workflows gets the suite.
+    # after any field; a check from no workflow has none.
     def row(c):
         name, bucket = c[0], c[1]
         app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]
-        group = f"workflow:{workflow}/{event}" if workflows and workflow else f"suite:{suite}"
+        group = f"{workflow}/{event}" if workflow else ""
         return "\t".join([kind, name, app, "" if kind == "status" else group, str(order), bucket])
     print("\n".join(row(c) for c in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
@@ -64,7 +63,7 @@ class Required(unittest.TestCase):
                          "ci\tpending\nrequired: not all passed\n")
 
     def test_checks_it_cannot_read_are_an_error_not_none(self):
-        self.assertIn("Resource not accessible by integration", self.required(draft=False, checks="unreadable", code=1))
+        self.assertIn("needs the Actions: read permission", self.required(draft=False, checks="unreadable", code=1))
         self.assertEqual(self.required(draft=False, checks=[]), "no required checks on main\nrequired: all passed\n")
 
     def test_a_draft_whose_ci_skipped_did_not_run(self):
@@ -117,15 +116,10 @@ class Required(unittest.TestCase):
                 own = [["ci", "pass", "15368", 10], ["ci", "fail", "999", 11]]
                 self.assertEqual(self.required(draft=False, checks=own, **rule), "ci\tpass\nrequired: all passed\n")
 
-    def test_a_token_that_cannot_read_workflows_keeps_each_suite_and_fails_closed(self):
-        # An App's token without the actions permission: a re-run stays in its suite, so its newest
-        # counts; two suites of one name may be two workflows, so the worst counts.
-        rerun = [["Lint", "fail", "github-actions", 10, "CI", "pull_request", 1], ["Lint", "pass", "github-actions", 11, "CI", "pull_request", 1]]
-        self.assertEqual(self.required(draft=False, required=["Lint"], checks=rerun, no_actions=True),
-                         "Lint\tpass\nrequired: all passed\n")
-        two = [["ci", "fail", "github-actions", 10, "Test", "pull_request", 1], ["ci", "pass", "github-actions", 11, "Build", "pull_request", 2]]
-        self.assertEqual(self.required(draft=False, required=["ci"], checks=two, no_actions=True),
-                         "ci\tfail\nrequired: not all passed\n")
+    def test_a_token_that_cannot_read_workflows_names_the_permission(self):
+        # An App's token without Actions: read can't tell a check's re-runs apart, so it never guesses.
+        rerun = [["Lint", "fail", "github-actions", 10, "CI", "pull_request", 1], ["Lint", "pass", "github-actions", 11, "CI", "pull_request", 2]]
+        self.assertIn("needs the Actions: read permission", self.required(draft=False, required=["Lint"], checks=rerun, no_actions=True, code=1))
 
     def test_a_ready_pr_or_a_base_that_never_skips_drafts_is_unchanged(self):
         for label, kwargs in {"ready": {"draft": False}, "no draft workflows": {"workflows": ()}}.items():
