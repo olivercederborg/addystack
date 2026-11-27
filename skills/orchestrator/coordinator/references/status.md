@@ -47,7 +47,7 @@ reads the checkout's origin from git to resolve `#N`.
 ## The page
 
 `scripts/status.html` is the page's one template. `status --html` replaces the `null` in
-its `<script type="application/json" id="status-data">` block with the data, escaping `<`
-and `>`, and the page's `draw(data)` renders it, setting every text through
-`textContent`. Only `https:`, `http:`, and `t3-thread:` links become links. The page loads
+its `<script type="application/json" id="status-data">` block with the data's UTF-8 JSON
+in base64, as a JSON string, so no text can end the block, even pasted as `html`. The
+page's `draw(data)` renders it, setting every text through `textContent`. Only `https:`, `http:`, and `t3-thread:` links become links. The page loads
 nothing from the network and uses T3's theme variables, so it follows the thread's theme.

@@ -2,7 +2,7 @@
 decisions, a Result section, notes under the Workers table, and a learning that runs
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import json, os, pathlib, subprocess, sys, tempfile, unittest, unittest.mock
+import base64, json, os, pathlib, re, subprocess, sys, tempfile, unittest, unittest.mock
 from datetime import date
 
 import project
@@ -552,20 +552,21 @@ class Status(unittest.TestCase):
                                          "groups": [], "unread_rows": [], "decisions": [], "phases": []})
 
     def test_html_bakes_the_data_into_one_block_that_round_trips_and_no_text_escapes_it(self):
-        hostile = "</script><script>alert(1)</script> <!-- x"
+        hostile = "</script><script>alert(1)</script> <!-- <script> x"
         self.write(**{"the user's go": hostile, "CSV first.": "<img src=x onerror=alert(1)>"})
-        data = self.status("--no-live")
-        path = pathlib.Path(self.run_project("status", "--html", "--no-live").strip())
+        self.prs["acme/app#12"]["title"] = "</script><b>x</b>"
+        data = self.status()
+        path = pathlib.Path(self.run_project("status", "--html").strip())
         self.addCleanup(path.unlink)
         self.assertTrue(path.is_absolute())
         page = path.read_text()
-        self.assertEqual(page.count('<script type="application/json" id="status-data">'), 1)
-        block = page.split('<script type="application/json" id="status-data">')[1].split("</script>")[0]
-        self.assertEqual(json.loads(block), data)
-        self.assertNotIn("<", block)
-        self.assertNotIn("alert(1)</script>", page)
-        self.assertNotIn("<img", page)
-        self.assertNotRegex(page, r"(?i)<(script|link)[^>]+src=|https?://(?!github\.com|linear\.app)|innerHTML")
+        pasted = re.sub(r"\\u([0-9a-fA-F]{4})", lambda match: chr(int(match.group(1), 16)), page)  # html_render's `html`
+        for text in (page, pasted):
+            opener = '<script type="application/json" id="status-data">'
+            self.assertEqual(text.count(opener), 1)
+            block = text.split(opener)[1].split("</script>")[0]
+            self.assertEqual(json.loads(base64.b64decode(json.loads(block)).decode()), data)
+            self.assertNotRegex(text, r"(?i)alert\(1\)|<b>|<img|<(script|link)[^>]+src=|https?://|innerHTML")
         self.assertIn("function draw(data)", page)
 
 if __name__ == "__main__":

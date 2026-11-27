@@ -45,6 +45,7 @@ and a label. State starts with one of STATES; detail may follow, as in
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
@@ -657,12 +658,14 @@ STATUS_DATA = '<script type="application/json" id="status-data">null</script>'  
 
 def status_html(data: dict) -> str:
     """status.html with status_data's data baked into its status-data block, so the page
-    draws it with no network. The JSON escapes `<` and `>`, so no project.md text can end
-    the block, and the page sets every text through textContent."""
+    draws it with no network. The block holds the data's UTF-8 JSON in base64, as a JSON
+    string: no project.md text can end the block, even when html_render's `html` input
+    turns each `\\uXXXX` back into its character, and the page sets text through textContent."""
     page = STATUS_PAGE.read_text()
     if page.count(STATUS_DATA) != 1:
         raise ValueError(f"{STATUS_PAGE} must hold the status-data block exactly once")
-    return page.replace(STATUS_DATA, STATUS_DATA.replace("null", project_queue.as_json(data)))
+    encoded = base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
+    return page.replace(STATUS_DATA, STATUS_DATA.replace("null", f'"{encoded}"'))
 
 
 # status's state groups, in the order the user reads them: what needs a look, then work under

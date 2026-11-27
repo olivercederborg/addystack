@@ -5,9 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Project status</title>
 <!-- The coordinator's status overview: `project.py DIR status --html` replaces the
-     status-data block's `null` with status_data's JSON, and draw(data) renders it. With
-     null left in, nothing draws, so another feeder can call draw(data) itself. Every
-     project.md text reaches the page through textContent, never as HTML. -->
+     status-data block's `null` with status_data's JSON in base64, as a JSON string, and
+     draw(data) renders it. With null left in, nothing draws, so another feeder can call
+     draw(data) itself. Every project.md text reaches the page through textContent. -->
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground, CanvasText);
@@ -77,7 +77,7 @@ function link(label, url) {
 // project.md text as nodes: a Markdown link `[label](url)` or an autolink `<url>` becomes a
 // link when its scheme is safe, a bare thread link labelled `thread`; the rest stays text.
 function rich(text) {
-  const nodes = [], pattern = /\[((?:\\.|[^\]\\])*)\]\(([^)\s]+)[^)]*\)|<((?:https?|t3-thread):[^>\s]+)>/g;
+  const nodes = [], pattern = /\[((?:\\.|[^\]\\])*)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)|<((?:https?|t3-thread):[^>\s]+)>/g;
   let at = 0;
   for (const match of String(text).matchAll(pattern)) {
     nodes.push(text.slice(at, match.index));
@@ -161,7 +161,8 @@ function draw(data) {
 }
 
 const baked = JSON.parse(document.getElementById("status-data").textContent);
-if (baked !== null) draw(baked);
+if (baked !== null)
+  draw(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(baked), (char) => char.charCodeAt(0)))));
 </script>
 </body>
 </html>
