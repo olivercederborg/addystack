@@ -2,8 +2,10 @@
 decisions, a Result section, notes under the Workers table, and a learning that runs
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import pathlib, subprocess, sys, tempfile, unittest
+import json, os, pathlib, subprocess, sys, tempfile, unittest
 from datetime import date
+
+from test_tick import FAKE_GH, FAKE_T3, thread
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
 TODAY = date.today().isoformat()
@@ -354,6 +356,168 @@ Proofs:
             with self.subTest(args=args):
                 self.project("phase", *args, code=code)
                 self.assertEqual((self.text(), self.files()), (PROJECT, ["project.md"]))
+
+
+STATUS = """# ◆ export
+
+Coordinator: <t3-thread://v2/env/lead> · Checkout: {checkout} (on `main`) · Mode: personal
+
+## Goal
+
+Ship the export.
+Proof: #12 merged.
+Follow-ups: none
+
+## Phases
+
+- 2026-11-01 · 01-spike: spike done · phases/01-spike.md
+
+## Queue
+
+Next id: 2
+
+| # | Kind | Name | From | Since |
+|---|---|---|---|---|
+| 1 | decide | pick the export format | coordinator | 2026-11-20 09:00 |
+
+## Decisions
+
+- 2026-11-20 · coordinator: CSV first.
+
+## Workers
+
+| Worker | Thread | Branch or PR | State | Waits on | Last side effect | Issue |
+|---|---|---|---|---|---|---|
+| build | <t3-thread://v2/env/w1> · task t1 | `export` · #12 | running | — | pushed abc | [DEV-1](https://linear.app/a/issue/DEV-1) |
+| probe | [probe](t3-thread://v2/env/w2) · task t2 | #13 | done | — | report | — |
+| remote | <t3-thread://v2/other/w3> · task t3 | other#5 | waiting | the user's go | launched |  |
+| odd | broken | row |
+
+## Learnings
+
+## Listening
+
+- Heartbeat: tick
+- Startup: none
+- Watches: #12 (build)
+"""
+
+
+class Status(unittest.TestCase):
+    """status against the tick's fake `t3` and `gh` on PATH, which log every call they get."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.root)])
+        self.fake, self.dir = self.root / "fake", self.root / "orchestrate" / "export"
+        (self.fake / "bin").mkdir(parents=True)
+        (self.fake / "userdata").mkdir()
+        (self.fake / "userdata" / "environment-id").write_text("env\n")
+        self.dir.mkdir(parents=True)
+        for name, body in [("t3", FAKE_T3), ("gh", FAKE_GH)]:
+            (self.fake / "bin" / name).write_text(body)
+            (self.fake / "bin" / name).chmod(0o755)
+        self.checkout = self.root / "app"
+        subprocess.run(["git", "init", "-q", str(self.checkout)], check=True)
+        subprocess.run(["git", "-C", str(self.checkout), "remote", "add", "origin", "git@github.com:acme/app.git"],
+                       check=True)
+        self.threads = {"lead": thread("completed", 40), "w1": thread(), "w2": thread("completed"),
+                        "w3": thread()}
+        self.prs = {"acme/app#12": {"title": "Add the export", "state": "OPEN", "isDraft": True},
+                    "acme/app#13": {"title": "Spike the format", "state": "MERGED", "isDraft": False},
+                    "acme/other#5": {"title": "Fix the parser", "state": "OPEN", "isDraft": False}}
+        self.checks = {"acme/app#12": [8, [{"bucket": "pass"}, {"bucket": "pending"}, {"bucket": "pending"}]],
+                       "acme/app#13": [0, []]}
+        self.write()
+
+    def write(self, text=STATUS, **replace):
+        text = text.format(checkout=self.checkout)
+        for old, new in replace.items():
+            text = text.replace(old, new)
+        (self.dir / "project.md").write_text(text)
+
+    def run_project(self, *args):
+        for name, value in [("threads", self.threads), ("prs", self.prs), ("checks", self.checks)]:
+            (self.fake / f"{name}.json").write_text(json.dumps(value))
+        env = {**os.environ, "FAKE": str(self.fake), "T3CODE_HOME": str(self.fake),
+               "PATH": f"{self.fake / 'bin'}:{os.environ['PATH']}"}
+        result = subprocess.run([sys.executable, str(SCRIPT), str(self.dir), *args], capture_output=True, text=True,
+                                env=env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def calls(self, tool):
+        path = self.fake / f"{tool}-calls.jsonl"
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+    def test_status_prints_each_unit_with_its_links_and_live_state_and_writes_nothing(self):
+        before = (self.dir / "project.md").read_text()
+        self.assertEqual(self.run_project("status"), """◆ export · Ship the export.
+
+**Needs you**
+1 of 1 needs you · pick the export format · coordinator
+needs: [{"id":1,"kind":"decide","name":"pick the export format"}]
+queue:
+  1 decide · pick the export format · coordinator · since 2026-11-20 09:00
+
+**waiting**
+- **[remote](t3-thread://v2/other/w3)** · thread unread · [acme/other#5, Fix the parser](https://github.com/acme/other/pull/5) open, no checks · waits on the user's go
+
+**running**
+- **[build](t3-thread://v2/env/w1)** · thread running · [#12, Add the export](https://github.com/acme/app/pull/12) open draft, ✅ 1 pass, ⏳ 2 pending · issue [DEV-1](https://linear.app/a/issue/DEV-1)
+
+**done**
+- **[probe](t3-thread://v2/env/w2)** · [#13, Spike the format](https://github.com/acme/app/pull/13) merged, no checks
+
+**unread rows**
+- odd: its cells don't match the Workers header
+
+**Decisions**
+- 2026-11-20 · coordinator: CSV first.
+
+**Phases**
+- 2026-11-01 · 01-spike: spike done · phases/01-spike.md
+""")
+        self.assertEqual((self.dir / "project.md").read_text(), before)
+        self.assertEqual(sorted(path.name for path in self.dir.iterdir()), ["project.md"])
+
+    def test_a_thread_on_another_machine_or_in_a_final_row_is_never_read(self):
+        self.run_project("status")
+        self.assertEqual([call[2] for call in self.calls("t3")], ["w1"])
+
+    def test_pending_checks_print_as_pending_and_a_failed_read_as_unread(self):
+        self.assertIn("⏳ 2 pending", self.run_project("status"))
+        self.checks["acme/app#12"] = [1, "HTTP 502"]
+        del self.prs["acme/app#13"]
+        printed = self.run_project("status")
+        self.assertIn("[#12, Add the export](https://github.com/acme/app/pull/12) open draft, checks unread", printed)
+        self.assertIn("- **[probe](t3-thread://v2/env/w2)** · [#13](https://github.com/acme/app/pull/13) unread\n",
+                      printed)
+
+    def test_a_pr_whose_repo_is_unknown_prints_unresolved_with_no_gh_call(self):
+        subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
+        self.write(**{"| other#5 |": "| acme/other#5 |"})
+        printed = self.run_project("status")
+        self.assertIn("· thread running · #12 unresolved · issue", printed)
+        self.assertIn("· #13 unresolved\n", printed)
+        self.assertEqual({call["key"] for call in self.calls("gh")}, {"acme/other#5"})
+
+    def test_a_project_without_a_queue_or_an_issue_column_prints_and_ticks_the_same(self):
+        old = STATUS.split("## Queue")[0] + "## Decisions" + STATUS.split("## Decisions")[1]
+        old = old.replace(" | Issue |\n|---|---|---|---|---|---|---|", " |\n|---|---|---|---|---|---|") \
+            .replace(" | [DEV-1](https://linear.app/a/issue/DEV-1) |", " |").replace(" | report | — |", " | report |") \
+            .replace(" | launched |  |", " | launched |")
+        ticked = self.run_project("tick")
+        self.write(old)
+        printed = self.run_project("status")
+        self.assertIn("**Needs you**\nno queue\n\n", printed)
+        self.assertIn("open draft, ✅ 1 pass, ⏳ 2 pending\n", printed)
+        self.assertEqual(self.run_project("tick"), ticked)
+
+    def test_a_project_with_no_workers_decisions_or_phases_says_so(self):
+        self.write("# ◆ bare\n\nCoordinator: <t3-thread://v2/env/lead> · Checkout: {checkout}\n\n## Goal\n\nShip.\n")
+        self.assertEqual(self.run_project("status"), "◆ bare · Ship.\n\n**Needs you**\nno queue\n\nno workers\n\n"
+                                                     "**Decisions**\nnone\n\n**Phases**\nnone\n")
 
 
 if __name__ == "__main__":

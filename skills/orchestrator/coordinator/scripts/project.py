@@ -32,6 +32,8 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
+  project.py DIR status             print the project's overview (references/status.md), reading
+                                    thread, PR, and check state live; writes nothing
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -438,14 +440,39 @@ def view_pr(ref: str) -> list | None:
 def _pr(ref: str) -> dict | None:
     """{title, state, isDraft} of `owner/repo#N` for status; None when unread. view_pr
     stays [state, isDraft], since tick compares that value whole."""
-    raise NotImplementedError
+    repo, number = ref.split("#")
+    code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "title,state,isDraft"])
+    if code:
+        _warn(f"status: `gh pr view {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
+    try:
+        pr = json.loads(out) if code == 0 else None
+        return {key: pr[key] for key in ("title", "state", "isDraft")} if pr else None
+    except (ValueError, KeyError, TypeError):
+        return None
 
 
 def _checks(ref: str) -> dict[str, int] | None:
     """The count of `owner/repo#N`'s checks per gh bucket (pass, fail, pending, skipping,
     cancel), {} when it has none, None when unread. Reads stdout itself: `gh pr checks`
     exits 8 while checks are pending, and `_run` drops stdout on a nonzero exit."""
-    raise NotImplementedError
+    repo, number = ref.split("#")
+    try:
+        done = subprocess.run(["gh", "pr", "checks", number, "-R", repo, "--json", "bucket"],
+                              capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        _warn(f"status: `gh pr checks {number} -R {repo}` failed: {error}")
+        return None
+    try:
+        counts: dict[str, int] = {}
+        for check in json.loads(done.stdout):
+            counts[check["bucket"]] = counts.get(check["bucket"], 0) + 1
+        return counts
+    except (ValueError, KeyError, TypeError):
+        if "no checks reported" in done.stderr:
+            return {}
+        _warn(f"status: `gh pr checks {number} -R {repo}` exited {done.returncode}: "
+              f"{(done.stderr.strip().splitlines() or [''])[-1][:200]}")
+        return None
 
 
 def _header(lines: list[str], field: str) -> str:
@@ -596,7 +623,92 @@ def status(lines: list[str]) -> str:
     each resolved PR's state and checks (`unread` when a read fails or the thread is on
     another machine, `unresolved` for a PR whose repo isn't known); then the Queue as
     `queue show` prints it, or `no queue`; the Decisions; and the Phases lines."""
-    raise NotImplementedError
+    goal = _body(lines, "Goal")
+    out = [f"◆ {lines[0].removeprefix('# ◆').strip() if lines else '?'} · {goal[0] if goal else '?'}", "",
+           "**Needs you**"]
+    try:
+        items = project_queue.read(lines)
+        out.append("no queue" if items is None else project_queue.show(items))
+    except project_queue.QueueError as error:
+        out.append(f"unread: {error}")
+    out.append("")
+    if "## Workers" in lines:
+        place = _header(lines, "Checkout").split(" (")[0].strip()
+        origin = _origin(Path(place).expanduser() if place else None)
+        rows, odd = _workers(lines)
+        groups: dict[str, list[str]] = {}
+        for row in rows:
+            match = STATE.match(row.get(COLUMNS["state"], ""))
+            group = (match.group(1) or "replaced/absorbed") if match else "other"
+            groups.setdefault(group, []).append(_unit(row, origin))
+        if odd:
+            groups["unread rows"] = [f"- {(_cells(line) or ['?'])[0]}: its cells don't match the Workers header"
+                                     for line in odd]
+        for group in sorted(groups, key=lambda name: STATUS_ORDER.index(name)):
+            out += [f"**{group}**", *groups[group], ""]
+        if not groups:
+            out += ["no workers", ""]
+    else:
+        out += ["no workers", ""]
+    for name in ("Decisions", "Phases"):
+        out += [f"**{name}**", *(_body(lines, name) or ["none"]), ""]
+    return "\n".join(out[:-1])
+
+
+# status's state groups, in the order the user reads them: what needs a look, then work under
+# way, then work that ended; `other` holds a State a hand edit left outside STATES.
+STATUS_ORDER = ["stuck", "waiting", "overdue", "unknown", "running", "queued", "done", "dropped",
+                "replaced/absorbed", "other", "unread rows"]
+EMPTY = ("", "—", "-")  # a cell that holds nothing
+
+
+def _body(lines: list[str], name: str) -> list[str]:
+    """The non-blank lines of `## name`, or [] when it has none or isn't there."""
+    if f"## {name}" not in lines:
+        return []
+    start_at, end = _section(lines, name)
+    return [text for text in lines[start_at + 1:end] if text.strip()]
+
+
+def _unit(row: dict[str, str], origin: str) -> str:
+    """One Workers row as status's list item: its worker thread, the thread's live status
+    unless its row is FINAL, each PR, its Issue cell, and what it waits on."""
+    slug, state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
+    link = LINK.search(row.get(COLUMNS["thread"], ""))
+    parts = [f"**[{slug}]({link.group(0)})**" if link else f"**{slug}**"]
+    if link and not FINAL.match(state):
+        here = this_environment()
+        seen = show_thread(link.group(2)) if here and link.group(1) == here else None
+        parts.append(f"thread {seen.get('status') or 'unread'}" if seen else "thread unread")
+    refs: set[str] = set()
+    _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
+    parts += [_pr_line(ref, origin) for ref in sorted(refs, key=lambda ref: (ref.split("#")[0], int(ref.split("#")[1])))]
+    if (issue := row.get(COLUMNS["issue"], "")) not in EMPTY:
+        parts.append(f"issue {issue}")
+    if (waits := row.get(COLUMNS["waits"], "")) not in EMPTY:
+        parts.append(f"waits on {waits}")
+    return "- " + " · ".join(parts)
+
+
+CHECK_MARKS = {"pass": "✅", "fail": "❌", "pending": "⏳", "skipping": "⏭️", "cancel": "🚫"}
+
+
+def _pr_line(ref: str, origin: str) -> str:
+    """A PR as `[#N, title](url)` with its state and checks; `#N unresolved` when its repo
+    isn't known, read from nowhere; a repo other than the checkout's names itself."""
+    if ref.startswith("?"):
+        return f"{ref.lstrip('?/')} unresolved"
+    repo, number = ref.split("#")
+    name, url = (f"#{number}" if repo == origin else ref), f"https://github.com/{repo}/pull/{number}"
+    pr = _pr(ref)
+    if pr is None:
+        return f"[{name}]({url}) unread"
+    title = str(pr["title"]).replace("[", "\\[").replace("]", "\\]")
+    checks = _checks(ref)
+    ci = ("checks unread" if checks is None else ", ".join(
+        f"{CHECK_MARKS.get(bucket, '')} {count} {bucket}".strip() for bucket, count in
+        sorted(checks.items(), key=lambda pair: [*CHECK_MARKS, pair[0]].index(pair[0]))) or "no checks")
+    return f"[{name}, {title}]({url}) {str(pr['state']).lower()}{' draft' if pr['isDraft'] else ''}, {ci}"
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
@@ -681,6 +793,7 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
+    commands.add_parser("status", allow_abbrev=False)
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
     adding.add_argument("kind", choices=project_queue.KINDS)
@@ -726,6 +839,9 @@ def main(argv: list[str]) -> int:
         lines = path.read_text().split("\n")
         if args.command == "tick":
             return _tick(args.dir, lines, args.send)
+        if args.command == "status":
+            print(status(lines))
+            return 0
         if args.command == "queue":
             answer = getattr(args, "answer", None)
             printed = queue(lines, args.action, kind=getattr(args, "kind", None), name=getattr(args, "name", None),

@@ -36,6 +36,8 @@ FAKE_T3 = r"""#!/usr/bin/env python3
 import json, os, sys
 fake = os.environ["FAKE"]
 if sys.argv[1:3] == ["thread", "show"]:
+    with open(f"{fake}/t3-calls.jsonl", "a") as out:
+        out.write(json.dumps(sys.argv[1:]) + "\n")
     threads = json.load(open(f"{fake}/threads.json"))
     if sys.argv[3] not in threads:
         sys.exit("Thread is no longer available.")
@@ -53,7 +55,14 @@ repo = args[args.index("-R") + 1]
 prs = json.load(open(os.environ["FAKE"] + "/prs.json"))
 key = f"{repo}#{args[2]}"
 with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
-    out.write(json.dumps({"key": key}) + "\n")
+    out.write(json.dumps({"key": key, "command": args[1]}) + "\n")
+if args[1] == "checks":  # checks.json: {ref: [exit code, [{bucket}…]]}; gh exits 8 while any is pending
+    path = os.environ["FAKE"] + "/checks.json"
+    checks = json.load(open(path)) if os.path.exists(path) else {}
+    if key not in checks:
+        sys.exit("no checks reported on the 'export' branch")
+    print(json.dumps(checks[key][1]))
+    sys.exit(checks[key][0])
 if key not in prs:
     sys.exit("no pull requests found")
 print(json.dumps(prs[key]))
