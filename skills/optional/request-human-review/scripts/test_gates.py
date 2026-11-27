@@ -1,11 +1,13 @@
 """gates.py: the GATES.json shape, its coverage of the PR's Decisions table, and the rule an
 unattended reviewer follows."""
+import io
 import json
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gates  # noqa: E402
@@ -166,6 +168,7 @@ class OneWayDoors(unittest.TestCase):
         self.assertEqual(named('One-way doors include money movement\n\n## Auth\n'), ['money-movement at pay.ts:3'])
         self.assertEqual(named('<!-- One-way doors include money movement --> auth\n'), ['money-movement at pay.ts:3'])
         self.assertEqual(named('One-way doors include sent emails\n## Auth\n'), [])
+        self.assertEqual(named('One-way doors include money movement\n\nauth\n'), ['money-movement at pay.ts:3'])
         # Only an item that is an area's own name counts, in either spelling; a narrower one is the agent's to gate.
         self.assertEqual(named('One-way doors include authorization changes, or changes to money movement limits.\n'), [])
         self.assertEqual(named('One-way doors include auth or money-movement.\n'), ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
@@ -279,6 +282,24 @@ class Cli(unittest.TestCase):
         script = pathlib.Path(gates.__file__)
         result = subprocess.run([sys.executable, str(script), 'decide', str(path)], capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout), (0, 'needs a human: D1\n'))
+
+    def test_check_refuses_a_sensitive_area_the_repo_calls_a_one_way_door_until_it_is_gated(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / 'GATES.json'
+        sensitive = [{'area': 'money-movement', 'code': 'pay.ts:3'}]
+        pr = json.dumps({'body': '', 'headRefOid': HEAD, 'baseRefOid': BASE})
+        gh = lambda *arguments, **options: subprocess.CompletedProcess(arguments, 0, stdout=pr)
+        listed = ('.github/PULL_REQUEST_TEMPLATE.md:36', 'money movement, and writes to providers')
+        with patch.object(gates.subprocess, 'run', gh), patch.object(gates, 'same_diff', lambda *arguments: True), \
+                patch.object(gates, 'one_way_doors', lambda base, cwd='.': listed if base == BASE else None), \
+                patch('sys.stdout', new_callable=io.StringIO) as printed:
+            path.write_text(json.dumps(verdict(decision(None, code='pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
+            path.write_text(json.dumps(verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 0)
+        self.assertIn('money-movement at pay.ts:3 is a one-way door by .github/PULL_REQUEST_TEMPLATE.md:36',
+                      printed.getvalue())
 
 
 if __name__ == '__main__':
