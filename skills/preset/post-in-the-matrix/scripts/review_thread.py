@@ -18,13 +18,14 @@ never count. Run it from the PR's project checkout (or a T3 worktree of it), or 
 --project. Prints {"thread": null} when none holds it.
 
 The list shows at most five open PRs per thread, and only an agent can read the rest, with
-T3's `list_thread_pull_requests` tool. So when a review thread hides links and no thread
-links the PR itself, the script exits 3 and prints {"needLinks": [threadId, ...]}. The
-caller saves each listed thread's tool result, read with states ["open"], as one JSON
-object keyed by thread id, and runs the script again with --links FILE.
+T3's `list_thread_pull_requests` tool. So when a review thread hides links and a hidden
+link could make it the holder, the script exits 3 and prints {"needLinks": [threadId, ...]}.
+The caller saves each listed thread's tool result, read with states ["open"], as one JSON
+object keyed by thread id, and runs the script again with --links FILE. Each saved list is
+merged with the fresh list entry, which wins for a PR both name.
 
-Exits 2, with a message on stderr, when T3 can't be read or the links file doesn't cover
-every thread that hides links, so the caller stops instead of guessing.
+Exits 2, with a message on stderr, when T3 can't be read or the links file leaves out an
+open PR of a thread that could hold the PR, so the caller stops instead of guessing.
 """
 import argparse, json, re, subprocess, sys
 
@@ -81,27 +82,37 @@ def match(thread, repo, number, prefixes):
     return ("stack", any(stacked)) if stacked else None
 
 
-def holder(items, repo, number, prefixes):
-    found = []
-    for thread in items:
-        held = match(thread, repo, number, prefixes)
-        if held:
-            found.append((held, thread))
+def best(items, repo, number, prefixes):
+    """((kind, watching), thread) for the thread that holds the PR, or None."""
+    found = [(held, thread) for thread in items if (held := match(thread, repo, number, prefixes))]
     found.sort(key=lambda pair: str(pair[1].get("updatedAt") or ""), reverse=True)
     found.sort(key=lambda pair: (RANK[pair[0][0]], bool(pair[1].get("settled"))))
-    if not found:
-        return None
-    (kind, watching), thread = found[0]
-    return {"threadId": thread.get("threadId"), "title": thread.get("title"), "match": kind,
-            "watching": watching, "settled": bool(thread.get("settled")), "status": thread.get("status"),
-            "link": thread.get("link")}
+    return found[0] if found else None
+
+
+def ahead(thread, other):
+    """Whether this thread wins over the other within one kind: unsettled first, then newest."""
+    if bool(thread.get("settled")) != bool(other.get("settled")):
+        return not thread.get("settled")
+    return str(thread.get("updatedAt") or "") > str(other.get("updatedAt") or "")
 
 
 def hidden_links(items, prefixes):
     """Review threads whose list entry shows fewer open PRs than they link."""
-    return [thread.get("threadId") for thread in items
+    return [thread for thread in items
             if review_numbers(thread.get("title"), prefixes)
             and (thread.get("openPullRequestCount") or 0) > len(thread.get("pullRequests") or [])]
+
+
+def could_outrank(thread, found):
+    """Whether this thread would hold the PR ahead of `found` if a hidden link were to it."""
+    if found is None or found[0][0] != "linked":
+        return True  # a hidden link would make it a linked or stack holder
+    return thread is not found[1] and ahead(thread, found[1])
+
+
+def key(pr):
+    return (pr.get("repository") or "").lower(), pr.get("number")
 
 
 def read_links(path):
@@ -113,11 +124,19 @@ def read_links(path):
     links = {}
     for thread_id, result in results.items():
         pulls = result.get("pullRequests") if isinstance(result, dict) else None
-        if (not isinstance(pulls, list) or not all(isinstance(pr, dict) for pr in pulls)
-                or result.get("nextCursor")):
+        if (not isinstance(pulls, list) or result.get("nextCursor")
+                or not all(isinstance(pr, dict) and isinstance(pr.get("repository"), str)
+                           and isinstance(pr.get("number"), int) for pr in pulls)):
             raise ValueError(f"--links for {thread_id} is not one full list_thread_pull_requests result")
         links[thread_id] = pulls
     return links
+
+
+def with_links(thread, pulls):
+    """The thread with its saved full list, each PR once; the fresher list entry wins."""
+    merged = {key(pr): pr for pr in pulls}
+    merged.update({key(pr): pr for pr in thread.get("pullRequests") or []})
+    return {**thread, "pullRequests": list(merged.values())}
 
 
 class NeedsLinks(Exception):
@@ -135,15 +154,19 @@ def lookup(repo, number, prefixes, project=None, list_json=None, links_json=None
         items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
     if links_json:
         links = read_links(links_json)
-        items = [{**thread, "pullRequests": links[thread.get("threadId")]}
+        items = [with_links(thread, links[thread.get("threadId")])
                  if thread.get("threadId") in links else thread for thread in items]
-    thread = holder(items, repo, number, prefixes)
-    # A hidden link can hold the PR, or outrank a title or stack match, unless a thread links it.
-    if (thread is None or thread["match"] != "linked") and (hidden := hidden_links(items, prefixes)):
+    found = best(items, repo, number, prefixes)
+    if needed := [thread.get("threadId") for thread in hidden_links(items, prefixes) if could_outrank(thread, found)]:
         if links_json:
-            raise ValueError(f"--links doesn't hold every open PR of review threads {', '.join(map(str, hidden))}")
-        raise NeedsLinks(hidden)
-    return thread
+            raise ValueError(f"--links doesn't hold every open PR of review threads {', '.join(map(str, needed))}")
+        raise NeedsLinks(needed)
+    if found is None:
+        return None
+    (kind, watching), thread = found
+    return {"threadId": thread.get("threadId"), "title": thread.get("title"), "match": kind,
+            "watching": watching, "settled": bool(thread.get("settled")), "status": thread.get("status"),
+            "link": thread.get("link")}
 
 
 def main(argv=None):

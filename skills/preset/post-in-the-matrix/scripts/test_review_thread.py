@@ -116,9 +116,16 @@ class HolderTest(unittest.TestCase):
             code, out, _ = run([match, hiding], REPO, "9")
             self.assertEqual((code, out["needLinks"]), (3, ["big"]))
 
-    def test_a_thread_linking_the_pr_needs_no_more_links(self):
-        items = [thread("own", "◎ #9 · a", [pr(9)]), thread("big", "◎ #1 · b", [pr(1)], open_count=6)]
-        self.assertEqual(found(items, 9)["threadId"], "own")
+    def test_a_thread_linking_the_pr_needs_only_links_that_could_outrank_it(self):
+        own = thread("own", "◎ #9 · a", [pr(9)], updated="2026-11-13T10:00:00Z")
+        older = thread("older", "◎ #1 · b", [pr(1)], open_count=6, updated="2026-11-01T00:00:00Z")
+        settled = thread("settled", "◎ #2 · c", [pr(2)], open_count=6, settled=True, updated="2026-11-20T00:00:00Z")
+        self.assertEqual(found([own, older, settled], 9)["threadId"], "own")
+        newer = thread("newer", "◎ #3 · d", [pr(3)], open_count=6, updated="2026-11-20T00:00:00Z")
+        code, out, _ = run([own, older, newer], REPO, "9")
+        self.assertEqual((code, out["needLinks"]), (3, ["newer"]))
+        code, out, _ = run([{**own, "settled": True}, older], REPO, "9")
+        self.assertEqual((code, out["needLinks"]), (3, ["older"]))
 
     def test_full_links_find_a_link_the_list_hid(self):
         # T3 keeps a stack layer's link after GitHub's stack forgets it.
@@ -129,12 +136,28 @@ class HolderTest(unittest.TestCase):
         self.assertIsNone(found([big, thread("t", "Review #7 · b")], 7000, links=full))
         self.assertEqual(found([thread("t", "Review #7 · b"), big], 7, links=full)["match"], "title")
 
+    def test_a_link_the_list_shows_survives_an_older_full_result(self):
+        big = thread("big", "◎ #1 · a", [pr(n) for n in (1, 2, 3, 4, 9)], open_count=6)
+        stale = listed(*[pr(n) for n in (1, 2, 3, 4, 5, 6)])
+        self.assertEqual(found([big], 9, links={"big": stale})["match"], "linked")
+
+    def test_a_missing_list_fails_even_beside_a_thread_linking_the_pr(self):
+        own = thread("own", "◎ #1 · a", [pr(9)], settled=True, open_count=2)
+        other = thread("other", "◎ #11 · b", [pr(11)], open_count=2)
+        code, out, err = run([own, other], REPO, "9", links={"own": listed(pr(9), pr(1))})
+        self.assertEqual((code, out), (2, None))
+        self.assertIn("other", err)
+        held = found([own, other], 9, links={"own": listed(pr(9), pr(1)), "other": listed(pr(11), pr(9))})
+        self.assertEqual(held["threadId"], "other")
+
     def test_links_must_cover_every_hiding_thread_in_full(self):
         items = [thread("a", "◎ #1 · a", [pr(1)], open_count=2), thread("b", "◎ #2 · b", [pr(2)], open_count=2)]
         whole = listed(pr(1), pr(3))
         for links in ({"a": whole}, {"a": whole, "b": listed(pr(2))},
                       {"a": whole, "b": {**listed(pr(2), pr(4)), "nextCursor": "x"}},
-                      {"a": whole, "b": [pr(2), pr(4)]}, [whole]):
+                      {"a": whole, "b": [pr(2), pr(4)]}, [whole],
+                      {"a": whole, "b": listed(pr(2), pr(2))},
+                      {"a": whole, "b": listed(pr(2), {"repository": REPO, "source": "stack"})}):
             code, out, err = run(items, REPO, "9", links=links)
             self.assertEqual((code, out), (2, None), links)
             self.assertIn("--links", err)
