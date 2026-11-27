@@ -5,7 +5,8 @@
 # (preferences, preset, maintainer/) on this machine. `gh stack push`
 # and `gh stack submit` run git push, which runs this hook. Without dagger, or an engine
 # it can reach, the push stops; PRE_COMMIT_HOST_SUITES=1 runs the suites on this machine
-# instead, which takes 5 to 10 minutes.
+# instead, which takes 5 to 10 minutes. An engine that hangs past PRE_COMMIT_DAGGER_WAIT
+# still runs them here.
 # Enable once per clone (it enables pre-commit too):
 #   git config core.hooksPath .githooks
 set -euo pipefail

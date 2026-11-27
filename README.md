@@ -86,7 +86,8 @@ The pre-commit hook runs the lints and the touched skills' tests on this machine
 the pre-push hook, which `gh stack push` and `submit` run, runs the kit's Dagger suites
 once per push (`dagger check -l` lists them). Without Dagger or an engine it can reach,
 the push stops; `PRE_COMMIT_HOST_SUITES=1 git push` runs the suites on this machine
-instead, which takes 5 to 10 minutes.
+instead, which takes 5 to 10 minutes. An engine that doesn't answer within
+`PRE_COMMIT_DAGGER_WAIT` seconds (180 by default) still runs them here.
 
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run
