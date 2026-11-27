@@ -149,18 +149,31 @@ def _principles(resolved: Resolved, core: Path, values: Dict[str, str]) -> str:
     return _fill("\n".join(lines), {**values, "taste": sentence})
 
 
-def instructions(resolved: Resolved) -> Dict[Path, str]:
-    """Each file to write, by absolute path: the hosts' instruction files and the built
-    parts the Claude file imports."""
-    core = Path(resolved["kit"]) / "core"
-    values = {"user": resolved["identity"]["name"], "kit": _home(Path(resolved["kit"])),
-              "addystack": f"{hookset._kit(resolved)}/bin/addystack"}
+def placeholders(resolved: Resolved, kit: str = "") -> Dict[str, str]:
+    """The router's placeholders for resolved, with {{kit}} as `kit`, by default the
+    Resolved kit path."""
+    return {"user": resolved["identity"]["name"], "kit": kit or _home(Path(resolved["kit"])),
+            "addystack": f"{hookset._kit(resolved)}/bin/addystack"}
+
+
+def built_parts(resolved: Resolved, core: Path, values: Dict[str, str]) -> Dict[str, str]:
+    """The built parts from core/'s router.md and principles.md, by name, before their
+    `@` lines are expanded: router.md, and principles.md unless resolved builds none."""
     parts = {"router.md": _fill((core / "router.md").read_text(), values)}
     if resolved["judgment"]["principles"]["preset"] != "none":
         parts["principles.md"] = _principles(resolved, core, values)
     elif resolved["judgment"]["taste"]:
         # Without the principles index, the taste file still gets its line.
         parts["principles.md"] = f"# Taste\n\nWhat good code and UI look like: `{_home(Path(resolved['judgment']['taste']))}`.\n"
+    return parts
+
+
+def instructions(resolved: Resolved) -> Dict[Path, str]:
+    """Each file to write, by absolute path: the hosts' instruction files and the built
+    parts the Claude file imports."""
+    core = Path(resolved["kit"]) / "core"
+    values = placeholders(resolved)
+    parts = built_parts(resolved, core, values)
     mine = [config.read_text(Path(path)) for path in resolved["instructions"]]
     state = _resolved.STATE.expanduser().parent
     files: Dict[Path, str] = {}
