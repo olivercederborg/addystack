@@ -15,13 +15,15 @@ line above the table holds the next one. Kind is `stuck`, a run the coordinator 
 stuck, or a turn-block kind, `decide`, `review`, or `do`. Name is the turn block's need
 name: 1-80 characters with a word of 3+ letters. From is the worker, with its thread
 link, or `coordinator`. The user gets stuck runs first, then calls (decide and review),
-then Do items, oldest first within each, as the coordinator skill's step 5 orders them."""
+then Do items, oldest first within each, as the coordinator skill's step 5 orders them,
+behind the items the user's priority line names (project.py's `priority`)."""
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
+from typing import Callable
 
 import turn_block
 
@@ -30,6 +32,7 @@ COUNTER = "Next id: "
 HEADER = ["#", "Kind", "Name", "From", "Since"]
 KINDS = ("stuck", "decide", "review", "do")
 RANK = {"stuck": 0, "decide": 1, "review": 1, "do": 2}
+AGED = timedelta(days=1)  # under a priority line, an item waiting this long goes first too, so none starves
 CELL = re.compile(r"(?<!\\)\|")
 WORD = re.compile(r"[^\W\d_]{3}")  # turn_block.py's rule for a need's name
 
@@ -81,14 +84,27 @@ def _item(row: str) -> Item:
     return Item(int(cells[0]), cells[1], cells[2], cells[3], cells[4])
 
 
-def read(lines: list[str]) -> list[Item] | None:
+def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
+         now: datetime | None = None) -> list[Item] | None:
     """The open items in the order the user gets them, or None when project.md has no
-    Queue section yet. Raises QueueError on a table it can't read."""
+    Queue section yet. ahead, the user's priority line, puts the items it matches first,
+    with every item waiting over AGED, each part in the usual order. Raises QueueError on a
+    table it can't read."""
     bounds = _bounds(lines)
     if bounds is None:
         return None
-    items = [_item(lines[i]) for i in _table(lines, *bounds)]
-    return sorted(items, key=lambda item: (RANK[item.kind], item.id))
+    items = sorted((_item(lines[i]) for i in _table(lines, *bounds)), key=lambda item: (RANK[item.kind], item.id))
+    if ahead is None:
+        return items
+    old = (now or datetime.now()) - AGED
+    return sorted(items, key=lambda item: not (ahead(item) or _since(item) <= old))
+
+
+def _since(item: Item) -> datetime:
+    try:
+        return datetime.strptime(item.since, "%Y-%m-%d %H:%M")
+    except ValueError:  # a hand-edited time: never aged
+        return datetime.max
 
 
 def _one_line(name: str, value: str) -> str:

@@ -2,7 +2,7 @@
 decisions, a Result section, notes under the Workers table, and a learning that runs
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import pathlib, subprocess, sys, tempfile, unittest
+import pathlib, re, subprocess, sys, tempfile, unittest
 from datetime import date
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
@@ -228,6 +228,82 @@ class Queue(Fixture, unittest.TestCase):
         queue = self.text()[self.text().index("## Queue"):self.text().index("## Decisions")]
         self.project("phase", "audit", "--result", "five reports", *NEXT)
         self.assertIn(queue, self.text())
+
+
+class PriorityLine(unittest.TestCase):
+    """The user's priority, said in one project, orders every project's queue on the machine."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(self.root)])
+        self.heard, self.other = self.root / "audit", self.root / "export"
+        for folder in (self.heard, self.other):
+            folder.mkdir()
+            (folder / "project.md").write_text(PROJECT.replace("| running (slot 1) | — | launched |",
+                                                               "| running (slot 1) | — | launched |\n"
+                                                               "| docs | — | — | queued | slot | — |\n"
+                                                               "| ana-fixes | — | #41 by ana | queued | slot | — |"))
+            self.run_in(folder, "queue", "import", stdin='<!-- turn {"state":"done"} -->')
+        for kind, name, source in [("decide", "keep the v1 export", "export-v2"),
+                                   ("review", "post the reply to Ana on #41", "rv41"),
+                                   ("review", "approve #410 for Ben", "rv410")]:
+            self.run_in(self.other, "queue", "add", kind, name, "--from", source)
+
+    def run_in(self, folder, *args, code=0, stdin=None):
+        result = subprocess.run([sys.executable, str(SCRIPT), str(folder), *args], capture_output=True, text=True,
+                                input=stdin)
+        self.assertEqual(result.returncode, code, result.stderr)
+        return result
+
+    def order(self):
+        return [line.split()[0] for line in self.run_in(self.other, "queue", "show").stdout.splitlines()
+                if line.startswith("  ")]
+
+    def test_one_project_hears_it_and_another_reorders_with_no_message(self):
+        self.assertEqual(self.order(), ["1", "2", "3"])
+        said = self.run_in(self.heard, "priority", "set", "specifically Ana's PRs are the most important right now",
+                           "--match", "Ana", "--match", "#41").stdout
+        self.assertRegex(said, r'^- \d{4}-\d\d-\d\d \d\d:\d\d · audit · until .* · match: Ana, #41 · "specifically')
+        out = self.run_in(self.other, "queue", "show").stdout
+        self.assertEqual(self.order(), ["2", "1", "3"], "#410 and Ben's name aren't Ana's #41")
+        self.assertTrue(out.startswith("1 of 3 need you · post the reply to Ana on #41 · rv41\n"
+                                       'needs: [{"id":2,"kind":"review","name":"post the reply to Ana on #41"}]'), out)
+        self.assertIn("first here: 2 post the reply to Ana on #41; units ana-fixes\nNew here: echo it in one line", out)
+        stamp = said.split(" · ")[0][2:]
+        self.run_in(self.other, "listen", "Priority", stamp)
+        out = self.run_in(self.other, "queue", "show").stdout
+        self.assertNotIn("New here", out, "the coordinator echoes it once")
+        self.assertIn('"specifically Ana\'s PRs are the most important right now" · first here: 2 post', out)
+        self.assertIn("first here: units ana-fixes\nNew here", self.run_in(self.heard, "queue", "show").stdout)
+        self.run_in(self.heard, "priority", "clear")
+        self.assertEqual((self.order(), self.run_in(self.other, "priority", "show").stdout), (["1", "2", "3"],
+                                                                                               "no priority holds\n"))
+
+    def test_an_item_waiting_over_a_day_goes_first_too_so_none_starves(self):
+        text = (self.other / "project.md").read_text()
+        (self.other / "project.md").write_text(re.sub(r"(\| 1 \| decide \| keep the v1 export \| export-v2 \| )[^|]+",
+                                                      r"\g<1>2020-01-01 09:00 ", text))
+        self.run_in(self.heard, "priority", "set", "Ben first", "--match", "Ben")
+        self.assertEqual(self.order(), ["1", "3", "2"], "the aged item, then the priority's, then the rest")
+        self.run_in(self.heard, "priority", "set", "nothing here", "--match", "zebra")
+        self.assertIn("names nothing here", self.run_in(self.other, "queue", "show").stdout)
+        self.assertEqual(self.order(), ["1", "2", "3"],
+                         "a priority that names nothing here leaves its order to age as before")
+
+    def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):
+        self.run_in(self.heard, "priority", "set", "Ana first", "--match", "Ana", "--until", "2999-01-01")
+        self.assertIn("until 2999-01-01 00:00", self.run_in(self.other, "priority", "show").stdout)
+        line = (self.root / "priority.md").read_text().replace("until 2999-01-01", "until 2020-01-01")
+        (self.root / "priority.md").write_text(line)
+        self.assertEqual(self.order(), ["1", "2", "3"], "an expired priority orders nothing")
+        for args, error in [(["--match", "Ana", "--until", "2020-01-01"], "already past"),
+                            (["--match", "Ana, Ben"], "without a comma"),
+                            (["--match", "Ana", "--until", "friday"], "--until takes")]:
+            self.assertIn(error, self.run_in(self.heard, "priority", "set", "Ana first", *args, code=1).stderr)
+        self.run_in(self.heard, "priority", "set", "Ana first", code=2)
+        (self.root / "priority.md").write_text("# Priority\n\n- garbled\n")
+        shown = self.run_in(self.other, "queue", "show")
+        self.assertEqual((self.order(), "no one priority line" in shown.stderr), (["1", "2", "3"], True))
 
 
 LISTENING = PROJECT[PROJECT.index("## Listening"):]
