@@ -429,6 +429,19 @@ def view_pr(ref: str) -> list | None:
         return None
 
 
+def _pr(ref: str) -> dict | None:
+    """{title, state, isDraft} of `owner/repo#N` for status; None when unread. view_pr
+    stays [state, isDraft], since tick compares that value whole."""
+    raise NotImplementedError
+
+
+def _checks(ref: str) -> dict[str, int] | None:
+    """The count of `owner/repo#N`'s checks per gh bucket (pass, fail, pending, skipping,
+    cancel), {} when it has none, None when unread. Reads stdout itself: `gh pr checks`
+    exits 8 while checks are pending, and `_run` drops stdout on a nonzero exit."""
+    raise NotImplementedError
+
+
 def _header(lines: list[str], field: str) -> str:
     """A `Field: value` from the line under the title, up to the next ` · `."""
     line = next((text for text in lines if text.startswith("Coordinator:")), "")
@@ -569,6 +582,15 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
     return due, {"threads": threads, "prs": kept, "sent": sent}
+
+
+def status(lines: list[str]) -> str:
+    """The project's overview in Markdown, read-only: each Workers row under its state with
+    its worker thread, PRs, and Issue links, the thread's live status on this machine and
+    each resolved PR's state and checks (`unread` when a read fails or the thread is on
+    another machine, `unresolved` for a PR whose repo isn't known); then the Queue as
+    `queue show` prints it, or `no queue`; the Decisions; and the Phases lines."""
+    raise NotImplementedError
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
