@@ -6399,7 +6399,7 @@ class CheckQueueNotice(unittest.TestCase):
         return {"time": "t", "at": time.time() - seconds_ago, "agent_pid": os.getpid(),
                 "reason": "held 15 min while the machine's check queue stayed full (4 checks running)",
                 "command_sha256": hashlib.sha256(command.encode()).hexdigest(), "command": command,
-                "tool_call_id": None, "rule": "queue", "unit": "node tsc", **more}
+                "tool_call_ids": [], "rule": "queue", "unit": "node tsc", **more}
 
     def test_queued_note_names_the_held_count_in_claude_and_codex(self):
         self.hold(3)
@@ -6445,21 +6445,29 @@ class CheckQueueNotice(unittest.TestCase):
     def test_codex_notice_matches_by_tool_call_id(self):
         # Codex reports a yielded command when a later poll sees it end: no duration_ms, and
         # the kill can be minutes old.
-        self.log(self.kill(command="node tsc", seconds_ago=600, tool_call_id="call_7", agent_pid=1))
+        self.log(self.kill(command="node tsc", seconds_ago=600, tool_call_ids=["call_7"], agent_pid=1))
         out = json.loads(self.raw({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "call_7",
                                    "tool_input": {"command": "pnpm typecheck"}, "tool_response": "..."}))
         self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "PostToolUse")
         self.assertIn("check queue stayed full", out["hookSpecificOutput"]["additionalContext"])
 
     def test_codex_notice_ignores_another_tool_calls_kill(self):
-        self.log(self.kill(tool_call_id="call_7"), self.kill(tool_call_id=None))
+        self.log(self.kill(tool_call_ids=["call_7"]), self.kill(tool_call_ids=[]))
         payload = {"hook_event_name": "PostToolUse", "tool_use_id": "call_8", "tool_input": {"command": "bun run typecheck"}}
         self.assertEqual(self.raw(payload), "")
         self.assertEqual(self.raw({**payload, "tool_use_id": ""}), "")
 
+    def test_each_codex_call_a_kill_ended_gets_the_notice_once(self):
+        self.log(self.kill(tool_call_ids=["call_a", "call_b"]))
+        for call in ("call_a", "call_b"):
+            payload = {"hook_event_name": "PostToolUse", "tool_use_id": call, "tool_input": {"command": "x"}}
+            with self.subTest(call=call):
+                self.assertIn("check queue", run_hook(self.HOOK, payload, env=self.env))
+                self.assertEqual(self.raw(payload), "")
+
     def test_notice_reads_a_bounded_log_tail(self):
         stops = [{"event": "stop", "time": "t", "at": time.time(), "unit": "node tsc", "command": "x" * 200}] * 1500
-        self.log(self.kill(tool_call_id="call_old"), *stops, self.kill(tool_call_id="call_new"))
+        self.log(self.kill(tool_call_ids=["call_old"]), *stops, self.kill(tool_call_ids=["call_new"]))
         self.assertGreater((self.logs / "agent-memory-guard.log").stat().st_size, 256 * 1024)
         payload = {"hook_event_name": "PostToolUse", "tool_input": {"command": "x"}}
         self.assertIn("check queue", run_hook(self.HOOK, {**payload, "tool_use_id": "call_new"}, env=self.env))

@@ -10,9 +10,10 @@ Bash under one manifest id, so the guard and its messages are selected together:
   included, or a queued check's processes, so the agent otherwise sees a failure with no
   output and tends to rerun it as is.
 - PostToolUse (Codex, which has no failure event and runs it after every Bash call, a
-  yielded command's when a later poll sees it end): the same, for the kill whose
-  tool_call_id, the CODEX_TOOL_CALL_ID the guard read from the command's environment, is
-  this call's tool_use_id.
+  yielded command's when a later poll sees it end): the same, for each kill whose
+  tool_call_ids, the CODEX_TOOL_CALL_ID of each call the guard killed, read from its
+  processes' environment, hold this call's tool_use_id. A kill of a server Codex keeps,
+  such as its code-mode host, ends several calls, so each gets the notice once.
 
 In Claude, a log entry is this run's kill when its full-command hash matches, it was logged
 while the command ran, and the agent it names is an ancestor of this hook, so another
@@ -105,11 +106,14 @@ def main():
             done = set(reported.read().split())
     except OSError:
         done = set()
-    found = [entry for entry in kills() if repr(entry["at"]) not in done]
     if event == "PostToolUse":
-        call = payload.get("tool_use_id")
-        mine = [entry for entry in found if call and entry.get("tool_call_id") == call]
+        call = payload.get("tool_use_id") or ""
+        key = lambda entry: f"{entry['at']!r}:{call}"  # one kill can end several calls
+        mine = [entry for entry in kills() if call and call in (entry.get("tool_call_ids") or [])
+                and key(entry) not in done]
     else:
+        key = lambda entry: repr(entry["at"])
+        found = [entry for entry in kills() if key(entry) not in done]
         command = (payload.get("tool_input") or {}).get("command", "")
         digest = hashlib.sha256(command.encode()).hexdigest()
         # One second covers the gap between Claude Code's timer and the guard's clock read.
@@ -122,7 +126,7 @@ def main():
         return
     try:
         with open(REPORTED, "a") as reported:
-            reported.writelines(repr(entry["at"]) + "\n" for entry in mine)
+            reported.writelines(key(entry) + "\n" for entry in mine)
     except OSError:
         pass  # the notice matters more than deduplicating it
     print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": notice(mine[0])}}))

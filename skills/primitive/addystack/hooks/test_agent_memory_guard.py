@@ -810,8 +810,16 @@ class AgentCommand(unittest.TestCase):
         execed = guard.Proc(*proc(200, 90, marked=True, argv=("node", "tsc"))[:12], tool_call="call_1")
         commands = owners.attribute(snapshot(CODEX, execed))
         line = guard.entry(owners, 200, commands[200], "why", rule="queue")
-        self.assertEqual((line["command"], line["tool_call_id"], line["rule"], line["agent_pid"]),
-                         ("pnpm typecheck", "call_1", "queue", 90))
+        self.assertEqual((line["command"], line["tool_call_ids"], line["rule"], line["agent_pid"]),
+                         ("pnpm typecheck", ["call_1"], "queue", 90))
+
+    def test_a_kill_of_a_shared_host_names_every_call_it_ends(self):
+        owners = Owners()
+        host = proc(200, 90, argv=("code-mode-host",))
+        calls = [guard.Proc(*proc(pid, 200, argv=("node", "tsc"))[:12], tool_call=call)
+                 for pid, call in ((201, "call_a"), (202, "call_b"))]
+        commands = owners.attribute(snapshot(CODEX, host, *calls))
+        self.assertEqual(guard.entry(owners, 200, commands[200], "over")["tool_call_ids"], ["call_a", "call_b"])
 
 
 TSC = ("node", "/x/node_modules/typescript/bin/tsc", "--noEmit")
@@ -1073,7 +1081,7 @@ class CheckQueue(unittest.TestCase):
         q.now += guard.HOLD_SECONDS
         q.tick(q.check(1, 1000), q.check(2, 1000, tool_call="call_9"))
         [line] = [line for line in q.lines if line.get("rule") == "queue"]
-        self.assertEqual((line["tool_call_id"], line["unit"], line["agent_pid"]), ("call_9", "node tsc --noEmit", 100))
+        self.assertEqual((line["tool_call_ids"], line["unit"], line["agent_pid"]), (["call_9"], "node tsc --noEmit", 100))
         self.assertIn("check queue stayed full", line["reason"])
 
     def test_a_queue_kill_hashes_the_whole_command(self):

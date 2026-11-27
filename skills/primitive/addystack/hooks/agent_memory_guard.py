@@ -583,7 +583,8 @@ def agent_command(argv):
 def entry(owners, head, members, reason, **more):
     """The log line for killing members of the command `head`, the fields
     agent-memory-guard-notice.py matches on: agent_pid and the full command's hash for
-    Claude, tool_call_id (CODEX_TOOL_CALL_ID) for Codex. `more` adds fields, such as
+    Claude, tool_call_ids for Codex: every CODEX_TOOL_CALL_ID among the members, since a
+    server Codex keeps, such as its code-mode host, runs several calls. `more` adds fields, such as
     rule="queue" and unit=<text>."""
     first = next((p for p in members if p.ident == head), None)
     text = command_text(owners.argv.get(head) or (first or members[0]).argv)
@@ -591,7 +592,7 @@ def entry(owners, head, members, reason, **more):
             "processes": len(members), "gb": round(footprint(members) / GB, 1),
             "agent_pid": first.ppid if first and first.ppid > 1 else None,
             "command_sha256": hashlib.sha256(text.encode()).hexdigest(), "command": text[:500],
-            "tool_call_id": next((p.tool_call for p in members if p.tool_call), None)}
+            "tool_call_ids": sorted({p.tool_call for p in members if p.tool_call})}
     line.update(more)
     return line
 
@@ -1006,7 +1007,7 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
         return None
     head, reason = found
     # Logged before the kill, so agent-memory-guard-notice.py finds it once the command
-    # fails; agent_pid, the full command's hash, and tool_call_id tell it which run died.
+    # fails; agent_pid, the full command's hash, and tool_call_ids tell it which run died.
     line = entry(owners, head, commands[head], reason)
     record(line)
     _, refused = kill(owners, head, scan)
