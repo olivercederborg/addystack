@@ -165,8 +165,10 @@ class OneWayDoors(unittest.TestCase):
         # A list without its period stops at the blank line or the comment's end.
         self.assertEqual(named('One-way doors include money movement\n\n## Auth\n'), ['money-movement at pay.ts:3'])
         self.assertEqual(named('<!-- One-way doors include money movement --> auth\n'), ['money-movement at pay.ts:3'])
-        # Only an area's own name counts; a narrower kind is the agent's to gate.
-        self.assertEqual(named('One-way doors include authorization changes.\n'), [])
+        self.assertEqual(named('One-way doors include sent emails\n## Auth\n'), [])
+        # Only an item that is an area's own name counts, in either spelling; a narrower one is the agent's to gate.
+        self.assertEqual(named('One-way doors include authorization changes, or changes to money movement limits.\n'), [])
+        self.assertEqual(named('One-way doors include auth or money-movement.\n'), ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
         self.assertIn('by PULL_REQUEST_TEMPLATE.md:2:', self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md':
                                                                                    '# PR\nOne-way doors include auth.\n'})[0])
 

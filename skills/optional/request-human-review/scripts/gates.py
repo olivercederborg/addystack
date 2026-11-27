@@ -42,8 +42,9 @@ SECOND_OPINION = ('ran', 'not-needed', 'missing')
 SHA = re.compile(r'[0-9a-f]{40}')
 TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
 # A repository's own list of one-way doors, in a PR template where GitHub looks for one.
-# The list ends with its sentence, a blank line, or the comment it sits in.
-DOORS = re.compile(r'one-way\s+doors\s+include:?\s+(.+?)(?=\.(?:\s|\Z)|-->|\n\s*\n|\Z)', re.I | re.S)
+# The list ends with its sentence, a blank line, a heading, or the comment it sits in.
+DOORS = re.compile(r'one-way\s+doors\s+include:?\s+(.+?)(?=\.(?:\s|\Z)|-->|\n\s*\n|\n\s*#|\Z)', re.I | re.S)
+ITEM = re.compile(r',|\s(?:and|or)\s')
 TEMPLATE = re.compile(r'(\.github/|docs/)?pull_request_template\.md', re.I)
 TEMPLATE_FOLDERS = ('.github/', '', 'docs/')
 
@@ -105,17 +106,18 @@ def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
 
 def doors(verdict: dict, base: str, cwd: str = '.') -> list:
     """Problems with a verdict against the repository's own one-way doors at base, the PR's base
-    now: a sensitive area they name by its own name is a one-way door even when it follows a
-    pattern, so it needs a one-way-door decision at its code. A narrower kind, such as
-    authorization changes, is the agent's to gate."""
+    now: a sensitive area that is an item of their list by its own name is a one-way door even
+    when it follows a pattern, so it needs a one-way-door decision at its code. A narrower item,
+    such as authorization changes, is the agent's to gate."""
     definition = one_way_doors(base, cwd)
     if definition is None:
         return []
     source, listed = definition
+    items = {item.strip().lower() for item in ITEM.split(listed)}
     covered = {decision['code'] for decision in verdict['decisions'] if decision['gate'] == 'one-way-door'}
     return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
             'decision at that code' for entry in verdict['sensitive']
-            if re.search(rf'\b{entry["area"].replace("-", " ")}\b', listed, re.I) and entry['code'] not in covered]
+            if items & {entry['area'], entry['area'].replace('-', ' ')} and entry['code'] not in covered]
 
 
 def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
