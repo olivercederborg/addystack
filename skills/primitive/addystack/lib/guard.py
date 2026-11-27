@@ -150,7 +150,9 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List
     """Each change as (kind, target, detail, start), and whether the ledger records the
     guard as install's once they're made; reconcile runs a stop before writing the ledger. Kind `guard` starts the agent from its plist when start
     is True, and stops it and removes the plist when False; `shell-limit` is a write only.
-    Adds each file to write to writes. Raises ValueError as _read does."""
+    Adds each file to write to writes. Raises ValueError as _read does, and when launchctl
+    can't say whether the guard is loaded, so a failed start never removes the plist of a
+    guard that's still running."""
     path = plist()
     if not hookset.guard_wanted(resolved):
         if owned:
@@ -164,8 +166,12 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List
         writes[path] = text
         changes.append(("guard", path, ("writes" if current is None else "updates")
                         + " the agent memory guard's launchd plist and starts it", True))
-    elif not loaded():
-        changes.append(("guard", path, "starts the agent memory guard, which isn't loaded", True))
+    else:
+        state = loaded()
+        if state is None:
+            raise ValueError(f"launchctl couldn't say whether {LABEL} is loaded; run addystack install again")
+        if state is False:
+            changes.append(("guard", path, "starts the agent memory guard, which isn't loaded", True))
     limit = shell_limit()
     if limit is None or limit > LIMIT:
         env = _read(zshenv())
@@ -212,8 +218,12 @@ def problems(resolved: Resolved, limit: Optional[int]) -> List[str]:
         lines.append(f"{plist()} is missing")
     elif current != plist_text(resolved):
         lines.append(f"{plist()} differs from the kit's")
-    elif not loaded():
-        lines.append("the agent memory guard isn't loaded")
+    else:
+        state = loaded()
+        if state is None:
+            lines.append("launchctl couldn't say whether the agent memory guard is loaded")
+        elif state is False:
+            lines.append("the agent memory guard isn't loaded")
     if limit is None or limit > LIMIT:
         got = "none" if limit is None else f"{limit:,}"
         lines.append(f"a new agent shell gets no process limit of {LIMIT:,} or less (it gets {got}); "

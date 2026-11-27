@@ -935,6 +935,18 @@ class Guard(Home):
         self.assertEqual(self.probe("CLAUDECODE"), "2000")
         self.assertEqual(self.probe("T3CODE_THREAD_ID"), "3000")
 
+    def test_a_failed_query_never_starts_over_a_running_guard(self):
+        # The review's repro: launchctl answering neither loaded nor 113 must not pass for "not
+        # loaded", or the failed start that follows deletes a running guard's plist.
+        self.select()
+        self.ok("install")
+        self.stub("launchctl", "exit 5")
+        result = self.cli("install")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("couldn't say whether", result.stderr)
+        self.assertTrue(self.plist.exists())
+        self.assertIn("couldn't say whether the agent memory guard is loaded", self.doctor_line(self.cli("doctor").stdout))
+
     def test_a_failed_query_doesnt_pass_for_a_stopped_guard(self):
         self.select()
         self.ok("install")
