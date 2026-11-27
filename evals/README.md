@@ -2,9 +2,9 @@
 
 ## How we improve a skill
 
-Each skill's evals live in `evals/<skill>/`. Scenarios in an `evals.json` run through
-`maintainer/evals.py`, from the repo root; a folder with only a README, such as
-`scope-grill/`, runs by hand as its README says.
+Each skill's evals live in `evals/<skill>/`. A scenario in an `evals.json` that sets a
+`cwd` runs through `maintainer/evals.py`, from the repo root; the rest, such as
+`scope-grill/`'s README rubric, run by hand as their README says.
 
 ```sh
 maintainer/evals.py list [skill]                     # scenarios, turns, assertions
