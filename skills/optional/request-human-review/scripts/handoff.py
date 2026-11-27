@@ -25,7 +25,8 @@ is v2, and a reader takes the last block it trusts:
     <!-- addystack-handoff:v1
     {"pr", "base", "head", "by", "chosen_by": "rule" | "author", "second_opinion": why | null,
      "decisions": [{"key", "id", "gate", "decision", "ask", "why", "code", "domain"}],
-     "reviewers": [{"login", "role", "domains"}], "engaged": [login], "away": [{"login", "reason"}]}
+     "reviewers": [{"login", "role", "domains"}], "engaged": [login], "away": [{"login", "reason"}],
+     "unfilled": [domain | null]}
     -->
 """
 from __future__ import annotations
@@ -142,9 +143,19 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     def holds(records):
         return {(reviewer['login'].lower(), name) for reviewer in records for name in reviewer['domains'] if name}
     moved = holds(request + kept) - (holds(last['reviewers']) if same else set())
+    asked = [*engaged, *(reviewer['login'] for reviewer in request)]
     away = [{'login': login, 'reason': facts['standing'][login.lower()]['away']}
             for login in reviewers.unique(name for rule in facts['rules'] for name in rule['names'])
-            if login.lower() != author.lower() and facts['standing'][login.lower()]['away']]
+            if login.lower() != author.lower() and facts['standing'][login.lower()]['away']
+            and not reviewers.has(asked, login)]
+    def filled(name):
+        owners = [login for login in (reviewers.names(facts['rules'], name)[:2] if name else [])
+                  if login.lower() != author.lower()]
+        return (any(name in reviewer['domains'] for reviewer in request) or name in held
+                or any(reviewers.has(owners, login) for login in asked) or (not owners and bool(asked)))
+    # Domains the pick left with nobody, because everyone else was away or already asked.
+    unfilled = [] if chosen else list(dict.fromkeys(decision['domain'] for decision in placed
+                                                     if not filled(decision['domain'])))
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:
@@ -157,7 +168,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,
              'decisions': [{field: decision.get(field) for field in
                             ('key', 'id', 'gate', 'decision', 'ask', 'why', 'code', 'domain')} for decision in placed],
-             'reviewers': request + kept, 'engaged': engaged, 'away': away}
+             'reviewers': request + kept, 'engaged': engaged, 'away': away, 'unfilled': unfilled}
     return {**result, 'comment': _render(disclosure, block, facts['rules'])}
 
 
@@ -231,10 +242,13 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
     lines += ['- Away, so not asked: ' + ', '.join(f'`{person["login"]}` ({person["reason"]})'
                                                   for person in block['away'])] if block.get('away') else []
-    if not requested:
+    if block.get('unfilled') and (block.get('away') or block['engaged'] or block['reviewers']):
+        names = ', '.join(f'`{name}`' if name else 'no domain' for name in block['unfilled'])
+        lines.append(f'- Nobody to ask for {names}: everyone else REVIEWERS names is away or already asked. '
+                     'Ask someone by hand.')
+    elif not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
-                     '- Nobody to ask: everyone else REVIEWERS names is away. Ask someone by hand.' if block.get('away')
-                     else "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
+                     "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.
     payload = json.dumps(block, ensure_ascii=False).replace('<', '\\u003c').replace('>', '\\u003e')
     return '\n'.join(lines + ['', '</details>', '', f'<!-- {MARK}:v{VERSION}', payload, '-->']) + '\n'

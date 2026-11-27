@@ -180,7 +180,18 @@ class Plan(unittest.TestCase):
         nobody = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(standing=standing(away={'alice', 'bob', 'dave'})))
         self.assertEqual((nobody['why'], nobody['request']), ('nobody to ask', []))
-        self.assertIn('- Nobody to ask: everyone else REVIEWERS names is away.', nobody['comment'])
+        self.assertIn('- Nobody to ask for `billing`: everyone else REVIEWERS names is away or already asked.',
+                      nobody['comment'])
+        # alice already covers billing, but nobody is left for auth: the comment says so.
+        partly = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
+                           self.facts(engaged=['alice'], standing=standing(away={'bob', 'dave'})))
+        self.assertEqual(partly['request'], [])
+        self.assertIn('- Nobody to ask for `auth`:', partly['comment'])
+        self.assertNotIn('cover these decisions', partly['comment'])
+        # The author's own pick is requested, so it isn't listed as away and not asked.
+        chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                           self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
+        self.assertNotIn('Away, so not asked', chosen['comment'])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
