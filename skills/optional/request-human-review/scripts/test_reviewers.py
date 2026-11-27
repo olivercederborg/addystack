@@ -35,6 +35,7 @@ CONTEXT.md
 **/docs/adr/
 """
 RULES = reviewers.parse(FILE)
+WEIGHTS = {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10}
 
 
 def decision(code, id_='D1'):
@@ -53,6 +54,16 @@ class Parse(unittest.TestCase):
         rules = reviewers.parse('# settings\npriority: 3 2 1\n/early/ @alice\n\n## web\n/apps/web/ @bob\n')
         self.assertEqual([(rule['pattern'], rule['domain'], rule['names']) for rule in rules],
                          [('/apps/web/', 'web', ['bob'])])
+
+    def test_settings_come_from_the_lines_above_the_first_domain(self):
+        text = '# how the pick weighs people\npriority: 3 2 1\nopen ask: 1\nshare: 10\nshare since: 2026-12-01\n\n' + FILE
+        self.assertEqual(reviewers.settings(text), {'weights': WEIGHTS, 'share_since': reviewers.dt.date(2026, 12, 1)})
+
+    def test_a_missing_or_unreadable_setting_is_named(self):
+        with self.assertRaises(ValueError) as raised:
+            reviewers.settings('priority: 3 2\nshare: lots\nshare since: 2026-12-01\n## web\nopen ask: 1\n')
+        for named in ('line 1: priority: 3 2', 'line 2: share: lots', 'no `open ask:` line', 'no `priority:` line'):
+            self.assertIn(named, str(raised.exception))
 
     def test_a_pinned_heading_names_its_domain_and_comments_are_skipped(self):
         self.assertEqual([(rule['domain'], rule['names']) for rule in RULES if rule['domain'] == 'auth'],

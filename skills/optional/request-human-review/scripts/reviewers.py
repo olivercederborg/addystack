@@ -8,12 +8,20 @@ matches a path wins. `## <domain> · pinned` names the domain `<domain>`. The `u
 lists patterns that belong to no domain, such as an ADR, which belongs to the PR's main
 change instead. A domain may list nobody.
 
+The lines above the first domain hold the pick's settings, one `name: value` each:
+
+    priority: 3 2 1          points for a domain's P1, P2 and P3; nobody else gets any
+    open ask: 1              minus this for each review request they haven't started
+    share: 10                minus this times how far their review share is above the lowest
+    share since: 2026-12-01  review shares count from this date, at most 14 days back
+
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
     placed   = {**decision, 'domain': 'billing' | None}            None: no domain, the fallback
     reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'fallback', 'domains': ['billing']}
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 PATH = '.github/REVIEWERS'
@@ -45,6 +53,42 @@ def parse(text: str) -> list:
     if problems:
         raise ValueError('REVIEWERS: ' + '; '.join(problems))
     return rules
+
+
+def settings(text: str) -> dict:
+    """The pick's settings from the lines above the first domain:
+    {'weights': {'P1', 'P2', 'P3', 'open ask', 'share'}, 'share_since': date}, refused with each
+    line it can't read and each setting it lacks named."""
+    found, problems = {}, []
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if line.startswith('## '):
+            break
+        if not line or line.startswith('#'):
+            continue
+        name, colon, value = (part.strip() for part in line.partition(':'))
+        try:
+            if not colon or name not in SETTINGS:
+                raise ValueError
+            found[name] = SETTINGS[name](value)
+        except ValueError:
+            problems.append(f'line {number}: {line}')
+    problems += [f'no `{name}:` line above the first domain' for name in SETTINGS if name not in found]
+    if problems:
+        raise ValueError('REVIEWERS settings: ' + '; '.join(problems))
+    first, second, third = found['priority']
+    return {'weights': {'P1': first, 'P2': second, 'P3': third, 'open ask': found['open ask'], 'share': found['share']},
+            'share_since': found['share since']}
+
+
+def _priority(value: str) -> tuple:
+    points = tuple(float(point) for point in value.split())
+    if len(points) != 3:
+        raise ValueError
+    return points
+
+
+SETTINGS = {'priority': _priority, 'open ask': float, 'share': float, 'share since': dt.date.fromisoformat}
 
 
 def _matcher(pattern: str):
