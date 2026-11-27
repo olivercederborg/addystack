@@ -37,6 +37,9 @@ change to `project.md` before the turn ends.
   repo's `Mode:` line from the user's instructions, and write `standing-rules.md` from
   this chat's rules.
 
+Then open what `<kit>/bin/addystack status-page` prints, the
+[status page](references/status-page.md) (`<kit>`: the addystack skill's folder).
+
 **Done when:** `project.md` names the goal, its proof, and this thread's link, and the
 thread is pinned under its `◆` title.
 
@@ -89,20 +92,19 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
 ```
 
 - **Slots**: at most two workers or subthreads on this machine (one on a smaller one) build
-  or run heavy checks at once. A worker holds a slot while its task runs, including
-  while it waits on a pending question; one whose task ended holds none, though it
-  waits on a review, CI, or a call. Every later task you send a worker (an
+  or run heavy checks at once. A worker holds a slot while its task runs, even
+  while a question waits; one whose task ended holds none, though it waits on a
+  review, CI, or a call. Every later task you send a worker (an
   answer, a babysit pass, a retry, more work) goes into a free slot ahead of queued
   units, since it finishes an open PR. A task that only reads, reviews code, or drives
   an app without building takes none, and starts once Parallel by default lets it.
   Queue the rest, oldest first, and start one as a slot frees.
 - **Parallel by default**: start every step whose inputs exist now, so verifies, in-app
-  checks, the next PR, and probes overlap; a pilot's siblings need its proven brief
-  (step 2). A test-only fix leaves running checks standing: follow it with a delta
-  check. Serialize only for a shared resource (the one screen for in-app or UI checks,
-  one worktree, a stack layer being rewritten), for machine load (heavy builds and
-  suites stay within Slots, since timing and CPU tests flake under load), or for a check
-  on a head that a pending non-test fix will change.
+  checks, the next PR, and probes overlap. A test-only fix leaves running checks
+  standing: follow it with a delta check. Serialize only for a shared resource (the one
+  screen for in-app or UI checks, one worktree, a stack layer being rewritten), for
+  machine load (heavy builds and suites stay within Slots, since timing and CPU tests
+  flake under load), or for a check on a head that a pending non-test fix will change.
 - **Startup**: within about two minutes of each `delegate_task`, confirm the worker
   started with a status read of its thread (`t3_thread_read`, with its `environmentId`
   on another machine): `running`, `waiting`, or `completed` counts as started; `failed`,
@@ -142,10 +144,11 @@ inputs or one of Parallel by default's three reasons.
   (`list`, then `read`) on the worker's thread, set its State to `waiting`, so the stuck
   rule passes it over, and queue it (step 5). A worker on another machine
   wakes no one ([across machines](references/across-machines.md)).
-- **A PR watch**: once a worker opens a PR, `watch_pull_request` it and list it under
-  Listening. On a wake, send the event to the PR's owner once step 3 lets its task
-  start, telling it to run babysit's pass and that you keep the watch. When the owner
-  reports maintenance done, `unwatch_pull_request` that PR unless it's open, ready, and the user's.
+- **A PR watch**: once a worker opens a PR, `watch_pull_request` and
+  `link_pull_requests` it here, and list it under Listening. On a wake, send the event
+  to the PR's owner once step 3 lets its task start, telling it to run babysit's pass
+  and that you keep the watch. When the owner reports maintenance done,
+  `unwatch_pull_request` that PR unless it's open, ready, and the user's.
 - **The tick**: while any worker is running, waiting, `overdue`, or `unknown`, or a PR
   is under Watches, Listening's Heartbeat is `tick` (`scripts/project.py <folder> listen
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
@@ -184,9 +187,8 @@ no probe settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
---from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
-oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
-included, ends on the top item: the
+--from "<worker> <thread link>"`. While it holds one, every reply here, ⏳ statuses and
+quiet wakes included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip and the need that leads the
 turn block's `needs`.
@@ -203,8 +205,7 @@ top item or the one-line status.
 
 The PR's worker gets each PR merge-ready: restacked, verify-work Done, and checks green,
 or not run on a draft whose CI starts on ready. It fixes what
-`<kit>/hooks/merge-gate.py --dry-run '<line>'` (`<kit>`: the addystack skill's folder)
-names on the line
+`<kit>/hooks/merge-gate.py --dry-run '<line>'` names on the line
 `scripts/stack.sh where #N` prints until only a go or that CI is left. You run the line,
 since merge-gate takes a go only from the user's own latest prompt in the transcript
 that merges, never a worker's. Run it once the repo's trust value in
