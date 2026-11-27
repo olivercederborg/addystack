@@ -1,9 +1,9 @@
 """Tests for .githooks/pre-push: it runs the test suites as dagger check when Dagger
 reaches an engine, blocks the push when a check fails, when the module doesn't load, or
-when a pattern matches no check, and runs them on the host when dagger or its engine is
-missing; its macos_only list names every hook test that skips off macOS, since only that
-list runs on the Mac; and for .githooks/pre-commit: it runs only the touched folders'
-suites on the host, and never Dagger."""
+when a pattern matches no check, and when dagger or its engine is missing, unless
+PRE_COMMIT_HOST_SUITES=1 runs them on the host instead; its macos_only list names every
+hook test that skips off macOS, since only that list runs on the Mac; and for
+.githooks/pre-commit: it runs only the touched folders' suites on the host, and never Dagger."""
 import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
@@ -107,6 +107,8 @@ class DaggerOrHost(unittest.TestCase):
         if dagger:
             (self.bin / "dagger").write_text(FAKE_DAGGER)
             (self.bin / "dagger").chmod(0o755)
+        else:  # without dagger the push stops unless the host suites are asked for
+            extra.setdefault("PRE_COMMIT_HOST_SUITES", "1")
         env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
         untracked, refs = extra.pop("UNTRACKED", ()), extra.pop("REFS", 1)
         # OLD_TIP pushes a commit from before .githooks/suites.sh, made under this checkout's
@@ -151,8 +153,16 @@ class DaggerOrHost(unittest.TestCase):
         self.assertIn("a Dagger check failed", run.stderr)
         self.assertFalse(self.ran.exists())
 
-    def test_without_an_engine_the_host_suites_run(self):
-        run, calls = self.push(engine=1)
+    def test_without_an_engine_the_push_stops(self):
+        run, calls = self.push(engine=1, PRE_COMMIT_HOST_SUITES="")
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("Start Docker or your container runtime", run.stderr)
+        self.assertIn("PRE_COMMIT_HOST_SUITES=1", run.stderr)
+        self.assertEqual(calls, [LIST, "core version"])
+        self.assertFalse(self.ran.exists())
+
+    def test_without_an_engine_the_host_suites_run_when_asked(self):
+        run, calls = self.push(engine=1, PRE_COMMIT_HOST_SUITES="1")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("Dagger can't reach its engine", run.stdout)
         self.assertEqual(calls, [LIST, "core version"])
@@ -269,7 +279,16 @@ class DaggerOrHost(unittest.TestCase):
         run, _ = self.push(dagger=False)
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertIn("dagger isn't installed", run.stdout)
+        self.assertIn("PRE_COMMIT_HOST_SUITES=1", run.stdout)
         self.assertTrue(self.ran.exists())
+
+    def test_without_dagger_the_push_stops_and_says_how_to_install_it(self):
+        # Set empty, not left out, since the test's environment copies one that may export it.
+        run, _ = self.push(dagger=False, PRE_COMMIT_HOST_SUITES="")
+        self.assertEqual(run.returncode, 1)
+        self.assertIn("brew install dagger", run.stderr)
+        self.assertIn("PRE_COMMIT_HOST_SUITES=1", run.stderr)
+        self.assertFalse(self.ran.exists())
 
     @unittest.skipUnless(BASH_3, "needs /bin/bash older than 4, as on macOS")
     def test_bash_3_runs_a_skill_suite_on_the_host(self):

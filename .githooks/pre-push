@@ -3,7 +3,9 @@
 # sends, so a failure is blocked before the branch reaches GitHub; .githooks/pre-commit
 # runs only the lints, the touched skills' suites, and the suites Dagger leaves out
 # (preferences, preset, maintainer/) on this machine. `gh stack push`
-# and `gh stack submit` run git push, which runs this hook.
+# and `gh stack submit` run git push, which runs this hook. Without dagger, or an engine
+# it can reach, the push stops; PRE_COMMIT_HOST_SUITES=1 runs the suites on this machine
+# instead, which takes 5 to 10 minutes.
 # Enable once per clone (it enables pre-commit too):
 #   git config core.hooksPath .githooks
 set -euo pipefail
@@ -38,8 +40,9 @@ unset $(git rev-parse --local-env-vars)
 # The checks for one tree: today's Dagger block, unchanged, from the kit at $root.
 check_tree() {
 # The same suites as Dagger checks (.dagger/src/skills/main.py), which re-run only the
-# suites whose files changed, in parallel; the lints above already ran. Without dagger
-# (a Linux machine without it), or an engine it can reach, the suites run here. Listing the checks first
+# suites whose files changed, in parallel; the lints above already ran. Without dagger, or
+# an engine it can reach, the push stops and says how to fix it, unless PRE_COMMIT_HOST_SUITES=1
+# asks for the suites to run here; it never does when Dagger works. Listing the checks first
 # reaches the engine before any runs, so a failed check always blocks the commit, and a
 # pattern no check matches blocks it too, since dagger check runs nothing for it and exits 0.
 # An engine stuck restarting (a corrupt cache can crash it on every start) makes the
@@ -81,6 +84,18 @@ unmatched() {  # each of checks that no name in $listed matches
     printf ' %s' "$pattern"
   done
 }
+host_or_stop() {  # host_or_stop WHY FIX...: the suites here when PRE_COMMIT_HOST_SUITES=1, else stop
+  local why=$1
+  shift
+  if [ "${PRE_COMMIT_HOST_SUITES:-}" = 1 ]; then
+    echo "pre-commit: $why, so the test suites run here (PRE_COMMIT_HOST_SUITES=1)"
+    host_suites
+  else
+    echo "pre-commit: $why. $*, or push with PRE_COMMIT_HOST_SUITES=1 to run the test suites" \
+         "on this machine instead (5 to 10 minutes)" >&2
+    exit 1
+  fi
+}
 export DAGGER_NO_NAG=1
 cd "$root"
 listing=0
@@ -88,8 +103,8 @@ if command -v dagger > /dev/null; then
   listed=$(within "$wait_for_dagger" dagger check -l -s "${checks[@]}") || listing=$?
 fi
 if ! command -v dagger > /dev/null; then
-  echo "pre-commit: dagger isn't installed, so the test suites run here"
-  host_suites
+  host_or_stop "dagger isn't installed" "Install it (macOS: \`brew install dagger\`; elsewhere" \
+               "https://docs.dagger.io/install) and a container runtime such as Docker"
 elif [ "$listing" = 124 ]; then
   echo "pre-commit: Dagger's engine didn't answer in ${wait_for_dagger}s, so the test suites run here." \
        "If \`docker ps\` shows it restarting, its cache is likely corrupt: remove the container and its volume"
@@ -99,8 +114,7 @@ elif [ "$listing" != 0 ]; then
     echo "pre-commit: dagger check -l failed, so the Dagger module didn't load; run it to see why" >&2
     exit 1
   fi
-  echo "pre-commit: Dagger can't reach its engine (is Docker running?), so the test suites run here"
-  host_suites
+  host_or_stop "Dagger can't reach its engine" "Start Docker or your container runtime"
 elif missing=$(unmatched) && [ -n "$missing" ]; then
   echo "pre-commit: no Dagger check matches$missing; fix the checks list in .githooks/pre-push" >&2
   exit 1
