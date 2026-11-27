@@ -62,14 +62,27 @@ class Link(NamedTuple):
     def wakes(self):
         """Whether T3 wakes the thread on this PR: watched, and not stack-dismissed
         (T3's pullRequestWatchTasks skips those)."""
-        raise NotImplementedError
+        return self.watched and self.source != "stack-dismissed"
 
 
 def pull_requests(thread, db=None):
     """The thread's PR links, from its projection's payload. Opens and closes its own
     connection unless given one. Raises sqlite3.Error when the database can't be read and
     LookupError when it has no such thread."""
-    raise NotImplementedError
+    own = db is None
+    db = connect() if own else db
+    try:
+        row = db.execute("select payload_json from orchestration_v2_projection_threads "
+                         "where thread_id = ? and deleted_at is null", (thread,)).fetchone()
+    finally:
+        if own:
+            db.close()
+    if row is None:
+        raise LookupError(thread)
+    # `watch` is an object while the watch is on and null once it ends; `endedWatch` keeps the last.
+    return [Link(str(link.get("repository")).lower(), link.get("number"), bool(link.get("watch")),
+                 link.get("source"), (link.get("snapshot") or {}).get("state") == "open")
+            for link in json.loads(row[0]).get("pullRequests") or []]
 
 
 def threads(db, session_id):

@@ -208,6 +208,55 @@ class KeychainHomeGuard(unittest.TestCase):
                 subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps({"tool_input": {"command": command}}),
                                capture_output=True, text=True, timeout=2, check=True)
 
+class T3PullRequests(unittest.TestCase):
+    """t3_child.pull_requests on a thread payload shaped as T3 wrote one on Nov 27, 2026:
+    `watch` is an object while the watch is on and null once T3 ended it, which `endedWatch` keeps."""
+    ENDED = {"startedAt": "2026-11-27T11:58:18Z", "headSha": "a5b7", "wakes": 1}
+
+    def link(self, number, watch=None, source="agent", state="open", repository="Acme/Tools"):
+        return {"host": "github.com", "repository": repository, "number": number, "source": source,
+                "url": f"https://github.com/{repository}/pull/{number}", "linkedAt": "2026-11-27T11:58:18Z",
+                "snapshot": {"state": state, "isDraft": True}, "stack": None, "watch": watch, "endedWatch": self.ENDED}
+
+    def db(self, links):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        path = os.path.join(folder, "statev2.sqlite")
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
+            db.execute("create table orchestration_v2_projection_threads (thread_id text, payload_json text, deleted_at text)")
+            db.execute("insert into orchestration_v2_projection_threads values ('lead', ?, null)",
+                       (json.dumps({"pullRequests": links}),))
+            db.execute("insert into orchestration_v2_projection_threads values ('gone', '{}', '2026-11-27')")
+        return path
+
+    def test_reads_each_links_watch_flag(self):
+        watch = {"startedAt": "2026-11-27T12:00:00Z", "headSha": "c0ff", "wakes": 0}
+        path = self.db([self.link(109), self.link(110, watch), self.link(111, watch, "stack-dismissed"),
+                        self.link(112, watch, state="merged")])
+        with unittest.mock.patch.object(t3_child, "STATE_DB", path):
+            links = t3_child.pull_requests("lead")
+        self.assertEqual(links, [("acme/tools", 109, False, "agent", True), ("acme/tools", 110, True, "agent", True),
+                                 ("acme/tools", 111, True, "stack-dismissed", True),
+                                 ("acme/tools", 112, True, "agent", False)])
+        self.assertEqual([link.wakes for link in links], [False, True, False, True])
+
+    def test_reads_through_a_given_connection_and_leaves_it_open(self):
+        with contextlib.closing(sqlite3.connect(self.db([self.link(109)]))) as db:
+            self.assertEqual(len(t3_child.pull_requests("lead", db)), 1)
+            db.execute("select 1")  # still open
+
+    def test_raises_in_doubt(self):
+        path = self.db([])
+        with unittest.mock.patch.object(t3_child, "STATE_DB", path):
+            self.assertEqual(t3_child.pull_requests("lead"), [])
+            for thread in ("missing", "gone"):
+                with self.subTest(thread), self.assertRaises(LookupError):
+                    t3_child.pull_requests(thread)
+        with unittest.mock.patch.object(t3_child, "STATE_DB", "/nonexistent/statev2.sqlite"), \
+                self.assertRaises(sqlite3.Error):
+            t3_child.pull_requests("lead")
+
+
 class T3Session(unittest.TestCase):
     """t3_child.in_t3 and cli, from the variables T3 set on each machine on Nov 26, 2026."""
     DESKTOP_CLI = "/Applications/T3.app/bin/t3"
