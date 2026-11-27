@@ -780,12 +780,18 @@ class Governor:
                 if self.running[top] >= UNIT_IDLE_TICKS:
                     del self.running[top]
                     self.cpu.pop(top, None)
+        alive = {proc.ident for members in commands.values() for proc in members}
         for top in [top for top in self.held if top not in units]:
-            del self.held[top]  # it exited, or a memory rule killed its command
-            self._save()
+            if top in alive:
+                continue  # still there, only not read as heavy this scan: keep it held
+            # It exited, or a memory rule killed its command: resume any member left.
+            signal_all(self.held[top]["members"].values(), signal.SIGCONT, self.send, self.current)
+            self._forget(top)
         self._measure(units, now, wall)
         # 2. Keep held units stopped, and let go of one whose agent no longer waits.
         for top, unit in list(self.held.items()):
+            if top not in units:
+                continue
             members = units[top].members
             if not self._attended(commands[unit["head"]], agents):
                 self._resume(top, units, now, wall, "its agent's shell is gone")

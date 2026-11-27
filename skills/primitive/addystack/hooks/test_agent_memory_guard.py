@@ -908,6 +908,22 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual(q.stopped(), {221, 222})
         self.assertIn('[222, 222]', q.saved_at_stop[222])
 
+    def test_a_held_units_survivors_resume_when_its_top_is_gone(self):
+        q = Queue(self, cap=1)
+        worker = proc(222, 221, argv=("node", "worker.js"))
+        q.tick(q.check(1), q.check(2) + [worker])
+        q.tick(q.check(1, 1000), [q.check(2, 1000)[0], worker])
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.governor.held, {})
+
+    def test_a_held_top_read_without_its_argv_stays_held(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        shell, top = q.check(2, 1000)
+        q.tick(q.check(1, 1000), [shell, top._replace(argv=[])])
+        self.assertEqual(q.stopped(), {221})
+        self.assertIn(221, q.governor.held)
+
     def test_a_held_unit_whose_agent_shell_is_gone_is_resumed(self):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))
