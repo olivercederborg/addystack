@@ -68,7 +68,15 @@ def domain(rules: list, path: str) -> str | None:
 
 def names(rules: list, of: str) -> list:
     """A domain's logins in priority order, across all its patterns."""
-    return list(dict.fromkeys(name for rule in rules if rule['domain'] == of for name in rule['names']))
+    return unique(name for rule in rules if rule['domain'] == of for name in rule['names'])
+
+
+def unique(logins) -> list:
+    """Each login once, ignoring case, in its first spelling."""
+    seen = {}
+    for login in logins:
+        seen.setdefault(login.lower(), login)
+    return list(seen.values())
 
 
 def file_of(code: str) -> str:
@@ -121,8 +129,7 @@ def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> l
             continue
         if asked:
             continue
-        pool = [login for login in dict.fromkeys(n for rule in rules for n in rule['names'])
-                if login.lower() != author.lower()]
+        pool = [login for login in unique(n for rule in rules for n in rule['names']) if login.lower() != author.lower()]
         if pool:
             login = min(pool, key=lambda login: (load.get(login.lower(), 0), login.lower()))
             picked.append({'login': login, 'role': 'fallback', 'domains': [name] if name else []})

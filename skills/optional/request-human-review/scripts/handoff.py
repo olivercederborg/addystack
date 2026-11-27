@@ -107,7 +107,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         uncovered = sorted({name for reviewer in extra for name in reviewer['domains'] if name})
         covered = sorted({decision['domain'] for decision in placed if decision['domain']} - set(uncovered))
         # Someone already requested, or who already reviewed, isn't asked again.
-        request = [{'login': login, 'role': 'chosen', 'domains': covered} for login in dict.fromkeys(chosen)
+        request = [{'login': login, 'role': 'chosen', 'domains': covered} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
         request += extra if with_suggested else []
     else:

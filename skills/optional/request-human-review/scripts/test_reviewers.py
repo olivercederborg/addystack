@@ -116,6 +116,8 @@ class Pick(unittest.TestCase):
     def test_logins_match_whatever_their_case(self):
         self.assertEqual(self.pick('billing', author='Alice'), [('bob', 'P2', ['billing'])])
         self.assertEqual(self.pick('billing', engaged=['Alice']), [])
+        twice = reviewers.parse('## billing\n/a/ @Alice\n/b/ @alice @Bob\n')
+        self.assertEqual(reviewers.names(twice, 'billing'), ['Alice', 'Bob'])
         self.assertEqual(self.pick('web', load={'Alice': 0, 'BOB': 1, 'carol': 1, 'dave': 1, 'erin': 1}),
                          [('alice', 'fallback', ['web'])])
 
