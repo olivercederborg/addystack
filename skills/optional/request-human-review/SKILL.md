@@ -10,7 +10,7 @@ metadata:
 # Request human review
 
 A human reviews decisions, not code. Code that follows the repo's established patterns
-needs a person only when the repo calls its kind a one-way door; a decision does. This skill holds that rule once, for both sides of
+needs a person only when it is a one-way door; a decision does. This skill holds that rule once, for both sides of
 a PR: the unattended reviewer that approves what needs no human, and the author who wants
 to know whether a person must look.
 
@@ -60,7 +60,7 @@ concurrency (retries, idempotency, races), and dependencies get a deeper review 
 `blast-radius`, and its verified findings join the review's. They need a human only through
 a decision above, such as a kind the repo's own one-way doors name. `gates.py check` reads
 the PR template's "One-way doors include …" list at the base and fails on a sensitive area
-it names with no one-way-door decision at that area's code.
+that is an item of it with no one-way-door decision at that area's code.
 
 ## 1. Read the decisions
 
