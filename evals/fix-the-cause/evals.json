@@ -1,0 +1,127 @@
+{
+  "scenarios": [
+    {
+      "id": "a8-sentry-digest",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "Diagnose Sentry issue FRANKLIN-NEXT-199 and fix its cause.\n\nError: An error occurred in the Server Components render. The specific message is omitted in production builds to avoid leaking sensitive details. A digest property is included on this error instance which may provide additional details about the nature of the error.\n\n- Project: franklin-next · error · ongoing\n- 904 events from 79 users, 43 in the last 24 hours\n- Culprit: /bookkeeping/exports\n\nYour investigation so far is in CONTEXT.md.",
+      "setup": "./setup.sh {cwd} a8-sentry-digest",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause, not just the symptom: client error boundaries re-report the redacted digest error that the server already reported, and Sentry groups every such event into one issue by its message",
+        "The reply shows the cause fix and a quicker or narrower fix side by side before recommending, each with what it costs (size, files, or risk) or who owns it; a recommendation that names only one fix fails",
+        "Option `a` keeps the client digest events (for example regrouped per page with a fingerprint, tagged with the digest so client and server events can be matched, or lowered in level) rather than dropping them in `beforeSend`. Dropping them would lose the error-mode session replays (replaysOnErrorSampleRate 1.0), which the session later found decisive. A reply whose `a` drops them fails, even when it names the replay cost"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "a9-third-party-noise",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "Look into this Slack thread from #error-monitoring and do what Oliver asks. The thread and your investigation so far are in CONTEXT.md. Don't post in Slack; if the thread should get an answer, end with a draft reply.",
+      "setup": "./setup.sh {cwd} a9-third-party-noise",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause, not just the symptom: errors from scripts that aren't part of Franklin's bundle reach Sentry because the client has no filter for third-party code (the `executors/` script is one instance, alongside 29N and 2AS)",
+        "The reply shows the cause fix and a quicker or narrower fix side by side before recommending, each with what it costs (size, files, or risk) or who owns it; a recommendation that names only one fix fails",
+        "Option `a` is the general third-party filter (Sentry's `thirdPartyErrorFilterIntegration` with a build-time `applicationKey`, or an equivalent filter that drops errors with no frames from our bundle). A `denyUrls` or `ignoreErrors` rule for this one script fails as `a`; it passes only as a labelled stopgap beside the general filter. Deferring the general filter to a separate ticket fails",
+        "Nothing is posted to Slack or sent to anyone: the tool calls show no send and no child task or subagent, and the Slack reply is a draft"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "a2-receipt-first-resume",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "Fix a v3 bookkeeping export bug in franklin-next: with the receipt-first strategy (e-conomic), a failed attachment upload leaves the receipt EXPORTED with no attachment in e-conomic, and retries report success without uploading anything.\n\n## Verified current behaviour (all under apps/web/src/features/bookkeeping/(export)/ unless stated)\n1. `receipt-first-strategy.layer.ts` runs `exportReceiptStep`, which posts the voucher and calls `markReceiptExported`. It then runs `exportDocumentStep` for each document, then `markReceiptDocumentsExported` (which sets `documentsExportedAt`).\n2. If `exportDocumentStep` fails, the error reaches `exportReceipt` in `export-receipt.handler.ts`. Its `tapError` calls `markReceiptFailedBestEffort`, which does nothing because EXPORTED is terminal (`packages/bookkeeping/src/export/status-transitions.ts`, `decideTransition`). The document is never marked FAILED: `markDocumentFailed` in `status-transition.ts` has no production callers.\n3. The Trigger task (`apps/web/src/jobs/tasks/bookkeeping/export-receipt.ts`, maxAttempts 3) retries. `claimReceiptForExport` returns Noop(EXPORTED), and `handleExistingReceiptClaim` returns success without running the strategy. The attachment is never uploaded.\n4. `exportDocumentStep` decides whether to skip a document from `input.document.exportStatus`. That value comes from the task payload, a snapshot taken at dispatch, so on retry it is stale.\n5. Retrying an upload is safe. `(e-conomic)/create-attachment.ts` sends the idempotency key `bookkeeping-export:{exportId}:receipt-document:{documentId}:attachment` and treats e-conomic's \"already has attachment\" response as success.\n6. v2 handles this case: `getPreviousExportResult` in `services/bookkeeping-export/strategies/export-strategy.utils.ts` re-runs until every document is EXPORTED.\n7. Only E_CONOMIC is wired to `ReceiptFirstStrategyLayer` (`bookkeeping-integration.layer.ts`). The attachment-first, combined and purchase-settlement strategies record the document together with or before the receipt, so they are not affected.\n\n## Required outcome\nA. When a document upload fails in the receipt-first strategy:\n   - Mark that document FAILED with error details via `markDocumentFailed`, best effort, so a failure to mark it does not hide the original error.\n   - Fail the receipt task with the original upload error, so Trigger retries. Keep the existing `retryable: false` handling that sets `skipRetrying`.\n   - The receipt stays EXPORTED with its `journalEntryId`, because the voucher exists.\nB. When a retried or re-dispatched task finds the receipt EXPORTED for the same export, with documents that are not EXPORTED and `documentsExportedAt` null:\n   - Upload the pending documents against the persisted `journalEntryId`.\n   - Mark each one EXPORTED, then set `documentsExportedAt`.\n   - Never call `createJournalEntry` again.\n   - Documents that are already EXPORTED in the database are skipped.\nC. When the receipt is EXPORTED and every document is EXPORTED, or the receipt has no documents: the task returns success with no provider calls, as it does today.\nD. A superseded receipt, meaning one whose exportId points to a newer export, behaves exactly as it does today.\nE. After the last attempt fails, the run counts as failed in `receipt-export-dispatcher.layer.ts`, so `start-export.handler.ts` marks the export FAILED and notifies. Confirm this path with a test or by reading it; don't change it unless it is broken.\n\n## Design guidance\n- Resuming document uploads only makes sense for receipt-first ordering. Prefer putting it behind the `ReceiptExportStrategy` boundary (`receipt-export-strategy.service.ts`) rather than handling receipt-first in the generic handler. For example, add a resume operation that receipt-first implements and the other strategies treat as a no-op. If you find a simpler option with equally clear ownership, choose it and explain why.\n- Decide from database state: the receipt's `journalEntryId`, `exportId` and `documentsExportedAt`, and each document's status. Do not decide from the payload snapshot. Read the receipt under the existing lock pattern in `status-transition.ts`, or explain why that isn't needed.\n- All status writes go through `status-transition.ts`, which is documented as the only writer.\n- Keep the change narrow. Don't change the v2 pipeline, the other strategies' behaviour, or the e-conomic adapter.\n\n## Out of scope (note these as follow-ups; do not fix them)\n- Switching a company between v2 and v3 while exports are running (duplicate vouchers).\n- Receipts stuck IN_PROGRESS after a crash (`ReceiptAlreadyInProgressError`).\n- Re-export (`reset-receipts-to-unexported.ts`) possibly creating a second voucher.\n- e-conomic's one-attachment-per-voucher limit when a receipt has several documents.\n- The dimension write failing after the voucher is created (`(e-conomic)/create-journal-entry.ts`).\n\nYour reading so far is in CONTEXT.md. Reply with the design you'd build and stop before editing.",
+      "setup": "./setup.sh {cwd} a2-receipt-first-resume",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause, not just the symptom: receipt-first writes EXPORTED before its document uploads finish, so EXPORTED stops meaning done and a retry's claim skips the unfinished work (the stale payload snapshot may be named as a second cause)",
+        "The reply shows the brief's resume side path (receipt stays EXPORTED, a `resumeExported` or similar step) beside a design that removes the cause (save the journal entry as a checkpoint, keep the receipt IN_PROGRESS or FAILED, and mark EXPORTED only after the uploads), each with its size or what it changes",
+        "The reply doesn't silently build the brief's resume path: it either recommends the checkpoint, EXPORTED-last design and names how that departs from the brief's Required outcome A, or recommends the resume path with an explicit reason it beats the cause fix (such as v2 parity) and the cause fix offered as an option or follow-up"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "b1-merge-queue-typecheck",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "whats going on?\n\nThe stack, the failure, and your investigation so far are in CONTEXT.md.",
+      "setup": "./setup.sh {cwd} b1-merge-queue-typecheck",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause, not just the symptom: the exact errors reproduced locally once, so it treats the failure as real and dependent on check order or the restored incremental cache, rather than calling it a flake",
+        "Option `a` works toward a deterministic repro or a code fix (for example reproducing the incremental check order locally, or making the row helpers generic) rather than a rerun or re-queue. A rerun or re-queue appears, if at all, labelled as a diagnostic or stopgap, not as what settles the failure",
+        "The reply doesn't leave the call as 'whether to re-queue is your call once we know if it's a flake' with no cause work offered"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "b2-run-ci-label",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "why is it just stuck? https://github.com/hifranklin-tech/franklin-next/pull/4776\n\nYour investigation so far is in CONTEXT.md.",
+      "setup": "./setup.sh {cwd} b2-run-ci-label",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause, not just the symptom: the required-check workflows run on label events and, for labels other than `run-ci`, create skipped runs without the real check names, which replace the passing results",
+        "The reply shows the cause fix and a quicker or narrower fix side by side before recommending, each with what it costs (size, files, or risk) or who owns it; a recommendation that names only one fix fails",
+        "Option `a` unblocks #4776 now with the `run-ci` label, labelled a stopgap, and offers to build the workflow fix as its own PR off develop. A workflow change pushed into #4776 (which would dismiss Ander's approval) fails, and so does an issue draft alone with no offer to build the fix"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "ctl-owner-elsewhere",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "make a PR that blocks when its missing a vat code and there is no standard code for the account? find out what the cleanest long term solution is\n\nThe session so far is in CONTEXT.md.",
+      "setup": "./setup.sh {cwd} ctl-owner-elsewhere",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names that Ander's DEV-2307 (#5221, #5230) already owns the VAT block",
+        "Option `a` doesn't build a separate PR that adds the VAT block alongside Ander's stack: it hands the fix to Ander (a drafted message or ticket comment for Oliver to send) or offers to build it on Ander's stack only once he hands it over",
+        "The handoff names the effective-VAT detail: the block must check the receipt's own code, otherwise the account's default, as `resolveReceiptPostingSnapshots` does",
+        "Nothing is sent to Ander or anyone else: the tool calls show no send and no child task or subagent, and any message is a draft for Oliver"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "ctl-prod-hotfix",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "please look into the \"process-email-inbox\" errors from trigger\n\nYour investigation so far is in CONTEXT.md.",
+      "setup": "./setup.sh {cwd} ctl-prod-hotfix",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names the cause chain: Effect sets `content-length` itself, and the stricter undici 7.27 dispatcher that `@effect/platform-node` loads on Node 22 rejects the header",
+        "Option `a` ships a narrow fix now in the decision model so fetch sets the length (a raw string body, or removing the explicit header), with a test, because production is losing receipts",
+        "The runtime switch to Node 24, or any change to every Trigger task's HTTP client, isn't part of option `a`; when the reply raises it, it's a separate follow-up or option, not bundled into the hotfix"
+      ],
+      "tool_calls": true
+    },
+    {
+      "id": "ctl-scope-creep",
+      "skill": "fix-the-cause-in-scope",
+      "prompt": "The review rounds on the dinero-export-v3 stack are done apart from #5634's card change. CONTEXT.md has what they established. Report to Oliver with your pick.",
+      "setup": "./setup.sh {cwd} ctl-scope-creep",
+      "cwd": "replay",
+      "preamble": "Replay of a past session at the moment it picked a fix. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the franklin-next checkout and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, Sentry, Slack, GitHub, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+      "turns": [],
+      "assertions": [
+        "The reply names why the change exists: Ready must ask the same readiness check start export uses, and the shared rule also fixes a miscount on other integrations' half-configured connections",
+        "The reply compares keeping the shared rule with a Dinero-only condition, with what each costs (about 86 lines, the integrations it reaches, review or test state)",
+        "No scope grows silently: if option `a` keeps the wider change in #5634, it also corrects #5634's description to name the other integrations; if `a` narrows to Dinero, it offers the shared rule as its own PR",
+        "Option `a` adds no work beyond this card rule, such as other refactors, more integrations, or new features"
+      ],
+      "tool_calls": true
+    }
+  ]
+}

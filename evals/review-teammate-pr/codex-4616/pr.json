@@ -1,0 +1,35 @@
+{
+ "number": 4616,
+ "url": "https://github.com/example-org/example-app/pull/4616",
+ "author": "robin-dev",
+ "base": "develop",
+ "title": "Turn on noUncheckedIndexedAccess",
+ "body": "Turns on `noUncheckedIndexedAccess` for the whole repo, per EX-60. CI's typecheck is green, so nothing on develop violates it.",
+ "linkedIssue": {
+  "id": "EX-60",
+  "body": "Turn on noUncheckedIndexedAccess everywhere, and have CI enforce it from now on."
+ },
+ "reviews": [],
+ "ci": [
+  {
+   "name": "checks",
+   "required": true,
+   "state": "SUCCESS"
+  }
+ ],
+ "existingComments": [
+  {
+   "id": 9201,
+   "author": "chatgpt-codex-connector[bot]",
+   "path": "tsconfig.base.json",
+   "line": 4,
+   "body": "**P1** CI doesn't type-check this flag. With Turbo's remote cache on in CI, this PR's `typecheck` task hashes the same as develop's, because its `inputs` in `turbo.json` list `src/**/*.ts` and `tsconfig.json` but not `tsconfig.base.json`. So CI replays develop's cached pass, and the new flag is never checked.",
+   "replies": [
+    {
+     "author": "robin-dev",
+     "body": "CI never restores `.cache/`: there's no cache step for it in ci.yml, and `typecheck` declares no outputs, so tsc runs from scratch on every CI run. The stale-tsbuildinfo case is local only, which is what the docs note covers."
+    }
+   ]
+  }
+ ]
+}

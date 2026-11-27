@@ -1,0 +1,21 @@
+{
+  "project": "CSV export",
+  "now": "14:10",
+  "threads": [
+    {"name": "currency column", "pr": "#41", "state": "waiting on the reader",
+     "ask": "the merge go for #41", "detail": "the CSV export gains a currency column and quotes fields that hold commas; verify-work Done, review 10/10",
+     "takes": "a yes or no", "unblocks": "#42 merges on top of #41"},
+    {"name": "admin opt-out", "issue": "EX-11", "state": "waiting on the reader",
+     "ask": "a product call: should company admins be able to opt out of the monthly email before #42 ships?",
+     "detail": "about 1,900 companies get the email on the 1st once #42 ships", "takes": "a decision", "unblocks": "#42's merge"},
+    {"name": "SMTP password", "state": "waiting on the reader",
+     "ask": "add the SMTP password to the staging environment; only the reader has the mail provider's login",
+     "takes": "a login, about 5 minutes", "unblocks": "testing #42's email end to end on staging"},
+    {"name": "monthly email", "pr": "#42", "state": "running",
+     "detail": "CI re-run after a flaky timeout, started 13:55; the last 5 runs took 18 to 22 minutes"},
+    {"name": "export speed", "state": "running",
+     "detail": "measuring a 90,000-row export; the same measurement took 50 minutes last time, and it started at 14:00"},
+    {"name": "date parsing fix", "pr": "#40", "state": "done",
+     "detail": "merged this morning: exports no longer drop transactions dated on the last day of a month"}
+  ]
+}

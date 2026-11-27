@@ -1,0 +1,7 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "typecheck": { "inputs": ["src/**/*.ts", "tsconfig.json"], "outputs": [] },
+    "test": { "inputs": ["src/**"], "outputs": [] }
+  }
+}

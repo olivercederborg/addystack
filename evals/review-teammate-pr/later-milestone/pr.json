@@ -1,0 +1,20 @@
+{
+ "number": 4620,
+ "url": "https://github.com/example-org/example-app/pull/4620",
+ "author": "robin-dev",
+ "base": "develop",
+ "title": "Show receipt PDF amounts in the company's currency",
+ "body": "## Scope\n\nReceipt PDF lines show each amount as `12.34 EUR` instead of raw cents (EX-70, milestone 1).",
+ "linkedIssue": {
+  "id": "EX-70",
+  "body": "Receipt PDFs show each line's amount in the company's currency, as `12.34 EUR`. Milestone 1: every company is on EUR. EX-71 adds other currencies in a later milestone."
+ },
+ "ci": [
+  {
+   "name": "test",
+   "required": true,
+   "state": "SUCCESS"
+  }
+ ],
+ "existingComments": []
+}

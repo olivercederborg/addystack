@@ -1,0 +1,4 @@
+{"number": 4614, "url": "https://github.com/example-org/example-app/pull/4614", "author": "robin-dev", "base": "develop", "title": "Show the supplier picker to every company with a supplier catalog",
+ "linkedIssue": {"id": "EX-51", "body": "Bookkeepers at a company with a supplier catalog pick the supplier when they export."},
+ "ci": [{"name": "test", "required": true, "state": "SUCCESS"}],
+ "existingComments": []}

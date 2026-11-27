@@ -1,0 +1,11 @@
+{
+  "pr": {"number": 4600, "url": "https://github.com/example-org/example-app/pull/4600", "isDraft": true, "baseRefName": "main", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"},
+  "required": ["test"],
+  "ci": [{"name": "lint", "state": "PENDING", "runId": 9101}, {"name": "test", "state": "SUCCESS", "runId": 9101}],
+  "threads": [
+    {"id": "PRRT_1", "isResolved": false, "path": "src/export.ts", "line": 9,
+     "comments": [{"fullDatabaseId": "5000000001", "author": "cubic-dev-ai", "body": "**P1: Event can be lost on retry.** ..."}]}
+  ],
+  "reviews": [],
+  "conversationComments": []
+}

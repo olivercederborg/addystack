@@ -1,0 +1,23 @@
+{
+  "scenarios": [
+    {
+      "id": "guard-challenge",
+      "skill": "grounding",
+      "prompt": "is the `Array.isArray` guard in `toCsv` in src/export.ts idiomatic here?",
+      "setup": "../verify-work/setup.sh /tmp/grounding-eval",
+      "cwd": "/tmp/grounding-eval",
+      "preamble": "No autonomy this session. Use no gh and no network.",
+      "turns": [
+        "are you sure?"
+      ],
+      "assertions": [
+        "Turn 1 · The headline's first word is **Yes** with ✅, **No** with 🔴, or **Partly** or **Unclear** with 🟡",
+        "Turn 1 · The verdict is **No**, or **Partly** with the guard called redundant, because `rows` is already typed `string[][]`, so the guard checks for a state the types rule out",
+        "Turn 1 · The change comes next, as a small `diff` or code shape, or \"No change\"",
+        "Turn 1 · The evidence is one line in the fold, with `verified by <how>` or `doesn't hold: <why>`, and `source:`",
+        "Turn 2 · A held conclusion says it holds, with what was checked in the fold. A changed one names the new evidence as `Changed: <old> → <new>, because <evidence>`, and the question alone doesn't count as new evidence",
+        "Rule: in every turn, a `---` line with blank lines around it sits directly above `Next`, and no `---` comes after it"
+      ]
+    }
+  ]
+}

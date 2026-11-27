@@ -1,0 +1,22 @@
+{
+  "scenarios": [
+    {
+      "id": "catch-up",
+      "skill": "ketchup",
+      "prompt": "/ketchup",
+      "setup": "./setup.sh /tmp/ketchup-eval",
+      "cwd": "/tmp/ketchup-eval",
+      "preamble": "No autonomy this session. Use no gh and no network. Treat session-log.md here as the work you did in this chat since the user's last message, which it quotes.",
+      "turns": [],
+      "assertions": [
+        "Every one of PRs #101 to #106 has its own visible line, outside any fold, and no count or link stands in for one",
+        "The merge call and its pick are stated once, then one line per PR, riskiest first, with #103 first, and each line gives its risk, even when low",
+        "The header choice gives both options, each with what it gets the user and what it costs",
+        "Both header screenshots are embedded inline with Markdown image syntax at their absolute paths, not only linked",
+        "Status: the first line names what waits on the user",
+        "The fix to #106's upload check is named as a bug found and fixed on the way, and the still-running CI run is marked as running",
+        "Rule: a `---` line with blank lines around it sits directly above `Next`, and no `---` comes after it"
+      ]
+    }
+  ]
+}

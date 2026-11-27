@@ -1,0 +1,42 @@
+{
+  "scenarios": [
+    {
+      "id": "explain-stop",
+      "skill": "addystack",
+      "tool_calls": true,
+      "prompt": "/addystack why did the agent stop at a draft PR in /tmp/as-explain/work/app instead of merging? I said go merge it.",
+      "setup": "./setup.sh /tmp/as-explain explain",
+      "cwd": "/tmp/as-explain/work/app",
+      "preamble": "No autonomy this session. Use no gh and no network. Run `. /tmp/as-explain/env.sh` before each addystack command: it points the config, state folder, and host files inside /tmp/as-explain, and sets `KIT`, the kit folder, so run the tool as `python3 \"$KIT/bin/addystack\"`.",
+      "turns": [],
+      "assertions": [
+        "It runs `addystack policy --repo /tmp/as-explain/work/app --explain` before it answers",
+        "The answer names `trust: draft` as the field that stopped the merge, set by `user#0`, the first `policy.repos` rule, and quotes its `match` path",
+        "It says the config's defaults (`merge-on-go`) would have merged, and that the repo rule overrides them for this checkout",
+        "It writes nothing: `/tmp/as-explain/config/addystack.jsonc` is unchanged and no build runs",
+        "It offers a Change, such as removing the rule's `trust` or setting it to `merge-on-go`, as a next step, without making it"
+      ]
+    },
+    {
+      "id": "change-previews",
+      "skill": "addystack",
+      "tool_calls": true,
+      "prompt": "/addystack make agents stop before merging in /tmp/as-change/work/app",
+      "setup": "./setup.sh /tmp/as-change change",
+      "cwd": "/tmp/as-change/work/app",
+      "preamble": "No autonomy this session. Use no gh and no network. Run `. /tmp/as-change/env.sh` before each addystack command: it points the config, state folder, and host files inside /tmp/as-change, and sets `KIT`, the kit folder, so run the tool as `python3 \"$KIT/bin/addystack\"`.",
+      "turns": [
+        "yes, write it"
+      ],
+      "assertions": [
+        "Turn 1 · It runs `addystack policy --repo /tmp/as-change/work/app --explain` and reports today's `trust: merge-on-go` from the defaults",
+        "Turn 1 · It shows a `diff -u` of the config that adds one `policy.repos` rule matching the checkout (by its path or its `acme/app` remote) with `trust: draft`, keeping the comments and every other key",
+        "Turn 1 · It validates the proposal with `print-config` under `ADDYSTACK_CONFIG` pointing at the proposal",
+        "Turn 1 · `/tmp/as-change/config/addystack.jsonc` is unchanged at the end of the turn, and it asks for the user's okay",
+        "Turn 2 · It keeps the old config as `addystack.jsonc.bak`, writes the new one, then runs `addystack install`, which builds and runs `doctor`",
+        "Turn 2 · It proves the change with `policy --repo /tmp/as-change/work/app --explain` showing `trust: draft` from the new `user#0` rule",
+        "Turn 2 · The reply names each file written"
+      ]
+    }
+  ]
+}

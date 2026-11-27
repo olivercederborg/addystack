@@ -1,0 +1,14 @@
+{
+  "task": "make the CSV export include each transaction's currency and keep descriptions with commas in one column",
+  "finished": "13:40",
+  "merged": [{"pr": "#41", "title": "Add currency column and quote fields in CSV export"}],
+  "deployed": "13:55, by the deploy that the merge runs",
+  "changes": [
+    "the CSV header goes from date,description,amount to date,description,amount,currency",
+    "a description that holds a comma or a quote is wrapped in quotes, so spreadsheets no longer split it into extra columns"
+  ],
+  "steps_taken": ["read EX-7", "wrote escapeField", "added 6 tests", "ran verify-work: Done", "ran review-loop: 2 rounds, 10/10", "merged #41 with gh stack", "watched the deploy finish"],
+  "undo": "revert #41 and let the deploy run; there is no data migration",
+  "affects_the_reader": ["the finance team's import macro reads columns by position and expects 3 columns, so it needs the 4th column added before the next monthly import"],
+  "not_done": []
+}

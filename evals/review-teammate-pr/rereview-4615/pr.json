@@ -1,0 +1,42 @@
+{
+ "number": 4615,
+ "url": "https://github.com/example-org/example-app/pull/4615",
+ "author": "robin-dev",
+ "base": "develop",
+ "title": "Filter receipts by account",
+ "linkedIssue": {
+  "id": "EX-51",
+  "body": "Let users filter the receipts list by account, including receipts with no account. Keyboard users keep focus on the filter after they pick."
+ },
+ "reviews": [
+  {
+   "author": "olivercederborg",
+   "state": "COMMENTED",
+   "commit": "the commit tagged reviewed",
+   "body": ""
+  }
+ ],
+ "ci": [
+  {
+   "name": "test",
+   "required": true,
+   "state": "SUCCESS"
+  }
+ ],
+ "existingComments": [
+  {
+   "id": 9101,
+   "author": "olivercederborg",
+   "path": "src/account-filter.ts",
+   "line": 36,
+   "commit": "the commit tagged reviewed",
+   "body": "<sub>`AGENT` Claude Opus 5.5 · on behalf of **Oliver**</sub><br>\nPicking an account moves keyboard focus to another option: the list re-renders with the pick first, but `onPick` focuses the pick's old position. Focusing the picked option by its value would fix it.",
+   "replies": [
+    {
+     "author": "robin-dev",
+     "body": "Fixed: options have stable ids now and focus follows the picked value. Added tests."
+    }
+   ]
+  }
+ ]
+}

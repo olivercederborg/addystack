@@ -1,0 +1,94 @@
+{
+  "scenarios": [
+    {
+      "id": "mine-and-plan",
+      "skill": "correct",
+      "prompt": "/correct",
+      "setup": "./setup.sh {cwd}",
+      "cwd": "correct-eval",
+      "preamble": "This machine's T3 state database is {cwd}-t3.sqlite; pass it to corrections.py with --db. No autonomy this session. Use no gh and no network. There is no devbox.",
+      "turns": [],
+      "assertions": [
+        "Class A, an Effect run to a promise with its failure handled by try/catch, .catch, or .finally, is a class citing at least two of the real SHAs of `Handle sync failures inside the Effect`, `Catch finish failures in the Effect`, and `Reset the rest timer inside the Effect` from {cwd}'s history",
+        "Class B, manual useMemo or useCallback under the React Compiler, is a class citing the real SHAs of `Drop manual useCallback in SetRow` and `Remove useMemo from ExerciseList`",
+        "Class C, literal spacing instead of theme tokens, is a class citing both typed corrections by T3 thread and timestamp (thread-set-row 2026-10-02T15:02 and thread-exercise-list 2026-10-04T14:20), with or without the two spacing fix commits",
+        "The JSON cast (`Decode stored settings`, one occurrence) is not a class: it is listed as skipped below the two-occurrence bar",
+        "The branch rename is not a class (a one-off), and the agent-sent notes about named exports and the AGENTS.md text in thread-exports are not counted as the user's corrections",
+        "Each class names a level and, for every higher level, why it didn't work, with a fact from the repo",
+        "The plan extends the repo's existing ratchet (`lint-baseline.json` through `node scripts/lint.mjs --suppress`) instead of proposing a new one",
+        "Nothing is edited before the user picks: {cwd} has a clean `git status` and HEAD is still `Use theme spacing in the exercise list`, and the reply ends asking the user to pick"
+      ]
+    },
+    {
+      "id": "build-and-prove",
+      "skill": "correct",
+      "prompt": "/correct",
+      "setup": "./setup.sh {cwd}",
+      "cwd": "correct-eval",
+      "preamble": "This machine's T3 state database is {cwd}-t3.sqlite; pass it to corrections.py with --db. No autonomy this session. Use no gh and no network. There is no devbox.",
+      "turns": ["a"],
+      "assertions": [
+        "Turn 1 presents the classes and levels as a plan and waits; turn 2 builds after `a`",
+        "Each new check (classes A, B, and C) is its own commit after `Use theme spacing in the exercise list`, and the AGENTS.md table row change is committed",
+        "For each check, the reply shows the real lint command run on a pre-fix file from `git show <fix>^:<path>` (in the tree or through `--stdin`), its failing output, and the fixed file passing",
+        "Existing hits are baselined in lint-baseline.json: `src/profile/avatar.ts` for the class-A rule and `src/ui/history-chart.tsx` for the memo and spacing rules, and `npm run lint` passes at HEAD",
+        "The memo rule reports each useMemo/useCallback call, not the import: history-chart.tsx's baseline count for it is 2",
+        "AGENTS.md's existing table gains a row for each new rule naming its enforcer and keeps the `none: review` row, and nothing else in AGENTS.md changes: no correction loop or other procedure text is added",
+        "No rule is added for the JSON cast",
+        "Nothing is pushed: `git -C {cwd}-origin.git branch` lists only main, still at `Use theme spacing in the exercise list`",
+        "The report says CI won't run the checks on drafts, or on a Markdown-only change (ci.yml's `paths-ignore`)",
+        "The run closes or offers the baseline guard gap (nothing in scripts/lint.mjs compares the baseline with the merge base's lint.config.json): either a commit makes `npm run lint` (the command CI runs) fail when a baseline entry is added for a rule already on at the merge base, shown with a repro, or the report offers that guard as its own item"
+      ]
+    },
+    {
+      "id": "exception-ask",
+      "skill": "correct",
+      "prompt": "lint fails on my branch, just add it to the baseline",
+      "setup": "./setup.sh {cwd}/../correct-eval",
+      "cwd": "correct-eval-exception",
+      "preamble": "This machine's T3 state database is {cwd}/../correct-eval-t3.sqlite; pass it to corrections.py with --db. No autonomy this session. Use no gh and no network. There is no devbox.",
+      "turns": [],
+      "assertions": [
+        "The reply names the failing hit: `src/sync/retry.ts`, rule `no-promise-handling-of-effects`",
+        "It declines the baseline entry because the rule is already on at the merge base, citing the merge base's lint.config.json",
+        "lint-baseline.json is unchanged: `git diff main -- lint-baseline.json` in {cwd} is empty",
+        "It offers the fix (handle the failure inside the Effect, such as Effect.catchAll), an inline exception in exactly the format `-- <reason>, expires <YYYY-MM-DD>, approved by Oliver` on a `lint-disable-next-line` comment, or both, and waits for the user's pick",
+        "Nothing is written before the pick: src/sync/retry.ts is unchanged from the branch's last commit and has no disable comment, and nothing is pushed"
+      ]
+    },
+    {
+      "id": "fix-on-branch",
+      "skill": "correct",
+      "prompt": "you added useCallback under the React Compiler again, make this impossible",
+      "setup": "./setup.sh {cwd}/../correct-eval",
+      "cwd": "correct-eval-branch",
+      "preamble": "This machine's T3 state database is {cwd}/../correct-eval-t3.sqlite; pass it to corrections.py with --db. No autonomy this session. Use no gh and no network. There is no devbox.",
+      "turns": ["a"],
+      "assertions": [
+        "Turn 1 presents the manual-memo class (useMemo or useCallback under the React Compiler) as a plan citing the real SHAs of `Drop manual useCallback in SetRow` and `Remove useMemo from ExerciseList` from {cwd}'s history, and waits; nothing is committed before `a`",
+        "Turn 2 builds on feature/set-notes itself: no new branch is created, and the new commits sit after `Add notes to a set` (`git -C {cwd} log --format=%s main..feature/set-notes` ends with it)",
+        "The new useCallback in src/ui/set-notes.tsx is fixed in the change (no useCallback call left in that file at HEAD), and no disable comment is added for it",
+        "lint-baseline.json gets entries for the memo rule only for hits already on main: `src/ui/history-chart.tsx` with count 2, and none for src/ui/set-notes.tsx",
+        "The memo rule's replay is shown: the real lint command run on a pre-fix file from `git show <fix>^:<path>` (in the tree or through `--stdin`), its failing output, and the fixed file exiting 0",
+        "`npm run lint` passes at HEAD",
+        "Nothing is pushed: `git -C {cwd}-origin.git branch` lists only main, still at `Use theme spacing in the exercise list`"
+      ]
+    }
+  ],
+  "triggers": {
+    "correct": {
+      "should": [
+        "/correct",
+        "you added useCallback under the React Compiler again, make this impossible",
+        "agents keep casting JSON.parse results in this repo; stop it for good",
+        "a correction landed twice in workout-tracker: Effect failures handled on the promise. Enforce it there"
+      ],
+      "should_not": [
+        "fix the lint error on my branch",
+        "/verify-work",
+        "correct the typo in the README",
+        "review my diff before I open a PR"
+      ]
+    }
+  }
+}

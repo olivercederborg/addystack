@@ -1,0 +1,56 @@
+{
+  "scenarios": [
+    {
+      "id": "01-first-round",
+      "skill": "address-review",
+      "prompt": "/address-review",
+      "turns": [
+        "fix them, but don't push yet",
+        "a"
+      ],
+      "assertions": [
+        "Turn 1 opens with a headline counting the calls, then 3 one-line items (`**N** · who · claim → call`), with no triage table",
+        "Item 1 (cubic, export.ts:9) is Fix and, as a control-flow change, is the reply's snippet, a diff in context under a comment restating the claim; its evidence line is in the fold",
+        "Item 2 (alex-dev rename) is Decline, grounded in CONTEXT.md",
+        "Item 3 (CodeRabbit JSDoc from the review body) gets a reasoned call and is answered with a PR comment, not a thread reply",
+        "The resolved thread, the Vercel comment, and the CodeRabbit walkthrough are not items",
+        "The CI Infisical failure appears once, as one note or one line in the fold",
+        "Every turn ends with a Next list of at most two lettered options, a bold `a` first, and no other question is asked in prose",
+        "After fixing, tests are one-line cases, checks are in the fold, and replies are drafted without being asked and shown once below a **Review** note",
+        "After yes: thread 1 resolved, thread 2 left open for alex-dev, item 3 posted as a PR comment",
+        "Replies start with the AGENT disclosure; the fix reply has a Fixed in footer with the real SHA"
+      ]
+    },
+    {
+      "id": "02-new-round",
+      "skill": "address-review",
+      "prompt": "/address-review new round of comments",
+      "turns": [],
+      "assertions": [
+        "PRRT_1 and PRRT_5 are not items; both are listed as answered but still open, with a resolve plan",
+        "PRRT_5's older 🤖 **[Agent]:** prefix counts as our reply",
+        "PRRT_2 (alex-dev's follow-up after our decline) is an item, triaged against the repo's naming",
+        "PRRT_4 (sam-dev backoff) is Defer with a named follow-up issue, and nothing is created",
+        "CodeRabbit's JSDoc body finding is skipped because our PR comment already quotes it",
+        "CodeRabbit's memoization body finding is a new item",
+        "Each item is one line, at most three visible, and reviewers are named by their login"
+      ]
+    }
+  ],
+  "triggers": {
+    "address-review": {
+      "should": [
+        "cubic left comments on my PR, can you handle them",
+        "new round of review comments on #4600",
+        "address the review feedback on my stack",
+        "reply to the reviewers on my PR and resolve what's fixed"
+      ],
+      "should_not": [
+        "review my diff before I open a PR",
+        "review Robin's PR #4610",
+        "write a PR description for this branch",
+        "why is CI failing on my PR"
+      ]
+    }
+  }
+}
