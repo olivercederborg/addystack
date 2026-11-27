@@ -17,18 +17,21 @@ Within a kind, an unsettled thread beats a settled one, then the newest. Subagen
 never count. Run it from the PR's project checkout (or a T3 worktree of it), or pass
 --project. Prints {"thread": null} when none holds it.
 
-T3's list shows at most five open PRs per thread, so a review thread of a bigger stack hides
-some links. A thread links only the PRs it reviews and their GitHub stack layers, so before
-answering "none" the script asks GitHub for the PR's stack (`gh api repos/<repo>/stacks`, the
-read T3 links stack layers from) and only a hiding thread whose title or shown links touch
-that stack blocks the answer. Exits 2, with a message on stderr, when T3 or GitHub can't be
-read or such a thread blocks a "none" answer, so the caller stops instead of guessing.
+The list shows at most five open PRs per thread, and only an agent can read the rest, with
+T3's `list_thread_pull_requests` tool. So when a review thread hides links and no thread
+links the PR itself, the script exits 3 and prints {"needLinks": [threadId, ...]}. The
+caller saves each listed thread's tool result, read with states ["open"], as one JSON
+object keyed by thread id, and runs the script again with --links FILE.
+
+Exits 2, with a message on stderr, when T3 can't be read or the links file doesn't cover
+every thread that hides links, so the caller stops instead of guessing.
 """
 import argparse, json, re, subprocess, sys
 
 DEFAULT_PREFIXES = ("Review #", "◎ #")
 RANK = {"linked": 0, "title": 1, "stack": 2}
 PAGE = 100  # the CLI reads the list in pages of this size, newest first
+NEEDS_LINKS = 3
 
 
 def read_list(project, list_json):
@@ -96,44 +99,50 @@ def holder(items, repo, number, prefixes):
 
 def hidden_links(items, prefixes):
     """Review threads whose list entry shows fewer open PRs than they link."""
-    return [thread for thread in items
+    return [thread.get("threadId") for thread in items
             if review_numbers(thread.get("title"), prefixes)
             and (thread.get("openPullRequestCount") or 0) > len(thread.get("pullRequests") or [])]
 
 
-def stack_numbers(repo, number):
-    """This PR's number and those of every layer in its GitHub stack."""
-    command = ["gh", "api", f"repos/{repo}/stacks?pull_request={number}"]
-    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
-    if result.returncode != 0:
-        raise RuntimeError(f"gh can't read the stack of #{number}: {result.stderr.strip()[:300]}")
-    stacks = json.loads(result.stdout)
-    if not isinstance(stacks, list) or not all(isinstance(stack, dict) for stack in stacks):
-        raise ValueError(f"GitHub did not return a list of stacks for #{number}")
-    return {number} | {layer.get("number") for stack in stacks for layer in stack.get("pull_requests") or []
-                       if isinstance(layer, dict)}
+def read_links(path):
+    """Each thread's full open PR list, from saved `list_thread_pull_requests` results."""
+    with open(path) as handle:
+        results = json.load(handle)
+    if not isinstance(results, dict):
+        raise ValueError("--links must hold one object keyed by thread id")
+    links = {}
+    for thread_id, result in results.items():
+        pulls = result.get("pullRequests") if isinstance(result, dict) else None
+        if (not isinstance(pulls, list) or not all(isinstance(pr, dict) for pr in pulls)
+                or result.get("nextCursor")):
+            raise ValueError(f"--links for {thread_id} is not one full list_thread_pull_requests result")
+        links[thread_id] = pulls
+    return links
 
 
-def touches(thread, repo, numbers, prefixes):
-    """Whether this thread's title or shown links name a PR among these numbers."""
-    shown = {pr.get("number") for pr in thread.get("pullRequests") or []
-             if isinstance(pr, dict) and (pr.get("repository") or "").lower() == repo}
-    return bool((review_numbers(thread.get("title"), prefixes) | shown) & numbers)
+class NeedsLinks(Exception):
+    def __init__(self, thread_ids):
+        super().__init__()
+        self.thread_ids = thread_ids
 
 
-def lookup(repo, number, prefixes, project=None, list_json=None):
+def lookup(repo, number, prefixes, project=None, list_json=None, links_json=None):
     items = read_list(project, list_json)
     if len(items) >= PAGE and not list_json:
         # The CLI reads pages newest first, so a thread that turned active mid-read can fall
         # between two pages. A second read catches it unless it moves again during that read;
         # the second read's entries replace the first's.
         items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
+    if links_json:
+        links = read_links(links_json)
+        items = [{**thread, "pullRequests": links[thread.get("threadId")]}
+                 if thread.get("threadId") in links else thread for thread in items]
     thread = holder(items, repo, number, prefixes)
-    if thread is None and (hidden := hidden_links(items, prefixes)):
-        stack = stack_numbers(repo, number)
-        if blocking := [t.get("threadId") for t in hidden if touches(t, repo, stack, prefixes)]:
-            raise ValueError(f"can't rule out a holder: review threads {', '.join(map(str, blocking[:3]))} "
-                             f"link more open PRs than the list shows, and touch #{number}'s stack")
+    # A hidden link can hold the PR, or outrank a title or stack match, unless a thread links it.
+    if (thread is None or thread["match"] != "linked") and (hidden := hidden_links(items, prefixes)):
+        if links_json:
+            raise ValueError(f"--links doesn't hold every open PR of review threads {', '.join(map(str, hidden))}")
+        raise NeedsLinks(hidden)
     return thread
 
 
@@ -144,12 +153,17 @@ def main(argv=None):
     parser.add_argument("--project", help="T3 project id or a path inside it; default: this directory")
     parser.add_argument("--title-prefix", action="append", default=[], dest="prefixes",
                         help=f"another review thread title prefix, repeatable; always also: {', '.join(DEFAULT_PREFIXES)}")
+    parser.add_argument("--links", dest="links_json",
+                        help="saved list_thread_pull_requests results keyed by thread id, after exit 3")
     parser.add_argument("--list-json", help=argparse.SUPPRESS)  # a saved `t3 thread list --json`, for tests
     args = parser.parse_args(argv)
     repo = args.repo.lower()
     prefixes = tuple(dict.fromkeys([*DEFAULT_PREFIXES, *args.prefixes]))
     try:
-        thread = lookup(repo, args.number, prefixes, args.project, args.list_json)
+        thread = lookup(repo, args.number, prefixes, args.project, args.list_json, args.links_json)
+    except NeedsLinks as needed:
+        print(json.dumps({"pr": f"{repo}#{args.number}", "needLinks": needed.thread_ids}))
+        return NEEDS_LINKS
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"review_thread: {error}", file=sys.stderr)
         return 2
