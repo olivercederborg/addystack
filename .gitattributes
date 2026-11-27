@@ -2,6 +2,9 @@
 /.gitattributes linguist-generated
 /skills/optional/reply-shape/references/views.md linguist-generated
 /skills/optional/reply-shape/scripts/check-mermaid.mjs linguist-generated
+/skills/optional/request-human-review/scripts/evidence.py linguist-generated
+/skills/optional/request-human-review/scripts/github.sh linguist-generated
+/skills/optional/request-human-review/scripts/verdicts.py linguist-generated
 /skills/optional/review-artifact/references/format.md linguist-generated
 /skills/optional/review-artifact/references/taste.md linguist-generated
 /skills/optional/review-artifact/references/views.md linguist-generated
