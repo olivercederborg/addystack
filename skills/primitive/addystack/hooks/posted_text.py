@@ -22,9 +22,9 @@ Known limits, each a missed or extra reminder, never a lost post:
 - A heredoc written to the body file inside an if, a loop, or after `||` is read as if it
   ran."""
 import os, re, stat
-from typing import Callable, List, NamedTuple, Optional, Tuple
+from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
-from shell_dirs import HEREDOC, QUOTED, Walk
+from shell_dirs import ASSIGNMENT, HEREDOC, QUOTED, Walk
 
 # The tool names whose calls may post text, as one regex both runtimes' manifest entries
 # carry; test_named_links checks the manifest against it.
@@ -56,6 +56,8 @@ _CAT = re.compile(r"\$\(\s*cat\s*<<\x01H(\d+)\x01\s*\)")
 # What the shell expands in a double-quoted string, an unquoted word, or an unquoted
 # heredoc: a $ or a backtick after an even run of backslashes, which escape each other.
 _EXPANDS = re.compile(r"(?<!\\)(?:\\\\)*[$`]")
+# A plain variable, $NAME or ${NAME}, that a body file's path may hold.
+_VARIABLE = re.compile(r"(?<!\\)((?:\\\\)*)\$(?:\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*))")
 _COMMENT = re.compile(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", re.M)
 
 
@@ -79,7 +81,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
     # A heredoc's body, None when the shell expands it (an unquoted delimiter and a $ or `),
     # so what it posts can't be known here.
     bodies: List[Optional[str]] = []
-    quoted: List[Tuple[str, bool]] = []  # each quoted string's text, and whether the shell expands it
+    quoted: List[Tuple[str, bool]] = []  # each quoted string's text as written, and whether it's in double quotes
 
     def hold_heredoc(match: "re.Match") -> str:
         whole, delimiter = match.group(0), match.group(1)
@@ -93,39 +95,50 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
 
     def hold_quoted(match: "re.Match") -> str:
         text = match.group(0)
-        if text[0] == "'":
-            quoted.append((text[1:-1], False))
-        else:
-            quoted.append((re.sub(r'\\([\\"$`])', r"\1", text[1:-1]), bool(_EXPANDS.search(text[1:-1]))))
+        quoted.append((text[1:-1], text[0] == '"'))
         return f"\x01Q{len(quoted) - 1}\x01"
 
     code = _COMMENT.sub("", QUOTED.sub(hold_quoted, HEREDOC.sub(hold_heredoc, command)))
 
-    def value(word: str) -> Optional[str]:
-        """A word's text with its quoted strings and heredoc bodies put back; a quoted
-        `"$(cat <<EOF … EOF)"` is the heredoc's body. None when the shell expands any of
-        it, such as `"see $LINK"`."""
+    def value(word: str, env: Optional[Dict[str, Optional[str]]] = None) -> Optional[str]:
+        """A word's text with its quoted strings and heredoc bodies put back, and each $NAME
+        or ${NAME} that `env` holds filled in; a quoted `"$(cat <<EOF … EOF)"` is the
+        heredoc's body. None when the shell expands any other part of it, such as `"see
+        $LINK"` with no LINK set earlier in the command."""
         unknown = []
+
+        def fill(text: str) -> str:
+            def variable(match: "re.Match") -> str:
+                known = (env or {}).get(match.group(2) or match.group(3))
+                unknown.extend([True] if known is None else [])
+                return match.group(1) + (known or "")
+            text = _VARIABLE.sub(variable, text)
+            unknown.extend([True] if _EXPANDS.search(text) else [])
+            return text
 
         def put_back(held: "re.Match") -> str:
             if held.group(1) == "H":
                 body = bodies[int(held.group(2))]
             else:
-                text, expands = quoted[int(held.group(2))]
+                text, double = quoted[int(held.group(2))]
                 cat = _CAT.fullmatch(text)
                 if not cat:
-                    unknown.extend([True] if expands else [])
-                    return _HOLD.sub(put_back, text)
+                    # In double quotes the shell expands first, then drops the backslashes
+                    # that escape \\, ", $, and `.
+                    return _HOLD.sub(put_back, re.sub(r'\\([\\"$`])', r"\1", fill(text)) if double else text)
                 body = bodies[int(cat.group(1))]
             unknown.extend([True] if body is None else [])
             return body or ""
-        found = _HOLD.sub(put_back, word)
-        return None if unknown or _EXPANDS.search(_HOLD.sub("", word)) else found
+        found = "".join(put_back(part) if part.group(1) else fill(part.group(0))
+                        for part in re.finditer(r"\x01([HQ])(\d+)\x01|[^\x01]+", word))
+        return None if unknown else found
 
-    def place(word: str, at: Optional[str]) -> Optional[str]:
-        """The absolute path a word names when run from `at`, or None."""
-        path = value(word)
-        if not path or re.search(r"[$*?\[{`]", path):
+    def place(word: str, where: Tuple[Optional[str], Dict[str, Optional[str]]]) -> Optional[str]:
+        """The absolute path a word names in a piece that runs from `where`'s directory with
+        its variables, or None."""
+        at, env = where
+        path = value(word, env)
+        if not path or re.search(r"[*?\[{]", path):
             return None
         path = os.path.expanduser(path)
         if os.path.isabs(path):
@@ -133,10 +146,19 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
         return os.path.normpath(os.path.join(at, path)) if at else None
 
     walk = Walk(code, cwd or "")
-    pieces = []  # (words, lead, the piece's text, its cwd or None)
+    # Variables the command sets before each piece, as agents keep a body file's folder in
+    # one (S=/tmp/x && gh pr edit 5 --body-file $S/body.md); None for one it can't read, or
+    # one set where it may not hold, such as inside an if or after ||.
+    env: Dict[str, Optional[str]] = {}
+    pieces = []  # (words, lead, the piece's text, (its cwd or None, the variables set before it))
     for at, words, lead in walk:
         known = bool(cwd) and "dir" not in walk.unknown
-        pieces.append((words, lead, walk.pieces[at], walk.cwd if known else None))
+        pieces.append((words, lead, walk.pieces[at], (walk.cwd if known else None, dict(env))))
+        sets = words[:lead] if lead == len(words) else words[lead + 1:] if words[lead] == "export" else []
+        for word in sets:
+            if ASSIGNMENT.match(word):
+                name, _, given = word.partition("=")
+                env[name] = None if walk.unsure("var " + name, f"sets {name}") else value(given, env)
 
     found_posts = []
     for index, (words, lead, text, at) in enumerate(pieces):
@@ -150,7 +172,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
         if given is None:
             continue
         if name in ("-b", "--body"):
-            body = value(given)
+            body = value(given, at[1])
         elif value(given) == "-":  # stdin: only a heredoc on this gh command places it
             held = re.findall(r"<<\x01H(\d+)\x01", text)
             body = bodies[int(held[-1])] if held else None
@@ -164,8 +186,8 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
     return found_posts
 
 
-def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[str],
-               place: Callable[[str, Optional[str]], Optional[str]]) -> Optional[str]:
+def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[Optional[str]],
+               place: Callable[[str, tuple], Optional[str]]) -> Optional[str]:
     """The text a --body-file at `path` holds when the gh command at `index` reads it: the
     heredoc a `cat > path <<EOF` in the same command wrote last before it, else the file on
     disk. None when the command names the path any other way before it, so it may write it;

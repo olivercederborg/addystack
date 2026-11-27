@@ -134,7 +134,8 @@ class PostedText(unittest.TestCase):
         self.assertEqual(self.posts("Bash", bash("printf 'see #1' | gh pr comment 7 -F -")), [])
 
     def test_text_the_shell_expands_passes(self):
-        for command in ('LINK=x; gh pr comment 1 --body "see #12 $LINK"', "gh pr comment 1 -b see#12$X",
+        for command in ('gh pr comment 1 --body "see #12 $LINK"', "gh pr comment 1 -b see#12$X",
+                        'if x; then LINK=y; fi; gh pr comment 1 --body "see #12 $LINK"',
                         'gh pr comment 1 -b "see #12 `date`"', "gh pr comment 1 -F - <<EOF\nsee #12 $LINK\nEOF",
                         'gh pr create --body "$(cat <<EOF\nsee #12 $LINK\nEOF\n)"',
                         "cat > b.md <<EOF\nsee #12 $LINK\nEOF\ngh pr create -F b.md",
@@ -146,6 +147,21 @@ class PostedText(unittest.TestCase):
             with self.subTest(command=command):
                 [post] = self.posts("Bash", bash(command))
                 self.assertIn("$5, see #12", post.text)
+
+    def test_a_body_file_through_a_variable_the_command_sets(self):
+        pathlib.Path(self.folder, "b.md").write_text("See DEV-4.")
+        folder = self.folder
+        for command in (f"S={folder} && gh pr edit 5 --body-file $S/b.md", f'S="{folder}"; B="$S/b.md"; gh pr edit 5 -F "$B"',
+                        f"export S={folder}\ngh pr edit 5 --body-file ${{S}}/b.md"):
+            with self.subTest(command=command):
+                self.assertEqual(self.posts("Bash", bash(command)), [posted_text.Post("gh pr edit 5", "See DEV-4.")])
+        command = f"S={folder} && cat > $S/new.md <<'EOF'\nFresh DEV-5.\nEOF\ngh pr create --body-file $S/new.md"
+        self.assertEqual(self.posts("Bash", bash(command)), [posted_text.Post("gh pr create", "Fresh DEV-5.")])
+        self.assertEqual(self.posts("Bash", bash('B="see DEV-6"; gh pr comment 1 -b "$B"'))[0].text, "see DEV-6")
+        for command in ("gh pr edit 5 -F $UNSET/b.md", f"if x; then S={folder}; fi; gh pr edit 5 -F $S/b.md",
+                        f"true || S={folder}; gh pr edit 5 -F $S/b.md", "S=$(pwd); gh pr edit 5 -F $S/b.md"):
+            with self.subTest(command=command):
+                self.assertEqual(self.posts("Bash", bash(command)), [])
 
     def test_a_body_file_relative_to_where_the_command_runs(self):
         pathlib.Path(self.folder, "sub").mkdir()
