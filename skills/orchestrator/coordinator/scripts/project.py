@@ -730,17 +730,25 @@ def _seen(path: Path) -> tuple[dict, dict, dict]:
 
 
 def _phase(lines: list[str], data: dict) -> str:
-    """snapshot's phase: a `## Result` beside a row that isn't FINAL, or one it can't read,
-    is unknown, since the project may be closing or only recording an interim result."""
+    """snapshot's phase. Closed needs a `## Result` with text and a Workers table it can read
+    whose rows are all FINAL; a Result beside a live or unread row, an empty Result, or a
+    Workers table it can't read is unknown, since the project may be closing or only
+    recording an interim result. A parked Goal is parked unless such a Result says otherwise."""
     if "## Goal" not in lines or data["goal"] is None:
         return "unknown"
+    headings = [i for i, text in enumerate(lines) if text == "## Result" or text.startswith("## Result (")]
+    if not headings:
+        return "parked" if _parked(lines) else "active"
+    written = all(any(text.strip() for text in lines[i + 1:_end(lines, i)]) for i in headings)
+    table = [] if "## Workers" not in lines else [
+        text for text in lines[slice(*_section(lines, "Workers"))] if text.startswith("|")]
+    unread = "## Workers" in lines and (len(table) < 2 or COLUMNS["state"] not in _cells(table[0])
+                                        or not re.match(r"\|\s*:?-", table[1]))
+    live = unread or data["unread_rows"] or any(not FINAL.match(unit["state"])
+                                                for group in data["groups"] for unit in group["units"])
     if _parked(lines):
-        return "parked"
-    if not any(text == "## Result" or text.startswith("## Result (") for text in lines):
-        return "active"
-    live = data["unread_rows"] or any(not FINAL.match(unit["state"])
-                                      for group in data["groups"] for unit in group["units"])
-    return "unknown" if live else "closed"
+        return "unknown" if live else "parked"
+    return "closed" if written and not live else "unknown"
 
 
 def status_data(lines: list[str], *, live: bool = True) -> dict:

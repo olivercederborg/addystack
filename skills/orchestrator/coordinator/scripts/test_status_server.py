@@ -142,6 +142,17 @@ class Snapshot(Folders, unittest.TestCase):
                 card = project.snapshot(folder)
                 self.assertEqual((card["state"], card["phase"]), ("ok", "unknown"))
 
+    def test_an_empty_result_a_workers_table_it_cant_read_or_a_parked_goal_beside_a_live_row_is_unknown(self):
+        result = {"## Queue": "## Result\n\nShipped #12.\n\n## Queue", "| running |": "| done |"}
+        empty = self.write("empty", **{**result, "## Result\n\nShipped #12.": "## Result\n"})
+        headless = self.write("headless", **{**result, "|---|---|---|---|---|---|\n": ""})
+        stateless = self.write("stateless", **{**result, "| State |": "| Status |"})
+        parked = self.write("parked", **{"## Queue": "## Result\n\nShipped #13.\n\n## Queue",
+                                         "Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting"})
+        for folder in (empty, headless, stateless, parked):
+            with self.subTest(folder.name):
+                self.assertEqual(project.snapshot(folder)["phase"], "unknown")
+
     def test_a_project_from_before_the_queue_has_a_null_queue(self):
         start = PROJECT.index("## Queue")
         folder = self.write(text=PROJECT[:start] + PROJECT[PROJECT.index("## Decisions"):])
@@ -200,7 +211,7 @@ class Page(Folders, unittest.TestCase):
         self.assertEqual(status_server.tag(seen), status_server.tag(status_server.signature(self.orchestrate)))
 
     def test_projects_come_unknown_and_active_first_then_parked_then_closed_and_more_queue_items_first(self):
-        self.write("closed", **{"## Queue": "## Result\n\n## Queue", "| running |": "| done |"})
+        self.write("closed", **{"## Queue": "## Result\n\nShipped #12.\n\n## Queue", "| running |": "| done |"})
         self.write("parked", **{"Ship the export.\nProof: #12 merged.": "Parked 2026-11-20: waiting"})
         self.write("quiet", **{"| 1 | decide | pick the export format | coordinator | 2026-11-20 09:00 |\n": ""})
         self.write("busy", **{"Next id: 2": "Next id: 3", "| coordinator | 2026-11-20 09:00 |":
