@@ -173,6 +173,29 @@ class Post(unittest.TestCase):
         self.assertEqual(outcome['outcome'], 'needs-human')
         self.assertEqual([command for command, _, _ in fake.writes], ['review', 'dismiss'])
 
+    def test_a_retry_leaves_a_newer_request_for_changes_and_posts_changed_evidence_again(self):
+        self.gate('interface')
+        fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})
+        def dismissal_fails(command, *arguments):
+            if command == 'dismiss':
+                raise ValueError('github.sh dismiss failed: HTTP 502')
+            return Fake.github(fake, command, *arguments)
+        with patch.object(fake, 'github', dismissal_fails), self.assertRaisesRegex(ValueError, 'HTTP 502'):
+            self.post(fake)
+        # Another review of this head requested changes meanwhile: the retry leaves that one.
+        fake.active = {'id': 42, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD}
+        self.post(fake, retry=True)
+        self.assertEqual([command for command, _, _ in fake.writes], ['review'])
+        # What it would post changed, as a check that went from pending to failed does: it posts again.
+        self.gate(None)
+        checks = Fake(required='ci\tpending\nrequired: not all passed\n')
+        self.assertEqual(self.post(checks)['outcome'], 'not-approved')
+        checks.required = 'ci\tfail\nrequired: not all passed\n'
+        retried = self.post(checks, retry=True)
+        self.assertEqual(retried['checks'], ['ci\tfail'])
+        self.assertEqual([command for command, _, _ in checks.writes], ['review', 'review'])
+        self.assertIn('ci\tfail', checks.writes[-1][2]['body.md'])
+
     def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
         self.gate('interface')
         failing = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})

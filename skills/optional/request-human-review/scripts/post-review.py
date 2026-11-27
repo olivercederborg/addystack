@@ -31,6 +31,7 @@ withdrawal finishes it without posting the review again.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -215,16 +216,21 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
                                       'not-approved': 'not-approved'}[action]
                 # A run that posted this review and then stopped before withdrawing the earlier one
-                # left a record: a retry finishes the withdrawal instead of posting it twice.
+                # left a record: a retry that would post the same thing finishes that withdrawal
+                # instead of posting it twice, and withdraws only the review it was meant to, while
+                # that one still counts; a newer one stands.
                 record = folder / 'POSTED.json'
                 posted = json.loads(record.read_text()) if record.exists() else {}
-                if posted.get('head') == head and posted.get('outcome') == outcome['outcome']:
-                    outcome['review'] = posted['review']
+                sent = hashlib.sha256((body + json.dumps(drafts)).encode()).hexdigest()
+                target = withdraw['id'] if withdraw and withdraw['state'] == 'CHANGES_REQUESTED' else None
+                if posted.get('head') == head and posted.get('outcome') == outcome['outcome'] and posted.get('sent') == sent:
+                    outcome['review'], target = posted['review'], posted.get('withdraw')
                 else:
                     outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
-                    record.write_text(json.dumps({'head': head, 'outcome': outcome['outcome'], 'review': outcome['review']}))
-                if withdraw and withdraw['state'] == 'CHANGES_REQUESTED':
-                    github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
+                    record.write_text(json.dumps({'head': head, 'outcome': outcome['outcome'], 'sent': sent,
+                                                  'review': outcome['review'], 'withdraw': target}))
+                if target is not None and active and active['id'] == target:
+                    github('dismiss', number, target, _write(scratch, 'dismissal.md', notice))
         finally:
             for leftover in folder.glob(f'{scratch.name}-*.json'):
                 leftover.unlink()
