@@ -295,9 +295,19 @@ PY
     event=${4:-COMMENT}
     "$0" anchors "$1" "$3"
     slug=$(repo); payload=$(mktemp)
+    # With an event and a body the review posts in one request, as approve does, so a failed
+    # post leaves no pending review to block the next one.
+    if [ $# = 5 ]; then
+      review_payload "$2" "$3" "$event" "$5" > "$payload"
+      if [ "${DRY_RUN:-}" = 1 ]; then
+        echo "DRY_RUN: post a review on $slug#$1 with event=$event and the body in $5:"; cat "$payload"; echo; exit 0
+      fi
+      gh api --method POST "repos/$slug/pulls/$1/reviews" --input "$payload" --jq .html_url
+      exit
+    fi
     review_payload "$2" "$3" > "$payload"
     if [ "${DRY_RUN:-}" = 1 ]; then
-      echo "DRY_RUN: create a pending review on $slug#$1, then submit it with event=$event${5:+ and the body in $5}:"
+      echo "DRY_RUN: create a pending review on $slug#$1, then submit it with event=COMMENT:"
       cat "$payload"; echo; exit 0
     fi
     # Leaving out `event` creates a pending review; submitting it with COMMENT and no
@@ -309,11 +319,7 @@ PY
       exit 1
     fi
     # Submitting with COMMENT and no body posts only the inline comments.
-    if [ $# = 5 ]; then
-      gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event="$event" -F body=@"$5" --jq .html_url
-    else
-      gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event=COMMENT --jq .html_url
-    fi
+    gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event=COMMENT --jq .html_url
     ;;
   approve)
     [ $# -ge 2 ] && [ $# -le 4 ] || usage

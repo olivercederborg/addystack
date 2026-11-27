@@ -178,9 +178,12 @@ class Anchors(unittest.TestCase):
         result = self.run_script("review", "7", "abc", "DRAFTS", "REQUEST_CHANGES", "BODY",
                                  drafts=[{"path": "a.ts", "line": 3, "body_file": "body.md"}])
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("submit it with event=REQUEST_CHANGES and the body in ", result.stdout)
-        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["comments"],
-                         [{"path": "a.ts", "line": 3, "side": "RIGHT", "body": "Why?"}])
+        # One request with the event and the body: a failed post leaves no pending review behind.
+        self.assertIn("post a review on o/r#7 with event=REQUEST_CHANGES and the body in ", result.stdout)
+        payload = json.loads(result.stdout.splitlines()[-1])
+        self.assertEqual(payload["comments"], [{"path": "a.ts", "line": 3, "side": "RIGHT", "body": "Why?"}])
+        self.assertEqual(payload["event"], "REQUEST_CHANGES")
+        self.assertIn("body", payload)
 
     def test_a_review_never_approves_and_needs_a_body_with_its_event(self):
         for args in (("APPROVE", "BODY"), ("REQUEST_CHANGES",)):
