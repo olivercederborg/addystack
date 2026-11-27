@@ -1,8 +1,9 @@
 """Tests for named_links.unnamed, which scripts/check_examples.py runs on the kit's
-example replies."""
-import unittest
+example replies and named-links-check.py on posts, and for the modules only the
+check uses."""
+import os, pathlib, re, shutil, tempfile, unittest
 
-import merge_go, named_links, turn_block
+import merge_go, named_links, posted_text, turn_block
 from test_hooks import block
 
 NAMED = "[DEV-4024, Close split exports](https://linear.app/acme/issue/DEV-4024)"
@@ -96,6 +97,117 @@ class TheTableNamesTheNextLinesId(unittest.TestCase):
 
     def test_the_reply_is_clean(self):
         self.assertEqual(named_links.unnamed(self.REPLY), [])
+
+
+def bash(command):
+    return {"command": command}
+
+
+class PostedText(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.folder)
+
+    def posts(self, tool, tool_input, cwd=None):
+        return posted_text.posts(tool, tool_input, self.folder if cwd is None else cwd)
+
+    def test_gh_body_flags_in_each_form(self):
+        for command in ('gh pr create --title "Fix #9" --body "see #12"', "gh pr create -t x -b 'see #12'",
+                        'gh pr create --body="see #12"', "gh pr new -bsee", 'git push && gh pr create -b "see #12"'):
+            with self.subTest(command=command):
+                [post] = self.posts("Bash", bash(command))
+                self.assertEqual(post.target, "gh pr create" if "new" not in command else "gh pr new")
+                self.assertNotIn("#9", post.text)
+        self.assertEqual(self.posts("Bash", bash("gh pr comment 12 --body 'Fixed in #14.'")),
+                         [posted_text.Post("gh pr comment 12", "Fixed in #14.")])
+        self.assertEqual(self.posts("Bash", bash('gh pr edit 12 --body "a \\"quoted\\" #3"')),
+                         [posted_text.Post("gh pr edit 12", 'a "quoted" #3')])
+
+    def test_a_heredoc_body_in_a_substitution_or_on_stdin(self):
+        command = 'gh pr create --title t --body "$(cat <<\'EOF\'\n## Summary\nCloses #12 "quoted"\nEOF\n)"'
+        [post] = self.posts("Bash", bash(command))
+        self.assertIn('Closes #12 "quoted"', post.text)
+        [post] = self.posts("Bash", bash("gh pr comment 7 --body-file - <<'EOF'\nSee DEV-4.\nEOF"))
+        self.assertEqual(post, posted_text.Post("gh pr comment 7", "See DEV-4."))
+        self.assertEqual(self.posts("Bash", bash("printf 'see #1' | gh pr comment 7 -F -")), [])
+
+    def test_a_body_file_relative_to_where_the_command_runs(self):
+        pathlib.Path(self.folder, "sub").mkdir()
+        pathlib.Path(self.folder, "sub", "b.md").write_text("See DEV-4.")
+        [post] = self.posts("Bash", bash("cd sub && gh pr create --body-file b.md"))
+        self.assertEqual(post.text, "See DEV-4.")
+        self.assertEqual(self.posts("Bash", bash("cd $X && gh pr create -F b.md")), [])
+        self.assertEqual(self.posts("Bash", bash("gh pr create -F sub/b.md"), cwd=""), [])
+
+    def test_a_file_the_command_writes_reads_its_heredoc_or_passes(self):
+        pathlib.Path(self.folder, "b.md").write_text("stale #99")
+        command = "cat > b.md <<'EOF'\nFresh DEV-4.\nEOF\ngh pr create --body-file b.md"
+        self.assertEqual(self.posts("Bash", bash(command)), [posted_text.Post("gh pr create", "Fresh DEV-4.")])
+        self.assertEqual(self.posts("Bash", bash("cat >b.md <<EOF && gh pr create -F b.md\nFresh DEV-4.\nEOF"))[0].text,
+                         "Fresh DEV-4.")
+        for command in ("echo hi > b.md && gh pr create -F b.md", "cat >> b.md <<EOF\nx\nEOF\ngh pr create -F b.md",
+                        "cp a.md b.md; gh pr create -F b.md"):
+            with self.subTest(command=command):
+                self.assertEqual(self.posts("Bash", bash(command)), [])
+
+    def test_bodies_it_cannot_place_pass(self):
+        fifo = os.path.join(self.folder, "fifo")
+        os.mkfifo(fifo)
+        pathlib.Path(self.folder, "big.md").write_text("#1 " * 200_000)
+        for path in (fifo, "/dev/null", "missing.md", "big.md", self.folder):
+            with self.subTest(path=path):
+                self.assertEqual(self.posts("Bash", bash(f"gh pr create --body-file {path}")), [])
+
+    def test_other_commands_and_titles_post_nothing(self):
+        for command in ("gh pr create --title 'Fix #12' --fill", "gh pr edit 3 --title '#4' --add-label x",
+                        "echo gh pr create --body '#12'", "gh pr view 12", "git commit -m '#12'"):
+            with self.subTest(command=command):
+                self.assertEqual(self.posts("Bash", bash(command)), [])
+
+    def test_t3_pull_request_bodies(self):
+        self.assertEqual(self.posts("mcp__t3-code__pull_request_create", {"title": "#1", "body": "see #12"}),
+                         [posted_text.Post("pull_request_create", "see #12")])
+        self.assertEqual(self.posts("mcp__t3-code__pull_request_update", {"number": 5, "body": "DEV-4"}),
+                         [posted_text.Post("pull_request_update 5", "DEV-4")])
+        self.assertEqual(self.posts("mcp__t3-code__pull_request_update", {"number": 5, "ready": True}), [])
+
+    def test_linear_text_fields_and_patch_inserts(self):
+        issue = {"team": "Core", "title": "DEV-1", "relatedTo": ["DEV-2"], "description": "After DEV-3."}
+        self.assertEqual(self.posts("mcp__claude_ai_Linear__save_issue", issue),
+                         [posted_text.Post("save_issue new Core", "After DEV-3.")])
+        patch = {"id": "DEV-9", "patch": [{"op": "insert_after", "anchor": "DEV-5", "text": "See DEV-6."},
+                                          {"op": "replace", "old_string": "DEV-7", "new_string": "DEV-8"}]}
+        [post] = self.posts("mcp__linear__save_issue", patch)
+        self.assertEqual(post.target, "save_issue DEV-9")
+        self.assertEqual(ids(post.text), ["DEV-6", "DEV-8"])
+        self.assertEqual(self.posts("mcp__claude_ai_Linear__save_comment", {"issueId": "DEV-9", "body": "x"}),
+                         [posted_text.Post("save_comment DEV-9", "x")])
+        for fields in ({"id": "DEV-9", "relatedTo": ["DEV-4"]}, {"id": "DEV-9", "duplicateOf": "DEV-4", "state": "x"}):
+            self.assertEqual(self.posts("mcp__claude_ai_Linear__save_issue", fields), [])
+
+    def test_executor_calls_unwrap_to_linear(self):
+        call = lambda path, fields: {"path": path, "input": {"accountId": "acc_1", "input": fields}}
+        one = call('tools["linear-mcp"].save_comment', {"issueId": "JOK-1", "body": "See JOK-2."})
+        self.assertEqual(self.posts("mcp__executor-personal__call", {"calls": one}),
+                         [posted_text.Post("save_comment JOK-1", "See JOK-2.")])
+        calls = [call('tools["linear-mcp"].get_issue', {"id": "JOK-1"}),
+                 call("tools.linear-mcp.save_issue", {"id": "JOK-1", "description": "JOK-3"})]
+        self.assertEqual(self.posts("mcp__executor-work__call", {"calls": calls}),
+                         [posted_text.Post("save_issue JOK-1", "JOK-3")])
+
+    def test_unexpected_shapes_post_nothing(self):
+        for tool, tool_input in (("Bash", None), ("Bash", {"command": 3}), ("Read", {"command": "gh pr create -b x"}),
+                                 ("mcp__executor-x__call", {"calls": "x"}), ("mcp__linear__save_issue", []),
+                                 (None, None), ("mcp__t3-code__pull_request_create", {"body": 3})):
+            with self.subTest(tool=tool, tool_input=tool_input):
+                self.assertEqual(posted_text.posts(tool, tool_input, None), [])
+
+    def test_the_matcher_names_exactly_the_routes(self):
+        for tool in ("Bash", "mcp__t3-code__pull_request_create", "mcp__t3-code__pull_request_update",
+                     "mcp__claude_ai_Linear__save_project", "mcp__linear__save_comment", "mcp__executor-work__call"):
+            self.assertTrue(re.fullmatch(posted_text.MATCHER, tool), tool)
+        for tool in ("Read", "mcp__t3-code__pull_request_merge", "mcp__linear__get_issue", "mcp__executor-x__execute"):
+            self.assertFalse(re.fullmatch(posted_text.MATCHER, tool), tool)
 
 
 if __name__ == "__main__":
