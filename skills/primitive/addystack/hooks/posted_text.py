@@ -11,7 +11,10 @@ passes it.
 
 It reads a command as the gates do (shell_dirs): heredoc bodies and quoted strings are
 data, kept aside by placeholder so the words and pieces around them read as the shell splits
-them, and `Walk` says where each piece runs, which places a relative --body-file."""
+them, and `Walk` says where each piece runs, which places a relative --body-file.
+
+Known limit: a Linear patch's inserted fragments are read joined in operation order, not
+where Linear places them, so a code fence one fragment opens can hide an id in the next."""
 import os, re, stat
 from typing import Callable, List, NamedTuple, Optional, Tuple
 
