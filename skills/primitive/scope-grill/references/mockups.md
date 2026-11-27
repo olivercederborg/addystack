@@ -11,7 +11,7 @@ the round changes, as prototypes the user would take for the app.
    screen to the part the choice changes and show one crop per option, labeled like the
    options, as in `A ✓ In the row` and `B · On the detail screen`. At phone width they
    stack.
-3. **Assumed screens.** Below the options, an `Assuming (say if wrong) · pending` section shows
+3. **Assumed screens.** Below the options, an `Assuming (say if wrong)` section shows
    one crop per screen an assumed default changes, such as a new menu entry, a sheet, or
    a row, captioned with the default. Skip a default an option's crop already shows.
 4. **Mark what's new.** Outline each element an option or default adds, such as with a

@@ -17,7 +17,7 @@ discovered.
 before you report if its text has left your context.
 <!-- toolkit-format:end -->
 
-Item kind here: **Decide**, one per question, as the round's lines.
+Item kind here: **Decide**, one per ❓ question.
 
 ## 1. Set the scope line
 
@@ -48,78 +48,73 @@ Not in scope, so a later run picks it up.
   is a restructure or rename, the target module list and what goes where are the
   *what*: ask them as a round-1 question.
 - **Skip the obvious.** When a question's options add no scope, are easy to undo, and
-  have a clear recommendation, mark it pending in **Assuming** instead of asking. If it adds work, propose it instead.
+  have a clear recommendation, list it under `Assuming (say if wrong):` instead of asking. If it adds work, make it a *My suggestion:* item instead.
 - **Question creep is scope creep.** When a question exists only because an earlier
   answer widened the scope, say so.
 - **Work the design tree.** A round asks only the **frontier**: decisions whose
   prerequisites are settled. Recompute it after each answer.
 - **Rounds** have one to three open frontier questions, the one whose options differ
-  most in Size first. Ask only decisions that need the user's input; don't add a
+  most in size first. Ask only decisions that need the user's input; don't add a
   question to fill the round. Each has a recommended option, and one answer can settle
-  the round: every pick, or every pick but the ones it overrides by number.
+  the round: every ➡️ answer, or all but the ones it overrides by number.
 - **Facts are yours; decisions are the user's.** Look up what the code, config, or
   tools can answer, with parallel sub-agents when two or more lookups are independent.
   While a lookup runs, only the questions that depend on it wait.
 
-## 3. Show each option's impact
+## 3. Ask the round
 
-Every reply in the grill, including a clarification, uses this order. Aim for about 45
-words of prose above its fold, and keep it under 60. Plan items and
-the fold's summary count, while code and diff blocks and the fixed labels (these
-headings, their tags, `Size`, `Pick`, `(say if wrong)` and the who-agreed tags) don't.
-Only **Proposed this round** and **Changed this round** are `diff` blocks; the plan is plain bullet lists,
-outside any code fence. When it doesn't fit, shorten its clauses and fold the rest by
-name, such as `+4 more in the fold`:
+Every reply in the grill, including a clarification, is a round in this order, as plain
+text:
 
-1. A short headline. **Proposed this round** · *my suggestion, not agreed*, word for word: a
-   `diff` block with `+` lines for every suggested addition, including assumptions
-   that add work and wider recommendations. Place it above the plan; move an addition
-   to Building only after acceptance.
-2. **Changed this round**: a red/green `diff` only if something changed since the last
-   round. Round 1 is all green, including your own baseline reading. A Size change goes
-   on the plan's Size line, not here.
-3. Print **The plan so far** as its own heading every time, then these plain headings
-   in order: **Building** · **Not building** · **Assuming** (say if wrong) · **Size**.
-   Use `Size`, not a synonym, so the Stop check can read it. Mark each Building
-   clause `(you)`, `(you, round N)`, or `(me, round N)`; write the heading exactly as
-   **Assuming** (say if wrong), with each value on its heading line as in the example.
-   Keep about five Building clauses,
-   folding older ones by name. Assumptions stay `pending` until checked. Size is PRs ·
-   ~files · migrations · `lines not estimated` unless measured. Show a change once, as
-   a trail on that line, such as `~4 → ~6 files` or `0 → 1 → 0 migrations`. Start a
-   trail only from a known count; otherwise write `1 proposed migration`.
-4. **Pick**: number each question and its recommended answer and impact. The fold holds
-   context, options, costs, sources, and the **For architect** list, or `none`. Then wait: the user takes every pick, names an
-   alternative, or overrides a question by its number.
-   A user's `confirm` takes the offered picks, unless they say otherwise.
+1. **Headline**: `🟡 **Round N: <what this round decides>?**`.
+2. **Questions**, one to three, a blank line between them. Each is `❓ **N · <question>?**`,
+   worded so "yes" takes the recommendation, then one sentence naming the other option
+   and its cost. Under it, the recommendation alone on a `➡️` line, with its reason and
+   size.
+3. **The plan, once**: `**Plan** · <PRs> · ~<files> · <migrations>`. A change shows as a
+   trail on that line, such as `~6 → ~11 files` or `0 → 1 → 0 migrations`; start a trail
+   only from a known count, otherwise write `1 proposed migration`. Then plain bullets,
+   a sentence each: what gets built; *My suggestion:* before each item the user hasn't
+   agreed to, including an assumption that adds work, until they accept it;
+   `Not building:`; and `Assuming (say if wrong):`. A bullet this round changed can lead
+   with `New:`, and a dropped item shows once as `Dropped: …`. Past about five built
+   items, fold the older ones by name, such as `+4 more in the fold`.
+4. **The fold**: each option with its change and cost line, the sources, any unchecked
+   fact, and the **For architect** list, or `none`.
+5. **Wait.** In the reply's Next, `a` takes every ➡️ answer, and the user overrides one
+   by number, such as `2: shared`. A user's `confirm` takes them too.
 
-Example, when a table is suggested but not agreed:
+Example:
 
 ````markdown
-🟡 **Keep serviceData?**
+🟡 **Round 1: how much should the loading screens reuse existing skeletons?**
 
-**Proposed this round** · *my suggestion, not agreed*
+❓ **1 · Dashboard: reuse its five section skeletons?** The other option is one new
+skeleton, kept in step with the sections by hand.
 
-```diff
-+ A per-currency accounts table
-+ Size: 0 → 1 migration
-```
+➡️ Yes: export and compose them, about 6 files. They can't drift.
 
-**The plan so far**
+❓ **2 · Settings, members, top-ups, profile: an inline skeleton in each loading file?**
+The other option is shared components.
 
-- **Building**: per-currency account picker (you)
-- **Not building**: account creation
-- **Assuming** (say if wrong): old exports keep accounts (pending)
-- **Size**: 2 PRs · ~20 files · 0 migrations · lines not estimated
+➡️ Yes, as exports and archive already do, in 4 files.
 
-**Pick**: serviceData, no migration.
+**Plan** · 1 PR · ~11 files · no migrations
 
-<details><summary>⚠️ 1 unchecked · costs</summary>
+- Loading screens on six pages, covering only the page body. Headers and tabs stay real.
+- Transactions reuses its table-row and filter skeletons.
+- *My suggestion:* prove it with a production build and a slow server.
+- Not building: connections, export tabs, Cache Components.
+- Assuming (say if wrong): prefetching is fine, since each loading screen stays cached
+  for 5 minutes.
 
-Not checked: whether old exports keep their account; no export history is available.
-**Source**: `docs/exports.md`, one account per export.
+<details><summary>Options, costs, sources</summary>
+
+**1 · Reuse the section skeletons**: No extra scope · ≈6 files · easy to undo.
+**1 · One new skeleton**: No extra scope · ≈2 files · easy to undo. It drifts when a
+section changes.
+**Source**: `app/dashboard/sections/*.tsx`, five exported section skeletons.
 **For architect**: none.
-…
 
 </details>
 ````
@@ -127,9 +122,9 @@ Not checked: whether old exports keep their account; no export history is availa
 Add a decision diagram only when the choice hinges on a fact that's easier to see as a
 branch. When `html_render` exists and a round changes what a user sees (a layout, a
 state, or a flow between screens), through an option or an assumed default, its picture
-is one mockup page: prototypes of the real screens, built as
-[mockups](references/mockups.md) says. A round that changes no screen gets none. For
-each option, show:
+is one mockup page under the headline: prototypes of the real screens, built as
+[mockups](references/mockups.md) says. A round that changes no screen gets none. In the
+fold, give each option:
 
 - **Change**: what the option touches, named in its size, such as `1 file: export.ts`.
   Add a small `diff` of observable behavior only when names don't show it, and fold a
@@ -156,7 +151,8 @@ each option, show:
   slim-scope says it waits. Any other losing wider option names the signal that would
   justify it later, and moves to **Not in scope**. Every narrower option that
   loses names the concrete work it would cost to widen later, even when the narrower
-  choice is easy to undo. With one losing option, the Pick line can carry it.
+  choice is easy to undo. With one losing option, the question's other-option sentence can
+  carry it.
 - **Domain docs as you go**: use `domain-modeling` when an answer settles a domain term,
   the user's word is fuzzy or conflicts with the glossary, or a decision may need an ADR.
   Show a settled term in that question's fold and write it once the round is accepted;
@@ -164,9 +160,9 @@ each option, show:
 
 ## 4. Watch the whole plan
 
-- **A wider pick** changes the plan and Size trail in the next round and shows any new
+- **A wider answer** changes the plan and its size trail in the next round and shows any new
   questions it creates.
-- **A second PR**: when the Size line passes ~20 files or one migration plus its
+- **A second PR**: when the plan's size passes ~20 files or one migration plus its
   callers, say so and propose a split into vertical slices, each shipping a working part of the outcome. A
   wide rename or contract change goes expand → migrate → contract.
 - **A removed premise**: when a decision removes the reason behind an earlier pick, such
@@ -202,10 +198,10 @@ fails (auth or timeout), say so and continue.
 When the cross-review is settled, finish with:
 
 - **Decisions**: one line each, numbered `D1.`, with its cost line. One the user
-  didn't pick, such as an Assuming item or one of My additions, ends `[assumed]`.
+  didn't pick, such as an assumption, starts *My suggestion:*.
 - **Resulting shape**: one combined `diff` of the file tree the plan touches.
 - **For architect**: the structure questions parked for `architect`, or none.
-- **Scope and size**: the Size trail and each widening with the answer that caused it.
+- **Scope and size**: the size trail and each widening with the answer that caused it.
 - **Not in scope**: the parked questions, the losing options, and the baseline's
   exclusions, in the format below.
 - **Milestones**: the map, with the one this plan covers marked, or none.
@@ -218,9 +214,9 @@ When the cross-review is settled, finish with:
 - **Cross-review**: `N points · N reopened · N dropped`, with one line for each point
   kept, or `clean`.
 
-Use the same round format at plan-ready. List **My additions**: every addition
-agreed by default, not picked by the user, including docs, tests and migrations. The user's approval accepts them and saves the
-plan, or they drop them.
+Plan-ready uses the round's shape, with every addition the user didn't pick, including
+docs, tests and migrations, still a *My suggestion:* bullet. The user's approval accepts
+them and saves the plan, or they drop them.
 The fold holds the exact text to save, copied verbatim from any draft the session
 already wrote, with every artifact that draft carries, such as an email. Its target is
 the repo's issue tracker (one issue per
