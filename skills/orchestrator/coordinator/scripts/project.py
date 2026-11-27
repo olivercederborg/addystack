@@ -387,7 +387,7 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 # hourly took no action on 91% of its turns.
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
 PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
-LINK, PR_REF, THREAD_ROW = project_md.LINK, project_md.PR_REF, project_md.THREAD_ROW
+LINK, THREAD_ROW = project_md.LINK, project_md.THREAD_ROW
 REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
@@ -460,19 +460,6 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
-    """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
-    against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
-    it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
-    if text.startswith("none"):
-        return
-    text = project_md.ranges(text)
-    owner = origin.split("/")[0] if origin else "?"
-    for url_repo, url_n, repo, n, local in PR_REF.findall(text):
-        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
-        refs.add(f"{repo}#{url_n or n or local}")
-
-
 def _checkout(lines: list[str]) -> Path | None:
     """The path in the Checkout header, before any ` (on `branch`)` note."""
     place = _header(lines, "Checkout").split(" (")[0].strip()
@@ -517,9 +504,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     busy = hold and lead.get("status") in ACTIVE
     origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    watched: set[str] = set()
-    _pr_refs(_listened(lines, "Watches"), origin, watched)
-    refs = set(watched)
+    watches = _listened(lines, "Watches")
+    named = [project_md.pulls("" if watches.startswith("none") else watches, origin)]
+    watched = set(named[0].refs)
     rows, odd = _workers(lines)
     for line in odd:
         if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
@@ -529,7 +516,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
+            named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -563,10 +550,10 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
-    for ref in sorted(ref for ref in refs if ref.startswith("?")):
-        refs.discard(ref)
-        found.append((f"owner:{ref}", f"{ref.lstrip('?/')}: the tick can't tell its repo from the checkout's origin, so "
-                                      "write it as owner/repo#N"))
+    refs = {ref for pulls in named for ref in pulls.refs}
+    for piece in sorted({piece for pulls in named for piece in pulls.unread}):
+        found.append((f"owner:{piece}", f"{piece}: the tick can't tell its repo from the checkout's origin, so "
+                                        "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
     events = []

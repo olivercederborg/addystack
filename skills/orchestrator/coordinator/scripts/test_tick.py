@@ -209,6 +209,15 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertIn("- skills#246: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", self.sent()[0]["message"])
 
+    def test_a_running_rows_ref_for_another_repo_is_flagged_not_guessed(self):
+        self.write_project(rows={"`export` · #12": "`export` · #12; tools #9 → tools#10 (#8 merged)"})
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertIn("- tools #9: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", message)
+        self.assertIn("- tools#10: the tick can't tell its repo", message)
+        calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(sorted(set(calls)), ["acme/app#12", "acme/app#7"], "no PR is read under a guessed repo")
+
     def test_a_failed_read_keeps_the_stall_clock(self):
         self.tick("--send")
         self.age(3060)
