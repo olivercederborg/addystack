@@ -29,8 +29,7 @@ fine request: draw the goal, the must-haves, and the open questions out of it.
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
 work is wanted. The plan builds the must-haves. At a pilot Bar the smallest option that
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
-the goal back in the user's words. Keep
-the user's boundaries verbatim: on the plan, or copied into the fold and named on the
+the goal back in the user's words in the fold. Keep the user's boundaries verbatim: on the plan, or copied into the fold and named on the
 plan when the glance can't hold them.
 
 **Milestones**: when the request holds more than one step that ships on its own, map
@@ -217,7 +216,7 @@ When the cross-review is settled, finish with:
 Plan-ready uses the round's shape with one question, `❓ **1 · Approve this plan?**`, and every
 addition the user didn't pick, including docs, tests and migrations, still a *My
 suggestion:* bullet. The user's approval accepts
-them and saves the plan, or they drop them.
+them, or they drop them.
 The fold holds the exact text to save, copied verbatim from any draft the session
 already wrote, with every artifact that draft carries, such as an email. Its target is
 the repo's issue tracker (one issue per
