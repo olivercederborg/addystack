@@ -855,19 +855,25 @@ class Governor:
             last, debt, began, marks = self.cpu.get(top) or ({}, {}, wall, [])
             gained, last, debt = cpu_gained(units[top].members, last, debt, began)
             total = (marks[-1][1] if marks else 0) + gained
-            marks = [mark for mark in marks if now - mark[0] <= GATE_WINDOW_SECONDS] + [(now, total)]
+            # Keep the newest mark at least a window old, so the window is measured whole.
+            old = [i for i, mark in enumerate(marks) if now - mark[0] >= GATE_WINDOW_SECONDS]
+            marks = marks[old[-1] if old else 0:] + [(now, total)]
             self.cpu[top] = (last, debt, began, marks)
 
     def _cores(self, now):
-        """Cores the running units used over the last GATE_WINDOW_SECONDS. A unit tracked
-        for less than the window counts what it used, over the whole window."""
-        used = 0
+        """Cores the running units used over the last GATE_WINDOW_SECONDS: each unit's CPU
+        since its newest mark at least a window old, over the time since that mark. A unit
+        tracked for less than the window counts what it used, over the whole window."""
+        cores = 0
         for top in self.running:
             marks = self.cpu.get(top, (None, None, None, []))[3]
-            inside = [mark for mark in marks if now - mark[0] <= GATE_WINDOW_SECONDS]
-            if inside:
-                used += inside[-1][1] - inside[0][1]
-        return used / 1e9 / GATE_WINDOW_SECONDS
+            if len(marks) < 2:
+                continue
+            old = [mark for mark in marks if now - mark[0] >= GATE_WINDOW_SECONDS]
+            since, before = old[-1] if old else marks[0]
+            span = now - since if old else GATE_WINDOW_SECONDS
+            cores += (marks[-1][1] - before) / 1e9 / span
+        return cores
 
     def _run(self, top, now, wall):
         self.running[top] = 0

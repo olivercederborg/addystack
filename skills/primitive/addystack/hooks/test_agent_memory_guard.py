@@ -1057,6 +1057,15 @@ class CheckQueue(unittest.TestCase):
         q.tick(q.check(1, 1000, cpu=cpu), q.check(2))
         self.assertEqual(q.stopped(), {221})
 
+    def test_the_gate_measures_a_whole_window_at_uneven_ticks(self):
+        # Ticks of 0.51 s: a window cut at the last mark inside 2 s read 10.5 cores as 8.
+        q = Queue(self, cap=4, cores=10)
+        for n in range(8):
+            q.tick(q.check(1, 1000, reaped=int(n * .51 * 10.5e9)), seconds=.51)
+        q.tick(q.check(1, 1000, reaped=int(8 * .51 * 10.5e9)), q.check(2), seconds=.51)
+        self.assertAlmostEqual(q.governor._cores(q.now - .51), 10.5, places=1)
+        self.assertEqual(q.stopped(), {221})
+
     def test_the_gate_counts_a_worker_that_exited_between_scans(self):
         q = Queue(self, cap=4, cores=2)
         reaped = 0
