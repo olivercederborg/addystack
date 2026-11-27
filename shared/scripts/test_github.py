@@ -7,7 +7,7 @@ SCRIPT = pathlib.Path(__file__).resolve().parent / "github.sh"
 VERDICTS = SCRIPT.parent.parent.parent / "skills" / "primitive" / "addystack" / "hooks" / "verdicts.py"
 
 GH = r"""#!/usr/bin/env python3
-import json, os, sys
+import json, os, subprocess, sys
 s = json.load(open(os.environ["SCENARIO"]))
 a = " ".join(sys.argv[1:])
 if a.startswith("repo view"):
@@ -21,15 +21,25 @@ elif a.startswith("api repos/o/r/branches/main --jq"):
 elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
     if s["checks"] == "unreadable" or s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    # As the --jq prints them: type, name, app id, workflow and event, creation order and bucket. A
-    # scenario row is [name, bucket, app id, order, workflow id, event, suite id, type] and may stop
-    # after any field; a check from no workflow has none.
-    def row(c):
+    # The rollup GitHub returns, run through the script's own --jq. A scenario row is
+    # [name, bucket, app id, order, workflow id, event, suite id, type] and may stop after any
+    # field; a check from no workflow has none, and the suite id isn't read.
+    run_state = {"pass": ("COMPLETED", "SUCCESS"), "fail": ("COMPLETED", "FAILURE"), "cancel": ("COMPLETED", "CANCELLED"),
+                 "skipping": ("COMPLETED", "SKIPPED"), "pending": ("IN_PROGRESS", None)}
+    status_state = {"pass": "SUCCESS", "fail": "FAILURE", "pending": "PENDING"}
+    def node(c):
         name, bucket = c[0], c[1]
         app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]
-        group = f"{workflow}/{event}" if workflow else ""
-        return "\t".join([kind, name, app, "" if kind == "status" else group, str(order), bucket])
-    print("\n".join(row(c) for c in s["checks"]))
+        if kind == "status":
+            return {"__typename": "StatusContext", "context": name, "state": status_state[bucket]}
+        status, conclusion = run_state[bucket]
+        return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "databaseId": order,
+                "checkSuite": {"app": {"databaseId": app} if app else None,
+                               "workflowRun": {"event": event, "workflow": {"id": workflow}} if workflow else None}}
+    rollup = {"contexts": {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": [node(c) for c in s["checks"]]}}
+    doc = {"data": {"repository": {"pullRequest": {"commits": {"nodes": [{"commit": {"statusCheckRollup": rollup}}]}}}}}
+    filter = sys.argv[sys.argv.index("--jq") + 1]
+    sys.exit(subprocess.run(["jq", "-r", filter], input=json.dumps(doc), text=True).returncode)
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
 else:

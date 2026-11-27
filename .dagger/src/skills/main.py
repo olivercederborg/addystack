@@ -96,7 +96,7 @@ async def toolbox(kit: dagger.Directory, suite: str) -> dagger.Container:
     return (
         dag.container()
         .from_(PYTHON)
-        .with_exec(["sh", "-c", "apt-get update -q && apt-get install -yq --no-install-recommends git iproute2 procps"
+        .with_exec(["sh", "-c", "apt-get update -q && apt-get install -yq --no-install-recommends git iproute2 jq procps"
                     " && rm -rf /var/lib/apt/lists/*"])
         # hooks/test_hooks.py checks turn blocks against CommonMark with these, when installed.
         .with_exec(["pip", "install", "-q", "--no-cache-dir", "--root-user-action=ignore",
