@@ -1054,6 +1054,19 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual((line["tool_call_id"], line["unit"], line["agent_pid"]), ("call_9", "node tsc --noEmit", 100))
         self.assertIn("check queue stayed full", line["reason"])
 
+    def test_a_queue_kill_hashes_the_whole_command(self):
+        import hashlib
+        command = "printf " + "x" * 600
+        q = Queue(self, cap=1)
+        long = [proc(220, 100, argv=("/bin/zsh", "-lc", command)), proc(221, 220, argv=TSC, start=1000.0)]
+        q.tick(q.check(1), long)
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), long)
+        [line] = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual(line["command_sha256"], hashlib.sha256(command.encode()).hexdigest())
+        self.assertEqual(len(line["command"]), 500)
+        self.assertTrue(all(len(line["command"]) <= 500 for line in q.lines))
+
     def test_the_gate_holds_a_unit_while_running_units_use_max_cores(self):
         q = Queue(self, cap=4, cores=2)
         cpu = 0

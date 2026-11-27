@@ -891,7 +891,8 @@ class Governor:
                 "agent_pid": head.ppid if head is not None and head.ppid > 1 else None,
                 "text": " ".join(os.path.basename(arg) for arg in
                                  next(p for p in unit.members if p.ident == unit.top).argv[:4])[:70],
-                "command": command_text(owners.argv.get(unit.head) or members[unit.top].argv)[:200]}
+                # Whole: the notice matches it by its hash. Logs show its start.
+                "command": command_text(owners.argv.get(unit.head) or members[unit.top].argv)}
         self.held[unit.top] = held
         try:
             self._save()  # saved before it's stopped, so a crash can't strand it
@@ -920,7 +921,7 @@ class Governor:
         reason = (f"held {HOLD_SECONDS // 60} min while the machine's check queue stayed full "
                   f"({running} checks running)")
         line = entry(owners, unit["head"], members, reason, rule="queue", unit=unit["text"])
-        line["command"], line["agent_pid"] = unit["command"], unit["agent_pid"]
+        line["command"], line["agent_pid"] = unit["command"][:500], unit["agent_pid"]
         line["command_sha256"] = hashlib.sha256(unit["command"].encode()).hexdigest()
         self.record(line)  # logged before the kill, so the notice finds it
         signal_all(members, signal.SIGKILL, self.send, self.current)
@@ -932,7 +933,7 @@ class Governor:
 
     def _log(self, event, unit, **more):
         self.record({"event": event, "time": time.strftime("%Y-%m-%d %H:%M:%S"), "at": time.time(),
-                     "unit": unit["text"], "command": unit["command"], "running": len(self.running),
+                     "unit": unit["text"], "command": unit["command"][:200], "running": len(self.running),
                      "held": len(self.held), **more})
 
     def _forget(self, top):
