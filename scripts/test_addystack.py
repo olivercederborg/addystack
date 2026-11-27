@@ -125,6 +125,21 @@ class Build(Cli):
                 self.assertIn("is the file build writes for hosts.codex", result.stdout + result.stderr)
         self.assertEqual(self.codex.read_text(), "# Actions\n\n- Sam's action.\n")
 
+    def test_a_hard_link_to_a_host_file_is_left_as_the_source(self):
+        source = self.config.parent / "global.md"
+        self.codex.parent.mkdir()
+        os.link(source, self.codex)
+        self.assertEqual(self.run_cli("build").returncode, 0)
+        self.assertEqual(source.read_text(), "# Actions\n\n- Sam's action.\n")
+
+    def test_two_hosts_writing_one_file_fail(self):
+        self.env["ADDYSTACK_AGENTS_MD"] = str(self.codex)
+        self.config.write_text(USER.replace('"instructions": "global.md"',
+                                            '"instructions": "global.md", "hosts": { "agents": true }'))
+        result = self.run_cli("build")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hosts.codex and hosts.agents both write", result.stderr)
+
     def test_a_host_file_linked_to_the_instructions_is_replaced(self):
         source = self.config.parent / "global.md"
         self.codex.parent.mkdir()

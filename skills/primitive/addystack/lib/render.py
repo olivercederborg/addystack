@@ -185,17 +185,33 @@ def _hops(path: str) -> List[str]:
     return hops
 
 
+def _same_entry(a: str, b: str) -> bool:
+    """Whether a and b name one folder entry, the one build replaces: the same folder,
+    however spelled (or the same resolved path, for one not made yet), and the same name, or one cased differently on a disk that treats
+    them as one. A hard link elsewhere is another entry, and build leaves it."""
+    folder_a, folder_b = os.path.dirname(a) or ".", os.path.dirname(b) or "."
+    both = os.path.isdir(folder_a) and os.path.isdir(folder_b)
+    if not (os.path.samefile(folder_a, folder_b) if both else os.path.realpath(folder_a) == os.path.realpath(folder_b)):
+        return False
+    name_a, name_b = os.path.basename(a), os.path.basename(b)
+    return name_a == name_b or (name_a.casefold() == name_b.casefold() and os.path.lexists(a)
+                                and os.path.lexists(b) and os.path.samestat(os.lstat(a), os.lstat(b)))
+
+
 def aliases(resolved: Resolved) -> List[config.Issue]:
     """An issue for each instructions file that reaches a file build writes, itself or
-    through links, since build would overwrite the source with its own output. Entries
-    compare by identity, so a differently cased path on a case-insensitive disk counts,
-    and a host file that links to the source doesn't: build replaces the link."""
-    built = [(host, os.lstat(path)) for host, path in outputs(resolved).items() if os.path.lexists(path)]
-    return [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{host}; "
-                                         "keep your instructions in another file")
-            for source in resolved["instructions"]
-            for host in sorted({host for hop in _hops(source) if os.path.lexists(hop)
-                                for host, entry in built if os.path.samestat(os.lstat(hop), entry)})]
+    through links, since build would overwrite the source with its own output, and for
+    two hosts that write one file, since each build would undo the other. A host file
+    that links to the source is fine: build replaces the link."""
+    built = [(host, str(path)) for host, path in outputs(resolved).items()]
+    issues = [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{host}; "
+                                           "keep your instructions in another file")
+              for source in resolved["instructions"]
+              for host in sorted({host for hop in _hops(source) for host, path in built if _same_entry(hop, path)})]
+    return issues + [config.Issue("hosts", f"hosts.{first} and hosts.{second} both write {_home(Path(path))}; "
+                                           "turn one off")
+                     for index, (first, path) in enumerate(built) for second, other in built[index + 1:]
+                     if _same_entry(path, other)]
 
 
 def instructions(resolved: Resolved) -> Dict[Path, str]:
