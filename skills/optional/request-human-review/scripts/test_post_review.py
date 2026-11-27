@@ -154,6 +154,15 @@ class Post(unittest.TestCase):
         self.assertEqual(self.post(replaced, retry=True)['review'], 'https://github.com/o/r/pull/7#approve')
         self.assertEqual([command for command, _, _ in replaced.writes], ['approve', 'approve'])
 
+    def test_a_record_of_another_head_or_outcome_is_not_reused(self):
+        sent = post_review.hashlib.sha256((self.folder / 'BODY.md').read_text().encode()).hexdigest()
+        for record in ({'head': BASE, 'outcome': 'approved'}, {'head': HEAD, 'outcome': 'needs-human'}):
+            with self.subTest(record):
+                (self.folder / 'POSTED.json').write_text(json.dumps({**record, 'sent': sent, 'review': 'earlier'}))
+                fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
+                self.assertEqual(self.post(fake, retry=True)['review'], 'https://github.com/o/r/pull/7#comment')
+                self.assertEqual([command for command, _, _ in fake.writes], ['comment'])
+
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
                {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
