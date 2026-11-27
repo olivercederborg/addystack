@@ -225,6 +225,27 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [], "a named wait silences it")
 
+    def test_an_unread_pr_keeps_its_idle_and_blocker_clocks(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
+                                 "| #20 · #21 | waiting | #21 ← acme/tools#138 |"})
+        for n in (20, 21):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": True, "headRefOid": f"{n}aaaaaaaa"}
+        self.prs["acme/tools#138"] = {"state": "MERGED", "isDraft": False}
+        self.watch(7, 20, 21)
+        self.tick("--send")
+        self.age(1900)
+        self.tick("--send")
+        message = "".join(m["message"] for m in self.sent())
+        self.assertIn("- acme/app#20: a draft at 20aaaaa", message)
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged", message)
+        saved = {ref: self.prs.pop(ref) for ref in ("acme/app#20", "acme/tools#138")}
+        self.age(600)
+        self.tick("--send")
+        self.prs.update(saved)
+        self.age(600)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "read again 20 min after the alert, so each waits for the hour")
+
     def test_a_wait_on_a_pr_that_merged_or_closed_is_flagged(self):
         self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
                                  "| #21 · #22 | waiting | #21 ← acme/tools#138; #22 ← acme/tools#139 |"})

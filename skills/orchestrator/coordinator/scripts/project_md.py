@@ -106,11 +106,11 @@ def waits(cell, origin):
     found = []
     for entry in cell.split(";"):
         pull, arrow, blocker = (part.strip() for part in entry.partition("←"))
-        if not arrow or not blocker:  # `#12 ←` names nothing it waits on
+        bare = re.sub(r"\([^()]*\)", "", LINKED.sub(r" \1 ", blocker)).strip(" —–-")  # its notes and links out
+        if not arrow or not bare:  # `#12 ←`, `#12 ← —`, and `#12 ← (since 10:00)` name nothing it waits on
             continue
-        named = pulls(blocker, origin)  # one PR, with no other word beside it but a note, as `(since 10:00)`
-        alone = len(named.refs) == 1 and not named.unread and not re.sub(
-            r"https?://", "", PR_REF.sub("", re.sub(r"\([^()]*\)", "", blocker))).strip()
+        named = pulls(blocker, origin)  # one PR, with no other word beside it
+        alone = len(named.refs) == 1 and not named.unread and not re.sub(r"https?://", "", PR_REF.sub("", bare)).strip()
         found += [Wait(ref, blocker, named.refs[0] if alone else None) for ref in pulls(pull, origin).refs]
     return found
 

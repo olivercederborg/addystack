@@ -608,7 +608,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         prs[ref] = [pull.state, pull.draft] if pull else known  # tick.json keeps [state, draft], so a push isn't news
         if not pull:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
-            unread.add(f"unwatched:{ref}")
+            unread |= {f"unwatched:{ref}"} | {key for key in state.get("sent", {}) if key.startswith(f"idle:{ref}:")}
             stale.add(ref)
             if ref in clocks:
                 drafts[ref] = clocks[ref]  # keep its clock, but judge nothing on a stale look
@@ -638,7 +638,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         return states.get(ref)
 
     for wait in waits:
-        if wait.blocker_pull and state_of(wait.pull) == "OPEN" and state_of(wait.blocker_pull) in {"MERGED", "CLOSED"}:
+        if not wait.blocker_pull:
+            continue
+        if None in (state_of(wait.pull), state_of(wait.blocker_pull)):  # unknown, not cleared
+            unread.add(f"blocker:{wait.pull}:{wait.blocker_pull}")
+        elif state_of(wait.pull) == "OPEN" and state_of(wait.blocker_pull) in {"MERGED", "CLOSED"}:
             found.append((f"blocker:{wait.pull}:{wait.blocker_pull}",
                           f"{wait.pull} waits on {wait.blocker_pull}, which {states[wait.blocker_pull].lower()}"))
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found} | unread}
