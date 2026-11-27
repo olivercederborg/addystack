@@ -113,15 +113,25 @@ class Build(Cli):
         self.assertIn("would write 5 files", result.stdout)
         self.assertFalse(self.state.exists() or self.claude.exists() or self.codex.exists())
 
-    def test_instructions_that_are_a_built_file_fail_without_writing(self):
+    def test_instructions_that_reach_a_built_file_fail_without_writing(self):
+        source = self.config.parent / "global.md"
         self.codex.parent.mkdir()
-        self.codex.symlink_to(self.config.parent / "global.md")
+        source.rename(self.codex)
+        source.symlink_to(self.codex)
         for command in (("build",), ("doctor",)):
             with self.subTest(command=command):
                 result = self.run_cli(*command)
                 self.assertEqual(result.returncode, 1)
                 self.assertIn("is the file build writes for hosts.codex", result.stdout + result.stderr)
-        self.assertEqual((self.config.parent / "global.md").read_text(), "# Actions\n\n- Sam's action.\n")
+        self.assertEqual(self.codex.read_text(), "# Actions\n\n- Sam's action.\n")
+
+    def test_a_host_file_linked_to_the_instructions_is_replaced(self):
+        source = self.config.parent / "global.md"
+        self.codex.parent.mkdir()
+        self.codex.symlink_to(source)
+        self.assertEqual(self.run_cli("build").returncode, 0)
+        self.assertFalse(self.codex.is_symlink())
+        self.assertEqual(source.read_text(), "# Actions\n\n- Sam's action.\n")
 
     def test_a_link_is_replaced_not_written_through(self):
         target = self.dir / "kit-built.md"

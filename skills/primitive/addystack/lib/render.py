@@ -177,13 +177,25 @@ def outputs(resolved: Resolved) -> Dict[str, Path]:
     return {host: path for host, path in paths.items() if resolved["hosts"].get(host)}
 
 
+def _hops(path: str) -> List[str]:
+    """path, then each link it passes through to its file."""
+    hops = [path]
+    while os.path.islink(hops[-1]) and len(hops) < 40:
+        hops.append(os.path.join(os.path.dirname(hops[-1]), os.readlink(hops[-1])))
+    return hops
+
+
 def aliases(resolved: Resolved) -> List[config.Issue]:
-    """An issue for each instructions file that is, or links to, a file build writes,
-    since build would overwrite the source with its own output."""
-    built = {os.path.realpath(path): host for host, path in outputs(resolved).items()}
-    return [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{built[real]}; "
+    """An issue for each instructions file that reaches a file build writes, itself or
+    through links, since build would overwrite the source with its own output. Entries
+    compare by identity, so a differently cased path on a case-insensitive disk counts,
+    and a host file that links to the source doesn't: build replaces the link."""
+    built = [(host, os.lstat(path)) for host, path in outputs(resolved).items() if os.path.lexists(path)]
+    return [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{host}; "
                                          "keep your instructions in another file")
-            for source in resolved["instructions"] for real in [os.path.realpath(source)] if real in built]
+            for source in resolved["instructions"]
+            for host in sorted({host for hop in _hops(source) if os.path.lexists(hop)
+                                for host, entry in built if os.path.samestat(os.lstat(hop), entry)})]
 
 
 def instructions(resolved: Resolved) -> Dict[Path, str]:
