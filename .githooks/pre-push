@@ -35,6 +35,8 @@ while read -r _ local _ remote; do
 done
 [ ${#tips[@]} -gt 0 ] || exit 0
 unset $(git rev-parse --local-env-vars)
+# maintainer/'s tests check the kit in each tip's tree, not one ADDYSTACK_KIT names.
+unset ADDYSTACK_KIT
 
 # The checks for one tree: today's Dagger block, unchanged, from the kit at $root.
 check_tree() {

@@ -5,6 +5,7 @@ missing; its macos_only and macos_only_scripts lists name every hook and scripts
 that skips off macOS, since only those lists run on the Mac; and for .githooks/pre-commit: it runs only the touched folders'
 suites on the host, and never Dagger."""
 import ast, os, pathlib, re, shutil, subprocess, tempfile, unittest
+from unittest import mock
 
 KIT = pathlib.Path(__file__).resolve().parent.parent
 HOOK = KIT / ".githooks" / "pre-push"
@@ -149,12 +150,12 @@ class DaggerOrHost(unittest.TestCase):
         ran = pathlib.Path(self.folder.name, "maintainer-ran")
         (self.repo / "maintainer").mkdir()
         (self.repo / "maintainer" / "test_m.py").write_text(
-            "import pathlib, unittest\nclass M(unittest.TestCase):\n"
-            f"    def test_runs(self):\n        pathlib.Path({str(ran)!r}).touch()\n")
-        run, calls = self.push()
+            "import os, pathlib, unittest\nclass M(unittest.TestCase):\n"
+            f"    def test_runs(self):\n        pathlib.Path({str(ran)!r}).write_text(os.environ.get('ADDYSTACK_KIT', 'unset'))\n")
+        run, calls = self.push(ADDYSTACK_KIT="/elsewhere")
         self.assertEqual(run.returncode, 0, run.stderr)
         self.assertEqual(calls, [LIST, RUN])
-        self.assertTrue(ran.exists())
+        self.assertEqual(ran.read_text(), "unset")  # the tip's own kit, not the one the setting names
 
     def test_a_failing_maintainer_suite_blocks_the_push(self):
         (self.repo / "maintainer").mkdir()
@@ -428,6 +429,16 @@ class PreCommit(unittest.TestCase):
                 run, ran = self.commit(path)
                 self.assertEqual(run.returncode, 0, run.stderr)
                 self.assertEqual(ran, ["maintainer"])
+
+    def test_maintainers_suite_checks_this_checkouts_kit(self):
+        seen = pathlib.Path(self.folder.name, "kit-setting")
+        self.write("maintainer/test_maintainer.py",
+                   "import os, pathlib, unittest\nclass T(unittest.TestCase):\n    def test_runs(self):\n"
+                   f"        pathlib.Path({str(seen)!r}).write_text(os.environ.get('ADDYSTACK_KIT', 'unset'))\n")
+        with mock.patch.dict(os.environ, {"ADDYSTACK_KIT": "/elsewhere"}):
+            run, _ = self.commit("maintainer/evals.py")
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(seen.read_text(), "unset")
 
     def test_a_failing_touched_suite_blocks_the_commit(self):
         self.write("skills/primitive/one/scripts/test_fail.py",

@@ -47,6 +47,8 @@ while IFS= read -r -d '' path; do staged+=("$path"); done < <(git diff --cached 
 # Git runs hooks with GIT_DIR and its other repo-local variables set (always in a
 # worktree); a test that runs `git init` would then reinitialize this repo instead.
 unset $(git rev-parse --local-env-vars)
+# maintainer/'s tests check the kit in this checkout, not one ADDYSTACK_KIT names.
+unset ADDYSTACK_KIT
 
 . "$root/.githooks/suites.sh"
 
