@@ -4,7 +4,11 @@ Bash under one manifest id, so the guard and its messages are selected together:
 
 - PreToolUse (Claude and Codex): while the guard's check queue holds a check, say how
   many, so the agent waits for a check that prints nothing instead of killing or rerunning
-  it. Nothing else, and no permission decision.
+  it. Also tell of each kill of this agent's earlier commands no hook has told yet: Claude
+  Code moves a Bash call past its timeout (2 minutes by default, 10 at most) to the
+  background, and that command's failure fires no hook, so a queued check killed at 15
+  minutes is only ever told here. A kill naming Codex calls is left to their PostToolUse.
+  No permission decision.
 - PostToolUseFailure (Claude; a payload without the field counts as one): when the guard
   killed this command, say why. The guard SIGKILLs the whole command, wrapper shell
   included, or a queued check's processes, so the agent otherwise sees a failure with no
@@ -29,6 +33,9 @@ REPORTED = os.path.expanduser("~/Library/Logs/agent-memory-guard.reported")  # k
 QUEUE = os.path.join(os.path.expanduser(os.environ.get("ADDYSTACK_STATE", "~/.local/state/addystack")),
                      "check-queue.json")
 TAIL_BYTES = 256 * 1024
+# An earlier command's kill is told on a later Bash call only within this long, so a kill
+# whose agent never ran another command doesn't send every later call to `ps`.
+EARLIER_SECONDS = 6 * 60 * 60
 HOLD_MINUTES = 15
 # What to do next, by the kill's rule; a memory or CPU kill has none.
 ADVICE = {
@@ -78,34 +85,50 @@ def ancestors():
     return seen
 
 
-def notice(entry):
+def notice(entry, earlier=False):
+    command = f"an earlier command of yours, `{entry.get('command', '')[:120]}`," if earlier else "this command"
     if entry.get("rule") == "queue":
-        what = f"agent-memory-guard killed this command's check: it was {entry['reason']}."
+        what = f"agent-memory-guard killed the check in {command} after it was {entry['reason']}."
     else:
-        what = f"agent-memory-guard killed this command ({entry['reason']}) so it wouldn't freeze the Mac."
+        what = f"agent-memory-guard killed {command} ({entry['reason']}) so it wouldn't freeze the Mac."
     return f"{what} {ADVICE.get(entry.get('rule'), ADVICE[None])}"
+
+
+def earlier_kills(done):
+    """Kills of this agent's commands, newest first, that no hook told yet and that name no
+    Codex call."""
+    found, family = [], None
+    for entry in kills():
+        if (entry.get("tool_call_ids") or repr(entry["at"]) in done
+                or entry["at"] < time.time() - EARLIER_SECONDS):
+            continue
+        family = ancestors() if family is None else family
+        if entry.get("agent_pid") in family:
+            found.append(entry)
+    return found
 
 
 def main():
     payload = json.load(sys.stdin)
     event = payload.get("hook_event_name") or "PostToolUseFailure"
-    if event == "PreToolUse":
-        count = queued()
-        if count:
-            checks = "1 check is" if count == 1 else f"{count} checks are"
-            print(json.dumps({"hookSpecificOutput": {
-                "hookEventName": "PreToolUse",
-                "additionalContext": f"agent-memory-guard: {checks} queued behind other agents' checks. "
-                                     f"A type check, lint, or test you start now may wait silently for up "
-                                     f"to {HOLD_MINUTES} min, and is killed if the queue is still full "
-                                     "then. Don't kill or rerun a check that prints nothing; wait for it.",
-            }}))
-        return
     try:
         with open(REPORTED) as reported:
             done = set(reported.read().split())
     except OSError:
         done = set()
+    if event == "PreToolUse":
+        mine = earlier_kills(done)
+        key = lambda entry: repr(entry["at"])
+        texts = [notice(entry, earlier=True) for entry in reversed(mine)]
+        count = queued()
+        if count:
+            checks = "1 check is" if count == 1 else f"{count} checks are"
+            texts.append(f"agent-memory-guard: {checks} queued behind other agents' checks. A type check, "
+                         f"lint, or test you start now may wait silently for up to {HOLD_MINUTES} min, "
+                         "and is killed if the queue is still full then. Don't kill or rerun a check that "
+                         "prints nothing; wait for it.")
+        report(mine, key, event, texts)
+        return
     if event == "PostToolUse":
         call = payload.get("tool_use_id") or ""
         key = lambda entry: f"{entry['at']!r}:{call}"  # one kill can end several calls
@@ -122,16 +145,20 @@ def main():
         if mine:
             family = ancestors()
             mine = [entry for entry in mine if entry.get("agent_pid") in family]
-    if not mine:
-        return
-    try:
-        with open(REPORTED, "a") as reported:
-            reported.writelines(key(entry) + "\n" for entry in mine)
-    except OSError:
-        pass  # the notice matters more than deduplicating it
     # Every kill it reports, oldest first, so a queue kill isn't hidden behind a later one.
-    text = "\n".join(notice(entry) for entry in reversed(mine))
-    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": text}}))
+    report(mine, key, event, [notice(entry) for entry in reversed(mine)])
+
+
+def report(mine, key, event, texts):
+    """Marks each kill in mine told, then hands the agent texts, if any."""
+    if mine:
+        try:
+            with open(REPORTED, "a") as reported:
+                reported.writelines(key(entry) + "\n" for entry in mine)
+        except OSError:
+            pass  # the notice matters more than deduplicating it
+    if texts:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": "\n".join(texts)}}))
 
 
 if __name__ == "__main__":

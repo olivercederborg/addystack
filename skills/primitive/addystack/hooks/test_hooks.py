@@ -6426,13 +6426,35 @@ class CheckQueueNotice(unittest.TestCase):
         self.assertEqual(set(out["hookSpecificOutput"]), {"hookEventName", "additionalContext"})
         self.assertIn("1 check is queued", out["hookSpecificOutput"]["additionalContext"])
 
-    def test_a_queue_kill_gets_the_queue_advice(self):
-        self.log(self.kill())
-        note = run_hook(self.HOOK, {"hook_event_name": "PostToolUseFailure", "tool_input": {"command": "bun run typecheck"},
-                                    "duration_ms": 3000}, env=self.env)
-        self.assertIn("check queue stayed full", note)
+    def test_a_claude_queue_kill_is_told_on_the_next_bash_call(self):
+        # Claude Code moved the 15-minute call to the background at its timeout, and a
+        # background command's failure fires no hook, so the next call's PreToolUse tells it.
+        self.log(self.kill(seconds_ago=960))
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+        note = run_hook(self.HOOK, payload, env=self.env)
+        self.assertIn("killed the check in an earlier command of yours, `bun run typecheck`", note)
         self.assertIn("run a narrower check", note)
         self.assertNotIn("parallelism", note)
+        self.assertEqual(self.raw(payload), "")  # told once
+
+    def test_the_next_bash_call_tells_only_this_agents_claude_kills(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}
+        other = subprocess.Popen(["sleep", "5"])
+        try:
+            for kill in (self.kill(agent_pid=other.pid), self.kill(tool_call_ids=["call_1"]),
+                         self.kill(seconds_ago=7 * 3600)):
+                with self.subTest(kill={k: kill[k] for k in ("agent_pid", "tool_call_ids")}):
+                    self.log(kill)
+                    self.assertEqual(self.raw(payload), "")
+        finally:
+            other.kill()
+            other.wait()
+
+    def test_an_earlier_kill_and_the_queued_note_come_together(self):
+        self.hold(2)
+        self.log(self.kill(seconds_ago=960))
+        note = run_hook(self.HOOK, {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}, env=self.env)
+        self.assertLess(note.index("earlier command"), note.index("2 checks are queued"))
 
     def test_a_memory_kill_keeps_todays_advice(self):
         line = self.kill(reason="702 processes, over the per-command 600")
