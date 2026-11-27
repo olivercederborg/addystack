@@ -6,10 +6,12 @@ a shell command word, quoted when the kit's path needs it, with no conditionals.
 is a whole generated section: the repo policy table, the principles index without its
 excluded principles, the reply rules, taste, and the user's `global.md`. Claude Code's
 file imports the built parts with `@` lines, from ~/.local/state/addystack/; Codex's
-file has them inlined, since AGENTS.md has no imports.
+file and ~/.agents/AGENTS.md, the fallback other agents read, have them inlined, since
+AGENTS.md has no imports.
 
 The sources, all in the kit's core/ but the user's: `global.md` holds the team's
-sections; `claude-code.md` and `codex.md` add each host's preamble and lines; each
+sections; `claude-code.md`, `codex.md`, and the tool-neutral `agents.md` add each host's preamble
+and lines; each
 Resolved `instructions` file follows, in layer order. Sections merge by `# ` heading in
 that order: a heading's bodies join under its first appearance, and new headings follow.
 A line that is only `@router.md` or `@principles.md` names a built part. `principles.md`
@@ -19,8 +21,8 @@ import line, without a taste file. A path renders as
 `~/…` when it's under $HOME. It renders no policy table or reply rules: the router runs
 `addystack policy` per checkout, and a SessionStart hook loads the reply rules.
 
-`ADDYSTACK_CLAUDE_MD` and `ADDYSTACK_CODEX_MD` override claude_md() and CODEX, for tests
-and dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
+`ADDYSTACK_CLAUDE_MD`, `ADDYSTACK_CODEX_MD`, and `ADDYSTACK_AGENTS_MD` override claude_md(),
+CODEX, and AGENTS, for tests and dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
 """
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ import resolved as _resolved
 from config import Resolved
 
 CODEX = Path(os.environ.get("ADDYSTACK_CODEX_MD", "~/.codex/AGENTS.md"))
+AGENTS = Path(os.environ.get("ADDYSTACK_AGENTS_MD", "~/.agents/AGENTS.md"))
 
 
 def claude_md() -> Path:
@@ -188,9 +191,11 @@ def instructions(resolved: Resolved) -> Dict[Path, str]:
         files[claude_md()] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
         for name, text in parts.items():
             files[state / name] = _expand(text, parts, imported)
-    if resolved["hosts"]["codex"]:
-        def inlined(name: str) -> str:
-            return _expand(parts[name], parts, inlined).rstrip("\n")
+    def inlined(name: str) -> str:
+        return _expand(parts[name], parts, inlined).rstrip("\n")
 
+    if resolved["hosts"]["codex"]:
         files[CODEX.expanduser()] = f"{_HEADER}\n{_expand(body('codex.md'), parts, inlined)}"
+    if resolved["hosts"].get("agents"):
+        files[AGENTS.expanduser()] = f"{_HEADER}\n{_expand(body('agents.md'), parts, inlined)}"
     return files

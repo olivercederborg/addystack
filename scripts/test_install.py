@@ -138,6 +138,15 @@ class Instructions(Home):
         self.assertTrue(self.claude_md.read_text().startswith("<!-- Built by addystack build"))
         self.assertTrue(self.codex_md.read_text().startswith("<!-- Built by addystack build"))
 
+    def test_moves_the_agents_files_text_when_that_host_is_on(self):
+        agents_md = self.home / ".agents/AGENTS.md"
+        self.write(self.config, '{ "hosts": { "agents": true } }')
+        self.write(agents_md, "# Mine\n\n- Shared rule.\n")
+        self.ok("install")
+        self.assertIn("- Shared rule.", self.global_md())
+        self.assertTrue(agents_md.read_text().startswith("<!-- Built by addystack build"))
+        self.assertIn("- Shared rule.", agents_md.read_text())
+
     def test_without_a_config_the_build_carries_the_moved_text_now_and_later(self):
         self.write(self.claude_md, "# Claude\n\n- Answer in French.\n")
         self.write(self.codex_md, "# Codex\n\n- Run tests first.\n")

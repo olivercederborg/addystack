@@ -19,7 +19,8 @@ python3 ~/.agents/skills/addystack/bin/addystack install
 2. `init` writes your config, including the agents it finds on your PATH. Run it first,
    since `install` sets up those agents.
 3. For each of those agents, `install` adds the kit's hooks beside yours and moves text
-   you wrote in `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md` into
+   you wrote in `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, or, with `hosts.agents` on,
+   `~/.agents/AGENTS.md` into
    `~/.config/addystack/global.md`. For Claude Code, it links
    `~/.claude/agents/work-verifier.md` to verify-work's copy, the agent verify-work forks
    into. Then it builds and runs `doctor`.

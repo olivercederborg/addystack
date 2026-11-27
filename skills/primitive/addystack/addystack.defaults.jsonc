@@ -5,7 +5,7 @@
   "$schema": "./schema/v1.json",
   "version": 1,
   "identity": { "name": "the user", "github": null },
-  "hosts": { "claude": true, "codex": true, "t3": false, "machines": [] },
+  "hosts": { "claude": true, "codex": true, "agents": false, "t3": false, "machines": [] },
   "policy": {
     "defaults": {
       "planning": "gated",

@@ -25,7 +25,7 @@ a manifest script from the kit path the last build recorded, when the checkout h
 each of addystack's is removed once it's no longer selected. A disabled host's earlier hooks are removed too, when its file exists.
 A settings file that isn't a JSON object stops the run before anything is written.
 
-Instructions: before build replaces Claude Code's CLAUDE.md or ~/.codex/AGENTS.md for an
+Instructions: before build replaces Claude Code's CLAUDE.md, ~/.codex/AGENTS.md, or ~/.agents/AGENTS.md for an
 enabled host, text there that addystack didn't build (its first line isn't a build header)
 moves into the user's instructions file: the one the config's `instructions` names, or
 `global.md` beside the config, created or appended to, never overwritten. Text the file
@@ -398,7 +398,7 @@ def _moved_kits(resolved: Resolved) -> List[str]:
 def _adopt(resolved: Resolved, writes: Dict[Path, str]) -> List[Change]:
     """Moves each enabled host's hand-written instruction file into the user's
     instructions file, queued in writes."""
-    hosts = [(render.claude_md(), "claude"), (render.CODEX, "codex")]
+    hosts = [(render.claude_md(), "claude"), (render.CODEX, "codex"), (render.AGENTS, "agents")]
     found = [(path.expanduser(), text) for path, host in hosts if resolved["hosts"].get(host)
              for text in [_hand_written(path.expanduser())] if text]
     if not found:
