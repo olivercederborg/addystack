@@ -45,13 +45,19 @@ def live():
 
 
 def render(repo, rev, kit, built):
-    """rev's router and principles index, filled as `addystack build` fills them from
-    `built`, with {{kit}} as `kit`."""
+    """rev's router and principles part, filled as render.instructions fills them from
+    `built`, with {{kit}} as `kit`. The principles part is None when that build has none:
+    preset `none` without a taste file."""
     values = {"user": built["identity"]["name"], "kit": kit, "addystack": f"{hookset._kit(built)}/bin/addystack"}
-    with tempfile.TemporaryDirectory() as core:
-        pathlib.Path(core, "principles.md").write_text(show(repo, rev, CORE + "principles.md"))
-        principles = kit_render._principles(built, pathlib.Path(core), values)
-    return kit_render._fill(show(repo, rev, CORE + "router.md"), values), principles
+    router = kit_render._fill(show(repo, rev, CORE + "router.md"), values)
+    judgment = built["judgment"]
+    if judgment["principles"]["preset"] != "none":
+        with tempfile.TemporaryDirectory() as core:
+            pathlib.Path(core, "principles.md").write_text(show(repo, rev, CORE + "principles.md"))
+            return router, kit_render._principles(built, pathlib.Path(core), values)
+    if judgment["taste"]:
+        return router, f"# Taste\n\nWhat good code and UI look like: `{kit_render._home(pathlib.Path(judgment['taste']))}`.\n"
+    return kit_render._expand(router, {}, str), None
 
 
 def build(repo, out, arm, rev, typed, built):
@@ -62,7 +68,7 @@ def build(repo, out, arm, rev, typed, built):
     for name in names:
         (kit / "principles" / pathlib.Path(name).name).write_text(show(repo, rev, name))
     router, principles = render(repo, rev, str(kit), built)
-    router = router.replace("@principles.md", principles.strip())
+    router = router.replace("@principles.md", (principles or "").strip())
     variant = out / "variants" / arm
     variant.mkdir(parents=True, exist_ok=True)
     (variant / "SKILL.md").write_text(f"""---
@@ -84,7 +90,9 @@ def main(argv):
         state = resolved.STATE.expanduser().parent
         router, principles = render(repo, "origin/main", kit_render._home(pathlib.Path(built["kit"])), built)
         router = router.replace("@principles.md", f"@{kit_render._home(state / 'principles.md')}")
-        same = router == (state / "router.md").read_text() and principles == (state / "principles.md").read_text()
+        live_principles = state / "principles.md"
+        same = router == (state / "router.md").read_text() and principles == (
+            live_principles.read_text() if live_principles.exists() else None)
         print("matches the live router and principles" if same else "differs from the live files")
         return 0 if same else 1
     out, rest = pathlib.Path(argv[1]).resolve(), argv[2:]
