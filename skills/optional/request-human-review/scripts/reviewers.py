@@ -29,8 +29,8 @@ def parse(text: str) -> list:
             continue
         if not line or line.startswith('#'):
             continue
-        # A ` #` starts an inline comment, as in CODEOWNERS.
-        pattern, *names = line.split(' #', 1)[0].split()
+        # A `#` after whitespace starts an inline comment, as in CODEOWNERS.
+        pattern, *names = re.split(r'\s#', line, maxsplit=1)[0].split()
         if current is None:
             problems.append(f'line {number}: {pattern} comes before any `## <domain>` heading')
         elif current == UNOWNED and names:

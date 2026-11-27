@@ -71,7 +71,7 @@ class Domain(unittest.TestCase):
 
     def test_codeowners_globs_and_inline_comments(self):
         rules = reviewers.parse('## docs\ndocs/* @alice  # only the files directly in docs\n'
-                                '## adr\ndocs/**/adr/ @bob\n')
+                                '## adr\ndocs/**/adr/ @bob\t# tab before the comment\n')
         self.assertEqual(reviewers.domain(rules, 'docs/intro.md'), 'docs')
         self.assertIsNone(reviewers.domain(rules, 'docs/guides/intro.md'))
         self.assertEqual(reviewers.domain(rules, 'docs/adr/0001.md'), 'adr')
