@@ -89,8 +89,9 @@ def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
     def git(*arguments):
         return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
                               timeout=60).stdout
-    templates = [path for path in git('ls-tree', '--name-only', base, '--', './', '.github/', 'docs/').splitlines()
-                 if TEMPLATE.fullmatch(path)]
+    # --full-tree: the paths are the repository's, whatever folder the review runs in.
+    templates = [path for path in git('ls-tree', '--full-tree', '--name-only', base, '--', './', '.github/', 'docs/')
+                 .splitlines() if TEMPLATE.fullmatch(path)]
     for path in sorted(templates, key=lambda path: TEMPLATE_FOLDERS.index(path[:path.rfind('/') + 1])):
         for number, text in enumerate(git('show', f'{base}:{path}').splitlines(), 1):
             if match := DOORS.search(text):

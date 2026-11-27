@@ -151,6 +151,10 @@ class OneWayDoors(unittest.TestCase):
                    'PULL_REQUEST_TEMPLATE.md': 'One-way doors include money movement.\n'})
         self.assertEqual(gates.one_way_doors('HEAD', str(self.repo)), ('PULL_REQUEST_TEMPLATE.md:1', 'money movement'))
 
+    def test_a_review_in_a_subfolder_reads_the_repository_s_template(self):
+        base = self.base({'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE, 'src/pay.ts': ''})
+        self.assertEqual(gates.one_way_doors(base, str(self.repo / 'src'))[0], '.github/PULL_REQUEST_TEMPLATE.md:3')
+
     def test_a_base_the_checkout_lacks_fails_loudly(self):
         self.base({})
         with self.assertRaises(subprocess.CalledProcessError):
