@@ -145,13 +145,21 @@ show the test that fails on the base and passes here, or the command output.
 - **Review artifact**: when the repo's PR rules or the user ask for one, build it with
   the installed skill for review artifacts and link it first in the Review guide.
 - **Links**: link issues and plans rather than copying them, with the repo's
-  issue-linking phrase (for example `Closes EX-12`). In Linear, write the closing
-  phrase on every PR that carries the issue's planned work, each stack layer included:
-  Linear moves the issue when its last linked PR merges, and only if that PR closes it.
-  Write "Part of" only when work remains that no PR covers yet, and when the last of
-  that work gets its PR, change the issue's open "Part of" PRs to the closing phrase.
-  In a tracker that closes on the first merge, such as GitHub Issues, the closing
-  phrase goes on the PR that finishes the issue.
+  issue-linking phrase (for example `Closes EX-12`). In Linear:
+  - Put the issue key in the branch name of each PR that closes it. A stacking tool
+    such as `gh stack submit --auto` opens the PR before its description has the
+    phrase, and a PR Linear matches to an issue on its own gets a contributing link,
+    which never moves the issue to Done. Adding the phrase later may not change it.
+  - Write the closing phrase on every PR that carries the issue's planned work, each
+    stack layer included: Linear moves the issue when its last linked PR merges, and
+    only if that PR closes it.
+  - While any of the issue's planned work has no PR yet, write "Part of" on every one
+    instead, with no issue key in their branch names, so none closes it early. When
+    the last of that work gets its PR, change the open "Part of" PRs to the closing
+    phrase, then check in Linear that each one now shows as closing.
+
+  In a tracker that closes on the first merge into the default branch, such as GitHub
+  Issues, the closing phrase goes on the PR that finishes the issue.
 - **Words**: the terms in the `domain-modeling` glossary (`CONTEXT.md`), when the repo has one.
 - **Title**: the outcome in the imperative, under 70 characters.
 - **Describe only.** Code review belongs to `verify-work` and `review-loop`. Put known
