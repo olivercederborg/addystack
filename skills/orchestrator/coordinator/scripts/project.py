@@ -32,10 +32,12 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
-  project.py DIR status [--json] [--no-live]
-                                    print the project's overview (references/status.md), reading
-                                    thread, PR, and check state live; writes nothing. --json
-                                    prints status_data's data; --no-live skips t3 and gh
+  project.py DIR status (--json | --html) [--no-live]
+                                    the project's overview (references/status.md), reading thread,
+                                    PR, and check state live: --json prints status_data's data;
+                                    --html writes it into a copy of scripts/status.html in the
+                                    temp folder and prints that file's path; --no-live skips t3
+                                    and gh. Never writes DIR
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -619,7 +621,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
 
 def status_data(lines: list[str], *, live: bool = True) -> dict:
     """The project's overview as JSON-ready data, read-only. Text stays as project.md holds
-    it; status_markdown escapes it. Groups come in STATUS_ORDER, each Workers row a unit
+    it, unescaped. Groups come in STATUS_ORDER, each Workers row a unit
     with its worker, thread link, State, PRs, Issue, and Waits on. Live fields come from
     `t3` and `gh`: a unit's `thread_status` and a resolved PR's `read`, `title`, `state`,
     `draft`, and `checks`. With live=False they're absent and neither runs; the checkout's
@@ -649,33 +651,22 @@ def status_data(lines: list[str], *, live: bool = True) -> dict:
     return data
 
 
-def status_markdown(data: dict) -> str:
-    """status_data's overview as the Markdown `project.py DIR status` prints: the header, the
-    Queue as `queue show` prints it, each group's units, then the Decisions and Phases lines.
-    Free text goes through project_queue.shown, so the reply keeps its picks."""
-    name, goal = ("?" if data[key] is None else data[key] for key in ("project", "goal"))  # "" prints as ""
-    out = [project_queue.shown(f"◆ {name} · {goal}"), "", "**Needs you**"]
-    if data["queue_unread"] is not None:
-        out.append(project_queue.shown(f"unread: {data['queue_unread']}"))
-    else:
-        queue = data["queue"]
-        out.append("no queue" if queue is None else project_queue.show([project_queue.Item(**item) for item in queue]))
-    out.append("")
-    for group in data["groups"]:
-        out += [f"**{group['state']}**", *(project_queue.shown(_unit_line(unit)) for unit in group["units"]), ""]
-    if data["unread_rows"]:
-        out += ["**unread rows**", *(project_queue.shown(f"- {first}: its cells don't match the Workers header")
-                                     for first in data["unread_rows"]), ""]
-    if not data["groups"] and not data["unread_rows"]:
-        out += ["no workers", ""]
-    for name in ("Decisions", "Phases"):
-        out += [f"**{name}**", *([project_queue.shown(text) for text in data[name.lower()]] or ["none"]), ""]
-    return "\n".join(out[:-1])
+STATUS_PAGE = Path(__file__).with_name("status.html")
+STATUS_DATA = '<script type="application/json" id="status-data">null</script>'  # draw(data)'s feed
+
+
+def status_html(data: dict) -> str:
+    """status.html with status_data's data baked into its status-data block, so the page
+    draws it with no network. The JSON escapes `<` and `>`, so no project.md text can end
+    the block, and the page sets every text through textContent."""
+    page = STATUS_PAGE.read_text()
+    if page.count(STATUS_DATA) != 1:
+        raise ValueError(f"{STATUS_PAGE} must hold the status-data block exactly once")
+    return page.replace(STATUS_DATA, STATUS_DATA.replace("null", project_queue.as_json(data)))
 
 
 # status's state groups, in the order the user reads them: what needs a look, then work under
-# way, then work that ended; `other` holds a State a hand edit left outside STATES. Unread
-# rows, whose cells don't match the header, print after them all.
+# way, then work that ended; `other` holds a State a hand edit left outside STATES.
 STATUS_ORDER = ["stuck", "waiting", "overdue", "unknown", "running", "queued", "done", "dropped",
                 "replaced/absorbed", "other"]
 EMPTY = ("", "—", "-")  # a cell that holds nothing
@@ -723,44 +714,6 @@ def _pr_data(ref: str, origin: str, live: bool) -> dict:
         if seen is not None:
             pr.update(title=seen["title"], state=seen["state"], draft=seen["isDraft"], checks=_checks(ref))
     return pr
-
-
-def _unit_line(unit: dict) -> str:
-    """A unit as status's list item, before escaping."""
-    parts = [f"**[{unit['worker']}]({unit['thread']})**" if unit["thread"] else f"**{unit['worker']}**"]
-    if "thread_status" in unit:
-        parts.append(f"thread {unit['thread_status']}")
-    parts += [_pr_text(pr) for pr in unit["prs"]]
-    if unit["issue"] is not None:
-        parts.append(f"issue {unit['issue']}")
-    if unit["waits_on"] is not None:
-        parts.append(f"waits on {unit['waits_on']}")
-    return "- " + " · ".join(parts)
-
-
-CHECK_MARKS = {"pass": "✅", "fail": "❌", "pending": "⏳", "skipping": "⏭️", "cancel": "🚫"}
-
-
-def _pr_line(ref: str, origin: str) -> str:
-    """`owner/repo#N` read live and printed as status prints it."""
-    return _pr_text(_pr_data(ref, origin, True))
-
-
-def _pr_text(pr: dict) -> str:
-    """A PR as `[#N, title](url)` with its state and checks, `#N unresolved` when its repo
-    isn't known, and `[#N](url)` alone when it wasn't read."""
-    if pr["url"] is None:
-        return f"{pr['name']} unresolved"
-    if "read" not in pr:
-        return f"[{pr['name']}]({pr['url']})"
-    if not pr["read"]:
-        return f"[{pr['name']}]({pr['url']}) unread"
-    title = str(pr["title"]).replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-    checks = pr["checks"]
-    ci = ("checks unread" if checks is None else ", ".join(
-        f"{CHECK_MARKS.get(bucket, '')} {count} {bucket}".strip() for bucket, count in
-        sorted(checks.items(), key=lambda pair: [*CHECK_MARKS, pair[0]].index(pair[0]))) or "no checks")
-    return f"[{pr['name']}, {title}]({pr['url']}) {str(pr['state']).lower()}{' draft' if pr['draft'] else ''}, {ci}"
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
@@ -846,7 +799,9 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
     showing = commands.add_parser("status", allow_abbrev=False)
-    showing.add_argument("--json", action="store_true")
+    output = showing.add_mutually_exclusive_group(required=True)
+    output.add_argument("--json", action="store_true")
+    output.add_argument("--html", action="store_true")
     showing.add_argument("--no-live", action="store_true")
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
@@ -895,7 +850,13 @@ def main(argv: list[str]) -> int:
             return _tick(args.dir, lines, args.send)
         if args.command == "status":
             data = status_data(lines, live=not args.no_live)
-            print(json.dumps(data, ensure_ascii=False, indent=2) if args.json else status_markdown(data))
+            if args.json:
+                print(json.dumps(data, ensure_ascii=False, indent=2))
+            else:
+                page = Path(tempfile.gettempdir()) / "addystack-status" / f"{args.dir.resolve().name}.html"
+                page.parent.mkdir(exist_ok=True)
+                page.write_text(status_html(data))
+                print(page)
             return 0
         if args.command == "queue":
             answer = getattr(args, "answer", None)

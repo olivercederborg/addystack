@@ -451,61 +451,71 @@ class Status(unittest.TestCase):
         path = self.fake / f"{tool}-calls.jsonl"
         return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def test_status_prints_each_unit_with_its_links_and_live_state_and_writes_nothing(self):
+    def status(self, *args):
+        return json.loads(self.run_project("status", "--json", *args))
+
+    def units(self, data):
+        return {unit["worker"]: unit for group in data["groups"] for unit in group["units"]}
+
+    def test_status_reads_each_unit_with_its_links_and_live_state_and_writes_nothing(self):
         before = (self.dir / "project.md").read_text()
-        self.assertEqual(self.run_project("status"), """◆ export · Ship the export.
-
-**Needs you**
-1 of 1 needs you · pick the export format · coordinator
-needs: [{"id":1,"kind":"decide","name":"pick the export format"}]
-queue:
-  1 decide · pick the export format · coordinator · since 2026-11-20 09:00
-
-**waiting**
-- **[remote](t3-thread://v2/other/w3)** · thread unread · [acme/other#5, Fix the parser](https://github.com/acme/other/pull/5) open, no checks · waits on the user's go
-
-**running**
-- **[build](t3-thread://v2/env/w1)** · thread running · [#12, Add the export](https://github.com/acme/app/pull/12) open draft, ✅ 1 pass, ⏳ 2 pending · issue [DEV-1](https://linear.app/a/issue/DEV-1)
-
-**done**
-- **[probe](t3-thread://v2/env/w2)** · [#13, Spike the format](https://github.com/acme/app/pull/13) merged, no checks
-
-**unread rows**
-- odd: its cells don't match the Workers header
-
-**Decisions**
-- 2026-11-20 · coordinator: CSV first.
-
-**Phases**
-- 2026-11-01 · 01-spike: spike done · phases/01-spike.md
-""")
+        data = self.status()
+        self.assertEqual({key: data[key] for key in ("project", "goal", "queue", "queue_unread", "decisions", "phases")}, {
+            "project": "export", "goal": "Ship the export.", "queue_unread": None,
+            "queue": [{"id": 1, "kind": "decide", "name": "pick the export format", "source": "coordinator",
+                       "since": "2026-11-20 09:00"}],
+            "decisions": ["- 2026-11-20 · coordinator: CSV first."],
+            "phases": ["- 2026-11-01 · 01-spike: spike done · phases/01-spike.md"]})
+        self.assertEqual([(group["state"], [unit["worker"] for unit in group["units"]]) for group in data["groups"]],
+                         [("waiting", ["remote"]), ("running", ["build"]), ("done", ["probe"])])
+        self.assertEqual(data["unread_rows"], ["odd"])
+        self.assertEqual(self.units(data), {
+            "remote": {"worker": "remote", "thread": "t3-thread://v2/other/w3", "state": "waiting",
+                       "thread_status": "unread", "issue": None, "waits_on": "the user's go",
+                       "prs": [{"ref": "acme/other#5", "name": "acme/other#5", "url": "https://github.com/acme/other/pull/5",
+                                "read": True, "title": "Fix the parser", "state": "OPEN", "draft": False, "checks": {}}]},
+            "build": {"worker": "build", "thread": "t3-thread://v2/env/w1", "state": "running", "thread_status": "running",
+                      "issue": "[DEV-1](https://linear.app/a/issue/DEV-1)", "waits_on": None,
+                      "prs": [{"ref": "acme/app#12", "name": "#12", "url": "https://github.com/acme/app/pull/12",
+                               "read": True, "title": "Add the export", "state": "OPEN", "draft": True,
+                               "checks": {"pass": 1, "pending": 2}}]},
+            "probe": {"worker": "probe", "thread": "t3-thread://v2/env/w2", "state": "done", "issue": None,
+                      "waits_on": None,
+                      "prs": [{"ref": "acme/app#13", "name": "#13", "url": "https://github.com/acme/app/pull/13",
+                               "read": True, "title": "Spike the format", "state": "MERGED", "draft": False,
+                               "checks": {}}]}})
         self.assertEqual((self.dir / "project.md").read_text(), before)
         self.assertEqual(sorted(path.name for path in self.dir.iterdir()), ["project.md"])
 
+    def test_status_takes_json_or_html(self):
+        env = {**os.environ, "PATH": f"{self.fake / 'bin'}:{os.environ['PATH']}"}
+        for args in [[], ["--json", "--html"]]:
+            result = subprocess.run([sys.executable, str(SCRIPT), str(self.dir), "status", *args], capture_output=True,
+                                    text=True, env=env)
+            self.assertEqual(result.returncode, 2, args)
+
     def test_a_thread_on_another_machine_or_in_a_final_row_is_never_read(self):
-        self.run_project("status")
+        self.status()
         self.assertEqual([call[2] for call in self.calls("t3")], ["w1"])
 
-    def test_pending_checks_print_as_pending_and_a_failed_read_as_unread(self):
-        self.assertIn("⏳ 2 pending", self.run_project("status"))
+    def test_a_failed_pr_or_checks_read_is_marked_unread(self):
         self.checks["acme/app#12"] = [1, "HTTP 502"]
         del self.prs["acme/app#13"]
-        printed = self.run_project("status")
-        self.assertIn("[#12, Add the export](https://github.com/acme/app/pull/12) open draft, checks unread", printed)
-        self.assertIn("- **[probe](t3-thread://v2/env/w2)** · [#13](https://github.com/acme/app/pull/13) unread\n",
-                      printed)
+        units = self.units(self.status())
+        self.assertIsNone(units["build"]["prs"][0]["checks"])
+        self.assertEqual(units["probe"]["prs"], [{"ref": "acme/app#13", "name": "#13",
+                                                  "url": "https://github.com/acme/app/pull/13", "read": False}])
 
-    def test_a_pr_whose_repo_is_unknown_prints_unresolved_with_no_gh_call(self):
+    def test_a_pr_whose_repo_is_unknown_is_unresolved_with_no_gh_call(self):
         subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
         self.write(**{"| other#5 |": "| acme/other#5 |"})
-        printed = self.run_project("status")
-        self.assertIn("· thread running · #12 unresolved · issue", printed)
-        self.assertIn("· #13 unresolved\n", printed)
+        units = self.units(self.status())
+        self.assertEqual(units["build"]["prs"], [{"ref": "?#12", "name": "#12", "url": None}])
         self.assertEqual({call["key"] for call in self.calls("gh")}, {"acme/other#5"})
 
     def test_a_markdown_link_to_a_pr_names_only_its_urls_pr(self):
         self.write(**{"| other#5 |": "| [#5, Their change](https://github.com/acme/other/pull/5) |"})
-        self.run_project("status")
+        self.status()
         self.assertNotIn("acme/app#5", {call["key"] for call in self.calls("gh")})
         self.assertIn("acme/other#5", {call["key"] for call in self.calls("gh")})
 
@@ -515,51 +525,48 @@ queue:
             project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7)", "acme/app", refs)
             self.assertEqual(refs, {"other/repo#7"}, label)
 
-    def test_a_title_ending_in_a_backslash_keeps_its_link(self):
-        with unittest.mock.patch.object(project, "_pr", return_value={"title": "path\\", "state": "OPEN", "isDraft": False}), \
-             unittest.mock.patch.object(project, "_checks", return_value={}):
-            self.assertTrue(project._pr_line("acme/app#7", "acme/app").startswith("[#7, path\\\\](https://"))
-
-    def test_raw_html_in_a_cell_prints_escaped_so_the_reply_keeps_its_picks(self):
-        self.write(**{"the user's go": "the user's go <details>"})
-        self.assertIn("&lt;details>", self.run_project("status"))
-
-    def test_a_project_without_a_queue_or_an_issue_column_prints_and_ticks_the_same(self):
+    def test_a_project_without_a_queue_or_an_issue_column_reads_and_ticks_the_same(self):
         old = STATUS.split("## Queue")[0] + "## Decisions" + STATUS.split("## Decisions")[1]
         old = old.replace(" | Issue |\n|---|---|---|---|---|---|---|", " |\n|---|---|---|---|---|---|") \
             .replace(" | [DEV-1](https://linear.app/a/issue/DEV-1) |", " |").replace(" | report | — |", " | report |") \
             .replace(" | launched |  |", " | launched |")
         ticked = self.run_project("tick")
         self.write(old)
-        printed = self.run_project("status")
-        self.assertIn("**Needs you**\nno queue\n\n", printed)
-        self.assertIn("open draft, ✅ 1 pass, ⏳ 2 pending\n", printed)
+        data = self.status()
+        self.assertEqual((data["queue"], data["queue_unread"]), (None, None))
+        self.assertEqual(self.units(data)["build"]["prs"][0]["checks"], {"pass": 1, "pending": 2})
+        self.assertIsNone(self.units(data)["build"]["issue"])
         self.assertEqual(self.run_project("tick"), ticked)
 
     def test_no_live_reads_neither_t3_nor_gh_and_leaves_each_live_field_out(self):
-        data = json.loads(self.run_project("status", "--json", "--no-live"))
+        data = self.status("--no-live")
         self.assertEqual((self.calls("t3"), self.calls("gh")), ([], []))
-        units = {unit["worker"]: unit for group in data["groups"] for unit in group["units"]}
-        self.assertEqual(units["build"], {
+        self.assertEqual(self.units(data)["build"], {
             "worker": "build", "thread": "t3-thread://v2/env/w1", "state": "running", "issue":
             "[DEV-1](https://linear.app/a/issue/DEV-1)", "waits_on": None,
             "prs": [{"ref": "acme/app#12", "name": "#12", "url": "https://github.com/acme/app/pull/12"}]})
-        self.assertEqual([group["state"] for group in data["groups"]], ["waiting", "running", "done"])
-        self.assertEqual((data["unread_rows"], data["queue"][0]["name"]), (["odd"], "pick the export format"))
-        self.assertIn("- **[build](t3-thread://v2/env/w1)** · [#12](https://github.com/acme/app/pull/12) · issue",
-                      self.run_project("status", "--no-live"))
 
-    def test_json_holds_what_the_markdown_prints(self):
-        data = json.loads(self.run_project("status", "--json"))
-        self.assertEqual(project.status_markdown(data) + "\n", self.run_project("status"))
-        build = next(unit for group in data["groups"] for unit in group["units"] if unit["worker"] == "build")
-        self.assertEqual((build["thread_status"], build["prs"][0]["checks"]), ("running", {"pass": 1, "pending": 2}))
-
-    def test_a_project_with_no_workers_decisions_or_phases_says_so(self):
+    def test_a_project_with_no_workers_decisions_or_phases_reads_empty(self):
         self.write("# ◆ bare\n\nCoordinator: <t3-thread://v2/env/lead> · Checkout: {checkout}\n\n## Goal\n\nShip.\n")
-        self.assertEqual(self.run_project("status"), "◆ bare · Ship.\n\n**Needs you**\nno queue\n\nno workers\n\n"
-                                                     "**Decisions**\nnone\n\n**Phases**\nnone\n")
+        self.assertEqual(self.status(), {"project": "bare", "goal": "Ship.", "queue": None, "queue_unread": None,
+                                         "groups": [], "unread_rows": [], "decisions": [], "phases": []})
 
+    def test_html_bakes_the_data_into_one_block_that_round_trips_and_no_text_escapes_it(self):
+        hostile = "</script><script>alert(1)</script> <!-- x"
+        self.write(**{"the user's go": hostile, "CSV first.": "<img src=x onerror=alert(1)>"})
+        data = self.status("--no-live")
+        path = pathlib.Path(self.run_project("status", "--html", "--no-live").strip())
+        self.addCleanup(path.unlink)
+        self.assertTrue(path.is_absolute())
+        page = path.read_text()
+        self.assertEqual(page.count('<script type="application/json" id="status-data">'), 1)
+        block = page.split('<script type="application/json" id="status-data">')[1].split("</script>")[0]
+        self.assertEqual(json.loads(block), data)
+        self.assertNotIn("<", block)
+        self.assertNotIn("alert(1)</script>", page)
+        self.assertNotIn("<img", page)
+        self.assertNotRegex(page, r"(?i)<(script|link)[^>]+src=|https?://(?!github\.com|linear\.app)|innerHTML")
+        self.assertIn("function draw(data)", page)
 
 if __name__ == "__main__":
     unittest.main()
