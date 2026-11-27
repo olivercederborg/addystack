@@ -16,7 +16,10 @@ for a PR with no checks, which the reply can't see either.
 Of 1,198 cards with a push or merge stop from Nov 18 to 26, 2026, on two machines, it flags
 21 push options, 16 distinct. T3 shows a reply as it streams, so the user sees the first card too;
 the resent one comes seconds later and is the one a key answers (user_turn.answered).
-stop_hook_active keeps it to one send per stop, and any doubt or error passes.
+It sends back once a turn: a Stop that a hook already continued (stop_hook_active) passes when
+the transcript shows card-check's own send-back since the last Stop that ended a turn, or
+can't be read, so a card written again after another Stop hook's block, such as a `/goal`
+check's, is still checked. Any doubt or error passes.
 
 It also sends back a reply whose block is `running` when nothing in T3 will wake its thread
 on what it waits for (wake_gap). A user's Stop ends every PR watch on a thread without a
@@ -211,10 +214,32 @@ def wake_gap(turn, reply, thread, now):
             "the eta if it isn't measured")
 
 
+def sent_back(path):
+    """Whether card-check already sent this turn's reply back: the transcript at path has a
+    Stop hook_success record of card-check.py with output since the last Stop that ended a
+    turn or the user interrupted it (transcripts.stops). A worker's result or a task notice
+    lands as a prompt inside a turn, so a prompt doesn't end one. True when it can't be read,
+    so a doubt never sends twice."""
+    import transcripts
+    try:
+        found = transcripts.entries(path)
+    except (OSError, TypeError, UnicodeDecodeError):
+        return True
+    ends, sent = transcripts.stops(found), False
+    for at, entry in enumerate(found):
+        if ends.get(at) in ("ended", "interrupted"):
+            sent = False
+        part = entry.get("attachment") if isinstance(entry, dict) else None
+        if isinstance(part, dict) and part.get("type") == "hook_success" and part.get("hookEvent") == "Stop" \
+                and str(part.get("command", "")).endswith("card-check.py") and part.get("stdout"):
+            sent = True
+    return sent
+
+
 def main():
     try:
         event = json.loads(sys.stdin.read())
-        if event.get("stop_hook_active"):
+        if event.get("stop_hook_active") and sent_back(event.get("transcript_path")):
             return
         import turn_block
         reply = event.get("last_assistant_message") or ""

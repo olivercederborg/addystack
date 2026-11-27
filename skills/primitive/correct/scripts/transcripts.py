@@ -162,6 +162,55 @@ def reply_text(entry):
     return text if text.strip() else None
 
 
+# What Claude Code records for a Stop a hook continued: a `decision: block` and additionalContext.
+# A hook's non-blocking error (hook_non_blocking_error) lands in the same summary's hookErrors
+# but ends the turn as any Stop does.
+CONTINUED = ("hook_blocking_error", "hook_additional_context")
+
+
+def entries(path):
+    """The Claude Code transcript at path, a parsed record per line it can parse; raises OSError."""
+    out = []
+    with open(path) as transcript:
+        for line in transcript:
+            try:
+                out.append(json.loads(line))
+            except (ValueError, RecursionError):
+                continue
+    return out
+
+
+# How Claude Code records a turn the user stopped, with no Stop: a message, or, during a tool call,
+# only the call's tool_result ("[Request interrupted by user for tool use]").
+INTERRUPTED = "[Request interrupted by user"
+
+
+def said(parts):
+    """The text in a message's parts and in its tool results' content."""
+    out = texts(parts)
+    for part in parts:
+        if isinstance(part, dict) and part.get("type") == "tool_result":
+            content = part.get("content")
+            out += [content] if isinstance(content, str) else texts(content) if isinstance(content, list) else []
+    return out
+
+
+def stops(found):
+    """Each turn boundary in found, a transcript's entries, by position: "continued" at a
+    Stop's stop_hook_summary record when a hook continued the turn there (a CONTINUED record
+    for that Stop's toolUseID), "ended" at one that ended the turn, and "interrupted" at the
+    record of a turn the user interrupted, which ends it without a Stop."""
+    continued = {part.get("toolUseID") for entry in found if isinstance(entry, dict)
+                 and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED}
+    out = {}
+    for at, entry in enumerate(found):
+        if isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "stop_hook_summary":
+            out[at] = "continued" if entry.get("toolUseID") in continued else "ended"
+        elif any(text.startswith(INTERRUPTED) for text in said(text_parts(entry) or [])):
+            out[at] = "interrupted"
+    return out
+
+
 def entry_text(entry):
     """The typed text an entry carries, or None for anything the user didn't type."""
     return prompt_text(entry) or None
