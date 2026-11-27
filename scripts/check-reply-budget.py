@@ -7,16 +7,15 @@ loads only a 2,000-character preview, so 8,000 keeps a margin. Each payload is c
 its own, built by the hook's own `context()`:
 
 - reply-shape: this checkout's skills/optional/reply-shape/SKILL.md, and the one the hook loads
-  (REPLY_SHAPE_SKILL, or the installed skill) when that's another file.
+  (REPLY_SHAPE_SKILL, or the installed skill).
 - rules: the checkout's replies.md when it has one (the workshop's maintainer does), so a
   commit that grows it fails here, and the file
-  `replies.rules` names in the built resolved.json (ADDYSTACK_STATE overrides its folder)
-  when that's another file.
+  `replies.rules` names in the built resolved.json (ADDYSTACK_STATE overrides its folder).
 
 The hook's header names the file's path, so a checkout's own copy counts its path as
 PATH_ALLOWANCE characters wherever the checkout sits: a long worktree folder doesn't fail
-a commit, and every checkout and CI measure the same. A file the hook loads counts its
-real path.
+a commit, and every checkout and CI measure the same. A file the hook loads counts the
+path it's loaded by, in full, even when that's the checkout's own copy.
 
 A payload that couldn't load fails too.
 
