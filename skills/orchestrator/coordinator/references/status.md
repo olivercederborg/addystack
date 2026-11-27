@@ -3,17 +3,18 @@
 When the user asks where the project stands, show the overview inline and change nothing
 else: no plan change, no message, no retry.
 
-1. Run `scripts/project.py <folder> status --json` and read it yourself: it's the data
-   the page draws, and its `queue` gives the top item the reply ends on.
-2. Run `scripts/project.py <folder> status --html`. It writes the page to the temp folder
-   and prints its absolute path.
-3. Show it with `html_render`, passing that path and a `height` from `html_preview`'s
-   `contentHeight`. A thread that can't pass a path passes the file's contents as `html`.
-4. End the reply on the queue's top item as step 5 says, or on the missing queue for a
+1. Run `scripts/project.py <folder> status --json --html` once. It writes the page to the
+   temp folder and prints the data the page draws, plus `html_path`, the page's absolute
+   path. Read the data yourself: its `queue` gives the top item the reply ends on.
+2. Show the page with `html_render`, passing `html_path` and a `height` from
+   `html_preview`'s `contentHeight`. A thread that can't pass a path passes the file's
+   contents as `html`.
+3. End the reply on the queue's top item as step 5 says, or on the missing queue for a
    project from before the queue.
 
-Both runs read `project.md` and live state and never write the project's folder. A read
-that fails is named on stderr, with the CLI's reason.
+The run reads `project.md` and live state once and never writes the project's folder. A
+read that fails is named on stderr, with the CLI's reason. `--json` or `--html` alone
+prints only the data or only the path.
 
 ## What the page shows
 

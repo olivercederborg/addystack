@@ -32,12 +32,13 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
-  project.py DIR status (--json | --html) [--no-live]
+  project.py DIR status [--json] [--html] [--no-live]
                                     the project's overview (references/status.md), reading thread,
                                     PR, and check state live: --json prints status_data's data;
                                     --html writes it into a copy of scripts/status.html in the
-                                    temp folder and prints that file's path; --no-live skips t3
-                                    and gh. Never writes DIR
+                                    temp folder and prints that file's path; both print the data
+                                    with the path as `html_path`; --no-live skips t3 and gh.
+                                    Takes at least one of --json and --html. Never writes DIR
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -802,9 +803,8 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
     showing = commands.add_parser("status", allow_abbrev=False)
-    output = showing.add_mutually_exclusive_group(required=True)
-    output.add_argument("--json", action="store_true")
-    output.add_argument("--html", action="store_true")
+    showing.add_argument("--json", action="store_true")
+    showing.add_argument("--html", action="store_true")
     showing.add_argument("--no-live", action="store_true")
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
@@ -819,6 +819,8 @@ def main(argv: list[str]) -> int:
     importing.add_argument("--from", dest="sources", action="append", metavar="ID=WHO")
     importing.add_argument("--stuck", type=int, action="append", metavar="ID")
     args = parser.parse_args(argv)
+    if args.command == "status" and not (args.json or args.html):
+        showing.error("status takes --json, --html, or both")
     if args.command == "phase" and (args.goal is None) != (args.proof is None):
         ending.error("--goal needs --proof, and --park takes neither")
     path = args.dir / "project.md"
@@ -853,12 +855,13 @@ def main(argv: list[str]) -> int:
             return _tick(args.dir, lines, args.send)
         if args.command == "status":
             data = status_data(lines, live=not args.no_live)
-            if args.json:
-                print(json.dumps(data, ensure_ascii=False, indent=2))
-            else:
+            if args.html:
                 page = Path(tempfile.gettempdir()) / "addystack-status" / f"{args.dir.resolve().name}.html"
                 page.parent.mkdir(exist_ok=True)
                 page.write_text(status_html(data))
+            if args.json:
+                print(json.dumps({**data, "html_path": str(page)} if args.html else data, ensure_ascii=False, indent=2))
+            else:
                 print(page)
             return 0
         if args.command == "queue":

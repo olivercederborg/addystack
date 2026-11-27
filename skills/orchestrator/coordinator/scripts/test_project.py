@@ -487,12 +487,28 @@ class Status(unittest.TestCase):
         self.assertEqual((self.dir / "project.md").read_text(), before)
         self.assertEqual(sorted(path.name for path in self.dir.iterdir()), ["project.md"])
 
-    def test_status_takes_json_or_html(self):
+    def test_status_takes_json_html_or_both(self):
         env = {**os.environ, "PATH": f"{self.fake / 'bin'}:{os.environ['PATH']}"}
-        for args in [[], ["--json", "--html"]]:
-            result = subprocess.run([sys.executable, str(SCRIPT), str(self.dir), "status", *args], capture_output=True,
-                                    text=True, env=env)
-            self.assertEqual(result.returncode, 2, args)
+        result = subprocess.run([sys.executable, str(SCRIPT), str(self.dir), "status"], capture_output=True, text=True,
+                                env=env)
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("status takes --json, --html, or both", result.stderr)
+
+    def test_json_and_html_together_read_live_state_once_and_print_the_pages_path(self):
+        alone = self.status()
+        t3_alone, gh_alone = len(self.calls("t3")), len(self.calls("gh"))
+        self.assertEqual((t3_alone, gh_alone), (1, 6))  # w1's thread; view and checks for each of 3 PRs
+        for tool in ("t3", "gh"):
+            (self.fake / f"{tool}-calls.jsonl").unlink()
+        data = self.status("--html")
+        self.assertEqual((len(self.calls("t3")), len(self.calls("gh"))), (t3_alone, gh_alone))
+        path = pathlib.Path(data.pop("html_path"))
+        self.addCleanup(path.unlink)
+        self.assertEqual(data, alone)
+        self.assertTrue(path.is_absolute())
+        block = path.read_text().split('<script type="application/json" id="status-data">')[1].split("</script>")[0]
+        self.assertEqual(json.loads(base64.b64decode(json.loads(block)).decode()), data)
+        self.assertNotIn("html_path", self.status())
 
     def test_a_thread_on_another_machine_or_in_a_final_row_is_never_read(self):
         self.status()

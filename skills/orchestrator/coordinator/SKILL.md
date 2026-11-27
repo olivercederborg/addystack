@@ -129,8 +129,8 @@ inputs or one of Parallel by default's three reasons.
 
 ## 4. On each wake
 
-- **The user's message**: an answer goes through step 5; a status request reads
-  `status --json` and shows `--html` in `html_render` ([status](references/status.md)),
+- **The user's message**: an answer goes through step 5; a status request runs
+  `status --json --html` and shows its page in `html_render` ([status](references/status.md)),
   changing no plan; anything else updates the plan.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
@@ -155,7 +155,7 @@ inputs or one of Parallel by default's three reasons.
   `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
   repeats hourly. When you set `tick`, run
   `project.py <folder> tick` once to check the timer runs. A wait for a time, such as
-  a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
+  a rate-limit reset, gets a `once` `schedule_task`, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
