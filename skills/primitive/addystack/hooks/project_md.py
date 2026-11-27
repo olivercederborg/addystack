@@ -23,8 +23,13 @@ def ranges(text):
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
 
 
-UNREAD = re.compile(r"(?<![\w/.#-])[\w.-]*[^\W_][\w./-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")  # `web #20`, `acme/web #20–#22`
-LINKED = re.compile(r"\[[^\]\n]*\]\(<?([^()\s<>]*)>?(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'))?\)")  # a link names its destination
+# `web #20` or `acme/web #20–#22`, but not a joining word, as in `#20 and #21` or `PR #12`
+UNREAD = re.compile(r"(?<![\w/.#-])(?!(?i:and|or|then|plus|pr|prs|see|after|before|with|on)\s)"
+                    r"[\w.-]*[^\W_][\w./-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")
+LINKED = re.compile(r"\[[^\]\n]*\]\(<?([^()\s<>]*)>?(?:\s+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^()\n]*\)))?\)")  # a link names its destination
+
+
+CODE_PR = re.compile(r"(?:https?://)?github\.com/[\w.-]+/[\w.-]+/pull/\d+|[\w.-]+/[\w.-]+#\d+|#\d+")  # a PR in code, not a branch
 
 
 class Pulls(NamedTuple):
@@ -36,10 +41,12 @@ def pulls(text, origin):
     """The PRs a Workers cell names, resolved against origin, the checkout's `owner/repo`.
     `#N`, and `repo#N` when repo is origin's own name, are origin's; `owner/repo#N` and a
     github.com PR URL name their own, a Markdown link by its destination; a range `#20–#22`
-    names each. Refs are lowercased. A parenthesised note and a backticked branch name no PR. Unread: a word then `#N` (`web #20`), `repo#N`
-    for another repo, since its owner is a guess, and `#N` when origin is ""."""
+    names each. Refs are lowercased. A parenthesised note and a backticked branch name no PR,
+    while a backticked PR ref or URL does. Unread: a word then `#N` (`web #20`), `repo#N` for
+    another repo, since its owner is a guess, and `#N` when origin is ""."""
     text, origin = LINKED.sub(r" \1 ", text), origin.lower()
-    while (bare := re.sub(r"\([^()]*\)|`[^`]*`", " ", text)) != text:  # innermost note first
+    text = re.sub(r"`([^`]*)`", lambda code: f" {code[1]} " if CODE_PR.fullmatch(code[1].strip()) else " ", text)
+    while (bare := re.sub(r"\([^()]*\)", " ", text)) != text:  # innermost note first
         text = bare
     unread = [m[0] for m in UNREAD.finditer(text)]
     refs = []
