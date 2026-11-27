@@ -6432,10 +6432,16 @@ class CheckQueueNotice(unittest.TestCase):
         self.log(self.kill(seconds_ago=960))
         payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
         note = run_hook(self.HOOK, payload, env=self.env)
-        self.assertIn("killed the check in an earlier command of yours, `bun run typecheck`", note)
+        self.assertIn("killed the check in an earlier command in this session, `bun run typecheck`", note)
         self.assertIn("run a narrower check", note)
         self.assertNotIn("parallelism", note)
         self.assertEqual(self.raw(payload), "")  # told once
+
+    def test_a_subagents_bash_call_leaves_the_main_agents_kill_untold(self):
+        self.log(self.kill(seconds_ago=960))
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "echo sub"}}
+        self.assertEqual(self.raw({**payload, "agent_id": "a5168f63857f33134"}), "")
+        self.assertIn("earlier command in this session", run_hook(self.HOOK, payload, env=self.env))
 
     def test_the_next_bash_call_tells_only_this_agents_claude_kills(self):
         payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}

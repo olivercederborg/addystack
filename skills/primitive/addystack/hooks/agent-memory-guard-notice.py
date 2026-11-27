@@ -8,7 +8,9 @@ Bash under one manifest id, so the guard and its messages are selected together:
   Code moves a Bash call past its timeout (2 minutes by default, 10 at most) to the
   background, and that command's failure fires no hook, so a queued check killed at 15
   minutes is only ever told here. A kill naming Codex calls is left to their PostToolUse.
-  No permission decision.
+  Only the main agent hears it: a subagent runs inside the same Claude process, so the log
+  can't tell whose command died, and a payload with `agent_id` is a subagent's. No
+  permission decision.
 - PostToolUseFailure (Claude; a payload without the field counts as one): when the guard
   killed this command, say why. The guard SIGKILLs the whole command, wrapper shell
   included, or a queued check's processes, so the agent otherwise sees a failure with no
@@ -86,7 +88,7 @@ def ancestors():
 
 
 def notice(entry, earlier=False):
-    command = f"an earlier command of yours, `{entry.get('command', '')[:120]}`," if earlier else "this command"
+    command = f"an earlier command in this session, `{entry.get('command', '')[:120]}`," if earlier else "this command"
     if entry.get("rule") == "queue":
         what = f"agent-memory-guard killed the check in {command} after it was {entry['reason']}."
     else:
@@ -117,7 +119,8 @@ def main():
     except OSError:
         done = set()
     if event == "PreToolUse":
-        mine = earlier_kills(done)
+        # A subagent shares its parent's process, so only the main agent hears of a kill.
+        mine = [] if payload.get("agent_id") else earlier_kills(done)
         key = lambda entry: repr(entry["at"])
         texts = [notice(entry, earlier=True) for entry in reversed(mine)]
         count = queued()
