@@ -35,9 +35,9 @@ Calls, one per candidate: **recommended** or **alternative**.
   seams when they're installed.
 - **Names**: use the terms in the `domain-modeling` glossary (`CONTEXT.md`).
 
-Before a candidate adds scope beyond a saved plan, show **Proposed this round** ·
-*my suggestion, not agreed* with a `diff` block of `+` additions and any Size change,
-above the plan. Wait for the user's answer before including the addition.
+Before a candidate adds scope beyond a saved plan, mark each addition *My suggestion:*
+in the plan, with any size change as a trail on its heading (`~6 → ~8 files`), as
+`scope-grill` rounds do. Wait for the user's answer before including the addition.
 
 **Done when:** every touched module, its current interface, and its callers are named.
 

@@ -86,8 +86,8 @@ this build is a writer child's or `review-loop`'s, since the caller reviews.
 ## 3. Stay in scope
 
 - **Needed but not planned**: show a **Decision** card in the
-  [decision card](references/views.md#decision-card-example) shape, opening with **Proposed this round** · *my suggestion, not agreed*: a `diff`
-  block of `+` additions and any Size change. Recommend the option that keeps
+  [decision card](references/views.md#decision-card-example) shape, with each addition
+  marked *My suggestion:* and any size change as a trail (`~6 → ~8 files`). Recommend the option that keeps
   every plan decision with the least added scope, and in the fold give each option its
   scope against the plan, as in `scope-grill`: `No extra scope`, `Drops …`, or
   `Adds …`. Build the addition only after the user's answer.
