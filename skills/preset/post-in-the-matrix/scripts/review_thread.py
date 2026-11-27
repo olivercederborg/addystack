@@ -15,9 +15,14 @@ order:
 
 Within a kind, an unsettled thread beats a settled one, then the newest. Subagent threads
 never count. Run it from the PR's project checkout (or a T3 worktree of it), or pass
---project. Prints {"thread": null} when none holds it. Exits 2, with a message on stderr,
-when T3 can't be read or a "none" answer can't be trusted, so the caller stops instead of
-guessing.
+--project. Prints {"thread": null} when none holds it.
+
+T3's list shows at most five open PRs per thread, so a review thread of a bigger stack hides
+some links. A thread links only the PRs it reviews and their GitHub stack layers, so before
+answering "none" the script asks GitHub for the PR's stack (`gh api repos/<repo>/stacks`, the
+read T3 links stack layers from) and only a hiding thread whose title or shown links touch
+that stack blocks the answer. Exits 2, with a message on stderr, when T3 or GitHub can't be
+read or such a thread blocks a "none" answer, so the caller stops instead of guessing.
 """
 import argparse, json, re, subprocess, sys
 
@@ -91,9 +96,29 @@ def holder(items, repo, number, prefixes):
 
 def hidden_links(items, prefixes):
     """Review threads whose list entry shows fewer open PRs than they link."""
-    return [thread.get("threadId") for thread in items
+    return [thread for thread in items
             if review_numbers(thread.get("title"), prefixes)
             and (thread.get("openPullRequestCount") or 0) > len(thread.get("pullRequests") or [])]
+
+
+def stack_numbers(repo, number):
+    """This PR's number and those of every layer in its GitHub stack."""
+    command = ["gh", "api", f"repos/{repo}/stacks?pull_request={number}"]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        raise RuntimeError(f"gh can't read the stack of #{number}: {result.stderr.strip()[:300]}")
+    stacks = json.loads(result.stdout)
+    if not isinstance(stacks, list) or not all(isinstance(stack, dict) for stack in stacks):
+        raise ValueError(f"GitHub did not return a list of stacks for #{number}")
+    return {number} | {layer.get("number") for stack in stacks for layer in stack.get("pull_requests") or []
+                       if isinstance(layer, dict)}
+
+
+def touches(thread, repo, numbers, prefixes):
+    """Whether this thread's title or shown links name a PR among these numbers."""
+    shown = {pr.get("number") for pr in thread.get("pullRequests") or []
+             if isinstance(pr, dict) and (pr.get("repository") or "").lower() == repo}
+    return bool((review_numbers(thread.get("title"), prefixes) | shown) & numbers)
 
 
 def lookup(repo, number, prefixes, project=None, list_json=None):
@@ -105,8 +130,10 @@ def lookup(repo, number, prefixes, project=None, list_json=None):
         items = list({thread.get("threadId"): thread for thread in items + read_list(project, None)}.values())
     thread = holder(items, repo, number, prefixes)
     if thread is None and (hidden := hidden_links(items, prefixes)):
-        raise ValueError(f"can't rule out a holder: review threads {', '.join(map(str, hidden[:3]))} "
-                         "link more open PRs than the list shows")
+        stack = stack_numbers(repo, number)
+        if blocking := [t.get("threadId") for t in hidden if touches(t, repo, stack, prefixes)]:
+            raise ValueError(f"can't rule out a holder: review threads {', '.join(map(str, blocking[:3]))} "
+                             f"link more open PRs than the list shows, and touch #{number}'s stack")
     return thread
 
 

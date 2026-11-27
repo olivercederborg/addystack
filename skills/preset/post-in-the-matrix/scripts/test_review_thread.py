@@ -19,6 +19,12 @@ def thread(tid, title, prs=(), settled=False, updated="2026-11-13T10:00:00Z", re
             "status": "waiting", "link": f"https://example.invalid/{tid}"}
 
 
+def stacks(*layers):
+    """A `gh api .../stacks` reply: one stack of these PR numbers, or none."""
+    body = [{"number": layers[0], "pull_requests": [{"number": n} for n in layers]}] if layers else []
+    return mock.Mock(returncode=0, stdout=json.dumps(body), stderr="")
+
+
 def run(items, *args):
     with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as handle:
         json.dump(items, handle)
@@ -93,10 +99,34 @@ class HolderTest(unittest.TestCase):
         self.assertEqual(found(items, 7, "--title-prefix", "PR ")["threadId"], "custom")
         self.assertEqual(found(items, 8, "--title-prefix", "PR ")["threadId"], "default")
 
-    def test_none_is_refused_when_a_review_thread_hides_links(self):
-        code, out, err = run([thread("big", "◎ #1 · a", [pr(1)], open_count=6)], REPO, "2")
+    def test_a_hiding_thread_outside_the_prs_stack_does_not_block_none(self):
+        big = thread("big", "◎ #1 · a", [pr(n, "stack") for n in (1, 3, 4, 5, 6)], open_count=6)
+        with mock.patch.object(review_thread.subprocess, "run", return_value=stacks()) as called:
+            code, out, err = run([big], REPO, "2")
+        self.assertEqual((code, out["thread"]), (0, None), err)
+        self.assertEqual(called.call_args.args[0], ["gh", "api", "repos/octo/app/stacks?pull_request=2"])
+
+    def test_none_is_refused_when_a_hiding_thread_touches_the_prs_stack(self):
+        shown = thread("shown", "◎ #1 · a", [pr(1)], open_count=6)
+        titled = thread("titled", "◎ #7 · b", [pr(8)], open_count=6)
+        for hiding, layers in ((shown, (1, 2)), (titled, (7, 2))):
+            with mock.patch.object(review_thread.subprocess, "run", return_value=stacks(*layers)):
+                code, out, err = run([hiding], REPO, "2")
+            self.assertEqual((code, out), (2, None))
+            self.assertIn(hiding["threadId"], err)
+
+    def test_an_unreadable_stack_exits_2(self):
+        failed = mock.Mock(returncode=1, stdout="", stderr="HTTP 502")
+        with mock.patch.object(review_thread.subprocess, "run", return_value=failed):
+            code, out, err = run([thread("big", "◎ #1 · a", [pr(1)], open_count=6)], REPO, "2")
         self.assertEqual((code, out), (2, None))
-        self.assertIn("big", err)
+        self.assertIn("HTTP 502", err)
+
+    def test_github_is_asked_only_when_a_thread_hides_links(self):
+        with mock.patch.object(review_thread.subprocess, "run") as called:
+            self.assertIsNone(found([thread("t", "◎ #1 · a", [pr(1)])], 2))
+            self.assertEqual(found([thread("big", "◎ #2 · a", [pr(2)], open_count=6)], 2)["threadId"], "big")
+        called.assert_not_called()
 
     def test_malformed_list_exits_2(self):
         self.assertEqual(run([None], REPO, "1")[0], 2)
