@@ -111,8 +111,8 @@ own `.agents/addystack.jsonc` can only make it stricter.
 A repo whose policy sets `review`, as `"review": {"app": "<slug>"}` from the repo's own
 `.agents/addystack.jsonc`, is reviewed by that GitHub App: it reviews every ready PR, and
 its approval is the one the repo requires. After a PR is marked ready, the next wait is
-that App's review, never a person's. Watch the PR, then read the App's review at once,
-since it may have posted before the watch, and again on each wake, with
+that App's review, not a request for a person's. Watch the PR, then read the App's
+review at once, since it may have posted before the watch, and again on each wake, with
 `scripts/github.sh reviewed <N> '<slug>[bot]'`:
 
 - **Approved**: `active` is an approval whose `commit_id` is `scripts/github.sh head <N>`.
