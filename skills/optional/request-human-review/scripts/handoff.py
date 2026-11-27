@@ -45,8 +45,6 @@ GITHUB = Path(__file__).resolve().parent / 'github.sh'
 MARK, VERSION = 'addystack-handoff', 1
 SECOND_OPINION = 'second-opinion'
 BLOCK = re.compile(rf'<!-- {MARK}:v(\d+)\n(.*?)\n-->', re.S)
-# An App's review that posts a person's go names them, so their review counts as theirs.
-GO = re.compile(r'<!-- review-decisions:go v1 (\{.*?\}) -->', re.S)
 ROLES = {'P1': 'P1', 'P2': 'P2', 'fallback': 'fewest open requests', 'chosen': 'chosen by the author'}
 
 
@@ -218,8 +216,8 @@ def _lines(output: str) -> list:
 def _facts(number: int) -> dict:
     """Every read a plan needs: {'viewer', 'author', 'body', 'base', 'head', 'rules': list | None,
     'changed': [path], 'load': {login: open requests}, 'engaged': [login], 'handoffs': [block]},
-    where engaged is each person requested or with a submitted review, their own or an App's
-    that carries their go, and handoffs are the viewer's own, oldest first."""
+    where engaged is each person requested or with a submitted review, and handoffs are the
+    viewer's own, oldest first."""
     repo = 'repos/{owner}/{repo}'
     viewer = github('viewer').strip()
     pr = json.loads(_gh('api', f'{repo}/pulls/{number}'))
@@ -227,10 +225,8 @@ def _facts(number: int) -> dict:
     text = _gh('api', f'{repo}/contents/{reviewers.PATH}?ref={pr["base"]["sha"]}',
                '-H', 'Accept: application/vnd.github.raw', missing_ok=True)
     requested = _lines(_gh('api', f'{repo}/pulls/{number}/requested_reviewers', '--jq', '.users[].login'))
-    reviews = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/reviews?per_page=100', '--jq',
-                                         '.[] | select(.state != "PENDING") | {type: .user.type, login: .user.login, body}'
-                                         ' | tojson')))
-    reviewed = [login for review in reviews for login in _reviewers(review)]
+    reviewed = _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/reviews?per_page=100', '--jq',
+                          '.[] | select(.user.type == "User" and .state != "PENDING") | .user.login'))
     load = {}
     for login in _lines(_gh('api', '--paginate', f'{repo}/pulls?state=open&per_page=100',
                             '--jq', '.[].requested_reviewers[].login')):
@@ -244,23 +240,6 @@ def _facts(number: int) -> dict:
                                       if login.lower() != author.lower()],
             'handoffs': [block for block in (read(comment['body']) for comment in comments
                                              if comment['login'] == viewer) if block]}
-
-
-def _reviewers(review: dict) -> list:
-    """Whose review this is: a person's own, or for an App's, each person whose go it carries."""
-    if review['type'] == 'User':
-        return [review['login']]
-    if review['type'] != 'Bot':
-        return []
-    found = []
-    for go in GO.findall(review['body'] or ''):
-        try:
-            login = json.loads(go)['reviewer']
-        except (json.JSONDecodeError, KeyError, TypeError):
-            continue
-        if isinstance(login, str) and login:
-            found.append(login)
-    return found
 
 
 def main(arguments) -> int:
