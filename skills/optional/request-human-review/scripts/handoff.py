@@ -103,7 +103,9 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         extra = reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['load'])
         uncovered = sorted({name for reviewer in extra for name in reviewer['domains'] if name})
         covered = sorted({decision['domain'] for decision in placed if decision['domain']} - set(uncovered))
-        request = [{'login': login, 'role': 'chosen', 'domains': covered} for login in dict.fromkeys(chosen)]
+        # Someone already requested, or who already reviewed, isn't asked again.
+        request = [{'login': login, 'role': 'chosen', 'domains': covered} for login in dict.fromkeys(chosen)
+                   if not reviewers.has(engaged, login)]
         request += extra if with_suggested else []
     else:
         request = list(suggested)
@@ -112,8 +114,9 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         sorted(decision['key'] for decision in last['decisions'])
     named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
     requested = [reviewer['login'] for reviewer in request]
-    # A run that commented, then failed to request: its reviewers who were never asked.
-    request += [reviewer for reviewer in (last['reviewers'] if same else [])
+    # A run that commented, then failed to request: its reviewers who were never asked, unless an
+    # author's pick now replaces them.
+    request += [reviewer for reviewer in (last['reviewers'] if same and not chosen else [])
                 if not reviewers.has([*engaged, *requested, author], reviewer['login'])]
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
     if not same:

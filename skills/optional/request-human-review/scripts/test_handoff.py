@@ -83,6 +83,14 @@ class Plan(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'carol wrote the PR'):
             self.plan(judged, facts, chosen=('carol',))
 
+    def test_the_authors_new_pick_replaces_an_earlier_one_and_nobody_is_asked_twice(self):
+        judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
+        earlier = handoff.read(self.plan(judged, self.facts(viewer='carol'), chosen=('alice',))['comment'])
+        switched = self.plan(judged, self.facts(viewer='carol', handoffs=[earlier]), chosen=('bob',))
+        self.assertEqual([reviewer['login'] for reviewer in switched['request']], ['bob'])
+        reviewed = self.plan(judged, self.facts(viewer='carol', handoffs=[earlier], engaged=['alice']), chosen=('alice',))
+        self.assertEqual((reviewed['post'], reviewed['request']), (False, []))
+
     def test_a_base_without_reviewers_or_a_moved_head_hands_off_nothing(self):
         judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
         self.assertEqual(self.plan(judged, self.facts(rules=None))['post'], False)
