@@ -23,6 +23,9 @@ def ranges(text):
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
 
 
+UNREAD = re.compile(r"(?<!\S)[\w.-]*[^\W_][\w.-]*\s+#\d+(?:\s*[–-]\s*#?\d+)?\b")  # `web #20`, or `web #20–#22`
+
+
 class Pulls(NamedTuple):
     refs: tuple  # each PR the text names, as "owner/repo#N", once, in order
     unread: tuple  # each piece that reads as a PR but resolves to no repo, as written
@@ -34,7 +37,18 @@ def pulls(text, origin):
     github.com PR URL name their own; a range `#20–#22` names each. A parenthesised note
     and a backticked branch name no PR. Unread: a word then `#N` (`web #20`), `repo#N`
     for another repo, since its owner is a guess, and `#N` when origin is ""."""
-    raise NotImplementedError
+    while (bare := re.sub(r"\([^()]*\)|`[^`]*`", " ", text)) != text:  # innermost note first
+        text = bare
+    unread = [m[0] for m in UNREAD.finditer(text)]
+    refs = []
+    for url_repo, url_n, repo, n, local in PR_REF.findall(ranges(UNREAD.sub(" ", text))):
+        if url_repo or "/" in repo:
+            refs.append(f"{url_repo or repo}#{url_n or n}")
+        elif origin and (local or repo.lower() == origin.split("/")[1].lower()):
+            refs.append(f"{origin}#{n or local}")
+        else:
+            unread.append(f"{repo}#{n or local}")
+    return Pulls(tuple(dict.fromkeys(refs)), tuple(dict.fromkeys(unread)))
 
 
 def workers(lines, start, end):

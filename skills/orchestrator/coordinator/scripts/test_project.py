@@ -3,6 +3,7 @@ decisions, a Result section, notes under the Workers table, and a learning that 
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
 import pathlib, subprocess, sys, tempfile, unittest
+import project_md
 from datetime import date
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
@@ -144,6 +145,28 @@ class Project(Fixture, unittest.TestCase):
         self.assertIn("Follow-ups: none\n\n## Queue\n\nNext id: 1\n\n| # | Kind | Name | From | Since |\n"
                       "|---|---|---|---|---|\n\n## Decisions", text)
         self.assertEqual(self.project("queue", "show").stdout, "Nothing waits on the user.\n")
+
+
+class Pulls(unittest.TestCase):
+    """project_md.pulls, the one reader of a Branch or PR cell, on cells coordinators wrote."""
+    def test_refs_resolve_against_the_origin(self):
+        cases = [("#20 → #21 → #27", ("acme/box#20", "acme/box#21", "acme/box#27")),
+                 ("box#3, #3, acme/box#3", ("acme/box#3",)),  # the origin's own repo name, once
+                 ("acme/tools#1 https://github.com/o/r/pull/4", ("acme/tools#1", "o/r#4")),
+                 ("#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
+                 ("#5 (stack #6301) · `fix-#12`", ("acme/box#5",))]  # a note and a branch name no PR
+        for text, refs in cases:
+            with self.subTest(text):
+                self.assertEqual(project_md.pulls(text, "acme/box"), project_md.Pulls(refs, ()))
+
+    def test_a_ref_with_no_repo_to_resolve_against_is_unread(self):
+        cases = [("tools #109 → #110 (#108 merged)", "acme/box", ("acme/box#110",), ("tools #109",)),
+                 ("web #20–#22", "acme/box", (), ("web #20–#22",)),
+                 ("tools#4", "acme/box", (), ("tools#4",)),  # its owner is a guess
+                 ("#7 and box#8", "", (), ("#7", "box#8"))]
+        for text, origin, refs, unread in cases:
+            with self.subTest(text):
+                self.assertEqual(project_md.pulls(text, origin), project_md.Pulls(refs, unread))
 
 
 class Queue(Fixture, unittest.TestCase):
