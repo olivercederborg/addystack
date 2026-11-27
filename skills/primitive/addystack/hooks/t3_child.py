@@ -3,8 +3,7 @@ database (T3_STATE_DB overrides its path). A child is a `thread:delegated-task:`
 or a coordinator's worker on a linked machine: a top-level thread there whose first user
 message an agent wrote, with a line starting "Worker of: ", such as "Worker of:
 t3-thread://…" or "Worker of: the ◆ app coordinator (t3-thread://…)".
-reply-shape-context.py and named-links-notice.py read it to skip the reply rules for a
-child that doesn't opt in.
+reply-shape-context.py reads it to skip the reply rules for a child that doesn't opt in.
 Any doubt, such as a missing, locked, or changed database, reads as "not a child".
 
 It also lists the messages agents sent into a session's thread, such as an owner's
@@ -44,12 +43,6 @@ def cli():
 def rules_on(brief):
     """True when a child's brief has a line starting with OPT_IN."""
     return isinstance(brief, str) and any(line.startswith(OPT_IN) for line in brief.splitlines())
-
-
-def skips_rules(session_id):
-    """True for a T3 delegated child whose brief doesn't opt in. Any doubt reads as False."""
-    brief = delegated_brief(session_id)
-    return brief is not None and not rules_on(brief)
 
 
 def connect():
