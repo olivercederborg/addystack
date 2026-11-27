@@ -611,6 +611,18 @@ class RepliesTest(unittest.TestCase):
                 code, out, _ = self.run_main(out_dir=self.root / trial)
                 self.assertEqual((code, out.splitlines()[0]), (0, str(found[trial])))
 
+    def test_a_brief_and_turns_t3_names_the_sender_of_still_match(self):
+        sender = 'Code: the agent in T3 thread "thread:parent" sent this message, not the user.]\n\n'
+        session = write_transcript(self.projects / "-tmp-sent" / "s2.jsonl", [
+            user(f"[T3 {sender}Act as the test sub-agent for this task.\n\n{self.brief}"),
+            assistant(text("🔴 **Not done.**")), user(f"[T3 {sender}fix all"), assistant(text("✅ **Done.**")),
+        ])
+        os.utime(self.session, (5, 5))
+        code, out, _ = self.run_main()
+        self.assertEqual((code, out.splitlines()[0]), (0, str(session)))
+        self.assertTrue((self.root / "out" / "demo" / "01-basic.replies.md").read_text().startswith(
+            "=== turn 1 ===\n🔴 **Not done.**\n\n=== turn 2 ===\n✅ **Done.**\n\n"))
+
     def test_run_without_start_fails(self):
         code, _, err = self.run_main(out_dir=self.root / "unstarted")
         self.assertEqual(code, 1)

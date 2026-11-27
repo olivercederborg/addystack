@@ -37,8 +37,10 @@ EVALS = ROOT / "evals"
 # Claude Code writes one <session-id>.jsonl per session at the top of each project folder.
 PROJECTS = pathlib.Path(os.environ.get("CLAUDE_CONFIG_DIR", pathlib.Path.home() / ".claude")) / "projects"
 FENCED_JSON = re.compile(r"```json\s*\n(.*?)\n\s*```", re.DOTALL)
-# T3 opens each child task's first message with a line naming its delegate_task role.
+# T3 opens each child task's first message with a line naming its delegate_task role, and,
+# since late November 2026, opens each message an agent sends with a line naming the sender.
 T3_PREFIX = re.compile(r"^Act as the [\w-]+ sub-agent for this task\.\n\n")
+T3_SENDER = re.compile(r'^\[T3 Code: the agent in T3 thread "[^"\n]*" sent this message, not the user\.\]\n\n')
 # hooks/reply-shape-context.py skips T3 child tasks unless their brief has this line.
 REPLY_RULES = "Reply rules: on. This run plays Oliver's own session."
 # The files --rules DIR holds, which a side reads in place of the installed reply rules.
@@ -275,7 +277,7 @@ def messages(path, sent):
             if not transcript.is_injected(text):
                 user_line = line
                 yield "turn", text
-        elif later and text.strip() == later[0].strip():
+        elif later and T3_SENDER.sub("", text, count=1).strip() == later[0].strip():
             later.pop(0)
             user_line = line
             yield "turn", text
@@ -290,7 +292,7 @@ def find_transcript(brief_text):
     for path in paths:
         first = next((text for line, role, text in transcript.claude_events(path)
                       if role == "user" and not transcript.is_injected(text)), "")
-        if T3_PREFIX.sub("", first, count=1) == brief_text:
+        if T3_PREFIX.sub("", T3_SENDER.sub("", first, count=1), count=1) == brief_text:
             return path
     raise EvalError(f"no transcript in {PROJECTS} whose first message is this scenario's brief")
 
