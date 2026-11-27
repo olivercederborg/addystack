@@ -5381,16 +5381,28 @@ class CardCheckUnanswerable(unittest.TestCase):
                       "**Pick**: 1. **Routes** → `a` the three main routes.\n",
                       # A pick reported as made, and a quote, ask nothing.
                       "You picked `a`, so I posted the draft.\n",
-                      'The reply said "say **a** or **b**" with no options.\n'):
+                      'The reply said "say **a** or **b**" with no options.\n',
+                      # Review round 1: code, "and", a fence in a list item, and steps written out below.
+                      "The function returns `a` when the cache is empty.\n",
+                      "Next: **a** merges #12 and **b** keeps it open.\n",
+                      "1. Run:\n    ```text\n    Use `a` as a variable\n    ```\n\nDone.\n",
+                      "Follow the steps in my last reply:\n1. Open settings.\n2. Save.\n"):
             with self.subTest(reply=reply):
                 self.assertIsNone(self.reason(reply, options=(("decision", "merge #12"),)))
 
     def test_sends_back_a_standing_call_named_by_letter(self):
         # Real shapes: an open call carried in later replies by its letters alone.
         for reply in ("#12's approval still waits on your **a** or **b**.\n",
-                      "Still open: choose `a` or `b` from two replies back.\n"):
+                      "Still open: choose `a` or `b` from two replies back.\n",
+                      "Reply with “**a**” or “**b**” for the App call.\n"):
             with self.subTest(reply=reply):
                 self.assertIn("asks for `a` and `b`", self.reason(reply, options=None))
+
+    def test_sends_back_steps_and_options_left_in_an_earlier_reply(self):
+        for reply in ("Follow the 5 steps I sent you earlier, then say done.\n",
+                      "Next:\n- **a**: same as before.\n- **b**: same as before.\n"):
+            with self.subTest(reply=reply):
+                self.assertIn("which the reader may no longer see", self.reason(reply, options=None))
 
     def test_reads_what_the_reader_sees_not_the_block(self):
         # No turn block at all, and a block that defines b while the visible Next list doesn't.
