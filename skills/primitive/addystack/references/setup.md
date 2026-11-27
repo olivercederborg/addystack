@@ -11,7 +11,8 @@ Run each probe and keep its answer as the default:
 |---|---|---|
 | identity | `identity.name` | first word of `git config user.name` |
 | identity | `identity.github` | `gh api user -q .login`, or `null` |
-| hosts | `hosts.claude`, `hosts.codex`, `hosts.agents`, `hosts.t3` | `command -v claude`, `command -v codex`, `~/.agents/AGENTS.md` exists, `~/.t3` exists |
+| hosts | `hosts.claude`, `hosts.codex`, `hosts.t3` | `command -v claude`, `command -v codex`, `~/.t3` exists |
+| hosts | `hosts.agents` | `false`; offer it when the user runs agents addystack has no host for |
 | hosts | `hosts.machines` | none |
 | policy | `policy.defaults.planning` | `gated` |
 | policy | `policy.defaults.trust` | `draft` |

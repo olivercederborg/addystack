@@ -53,7 +53,7 @@
         "agents": {
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Build `~/.agents/AGENTS.md`, the tool-neutral file agents such as Pi, OpenCode, and Cursor fall back to, from the kit's tool-neutral template."
+          "markdownDescription": "Build `~/.agents/AGENTS.md` from the kit's tool-neutral template, for agents addystack has no host for: link each one's own global instructions file to it, such as `~/.pi/agent/AGENTS.md`. It carries the instructions only; reply rules and hooks reach Claude Code and Codex alone."
         },
         "t3": {
           "type": "boolean",
