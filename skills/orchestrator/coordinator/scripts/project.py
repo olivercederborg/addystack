@@ -654,6 +654,25 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
+STALE = 1200  # seconds: tick data older than this reads stale, as _tick's timer warning does
+
+
+def snapshot(folder: Path) -> dict:
+    """One project's card for the live status page (status_server.py), from folder/project.md
+    and folder/tick.json alone: status_data(live=False), with each unit's `thread_status`
+    and each PR's `state` and `draft` filled from what the tick last saw, where it holds
+    them. Never raises: a file it can't read or parse gives an `unknown` card with the reason.
+
+        Card = {folder, state: "ok", data: status_data, phase: "active" | "parked" | "closed"
+                  | "unknown", asOf: {project: mtime, tick: mtime | None}, tickOn: bool}
+             | {folder, state: "unknown", error: str, asOf: {project: mtime | None, tick: mtime | None}}
+
+    phase is parked by _parked, closed only once `## Result` is written and no row is live,
+    and unknown otherwise when the Goal can't be read. tickOn: Heartbeat is `tick` and the
+    coordinator's link names this machine."""
+    raise NotImplementedError
+
+
 def status_data(lines: list[str], *, live: bool = True) -> dict:
     """The project's overview as JSON-ready data, read-only. Text stays as project.md holds
     it, unescaped. Groups come in STATUS_ORDER, each Workers row a unit
