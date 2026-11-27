@@ -111,7 +111,9 @@ command before it freezes the Mac. Every half second it attributes each process 
 addystack's Bash hooks mostly don't run in Codex. It also kills an abandoned command,
 one whose shell is gone, once it averages over half a core for 30 minutes: on Nov 2,
 2026 ten Vitest fork workers, orphaned by an agent's `pkill` of hung runs, spun at 100%
-CPU for 15 hours. Its docstring lists the known limits.
+CPU for 15 hours. A command its agent still waits on gets 2 hours at that rate, and an
+agent's servers are exempt: on Nov 27, 2026 two `bun` probe scripts Codex ran without a
+shell spun for 9 and 11 hours under a live Codex. Its docstring lists the known limits.
 
 From the kit's folder, install it, and the kernel backstop for fork storms in agent shells:
 

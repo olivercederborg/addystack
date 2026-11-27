@@ -300,6 +300,27 @@ class AbandonedCommands(unittest.TestCase):
                                   + self.spinning_orphan(t))
         self.assertIsNone(found)
 
+    def test_a_command_its_agent_waits_on_is_killed_after_two_hours_busy(self):
+        # Nov 27, 2026: `bun -e` ran as Codex's direct child, no shell, at 100% for 11 hours.
+        abandoned = guard.Abandoned()
+        for minute in range(180):
+            t = minute * 60
+            found = abandoned.busy(
+                {201: [proc(201, 90, argv=("bun", "-e", "..."), marked=True,
+                            cpu=int(t * 1e9))]}, {90: 90}, t)
+            if found:
+                break
+        self.assertEqual((found[0], minute), (201, guard.ATTENDED_WINDOW_SECONDS // 60))
+        self.assertIn("busy while its agent waits on it, at 1.0 cores for 120 min", found[1])
+
+    def test_a_busy_agent_server_is_left_alone(self):
+        abandoned = guard.Abandoned()
+        for minute in range(240):
+            t = minute * 60
+            self.assertIsNone(abandoned.busy(
+                {300: [proc(300, 100, argv=("node", "mcp.js"), cpu=int(t * 1e9))]},
+                {100: 100}, t, services={300}))
+
     def test_an_idle_orphan_such_as_a_dev_server_is_left_alone(self):
         found, _ = self.run_ticks(90, lambda t: self.spinning_orphan(t, cores=0.05))
         self.assertIsNone(found)
@@ -395,7 +416,7 @@ class AbandonedCommands(unittest.TestCase):
         abandoned = guard.Abandoned()
         for tick in range(0, 60 * 60, 10):
             self.assertIsNone(abandoned.busy({200: members(tick)}, {100: 100}, tick))
-        self.assertEqual(abandoned.state[200][3], int(20e9 * 60))  # a third of a core
+        self.assertEqual(abandoned.state[200][4], int(20e9 * 60))  # a third of a core
 
     def test_a_scan_that_reads_the_parent_before_the_reap_never_drops_the_total(self):
         # The worker spun 900 s before tracking began; one scan sees it gone before its
@@ -405,7 +426,7 @@ class AbandonedCommands(unittest.TestCase):
                  [proc(201, 1)]] + [[proc(201, 1, reaped=int(900e9))]] * 3600
         for half, members in enumerate(scans):
             self.assertIsNone(abandoned.busy({200: members}, {100: 100}, half / 2))
-            totals.append(abandoned.state[200][3])
+            totals.append(abandoned.state[200][4])
         self.assertEqual(set(totals), {0})
 
     def test_a_parent_s_own_cpu_does_not_repay_its_child_s_debt(self):
@@ -418,7 +439,7 @@ class AbandonedCommands(unittest.TestCase):
         abandoned, totals = guard.Abandoned(), {}
         for tick in range(0, 4000, 10):
             abandoned.busy({200: members(tick)}, {100: 100}, tick)
-            totals[tick] = abandoned.state[200][3]
+            totals[tick] = abandoned.state[200][4]
         self.assertEqual(totals[1890], int((90 + 1790) * 1e9))
         self.assertEqual(totals[3990], int((100 + 1800) * 1e9))  # the reap adds its last 10 s
 

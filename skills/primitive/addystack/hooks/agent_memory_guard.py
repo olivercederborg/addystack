@@ -22,7 +22,10 @@ once it averages over half a core for 30 minutes. Added after Nov 2, 2026: an ag
 Vitest runs hung in a busy loop, and each `pkill` of the main Vitest process left its fork
 worker spinning under launchd, since a fork worker exits only when it next messages its
 parent. Ten of them ran at 100% CPU for 15 hours. Idle leftovers, such as a dev server an
-agent started with `nohup`, stay.
+agent started with `nohup`, stay. A command its agent still waits on gets 2 hours, the
+longest Claude Code's Bash tool waits: on Nov 27, 2026 two `bun` probe scripts Codex
+started without a shell spun at 100% CPU for 9 and 11 hours under a live Codex, long
+after their threads finished.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
@@ -71,6 +74,9 @@ SERVICE_IDLE_PROCESSES = 10
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
 ABANDONED_WINDOW_SECONDS = 30 * 60
+# A command its agent still waits on is killed once it averages ABANDONED_CORES over this
+# longer window. An agent's server (MCP, language server) is never killed by this rule.
+ATTENDED_WINDOW_SECONDS = 2 * 60 * 60
 CHECKPOINT_SECONDS = 5  # CPU in a window's first this-many seconds may go uncounted
 LOG = os.path.expanduser("~/Library/Logs/agent-memory-guard.log")
 
@@ -390,25 +396,32 @@ class Abandoned:
     only that ancestor's reaped CPU repays, so the total never drops or counts it twice,
     even when a scan reads the parent before the reap. The window is 30 minutes of awake
     time, on the monotonic clock, which stops while the Mac sleeps: CPU only burns while
-    it's awake. Process start times are compared with the wall clock. A command whose
-    shell comes back to an agent starts over."""
+    it's awake. Process start times are compared with the wall clock. A command an agent
+    still waits on, its shell or itself a direct child of a live agent, is measured the
+    same way over the 2-hour window; one that moves between the two states starts over."""
 
     def __init__(self):
-        # head -> (wall time first seen abandoned,
+        # head -> (attended, wall time first seen in that state,
         #          last {ident: (cpu ns, reaped ns, parent ident)},
         #          debt {ident: ns}, total ns, [(time, total)] oldest first)
         self.state = {}
 
-    def busy(self, commands, agents, now, wall=None):
-        """Return (head, reason) for an abandoned command whose CPU inside the last window
-        is over ABANDONED_CORES for the whole window, or None. `agents` maps each agent's
-        pid to its kernel id, so a reused pid can't pass for one."""
+    def busy(self, commands, agents, now, wall=None, services=frozenset()):
+        """Return (head, reason) for a command whose CPU inside the last window is over
+        ABANDONED_CORES for the whole window, or None: 30 minutes for an abandoned command,
+        2 hours for one an agent still waits on. `agents` maps each agent's pid to its
+        kernel id, so a reused pid can't pass for one."""
         wall = now if wall is None else wall
         found, kept = None, {}
         for head, members in commands.items():
-            if any(agents.get(proc.ppid) == proc.parent_ident for proc in members):
-                continue  # its shell is alive, so an agent still waits on it
-            began, last, debt, total, marks = self.state.get(head, (wall, {}, {}, 0, []))
+            attended = any(agents.get(proc.ppid) == proc.parent_ident for proc in members)
+            if attended and head in services:
+                continue  # an agent's server lives as long as its session
+            window = ATTENDED_WINDOW_SECONDS if attended else ABANDONED_WINDOW_SECONDS
+            state = self.state.get(head)
+            if state is None or state[0] != attended:
+                state = (attended, wall, {}, {}, 0, [])
+            _, began, last, debt, total, marks = state
             seen, debt, here = {}, dict(debt), {proc.ident for proc in members}
             for ident in last.keys() - here:
                 # The nearest ancestor still here reaps it, directly or through parents
@@ -438,18 +451,18 @@ class Abandoned:
                 seen[proc.ident] = (proc.cpu, proc.reaped, proc.parent_ident)
             if not marks or now - marks[-1][0] >= CHECKPOINT_SECONDS:
                 marks = marks + [(now, total)]
-            while now - marks[0][0] > ABANDONED_WINDOW_SECONDS:
+            while now - marks[0][0] > window:
                 marks.pop(0)  # only CPU inside the window counts
-            kept[head] = (began, seen, debt, total, marks)
+            kept[head] = (attended, began, seen, debt, total, marks)
             since, before = marks[0]
-            if found or now - since < ABANDONED_WINDOW_SECONDS - CHECKPOINT_SECONDS:
+            if found or now - since < window - CHECKPOINT_SECONDS:
                 continue
             # Divided by the whole window, CPU from its first few seconds is left out, so
             # this never reads above the true average.
-            cores = (total - before) / 1e9 / ABANDONED_WINDOW_SECONDS
+            cores = (total - before) / 1e9 / window
             if cores > ABANDONED_CORES:
-                found = head, (f"abandoned by its agent, at {cores:.1f} cores for "
-                               f"{ABANDONED_WINDOW_SECONDS // 60} min")
+                label = "busy while its agent waits on it" if attended else "abandoned by its agent"
+                found = head, f"{label}, at {cores:.1f} cores for {window // 60} min"
         self.state = kept
         return found
 
@@ -513,7 +526,7 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
     found = runaway(commands, owners.services)
     if not found and abandoned is not None:
         agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
-        found = abandoned.busy(commands, agents, now(), wall())
+        found = abandoned.busy(commands, agents, now(), wall(), owners.services)
     if not found:
         return None
     head, reason = found
