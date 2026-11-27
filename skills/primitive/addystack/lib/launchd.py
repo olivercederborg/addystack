@@ -59,11 +59,7 @@ class Agent:
     def start(self) -> None:
         """(Re)loads the agent from its plist. When launchd won't load it, the plist goes
         too, so the next install writes it and tries again. Raises OSError then."""
-        path = self.plist()
-        _launchctl("bootout", f"{_domain()}/{self.label}")
-        if _launchctl("bootstrap", _domain(), str(path)) != 0:
-            os.unlink(path)
-            raise OSError(f"launchctl couldn't load {path}; run addystack install again")
+        _load(self.label, self.plist())
 
     def unload(self) -> None:
         """Stops the agent. Raises OSError while launchd still has it, or can't say."""
@@ -74,10 +70,22 @@ class Agent:
     def stop(self) -> None:
         """Stops the agent and removes its plist. Raises OSError while launchd still has it."""
         self.unload()
-        try:
-            os.unlink(self.plist())
-        except FileNotFoundError:
-            pass
+        _remove(self.plist())
+
+
+def _load(label: str, path: Path) -> None:
+    """Agent.start for the plist at path, which guard.start takes from its caller."""
+    _launchctl("bootout", f"{_domain()}/{label}")
+    if _launchctl("bootstrap", _domain(), str(path)) != 0:
+        os.unlink(path)
+        raise OSError(f"launchctl couldn't load {path}; run addystack install again")
+
+
+def _remove(path: Path) -> None:
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
 
 
 def plan(agent: Agent, text: Optional[str], owned: bool, writes: Dict[Path, str]

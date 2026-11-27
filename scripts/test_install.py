@@ -6,7 +6,7 @@ user's install, init --yes, build, and doctor. On macOS it also sets up the agen
 guard and, while coordinator.statusPage is on, the coordinator status page."""
 from __future__ import annotations
 
-import hashlib, http.client, json, os, pathlib, plistlib, shutil, socket, stat, subprocess, sys, time, unittest
+import hashlib, http.client, json, os, pathlib, plistlib, shutil, socket, stat, subprocess, sys, time, unittest, unittest.mock
 from pathlib import Path
 
 from addystack_home import BIN, KIT, SKILLS, Home
@@ -744,6 +744,18 @@ class Guard(Home):
         self.assertIn("updates the agent memory guard's launchd plist and starts it", self.ok("install").stdout)
         self.assertIn("agent_memory_guard.py", self.plist.read_text())
         self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
+
+    def test_start_and_stop_act_on_the_plist_they_are_given(self):
+        import guard
+        custom = self.home / "custom.plist"
+        custom.write_text("custom")
+        self.plist.parent.mkdir(parents=True, exist_ok=True)
+        self.plist.write_text("default")
+        with unittest.mock.patch.dict(os.environ, self.env):
+            guard.start(custom)
+            self.assertIn(f"bootstrap gui/{os.getuid()} {custom}", self.calls())
+            guard.stop(custom)
+        self.assertEqual((custom.exists(), self.plist.exists()), (False, True))
 
     def test_a_changed_guard_script_restarts_it_and_doctor_flags_the_old_one(self):
         # The guard reads its script once and loops, so an update that changes the script has

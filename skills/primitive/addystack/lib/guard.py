@@ -146,7 +146,7 @@ def start(path: Path) -> None:
     """(Re)loads the agent from its plist, path, so a changed plist takes effect. When
     launchd won't load it, the plist goes too, so the next install writes it and tries
     again instead of trusting whatever guard is still running."""
-    AGENT.start()
+    launchd._load(LABEL, path)
 
 
 def unload() -> None:
@@ -156,7 +156,8 @@ def unload() -> None:
 
 def stop(path: Path) -> None:
     """Stops the agent and removes its plist, path. Raises OSError while launchd still has it."""
-    AGENT.stop()
+    AGENT.unload()
+    launchd._remove(path)
 
 
 def problems(resolved: Resolved, limit: Optional[int]) -> List[str]:
