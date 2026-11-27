@@ -29,8 +29,8 @@ query($owner: String!, $name: String!, $after: String) {
       nodes {
         number state createdAt updatedAt
         author { login }
-        comments(last: 50) { nodes { createdAt author { login } } }
-        commits(last: 50) { nodes { commit { authoredDate author { user { login } } } } }
+        comments(last: 100) { nodes { createdAt author { login } } }
+        commits(last: 100) { nodes { commit { authoredDate author { user { login } } } } }
         reviews(last: 100) { nodes { submittedAt author { __typename login } } }
         reviewRequests(first: 100) { nodes { requestedReviewer { ... on User { login } } } }
         timelineItems(itemTypes: [REVIEW_REQUESTED_EVENT], last: 100) {
@@ -125,8 +125,11 @@ def tally(pulls: list, busy: set, logins: list, share_since: dt.date, now: dt.da
 
 
 def _working_days_before(now: dt.datetime, days: int) -> dt.datetime:
-    """The moment `days` working days before now, counting back Monday to Friday only."""
+    """The moment `days` working days before now, counting back Monday to Friday only: on a
+    weekend the count starts from Saturday's start, since no working time has passed since."""
     moment = now
+    if now.weekday() >= 5:
+        moment = (now - dt.timedelta(days=now.weekday() - 5)).replace(hour=0, minute=0, second=0, microsecond=0)
     while days:
         moment -= dt.timedelta(days=1)
         days -= moment.weekday() < 5

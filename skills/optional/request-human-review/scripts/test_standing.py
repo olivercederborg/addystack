@@ -72,6 +72,11 @@ class Tally(unittest.TestCase):
         self.assertEqual({login: entry['away'] for login, entry in known.items()},
                          {'alice': None, 'bob': 'no activity since 3 Dec', 'dave': 'Busy'})
 
+    def test_on_a_weekend_the_working_days_count_back_from_saturdays_start(self):
+        saturday_noon = dt.datetime(2026, 12, 12, 12, tzinfo=dt.timezone.utc)
+        self.assertEqual(standing._working_days_before(saturday_noon, 3), dt.datetime(2026, 12, 9, tzinfo=dt.timezone.utc))
+        self.assertEqual(standing._working_days_before(NOW, 3), NOW - dt.timedelta(days=5))
+
     def test_a_comment_or_an_authored_commit_counts_as_activity_and_none_at_all_is_away(self):
         known = self.tally(pull(1, comments=[('alice', 1)], commits=[('bob', 2)]))
         self.assertEqual({login: entry['away'] for login, entry in known.items()},
