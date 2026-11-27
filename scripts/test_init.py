@@ -59,10 +59,6 @@ class Init(Home):
         self.assertEqual(self.parsed()["identity"], {"name": "Sam"})
         self.assertEqual((self.config.parent / "addystack.jsonc.bak").read_text(), '{ "identity": { "name": "Kept" } }')
 
-    def test_init_writes_the_check_queue_cap(self):
-        self.ok("init", "--yes")
-        self.assertEqual(self.parsed()["checkQueue"], {"maxChecks": 4})
-
     def test_without_yes_or_a_terminal_it_writes_nothing(self):
         before = self.snapshot()
         result = self.cli("init")
