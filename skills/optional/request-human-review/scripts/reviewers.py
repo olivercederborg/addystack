@@ -1,8 +1,9 @@
 """request-human-review's reader of a repository's `.github/REVIEWERS`, and its pick of whom
 to ask about a PR's gated decisions. Pure: no GitHub, no files; handoff.py reads them.
 
-REVIEWERS uses CODEOWNERS syntax in `## <domain>` blocks. A pattern's names are the domain's
-P1, then an optional P2 (a P3 counts as listed, never as covering). The last pattern that
+REVIEWERS uses CODEOWNERS syntax in `## <domain>` blocks. The names belong to the domain, P1
+first, then an optional P2 (a P3 counts as listed, never as covering): every pattern in a
+domain lists the same people, and where they differ the domain takes them in file order. The last pattern that
 matches a path wins. `## <domain> · pinned` names the domain `<domain>`. The `unowned` block
 lists patterns that belong to no domain, such as an ADR, which belongs to the PR's main
 change instead. A domain may list nobody.
