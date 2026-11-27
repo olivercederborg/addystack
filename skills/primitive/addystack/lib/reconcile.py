@@ -206,7 +206,8 @@ def _commands(resolved: Resolved) -> List[Change]:
 
 def _renamed_skills(resolved: Resolved) -> List[Change]:
     """Each enabled host's link to a renamed skill's old folder (skill_layer.RENAMED), which a
-    linked checkout's update left dangling: install links the new name to the new folder
+    linked checkout's update left with no SKILL.md, dangling or holding only untracked files:
+    install links the new name to the new folder
     beside it and drops the old link. A new name already taken is the user's, so the old link
     is reported and left."""
     # Both hosts can share one folder through a link, and one host's link can lead through
@@ -218,7 +219,8 @@ def _renamed_skills(resolved: Resolved) -> List[Change]:
     for folder in folders:
         for old, new in skill_layer.RENAMED.items():
             link = folder / old
-            if not link.is_symlink() or link.exists():
+            # Dangling or not: a renamed folder can keep untracked files, such as a __pycache__.
+            if not link.is_symlink() or (link / "SKILL.md").is_file():
                 continue
             ended = Path(os.path.realpath(link))
             moved = ended.parent / new

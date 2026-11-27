@@ -516,6 +516,24 @@ class RenamedSkill(Home):
             self.assertEqual((folder / "review-code").resolve(), (KIT.parent / "review-code").resolve(), folder)
             self.assertFalse(os.path.lexists(folder / "review-teammate-pr"), folder)
 
+    def test_a_link_to_an_old_folder_only_ignored_files_keep_is_moved_too(self):
+        # A rename leaves untracked files behind, such as verdicts.py's __pycache__.
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        (kit_skills / "review-teammate-pr/scripts/__pycache__").mkdir(parents=True)
+        (kit_skills / "review-teammate-pr/scripts/__pycache__/evidence.cpython-315.pyc").write_bytes(b"")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        for folder in (claude, agents):
+            self.assertEqual((folder / "review-code").resolve(), (kit_skills / "review-code").resolve(), folder)
+            self.assertFalse(os.path.lexists(folder / "review-teammate-pr"), folder)
+
     def test_moves_a_chain_of_host_links_in_one_install(self):
         kit_skills = self.home / "checkout/skills/primitive"
         (kit_skills / "review-code").mkdir(parents=True)
