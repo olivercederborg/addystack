@@ -22,8 +22,9 @@ approves: the PR goes to a person.
 
 It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?}, where
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
-or never finished within --wait), or superseded (the head moved; nothing posted, since the
-push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
+or never finished within --wait), or superseded (the head moved, or the PR moved to another
+base branch while the checks were waited on; nothing posted, since that push or retarget
+starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
 GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
 review is recorded in POSTED.json beside REVIEW.json, so a run retried after a failed
 withdrawal finishes it without posting the review again.
@@ -158,10 +159,11 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             if may_approve else []
         state, checks = required(number) if may_approve else ('passed', [])
         # The base after the checks: a PR moved to another branch, even one at the same commit,
-        # has other required checks and a diff the gates may not have judged.
+        # has other required checks and a diff the gates may not have judged. Like a push, the
+        # retarget starts its own review.
         base = pr(number, 'baseRefName,baseRefOid')
         if base['baseRefName'] != current['baseRefName']:
-            raise ValueError(f"the PR moved to {base['baseRefName']} while the checks were waited on; review it again")
+            return {'outcome': 'superseded', 'head': head, 'base': base['baseRefName']}
         if base['baseRefOid'] != judged:
             if not gates.same_diff(verdict['base'], base['baseRefOid'], head):
                 raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")

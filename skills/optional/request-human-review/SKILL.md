@@ -105,7 +105,7 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 | `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run |
 | `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body |
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
-| `superseded` | the head moved | nothing: the push starts its own review |
+| `superseded` | the head moved, or the PR moved to another base branch | nothing: the push or retarget starts its own review |
 
 It reads the head last, right before posting, and posts only as an App. Once it approves,
 it resolves the App's own open threads it read before, and names any it couldn't. For

@@ -158,10 +158,10 @@ class Post(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'changed while the checks were waited on'):
             self.post(fake, bases=[BASE, NEWER], diffs={NEWER: 'more'})
         # A base that only moved on leaves the diff, and the run goes on; another branch, even at
-        # the same commit, has other required checks.
+        # the same commit, has other required checks, and its retarget starts its own review.
         self.assertEqual(self.post(Fake(), bases=[BASE, NEWER])['outcome'], 'approved')
-        with self.assertRaisesRegex(ValueError, 'moved to release while the checks were waited on'):
-            self.post(fake, bases=[('main', BASE), ('release', BASE)])
+        self.assertEqual(self.post(fake, bases=[('main', BASE), ('release', BASE)]),
+                         {'outcome': 'superseded', 'head': HEAD, 'base': 'release'})
         self.assertEqual(fake.writes, [])
 
     def test_a_retry_after_a_failed_withdrawal_posts_the_review_once(self):
