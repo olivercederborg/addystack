@@ -131,11 +131,27 @@ class Classify(Repo):
 
     def test_a_tsx_file_without_jsx_is_not_ui(self):
         self.assertEqual(self.classify({"src/bot.tsx": "const skills = new Set<Skill>();\n"}), {})
-        for jsx in ("<>{x}</>", "<div>x</div>", "<Icon />"):
+        self.assertEqual(self.classify({"src/doc.tsx": "// Use it as <Widget />\n/* or <Widget></Widget> */\n"}), {})
+        for jsx in ("<>{x}</>", "<div>x</div>", "<Icon />", "<_Card>x</_Card>", "<$Card>x</$Card>"):
             with self.subTest(jsx=jsx):
                 self.setUp()
                 self.assertEqual(self.classify({"src/View.jsx": f"export const View = () => {jsx}\n"}),
                                  {"ui": ["src/View.jsx: UI file"]})
+
+    def test_a_deleted_component_is_read_where_the_diff_starts(self):
+        self.base = self.change({"src/View.tsx": "export const View = () => <div>Before</div>\n"}, "Add the view")
+        self.git("switch", "-qc", "work")
+        head = self.change({"src/View.tsx": None}, "Drop the view")
+        self.git("switch", "-q", "main")
+        tip = self.change({"src/View.tsx": "export const view = 1\n"}, "Main moves on")
+        self.assertEqual(evidence.classify(self.repo, tip, head)["ui"], ["src/View.tsx: UI file"])
+
+    def test_a_symlinked_component_is_read_through_its_link(self):
+        (self.repo / "src").mkdir(exist_ok=True)
+        (self.repo / "src/target.tsx").write_text("export const T = () => <div>After</div>\n")
+        (self.repo / "src/View.tsx").symlink_to("target.tsx")
+        head = self.change({}, "Link the view")
+        self.assertIn("src/View.tsx: UI file", self.kinds(head)["ui"])
 
     def test_deleting_a_risky_file_needs_no_mutants(self):
         self.base = self.change({"src/auth/check.ts": "function check() {}\n"}, "Add the check")
