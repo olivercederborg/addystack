@@ -5,7 +5,8 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
 `machine` tag, the darwin host profile, and `hooks.enable` and `hooks.disable` by that id.
 
 - **Agent**: while it's selected, install writes the launchd plist from
-  hooks/agent-memory-guard.plist with the kit's absolute path, and (re)starts the agent
+  hooks/agent-memory-guard.plist with the kit's absolute path and the guard script's
+  SHA-256, since the guard reads its script once and loops, and (re)starts the agent
   when the plist changed or it isn't loaded; from then on reconcile's ledger records the
   guard as install's. Once it's deselected, install stops a guard the ledger records,
   whether or not its plist is still there, and removes the plist; a guard the user set up
@@ -24,6 +25,7 @@ path and a broken stub can never fall through to the real one on PATH.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import plistlib
 import resource
@@ -57,16 +59,21 @@ def zshenv() -> Path:
 
 
 def plist_text(resolved: Resolved) -> str:
-    """The template with {{kit}} and {{home}} filled through plistlib, so a path holding &
-    or < stays valid XML."""
+    """The template with {{kit}}, {{home}}, and {{guard_sha256}} filled through plistlib, so
+    a path holding & or < stays valid XML. The hash makes the plist differ once an update
+    changes the guard's script, so install restarts it and doctor flags a guard still
+    running the old one."""
     kit, home = os.path.expanduser(str(resolved["kit"])), str(Path.home())
+    digest = hashlib.sha256((Path(kit) / "hooks" / "agent_memory_guard.py").read_bytes()).hexdigest()
 
     def fill(value):
         if isinstance(value, dict):
             return {key: fill(item) for key, item in value.items()}
         if isinstance(value, list):
             return [fill(item) for item in value]
-        return value.replace("{{kit}}", kit).replace("{{home}}", home) if isinstance(value, str) else value
+        if not isinstance(value, str):
+            return value
+        return value.replace("{{kit}}", kit).replace("{{home}}", home).replace("{{guard_sha256}}", digest)
 
     return plistlib.dumps(fill(plistlib.loads(TEMPLATE.read_bytes()))).decode()
 

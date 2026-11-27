@@ -5,7 +5,7 @@ the first build, and --dry-run writes nothing; and plan check 9's local part, a 
 user's install, init --yes, build, and doctor."""
 from __future__ import annotations
 
-import json, os, pathlib, shutil, stat, sys, unittest
+import hashlib, json, os, pathlib, shutil, stat, sys, unittest
 from pathlib import Path
 
 from addystack_home import BIN, KIT, SKILLS, Home
@@ -742,6 +742,28 @@ class Guard(Home):
         before = len(self.calls())
         self.assertIn("updates the agent memory guard's launchd plist and starts it", self.ok("install").stdout)
         self.assertIn("agent_memory_guard.py", self.plist.read_text())
+        self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
+
+    def test_a_changed_guard_script_restarts_it_and_doctor_flags_the_old_one(self):
+        # The guard reads its script once and loops, so an update that changes the script has
+        # to change the plist, or the old code keeps running while doctor says ok.
+        import guard
+        kit = self.home / "kit"
+        (kit / "hooks").mkdir(parents=True)
+        script = kit / "hooks" / "agent_memory_guard.py"
+        shutil.copy(KIT / "hooks" / "agent_memory_guard.py", script)
+        first = guard.plist_text({"kit": str(kit)})
+        script.write_text(script.read_text() + "# changed\n")
+        self.assertNotEqual(guard.plist_text({"kit": str(kit)}), first)
+
+        self.select()
+        self.ok("install")
+        digest = hashlib.sha256((KIT / "hooks" / "agent_memory_guard.py").read_bytes()).hexdigest()
+        self.plist.write_text(self.plist.read_text().replace(digest, "0" * 64))  # written for an older script
+        self.assertIn("differs from the kit's", self.cli("doctor").stdout)
+        before = len(self.calls())
+        self.assertIn("updates the agent memory guard's launchd plist and starts it", self.ok("install").stdout)
+        self.assertIn(digest, self.plist.read_text())
         self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
 
     def test_restarts_a_guard_that_isnt_loaded(self):

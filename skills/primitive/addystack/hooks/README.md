@@ -120,7 +120,9 @@ Its docstring lists the known limits.
 `addystack install` sets it up on macOS while the `agent-memory-guard-notice` hook is
 selected (the `machine` tag, so `hooks.preset` `all`, or `hooks.enable`): it writes
 `~/Library/LaunchAgents/addystack.agent-memory-guard.plist` from `agent-memory-guard.plist`
-with the kit's path, starts it with `launchctl`, and records it in its ledger. It then
+with the kit's path and the guard script's SHA-256, starts it with `launchctl`, and records
+it in its ledger. The guard reads its script once, so the hash restarts it when an update
+changes the script, and doctor flags a guard still running an older one. It then
 runs a login zsh as each kind of agent shell, and when one gets no process limit of 3,000 or
 less, appends the kernel backstop for fork storms to the `.zshenv` zsh reads
 (`$ZDOTDIR`, else home):
@@ -142,4 +144,4 @@ under another label: `launchctl list | grep agent-memory-guard`, then `launchctl
 gui/$(id -u)/<that label>` and remove its plist.
 
 Kills go to `~/Library/Logs/agent-memory-guard.log`, a notification, and, through
-`agent-memory-guard-notice.py`, the agent. After editing the guard, restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.
+`agent-memory-guard-notice.py`, the agent. After editing the guard, run `addystack install`, or restart it with `launchctl kickstart -k gui/$(id -u)/addystack.agent-memory-guard`.
