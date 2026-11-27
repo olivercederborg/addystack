@@ -6502,9 +6502,15 @@ class CheckQueueNotice(unittest.TestCase):
         self.assertEqual(self.raw({**payload, "tool_use_id": "call_old"}), "")
 
     def test_notice_reports_every_matching_kill_once(self):
-        self.log(self.kill(seconds_ago=2), self.kill(seconds_ago=1))
+        # Memory kills: a queue kill can't fail a 5-second Claude call.
+        kills = [self.kill(seconds_ago=2, reason="702 processes, over the per-command 600"),
+                 self.kill(seconds_ago=1, reason="21.0 GB, over the per-command 20 GB")]
+        for kill in kills:
+            del kill["rule"]
+        self.log(*kills)
         payload = {"hook_event_name": "PostToolUseFailure", "tool_input": {"command": "bun run typecheck"}, "duration_ms": 5000}
-        self.assertIn("check queue", run_hook(self.HOOK, payload, env=self.env))
+        note = run_hook(self.HOOK, payload, env=self.env)
+        self.assertLess(note.index("702 processes"), note.index("21.0 GB"))
         self.assertEqual(len((self.logs / "agent-memory-guard.reported").read_text().split()), 2)
         self.assertEqual(self.raw(payload), "")
 
