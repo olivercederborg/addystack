@@ -61,6 +61,9 @@ class Plan(unittest.TestCase):
         # The request failed after the comment posted: the retry asks again and posts nothing.
         retried = self.plan(again, self.facts(handoffs=[first]))
         self.assertEqual((retried['post'], [reviewer['login'] for reviewer in retried['request']]), (False, ['alice']))
+        # Meanwhile the P2 reviewed: the domain is covered, so nobody is asked.
+        covered = self.plan(again, self.facts(handoffs=[first], engaged=['bob']))
+        self.assertEqual((covered['post'], covered['request']), (False, []))
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])

@@ -12,9 +12,9 @@ PR's author runs it with their go, and may name the reviewer:
     handoff.py N GATES.json [--reviewer LOGIN]... [--with-suggested] --disclosure LINE --send
 
 `--send` posts the comment, then requests. It never requests the PR's author. A handoff of
-the same decisions as the signed-in login's own last one posts no comment, and requests only
-the reviewers that handoff named who are no longer requested and haven't reviewed, so a run
-that commented and then failed to request finishes on a retry. Someone else's handoff, such
+the same decisions as the signed-in login's own last one posts no comment, and still requests
+whoever the pick needs, so a run that commented and then failed to request finishes on a
+retry. Someone else's handoff, such
 as the author's, never stands in for this login's own. A base without `.github/REVIEWERS`
 hands off nothing.
 
@@ -120,12 +120,6 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     same = last is not None and sorted(decision['key'] for decision in placed) == \
         sorted(decision['key'] for decision in last['decisions'])
     named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
-    requested = [reviewer['login'] for reviewer in request]
-    # A run that commented, then failed to request: its reviewers who were never asked, when that
-    # run picked by the rule as this one does; a pick by the author replaces or is replaced.
-    retry = same and not chosen and last.get('chosen_by') == 'rule'
-    request += [reviewer for reviewer in (last['reviewers'] if retry else [])
-                if not reviewers.has([*engaged, *requested, author], reviewer['login'])]
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
     if not request and not engaged:
         why = 'nobody to ask'
