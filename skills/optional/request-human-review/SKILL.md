@@ -16,7 +16,7 @@ to know whether a person must look.
 ## Unattended review
 
 `--unattended` reviews as an App with nobody in the loop, and the request that starts it
-is the go to post. Run `review-teammate-pr`'s steps 1, 2, 4, and 6 as written, except: a
+is the go to post. Run `review-code`'s steps 1, 2, 4, and 6 as written, except: a
 step that needs the user (their plan, the rename) is skipped, and the review's body says
 so; step 2's pass by the other provider reviews the whole PR, even on a re-review, and is
 skipped only when the whole PR changes no behavior; when it doesn't run, because its

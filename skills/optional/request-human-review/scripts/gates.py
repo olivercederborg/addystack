@@ -34,7 +34,7 @@ AREAS = ('money-movement', 'auth', 'tenancy', 'concurrency', 'dependencies')
 # What an unattended reviewer does, from the most to the least blocking.
 ACTIONS = ('request-changes', 'needs-human', 'not-approved', 'wait', 'approve')
 REQUIRED = ('passed', 'pending', 'failed')
-# Whether the review's read-only pass by the other provider ran: not-needed is review-teammate-pr's
+# Whether the review's read-only pass by the other provider ran: not-needed is review-code's
 # skip for a diff that changes no behavior; missing is any other reason it didn't run.
 SECOND_OPINION = ('ran', 'not-needed', 'missing')
 SHA = re.compile(r'[0-9a-f]{40}')

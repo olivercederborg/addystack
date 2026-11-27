@@ -2,7 +2,7 @@
 """request-human-review's one GitHub writer for an unattended review. It re-reads the PR's
 head and required checks, applies gates.decide, and posts exactly one outcome as the App
 that gh is signed in as: an approval, a request for changes, or the decisions that need a
-human. It refuses to post as a person, whose review goes through review-teammate-pr with their go.
+human. It refuses to post as a person, whose review goes through review-code with their go.
 
 REVIEW.json, written by the reviewing agent, with paths relative to its own folder:
 
@@ -14,7 +14,7 @@ REVIEW.json, written by the reviewing agent, with paths relative to its own fold
      "second_opinion": {"status": "ran" | "not-needed" | "missing", "why": "when missing"}}
 
 BODY.md is the review's summary and starts with the agent disclosure. `holds` is
-review-teammate-pr's rule for a finding that holds the approval. `second_opinion` says whether the
+review-code's rule for a finding that holds the approval. `second_opinion` says whether the
 review's pass by the other provider ran; a missing one, or a REVIEW.json without it, never
 approves: the PR goes to a person.
 
