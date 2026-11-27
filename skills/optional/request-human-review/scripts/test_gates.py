@@ -154,14 +154,21 @@ class OneWayDoors(unittest.TestCase):
         self.base({'.github/pull_request_template.md': '## Risk\n'})
         self.assertIsNone(gates.one_way_doors('HEAD', str(self.repo)))
 
-    def test_a_wrapped_list_and_an_area_s_own_words_are_read(self):
-        signing_in = verdict(sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
-                                        {'area': 'auth', 'code': 'auth.ts:1'}])
-        problems = self.problems(signing_in, {'.github/PULL_REQUEST_TEMPLATE.md':
-                                              '## Risk\n\nOne-way doors include sent emails, changes to\n'
-                                              'authentication or authorization, and money\nmovement.\n'})
-        self.assertEqual([problem.split(' is ')[0] for problem in problems], ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
-        self.assertIn('by .github/PULL_REQUEST_TEMPLATE.md:3:', problems[0])
+    def test_the_list_is_read_whole_and_ends_where_it_does(self):
+        sensitive = verdict(sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
+                                       {'area': 'auth', 'code': 'auth.ts:1'}])
+        def named(template):
+            return [problem.split(' is ')[0] for problem in self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md': template})]
+        # Wrapped across lines, after another sentence about one-way doors.
+        self.assertEqual(named('One-way doors are hard to reverse. One-way doors\ninclude sent emails and money\nmovement.\n'),
+                         ['money-movement at pay.ts:3'])
+        # A list without its period stops at the blank line or the comment's end.
+        self.assertEqual(named('One-way doors include money movement\n\n## Auth\n'), ['money-movement at pay.ts:3'])
+        self.assertEqual(named('<!-- One-way doors include money movement --> auth\n'), ['money-movement at pay.ts:3'])
+        # Only an area's own name counts; a narrower kind is the agent's to gate.
+        self.assertEqual(named('One-way doors include authorization changes.\n'), [])
+        self.assertIn('by PULL_REQUEST_TEMPLATE.md:2:', self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md':
+                                                                                   '# PR\nOne-way doors include auth.\n'})[0])
 
     def test_a_review_in_a_subfolder_reads_the_repository_s_template(self):
         base = self.base({'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE, 'src/pay.ts': ''})
