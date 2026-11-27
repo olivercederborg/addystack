@@ -525,7 +525,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     watch sends checks, comments, reviews, and conflicts, not those. An open one T3 doesn't
     wake the coordinator's thread on repeats like a row, since T3 ends a thread's watches
     unannounced when the user stops or rolls back a turn, judged only on a PR it could read.
-    A PR the tick saw merged isn't read again; a closed one can reopen."""
+    So does an open draft at one head for IDLE_DRAFT that no Waits on entry on its row
+    names, since a draft that waits on nothing should be marked ready. A PR the tick saw
+    merged isn't read again; a closed one can reopen."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
@@ -534,7 +536,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     busy = hold and lead.get("status") in ACTIVE
     origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    named = []
+    named, unwaited = [], set()
     rows, odd = _workers(lines)
     for line in odd:
         if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
@@ -544,6 +546,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
+        waited = {wait.pull for wait in project_md.waits(row.get(COLUMNS["waits"], ""), origin)}
+        unwaited |= set(named[-1].refs) - waited
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -583,7 +587,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
                                         "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
-    events = []
+    events, drafts, clocks = [], {}, state.get("drafts", {})
     saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
     wakes, unread = watching(coordinator.group(2)), set()
     if wakes is None:  # unknown, not cleared: each unwatched finding keeps its repeat clock
@@ -603,6 +607,16 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if not pull:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
             unread.add(f"unwatched:{ref}")
+            if ref in clocks:
+                drafts[ref] = clocks[ref]  # keep its clock, but judge nothing on a stale look
+        elif pull.state == "OPEN" and pull.draft:
+            clock = clocks.get(ref)
+            drafts[ref] = clock if clock and clock["head"] == pull.head else {"head": pull.head, "since": now}
+            idle = now - drafts[ref]["since"]
+            if ref in unwaited and idle >= IDLE_DRAFT:
+                found.append((f"idle:{ref}:{pull.head}", f"{ref}: a draft at {pull.head[:7]} for {int(idle // 60)} min, "
+                              "and its row's Waits on names nothing it waits for: mark it ready, or write "
+                              f"`{ref} ← <what it waits on>`"))
         if pull and pull.state != "OPEN":  # seen closed, so a reopening is judged anew
             unread.discard(f"unwatched:{ref}")
         if wakes is not None and pull and pull.state == "OPEN" and ref.lower() not in wakes:
@@ -616,7 +630,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**saved, **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
-    return due, {"threads": threads, "prs": kept, "sent": sent}
+    return due, {"threads": threads, "prs": kept, "drafts": drafts, "sent": sent}
 
 
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
