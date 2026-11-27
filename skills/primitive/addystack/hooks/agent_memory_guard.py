@@ -55,8 +55,8 @@ Known limits:
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
   saw it.
 - When the guard starts, or a command moves between waited-on and abandoned, a worker that
-  exits while that first scan reads its command counts all its CPU once its parent reaps
-  it, CPU from before the window included."""
+  has exited but isn't reaped yet when that first scan reads it counts all its CPU once its
+  parent reaps it, CPU from before the window included."""
 import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
