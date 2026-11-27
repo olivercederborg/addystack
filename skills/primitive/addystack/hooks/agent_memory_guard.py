@@ -537,6 +537,90 @@ def notify(title, subtitle, text):
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+# The check queue: at most checkQueue.maxChecks heavy checks run across every agent's
+# commands, and a new one waits, stopped, until a slot frees and running checks use under
+# checkQueue.maxCores. A unit is the topmost heavy process with its descendants.
+HOLD_SECONDS = 15 * 60  # a unit still held this long, with the queue still full, dies
+GATE_WINDOW_SECONDS = 2  # the CPU gate's window, and the least time between admissions
+NEW_UNIT_SECONDS = 2 * INTERVAL_SECONDS  # a unit first seen older than this is never held
+QUEUE = os.path.join(os.path.expanduser(os.environ.get("ADDYSTACK_STATE", "~/.local/state/addystack")),
+                     "check-queue.json")
+NOT_BUILT = "check queue: contract only, not built yet"
+
+# top: the topmost heavy process's ident, the unit's id; head: its command's head;
+# members: the top and its descendants.
+Unit = namedtuple("Unit", "top head members")
+
+
+def is_heavy(argv):
+    """Whether argv runs a heavy check: tsc, tsgo, tsgolint, oxlint, eslint, jest, or
+    vitest not watching, by the binary or an interpreter's script, never a later
+    argument."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def heavy_units(commands):
+    """{top ident: Unit} for every heavy unit in commands ({head: [Proc]})."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def cpu_gained(members, last, debt, began):
+    """CPU in ns the members used since `last` ({ident: (cpu, reaped, parent ident)}),
+    reaped children included and never counted twice, as Abandoned counts it. Returns
+    (ns, new last, new debt)."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def agent_command(argv):
+    """The command an agent ran, from its wrapper shell's argv: Claude's
+    `eval '<cmd>'` or Codex's `<shell> -lc <cmd>`; None for any other argv."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def entry(owners, head, members, reason, **more):
+    """The log line for killing members of the command `head`: the fields
+    agent-memory-guard-notice.py matches on, plus `more`, such as rule="queue",
+    unit=<text>, and tool_call_id=<CODEX_TOOL_CALL_ID>."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def record(line):
+    """Appends one JSON line to LOG; never raises."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+def settings():
+    """resolved.check_queue(), read again only when resolved.json's mtime changes."""
+    raise NotImplementedError(NOT_BUILT)
+
+
+class Governor:
+    """Every check-queue decision and side effect: units, the cap, the CPU gate, tick
+    order, the hold limit, signals, QUEUE, and its log lines. Each tick it drops finished
+    units, resumes held ones oldest first, admits new units only when none wait, then
+    kills a unit held HOLD_SECONDS with the queue still full. A unit is written to QUEUE
+    before it's stopped, and only a unit first seen within NEW_UNIT_SECONDS of its start,
+    after the governor started or was re-enabled, is ever held. Memory and CPU rules in
+    tick() still run, and win."""
+
+    def __init__(self, settings=settings, state=QUEUE, send=os.kill, current=identity,
+                 record=record, notify=notify, wall=time.time):
+        """Resumes what an earlier guard left stopped, where the kernel ident still
+        matches, and clears `state`."""
+        raise NotImplementedError(NOT_BUILT)
+
+    def tick(self, owners, commands, agents, now, wall):
+        """One pass over commands ({head: [Proc]}) with agents ({pid: ident}), `now` on
+        the monotonic clock and `wall` the epoch. Never raises: on an error it resumes
+        every held unit and reports the error once."""
+        raise NotImplementedError(NOT_BUILT)
+
+    def release(self, why):
+        """Resumes every held unit and clears the state file: disabled, stopping, or an
+        error."""
+        raise NotImplementedError(NOT_BUILT)
+
+
 def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.time):
     procs = scan()
     commands = owners.attribute(procs)

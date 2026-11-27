@@ -724,5 +724,140 @@ class Signals(unittest.TestCase):
         self.assertEqual(sent, [])
 
 
+class HeavyChecks(unittest.TestCase):
+    """Which processes the check queue counts as a heavy check."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_each_checker_binary_is_heavy(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_an_interpreters_script_is_classified_never_a_later_argument(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_watch_forms_of_vitest_are_not_heavy(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_vitest_run_is_heavy(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_units_child_shares_its_parents_slot(self):
+        pass
+
+
+
+class AgentCommand(unittest.TestCase):
+    """Unwrapping the agent's wrapper shell to the command it ran."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_claude_eval_wrapper_unwraps_to_its_command(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_codex_shell_wrapper_unwraps_to_its_command(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_any_other_argv_is_none(self):
+        pass
+
+
+
+class CheckQueue(unittest.TestCase):
+    """The Governor, on synthetic snapshots with fake signals and clocks."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_third_unit_over_a_cap_of_two_is_held_within_a_tick(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_held_unit_resumes_before_a_newer_arrival(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_unit_running_when_the_guard_starts_is_never_stopped(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_unit_running_when_the_queue_is_reenabled_is_never_stopped(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_members_that_join_a_held_unit_are_stopped(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_held_unit_whose_agent_shell_is_gone_is_resumed(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_disabling_resumes_held_units_on_the_next_tick(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_start_resumes_saved_members_whose_ident_matches_and_skips_reused_pids(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_unit_is_saved_before_it_is_stopped(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_failed_state_write_leaves_the_unit_running(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_governor_error_resumes_every_held_unit_and_reports_once(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_governor_error_never_skips_the_memory_rules(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_unit_held_fifteen_minutes_with_the_queue_full_is_killed_alone(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_unit_whose_turn_comes_at_fifteen_minutes_runs_instead(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_queue_kill_logs_its_rule_unit_and_codex_tool_call_id(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_gate_holds_a_unit_while_running_units_use_max_cores(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_gate_counts_a_worker_that_exited_between_scans(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_gate_admits_when_no_unit_runs(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_gate_admits_at_most_one_unit_per_window(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_memory_rules_still_kill_the_biggest_command_with_held_units(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_resolved_json_change_applies_without_a_restart(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_state_file_holds_one_record_per_held_unit(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()

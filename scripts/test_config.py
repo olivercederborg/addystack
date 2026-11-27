@@ -328,5 +328,22 @@ class Resolve(Workspace):
         self.assertEqual(resolved["hooks"]["enable"], [])
 
 
+class IntegerKeys(unittest.TestCase):
+    """The validator's integer type and minimum keyword."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_an_integer_key_accepts_one_and_up(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_an_integer_key_rejects_zero_a_string_and_a_boolean(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_check_queue_merges_with_its_defaults(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()

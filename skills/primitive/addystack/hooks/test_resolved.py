@@ -292,5 +292,22 @@ class MissingState(Fixture):
                 self.assertKitDefaults()
 
 
+class CheckQueueSettings(unittest.TestCase):
+    """resolved.check_queue() and its section-only fallback."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_check_queue_reads_the_built_section(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_resolved_json_without_check_queue_gives_its_defaults_and_keeps_policy(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_bad_check_queue_value_gives_its_defaults_and_keeps_replies(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()

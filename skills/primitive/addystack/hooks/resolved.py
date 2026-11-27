@@ -81,6 +81,15 @@ class Replies:
     turnBlock: bool
 
 
+@dataclass(frozen=True)
+class CheckQueue:
+    """The agent memory guard's check queue: whether it runs, how many heavy checks run
+    at once, and the cores running checks may use before a new one waits."""
+    enabled: bool
+    maxChecks: int
+    maxCores: int
+
+
 _KIT = Path(__file__).resolve().parent.parent
 
 
@@ -286,6 +295,13 @@ def _replies(state: Dict[str, Any]) -> Replies:
     rules = _typed(data["rules"], str, type(None))
     return Replies(style=_one_of(data["style"], ReplyStyle), rules=Path(rules) if rules else None,
                    next=_one_of(data["next"], Next), turnBlock=_typed(data["turnBlock"], bool))
+
+
+def check_queue() -> CheckQueue:
+    """The check queue's settings. A resolved.json built before the section existed, or
+    with a bad value in it, gives the kit's defaults for this section alone; policy(),
+    replies(), and kit() still read the file."""
+    raise NotImplementedError("check queue: contract only, not built yet")
 
 
 def kit() -> Path:

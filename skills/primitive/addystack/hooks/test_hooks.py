@@ -6371,5 +6371,50 @@ class Exchanges(unittest.TestCase):
         self.assertEqual(transcripts.exchanges("/nonexistent/x.jsonl"), [])
 
 
+class CheckQueueNotice(unittest.TestCase):
+    """agent-memory-guard-notice.py's queued note and queue-kill notice, by hook_event_name."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_queued_note_names_the_held_count_in_claude_and_codex(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_no_queued_note_when_nothing_is_held_or_the_queue_file_is_unreadable(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_the_queued_note_makes_no_permission_decision(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_queue_kill_gets_the_queue_advice(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_a_memory_kill_keeps_todays_advice(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_codex_notice_matches_by_tool_call_id(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_codex_notice_ignores_another_tool_calls_kill(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_notice_reads_a_bounded_log_tail(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_notice_reports_every_matching_kill_once(self):
+        pass
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_every_guard_entry_shares_one_id_and_its_selection(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()

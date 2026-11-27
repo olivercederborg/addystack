@@ -64,5 +64,14 @@ class Annotations(unittest.TestCase):
                     self.assertIs(node.get("additionalProperties"), False)
 
 
+class CheckQueueFields(unittest.TestCase):
+    """The checkQueue keys agree everywhere they're listed."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_schema_keys_match_resolved_and_config_fields(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()

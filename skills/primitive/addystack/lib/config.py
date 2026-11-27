@@ -132,6 +132,13 @@ class PolicyTable(TypedDict):
     rules: List[Rule]
 
 
+class CheckQueue(TypedDict):
+    """The `checkQueue` section after merging: the agent memory guard's check queue."""
+    enabled: bool
+    maxChecks: int
+    maxCores: int
+
+
 class Resolved(TypedDict):
     """The merged config that build writes to resolved.json. `kit` is the installed
     checkout's absolute path, `layers` names the layers merged, and `digest` hashes the

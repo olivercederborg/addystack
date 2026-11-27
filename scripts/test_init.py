@@ -66,5 +66,14 @@ class Init(Home):
         self.assertEqual(self.snapshot(), before)
 
 
+class InitCheckQueue(unittest.TestCase):
+    """addystack init writes the check queue's cap."""
+
+    @unittest.skip("check queue: contract only, not built yet")
+    def test_init_writes_the_check_queue_cap(self):
+        pass
+
+
+
 if __name__ == "__main__":
     unittest.main()
