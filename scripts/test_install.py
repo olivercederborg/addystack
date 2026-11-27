@@ -479,6 +479,96 @@ class SkillLinks(Home):
         self.assertIn(f"would change {self.claude / 'dropped'} (skill-link)", self.ok("install", "--dry-run").stdout)
         self.assertEqual(self.snapshot(), before)
 
+class RenamedSkill(Home):
+    """A linked checkout's update renames a skill's folder; install moves the dangling link."""
+
+    def test_moves_a_dangling_link_to_the_renamed_folder_and_leaves_a_taken_name(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        folder = self.home / ".claude/skills"
+        # The home installs every core skill; this user has only the old link.
+        if os.path.lexists(folder / "review-code"):
+            (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        old = folder / "review-teammate-pr"
+        old.symlink_to(kit_skills / "review-teammate-pr")
+        out = self.ok("install").stdout
+        self.assertIn("review-teammate-pr is review-code now: links review-code to", out)
+        self.assertFalse(os.path.lexists(old))
+        self.assertEqual((folder / "review-code").resolve(), (kit_skills / "review-code").resolve())
+        # Once moved, a second install has nothing to do; a taken new name leaves the old link.
+        self.assertNotIn("renamed-skill", self.ok("install").stdout)
+        old.symlink_to(kit_skills / "review-teammate-pr")
+        self.assertIn("dangles, and review-code is installed already", self.ok("install").stdout)
+        self.assertTrue(old.is_symlink())
+
+    def test_a_link_into_the_kits_own_checkout_is_moved_once_not_also_dropped(self):
+        # Main's skill-link planner sees links into the kit's own tree; a renamed skill is this one's.
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(KIT.parent / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to("../../.agents/skills/review-teammate-pr")
+        out = self.ok("install").stdout
+        self.assertNotIn("(skill-link)", out)
+        for folder in (claude, agents):
+            self.assertEqual((folder / "review-code").resolve(), (KIT.parent / "review-code").resolve(), folder)
+            self.assertFalse(os.path.lexists(folder / "review-teammate-pr"), folder)
+
+    def test_a_link_to_an_old_folder_only_ignored_files_keep_is_moved_too(self):
+        # A rename leaves untracked files behind, such as verdicts.py's __pycache__.
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        (kit_skills / "review-teammate-pr/scripts/__pycache__").mkdir(parents=True)
+        (kit_skills / "review-teammate-pr/scripts/__pycache__/evidence.cpython-315.pyc").write_bytes(b"")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        for folder in (claude, agents):
+            self.assertEqual((folder / "review-code").resolve(), (kit_skills / "review-code").resolve(), folder)
+            self.assertFalse(os.path.lexists(folder / "review-teammate-pr"), folder)
+
+    def test_moves_a_chain_of_host_links_in_one_install(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("---\nname: review-code\n---\n")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            folder.mkdir(parents=True, exist_ok=True)
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        self.assertEqual((claude / "review-code").resolve(), (kit_skills / "review-code").resolve())
+        self.assertFalse(os.path.lexists(claude / "review-teammate-pr"))
+        self.assertFalse(os.path.lexists(agents / "review-teammate-pr"))
+
+    def test_a_chain_goes_to_the_renamed_checkout_folder_never_to_another_skill(self):
+        kit_skills = self.home / "checkout/skills/primitive"
+        (kit_skills / "review-code").mkdir(parents=True)
+        (kit_skills / "review-code/SKILL.md").write_text("kit\n")
+        claude, agents = self.home / ".claude/skills", self.home / ".agents/skills"
+        for folder in (claude, agents):
+            folder.mkdir(parents=True, exist_ok=True)
+            if os.path.lexists(folder / "review-code"):
+                (folder / "review-code").unlink() if (folder / "review-code").is_symlink() else shutil.rmtree(folder / "review-code")
+        foreign = self.home / "foreign/review-code"
+        foreign.mkdir(parents=True)
+        (foreign / "SKILL.md").write_text("foreign\n")
+        (agents / "review-code").symlink_to(foreign)
+        (agents / "review-teammate-pr").symlink_to(kit_skills / "review-teammate-pr")
+        (claude / "review-teammate-pr").symlink_to(agents / "review-teammate-pr")
+        self.ok("install")
+        self.assertEqual((claude / "review-code" / "SKILL.md").read_text(), "kit\n")
+        self.assertEqual((agents / "review-code" / "SKILL.md").read_text(), "foreign\n")
+
 
 class ClaudeConfigDir(Home):
     """With CLAUDE_CONFIG_DIR set, Claude Code and the skills CLI use that folder, so

@@ -1,5 +1,5 @@
 ---
-name: review-teammate-pr
+name: review-code
 description: Reviews a teammate's PR with the user and posts the comments they approve, then re-reviews after fixes. Use when asked to review someone else's PR.
 compatibility: Requires git, gh (authenticated), and jq.
 metadata:

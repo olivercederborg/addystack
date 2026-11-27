@@ -4,7 +4,7 @@ queues `/cleanest` as the thread's next message, once per run, so the agent answ
 user's "is this the cleanest, best and most idiomatic long-term solution?" before they type
 it. Two hook ids run it, each enabled on its own (`"hooks": {"enable": [...]}`), so each
 scope is trialled and measured apart:
-- `cleanest-ask`: review-teammate-pr threads, titled `◎ #<number>`, which review-teammate-pr
+- `cleanest-ask`: review-code threads, titled `◎ #<number>`, which review-code
   sets first, and which post-in-the-matrix's review_thread.py and the trial's baseline count by;
 - `cleanest-ask-impl` (`--scope implementation`): every other top-level thread, such as an
   implementation or coordinator thread. Its cards are many, and the user asked on about 1 in

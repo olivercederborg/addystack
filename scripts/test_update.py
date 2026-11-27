@@ -173,6 +173,37 @@ class SkillsInstall(Update):
         calls = [json.loads(line) for line in (self.home / "skills-cli.log").read_text().splitlines()]
         self.assertIn(["add", str(self.repo), "-g", "-y", "--skill", "gamma"], calls)
 
+    def test_a_renamed_skill_takes_its_old_names_place_only_where_it_was_installed(self):
+        self.release(self.repo, {"alpha": "primitive", "review-teammate-pr": "primitive"}, "v0.1.1")
+        self.ok("update", bin_=self.kit / "bin" / "addystack")
+        self.release(self.repo, {"alpha": "primitive", "review-code": "primitive"}, "v0.2.0")
+        (self.home / "skills-cli.log").unlink()
+        self.ok("update", bin_=self.kit / "bin" / "addystack")
+        self.assertEqual(self.calls(), [["update", "-g", "-y"], ["add", str(self.repo), "-g", "-y", "--skill", "review-code"],
+                                        ["remove", "review-teammate-pr", "-g", "-y"]])
+        # A user who removed it under its old name doesn't get it back under the new one.
+        self.release(self.repo, {"alpha": "primitive", "review-teammate-pr": "primitive"}, "v0.2.1")
+        self.ok("update", bin_=self.kit / "bin" / "addystack")
+        subprocess.run([self.stubs / "skills", "remove", "review-code", "review-teammate-pr", "-g", "-y"], env=self.env)
+        self.release(self.repo, {"alpha": "primitive", "review-code": "primitive"}, "v0.3.0")
+        (self.home / "skills-cli.log").unlink()
+        self.cli("update", bin_=self.kit / "bin" / "addystack")
+        self.assertEqual(self.calls(), [["update", "-g", "-y"]])
+
+    def test_a_skill_of_the_old_name_from_elsewhere_doesnt_bring_the_renamed_one(self):
+        self.release(self.repo, {"alpha": "primitive", "review-teammate-pr": "primitive"}, "v0.1.1")
+        self.ok("update", bin_=self.kit / "bin" / "addystack")
+        subprocess.run([self.stubs / "skills", "remove", "review-teammate-pr", "-g", "-y"], check=True, env=self.env)
+        self.write(self.mine / "review-teammate-pr" / "SKILL.md", "---\nname: review-teammate-pr\n---\n")
+        self.git(self.mine, "add", "-A")
+        self.git(self.mine, "commit", "-q", "-m", "my own")
+        subprocess.run([self.stubs / "skills", "add", str(self.mine), "-g", "-y", "--skill", "review-teammate-pr"],
+                       check=True, env=self.env)
+        self.release(self.repo, {"alpha": "primitive", "review-code": "primitive"}, "v0.2.0")
+        (self.home / "skills-cli.log").unlink()
+        self.cli("update", bin_=self.kit / "bin" / "addystack")
+        self.assertEqual(self.calls(), [["update", "-g", "-y"]])
+
     def test_an_optional_skill_made_core_is_added(self):
         subprocess.run([self.stubs / "skills", "remove", "extra", "-g", "-y"], check=True, env=self.env)
         (self.home / "skills-cli.log").unlink()

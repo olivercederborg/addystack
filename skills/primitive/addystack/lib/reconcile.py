@@ -93,11 +93,12 @@ _GLOBAL = config.GLOBAL
 class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
-    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link"]
+    kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link", "renamed-skill"]
     target: Path
     detail: str
     left: bool = False
-    # For a command: what install links target to, or None to remove the link.
+    # For a command: what install links target to, or None to remove the link. For a
+    # renamed skill: its new folder, which a link of its new name points at.
     source: Optional[Path] = None
 
 
@@ -113,6 +114,9 @@ def run(resolved: Resolved) -> List[Change]:
         elif change.kind == "command" and not change.left and change.source:
             _link(change.target, change.source)
         elif change.kind in ("command", "skill-link") and not change.left:
+            os.unlink(change.target)
+        elif change.kind == "renamed-skill" and not change.left:
+            _link(change.target.with_name(change.source.name), change.source)
             os.unlink(change.target)
     return changes
 
@@ -134,7 +138,7 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
     if _read_json(LEDGER.expanduser()) != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
-    return changes + ([agent] if agent else []) + _commands(resolved) + _skill_links(resolved), writes
+    return changes + ([agent] if agent else []) + _commands(resolved) + _renamed_skills(resolved) + _skill_links(resolved), writes
 
 
 def _skill_links(resolved: Resolved) -> List[Change]:
@@ -149,8 +153,9 @@ def _skill_links(resolved: Resolved) -> List[Change]:
             continue
         for link in sorted(folder.iterdir()):
             entry = (_place(str(folder)), link.name)
+            # A renamed skill's old link is _renamed_skills' to move, not a dropped skill's.
             if entry in seen or not link.is_symlink() or (link / "SKILL.md").is_file() \
-                    or skill_layer.folder(kit, link.name):
+                    or skill_layer.folder(kit, skill_layer.current(link.name)):
                 continue
             seen.add(entry)
             gone = Path(os.path.realpath(link))
@@ -196,6 +201,37 @@ def _commands(resolved: Resolved) -> List[Change]:
         elif earlier != str(source):
             changes.append(Change("command", link, f"links it to {render._home(source)}"
                                   + (f", not {earlier}" if earlier else ""), source=source))
+    return changes
+
+
+def _renamed_skills(resolved: Resolved) -> List[Change]:
+    """Each enabled host's link to a renamed skill's old folder (skill_layer.RENAMED), which a
+    linked checkout's update left with no SKILL.md, dangling or holding only untracked files:
+    install links the new name to the new folder
+    beside it and drops the old link. A new name already taken is the user's, so the old link
+    is reported and left."""
+    # Both hosts can share one folder through a link, and one host's link can lead through
+    # the other's: each folder once, and each link goes straight to the folder its chain ended
+    # at, renamed, never to whatever another folder holds under the new name.
+    folders = dict.fromkeys(skills_cli.folder(host).resolve() for host in ("claude", "codex")
+                            if resolved["hosts"].get(host))
+    changes = []
+    for folder in folders:
+        for old, new in skill_layer.RENAMED.items():
+            link = folder / old
+            # Dangling or not: a renamed folder can keep untracked files, such as a __pycache__.
+            if not link.is_symlink() or (link / "SKILL.md").is_file():
+                continue
+            ended = Path(os.path.realpath(link))
+            moved = ended.parent / new
+            if ended.name != old or not (moved / "SKILL.md").is_file():
+                continue
+            if os.path.lexists(folder / new):
+                changes.append(Change("renamed-skill", link, f"dangles, and {new} is installed already; remove it",
+                                      left=True))
+            else:
+                changes.append(Change("renamed-skill", link, f"{old} is {new} now: links {new} to "
+                                      f"{render._home(moved)} in its place", source=moved))
     return changes
 
 

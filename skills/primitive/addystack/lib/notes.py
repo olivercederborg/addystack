@@ -68,18 +68,27 @@ def sources() -> List[Path]:
     return sorted(path for path in folder.glob("*.md") if path.is_file()) if folder.is_dir() else []
 
 
+def _applying() -> List[Tuple[Path, str]]:
+    """Each note with the skill it applies to: its own name, or the name its skill was renamed
+    to (skill_layer.RENAMED). A note under an old name yields to one under the new name."""
+    names = {note.stem for note in sources()}
+    return [(note, skill_layer.current(note.stem)) for note in sources()
+            if note.stem == skill_layer.current(note.stem) or skill_layer.current(note.stem) not in names]
+
+
 def built(resolved: Resolved) -> Dict[Path, str]:
-    """Each built note's path and text, for the notes whose core skill exists."""
+    """Each built note's path and text, for the notes whose core skill exists, under its skill's
+    current name, where the skill's notes line reads it."""
     files = {}
     if _aliased():
         return files
-    for note in sources():
-        skill = _skill(resolved, note.stem)
+    for note, name in _applying():
+        skill = _skill(resolved, name)
         if skill is None:
             continue
-        header = (f"{_MARK}{render._home(note)} for {note.stem}, whose skill "
+        header = (f"{_MARK}{render._home(note)} for {name}, whose skill "
                   f"had sha256 {_digest(skill)}. Edit that file and rerun addystack build. -->")
-        files[built_dir() / note.name] = f"{header}\n{note.read_text()}"
+        files[built_dir() / f"{name}.md"] = f"{header}\n{note.read_text()}"
     return files
 
 
@@ -108,17 +117,26 @@ def problems(resolved: Resolved) -> List[Tuple[str, str]]:
     if _aliased():
         return [(f"{built_dir()} is {source_dir()}, so notes aren't built",
                  "make the state folder's notes/ a folder of its own")]
+    applying = dict(_applying())
     for note in sources():
-        skill = _skill(resolved, note.stem)
+        if note not in applying:
+            found.append((f"{note} is for {note.stem}, which is {skill_layer.current(note.stem)} now, and "
+                          f"{note.with_name(skill_layer.current(note.stem) + '.md')} is there too",
+                          f"move what you still want from {note} into that file, then delete {note}"))
+            continue
+        skill = _skill(resolved, applying[note])
         if skill is None:
             found.append((f"{note} names no core skill {note.stem}",
                           f"rename {note} to a core skill's name, or delete it"))
             continue
+        # Before the first build after a rename, the note is still built under its old name.
+        built_note = built_dir() / f"{applying[note]}.md"
+        built_note = built_note if built_note.exists() else built_dir() / note.name
         try:
-            recorded = _HASH.search((built_dir() / note.name).read_text())
+            recorded = _HASH.search(built_note.read_text())
         except (OSError, UnicodeDecodeError):
             continue  # not built yet: the built-files check names it
         if recorded and recorded.group(1) != _digest(skill):
-            found.append((f"{note.stem} changed since {note} was built",
+            found.append((f"{applying[note]} changed since {note} was built",
                           f"reread {note} against {skill}, then run addystack build"))
     return found
