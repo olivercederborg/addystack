@@ -117,6 +117,11 @@ def _notes(findings: list, heading: str, folder: Path) -> str:
     return '\n' + '\n'.join(lines) + '\n'
 
 
+def _url(printed: str) -> str:
+    """The posted review's URL: github.sh prints its inline comments' anchors first."""
+    return printed.strip().splitlines()[-1]
+
+
 def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, sleep=time.sleep) -> dict:
     review = json.loads(review_path.read_text())
     folder = review_path.resolve().parent
@@ -191,7 +196,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             if action == 'approve':
                 # No inline comments: an open thread would hold the merge until someone resolves it.
                 body += _notes(findings, 'Notes that don\'t hold the approval', folder)
-                outcome['review'] = github('approve', number, head, '', _write(scratch, 'body.md', body)).strip()
+                outcome['review'] = _url(github('approve', number, head, '', _write(scratch, 'body.md', body)))
                 outcome['outcome'] = 'approved'
                 # Once approved, a thread it can't resolve is named, never a failure: a retry
                 # would post a second approval.
@@ -242,7 +247,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 if posted.get('head') == head and posted.get('outcome') == outcome['outcome'] and posted.get('sent') == sent:
                     outcome['review'] = posted['review']
                 else:
-                    outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
+                    outcome['review'] = _url(github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)))
                     record.write_text(json.dumps({'head': head, 'outcome': outcome['outcome'], 'sent': sent,
                                                   'review': outcome['review'], 'withdraw': target}))
                 if target is not None and active and active['id'] == target:

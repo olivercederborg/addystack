@@ -47,7 +47,8 @@ class Fake:
             if path.suffix in ('.md', '.json') and path.exists():
                 files[path.name] = path.read_text()
         self.writes.append((command, [str(argument) for argument in arguments], files))
-        return f'https://github.com/o/r/pull/7#{command}\n'
+        # github.sh prints its inline comments' anchors before the posted review's URL.
+        return f'db/schema.ts:12 (changed)\nhttps://github.com/o/r/pull/7#{command}\n'
 
 
 class Post(unittest.TestCase):
