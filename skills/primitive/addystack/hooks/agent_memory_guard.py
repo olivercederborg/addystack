@@ -22,10 +22,10 @@ once it averages over half a core for 30 minutes. Added after Nov 2, 2026: an ag
 Vitest runs hung in a busy loop, and each `pkill` of the main Vitest process left its fork
 worker spinning under launchd, since a fork worker exits only when it next messages its
 parent. Ten of them ran at 100% CPU for 15 hours. Idle leftovers, such as a dev server an
-agent started with `nohup`, stay. A command its agent still waits on gets 2 hours, the
-longest Claude Code's Bash tool waits: on Nov 27, 2026 two `bun` probe scripts Codex
-started without a shell spun at 100% CPU for 9 and 11 hours under a live Codex, long
-after their threads finished.
+agent started with `nohup`, stay. A command its agent still waits on, its servers
+included, gets 2 hours at that rate, the longest Claude Code's Bash tool waits: on Nov 27,
+2026 two `bun` probe scripts Codex started without a shell spun at 100% CPU for 9 and 11
+hours under a live Codex, long after their threads finished.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
@@ -41,15 +41,17 @@ Known limits:
   toward the total. Under Codex it also needs a readable environment without the agent
   mark, so a Codex server that's an Apple binary, such as Xcode's mcpbridge, counts in
   full, and a command Codex starts with a cleared environment and no shell gets the
-  allowance. So does a Claude command that `exec`s out of its wrapper shell.
+  allowance. So does a Claude command that `exec`s out of its wrapper shell. The CPU rule
+  doesn't use this split, so a server over half a core for 2 hours dies like a command.
 - An orphan in a process group led by an installed app's own executable (under
   /Applications/, the one its bundle's Info.plist names) isn't agent work by its
   environment alone, since an app such as OrbStack starts its VM with the environment of whichever
   command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
   counts toward the total.
-- A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
-  too, and dies after 30 minutes; run it as a background task the agent tracks.
+- A CPU-heavy job an agent starts dies at over half a core: after 30 minutes when the
+  agent doesn't wait on it (`nohup` or `&`), after 2 hours when it does, a background
+  task it tracks included. Run a longer one in a terminal, outside the agent.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
   saw it."""
 import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
