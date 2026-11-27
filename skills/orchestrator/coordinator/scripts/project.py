@@ -453,25 +453,19 @@ def _pr(ref: str) -> dict | None:
 
 def _checks(ref: str) -> dict[str, int] | None:
     """The count of `owner/repo#N`'s checks per gh bucket (pass, fail, pending, skipping,
-    cancel), {} when it has none, None when unread. Reads stdout itself: `gh pr checks`
-    exits 8 while checks are pending, and `_run` drops stdout on a nonzero exit."""
+    cancel), {} when it has none, None when unread. With --json, gh exits 0 while checks
+    are pending, and 1 with `no checks reported` when there are none."""
     repo, number = ref.split("#")
-    try:
-        done = subprocess.run(["gh", "pr", "checks", number, "-R", repo, "--json", "bucket"],
-                              capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as error:
-        _warn(f"status: `gh pr checks {number} -R {repo}` failed: {error}")
-        return None
+    code, out = _run(["gh", "pr", "checks", number, "-R", repo, "--json", "bucket"])
+    if code and "no checks reported" in out:
+        return {}
     try:
         counts: dict[str, int] = {}
-        for check in json.loads(done.stdout):
+        for check in json.loads(out) if code == 0 else None:
             counts[check["bucket"]] = counts.get(check["bucket"], 0) + 1
         return counts
     except (ValueError, KeyError, TypeError):
-        if "no checks reported" in done.stderr:
-            return {}
-        _warn(f"status: `gh pr checks {number} -R {repo}` exited {done.returncode}: "
-              f"{(done.stderr.strip().splitlines() or [''])[-1][:200]}")
+        _warn(f"status: `gh pr checks {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
         return None
 
 

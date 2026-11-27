@@ -56,7 +56,7 @@ prs = json.load(open(os.environ["FAKE"] + "/prs.json"))
 key = f"{repo}#{args[2]}"
 with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
     out.write(json.dumps({"key": key, "command": args[1]}) + "\n")
-if args[1] == "checks":  # checks.json: {ref: [exit code, [{bucket}…]]}; gh exits 8 while any is pending
+if args[1] == "checks":  # checks.json: {ref: [exit code, [{bucket}…]]}; with --json, gh exits 0 while any is pending
     path = os.environ["FAKE"] + "/checks.json"
     checks = json.load(open(path)) if os.path.exists(path) else {}
     if key not in checks:

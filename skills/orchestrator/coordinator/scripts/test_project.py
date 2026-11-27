@@ -427,7 +427,7 @@ class Status(unittest.TestCase):
         self.prs = {"acme/app#12": {"title": "Add the export", "state": "OPEN", "isDraft": True},
                     "acme/app#13": {"title": "Spike the format", "state": "MERGED", "isDraft": False},
                     "acme/other#5": {"title": "Fix the parser", "state": "OPEN", "isDraft": False}}
-        self.checks = {"acme/app#12": [8, [{"bucket": "pass"}, {"bucket": "pending"}, {"bucket": "pending"}]],
+        self.checks = {"acme/app#12": [0, [{"bucket": "pass"}, {"bucket": "pending"}, {"bucket": "pending"}]],
                        "acme/app#13": [0, []]}
         self.write()
 
@@ -510,7 +510,6 @@ queue:
         self.assertIn("acme/other#5", {call["key"] for call in self.calls("gh")})
 
     def test_a_link_label_with_escaped_brackets_still_names_only_its_urls_pr(self):
-        refs: set[str] = set()
         for label in (r"#7, Fix \[CI\] failure", "#7, Fix [CI] failure"):
             refs: set[str] = set()
             project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7)", "acme/app", refs)
