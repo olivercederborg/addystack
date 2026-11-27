@@ -201,7 +201,7 @@
           "type": "integer",
           "minimum": 1,
           "default": 4,
-          "markdownDescription": "How many heavy checks run at once across every agent. A check idle for 30 seconds stops counting, and one that wakes counts again, so the count can pass this for a while. 4 suits an 18-core, 48 GB Mac."
+          "markdownDescription": "How many heavy checks run at once across every agent. A check idle for 30 seconds stops counting, and one that wakes counts again, so the count can pass this for a while. Test runs (vitest, jest) count but are never held, so they can pass it too. 4 suits an 18-core, 48 GB Mac."
         },
         "maxCores": {
           "type": "integer",

@@ -915,6 +915,23 @@ class CheckQueue(unittest.TestCase):
             q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
         self.assertEqual(q.stopped(), {231})
 
+    def test_a_test_runner_counts_toward_the_cap_but_is_never_stopped(self):
+        vitest = ("node", "/x/node_modules/vitest/vitest.mjs", "run")
+        jest = ("node", "/x/node_modules/jest/bin/jest.js")
+        q = Queue(self, cap=1)
+        runners = [[proc(210, 100, argv=("/bin/zsh", "-lc", "check 1")), proc(211, 210, argv=vitest, start=1000.0)],
+                   [proc(220, 100, argv=("/bin/zsh", "-lc", "check 2")), proc(221, 220, argv=jest, start=1000.0)]]
+        q.tick(*runners)
+        self.assertEqual(q.sent, [])
+        self.assertEqual(sorted(q.governor.running), [211, 221])
+        q.tick(*runners, q.check(3))
+        self.assertEqual(q.stopped(), {231})  # a type check waits behind the test runs
+
+    def test_checker_names_the_check(self):
+        self.assertEqual(guard.checker(["node", "/x/node_modules/vitest/vitest.mjs", "run"]), "vitest")
+        self.assertEqual(guard.checker(["/x/.bin/tsc", "--noEmit"]), "tsc")
+        self.assertIsNone(guard.checker(["grep", "tsc"]))
+
     def test_a_held_unit_resumes_before_a_newer_arrival(self):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))

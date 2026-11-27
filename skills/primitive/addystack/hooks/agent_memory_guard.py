@@ -43,7 +43,9 @@ does for every kill here. The next guard start, a SIGTERM,
 `"checkQueue": {"enabled": false}`, or any governor error resumes every waiting check. A
 running check idle for 30 seconds (under 0.1 cores) stops counting toward maxChecks, so a
 watcher can't hold a slot; one that wakes counts again without being stopped, so the count
-can pass maxChecks for a while.
+can pass maxChecks for a while. Test runs (vitest, jest) count toward maxChecks and the CPU
+gate but are never held, since a stop past a test's timeout fails it, so they can pass the
+cap, and type checks and lints wait behind them.
 
 Known limits:
 - A checker started outside an agent's commands, in the user's own terminal, isn't
@@ -653,6 +655,12 @@ INTERPRETERS = {"node", "bun", "bunx", "deno", "npx"}
 WATCH_FLAGS = {"tsc": {"--watch", "-w"}, "tsgo": {"--watch", "-w"}, "vitest": {"--watch", "-w"},
                "jest": {"--watch", "--watchAll"}}
 UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finished
+# Test runners count toward maxChecks and the CPU gate but are never held: a test's timers
+# count wall time, and vitest's first test starts about 200 ms in, before a 0.5 s scan
+# can be sure to see it, so a stop of more than 5 s fails a test that would pass ("Test
+# timed out in 5000ms", vitest 5.1.0; the research's node probe: a 1 s test read
+# "TIMEOUT after 3290ms"). tsc and the linters run no timers, so they stay holdable.
+TEST_RUNNERS = {"vitest", "jest"}
 # A running unit that used under IDLE_CORES over the last IDLE_SECONDS, with every CPU read
 # in them answered and the same processes throughout, stops counting toward maxChecks: a watcher the argv tests misread as a
 # check would otherwise hold a slot until it exits, and get queued checks killed. An idle
@@ -672,22 +680,27 @@ def is_heavy(argv):
     vitest not watching, by the binary or an interpreter's script, never a later
     argument, so `grep tsc` isn't one. A watcher (`--watch`, `-w`, `vitest watch`,
     `vitest dev`) and tsserver are servers, not checks."""
+    return checker(argv) is not None
+
+
+def checker(argv):
+    """The heavy check argv runs, such as "tsc" or "vitest", or None; see is_heavy."""
     if not argv or any("tsserver" in arg for arg in argv[:3]):
-        return False
+        return None
     tool, rest = argv[0], argv[1:]
     if not HEAVY.search(tool):
         if os.path.basename(tool) not in INTERPRETERS:
-            return False
+            return None
         index = next((i for i, arg in enumerate(rest)
                       if not arg.startswith("-") and arg not in {"run", "x", "exec"}), None)
         if index is None or not HEAVY.search(rest[index]):
-            return False
+            return None
         tool, rest = rest[index], rest[index + 1:]
     name = HEAVY.search(tool).group(2) or "tsgo"  # native-preview's binary is tsgo
     flags = WATCH_FLAGS.get(name, set())
     watching = any(_switched_on(arg, flags) for arg in rest)
     vitest_server = name == "vitest" and rest[:1] in (["watch"], ["dev"])
-    return not (watching or vitest_server)
+    return None if watching or vitest_server else name
 
 
 def _switched_on(arg, flags):
@@ -855,7 +868,8 @@ class Governor:
             # keeps its start time, so an exec seen since the last tick also makes it new.
             execed = self.versions.get(top.ident, top.version) != top.version
             fresh = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS) or execed
-            holdable = fresh and self._attended(unit.top, commands[unit.head], agents)
+            holdable = (fresh and checker(top.argv) not in TEST_RUNNERS
+                        and self._attended(unit.top, commands[unit.head], agents))
             if not holdable:
                 self._run(unit.top, unit.members, now, wall)  # already running: never stopped
             elif not self.held and self._room(config, now):

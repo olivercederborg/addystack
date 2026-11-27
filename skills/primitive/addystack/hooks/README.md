@@ -153,7 +153,10 @@ resumed oldest first when one finishes or goes idle, or when its agent's shell i
 minutes with the queue full is killed. A running check idle for 30 seconds (under 0.1
 cores) stops counting toward `checkQueue.maxChecks`, so a watcher misread as a check can't
 hold a slot; one that wakes counts again without being stopped, so the count can pass the
-cap for a while. Every waiting check resumes when the guard starts or
+cap for a while. Test runs (vitest, jest) count toward the cap and the CPU gate but are
+never held, since a stop past a test's 5-second timeout fails a test that would pass; so
+test runs can pass the cap, and type checks and lints wait behind them. Every waiting check
+resumes when the guard starts or
 stops, on `"checkQueue": { "enabled": false }`, which applies after `addystack build`
 without a restart, and on any queue error. Stops and resumes go to the guard's log with an
 `event` field.
