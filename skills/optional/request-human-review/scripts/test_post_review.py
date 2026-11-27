@@ -121,9 +121,9 @@ class Post(unittest.TestCase):
             with self.subTest(event):
                 fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
                 outcome = self.post(fake, bases=bases)
-                self.assertEqual((outcome['outcome'], outcome['review']), ('approved', 'https://github.com/o/r/pull/7#review'))
+                self.assertEqual((outcome['outcome'], outcome['review']), ('approved', 'https://github.com/o/r/pull/7#comment'))
                 (command, arguments, files), = fake.writes
-                self.assertEqual((command, arguments[1], arguments[3]), ('review', HEAD, 'COMMENT'))
+                self.assertEqual((command, arguments[0]), ('comment', '7'))
                 self.assertIn('Adds a totals column.', files['body.md'])
                 self.assertIn(f"this App's approval of `{HEAD[:7]}` stands", files['body.md'])
         # An approval of an older head doesn't approve this one.
@@ -146,7 +146,7 @@ class Post(unittest.TestCase):
         fake.active = {'id': 62, 'state': 'APPROVED', 'commit_id': HEAD}
         (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column; re-read after the rebase.\n')
         self.post(fake, retry=True)
-        self.assertEqual([command for command, _, _ in fake.writes], ['approve', 'review'])
+        self.assertEqual([command for command, _, _ in fake.writes], ['approve', 'comment'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':

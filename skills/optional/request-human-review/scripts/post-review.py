@@ -204,15 +204,15 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 body += _notes(findings, 'Notes that don\'t hold the approval', folder)
                 sent = hashlib.sha256(body.encode()).hexdigest()
                 outcome['outcome'] = 'approved'
+                stands = active and active['state'] == 'APPROVED' and active['commit_id'] == head
                 if posted.get('head') == head and posted.get('outcome') == 'approved' and posted.get('sent') == sent:
                     outcome['review'] = posted['review']
-                elif active and active['state'] == 'APPROVED' and active['commit_id'] == head:
+                elif stands:
                     # A new review of a head this App already approves, such as one its author
                     # asked for or one after a retarget: the approval stands, and a comment says so.
                     body += f"\n**Still approved:** this App's approval of `{head[:7]}` stands, so this review " \
                             'posts as a comment, not a second approval.\n'
-                    outcome['review'] = _url(github('review', number, head, _write(scratch, 'drafts.json', '[]'),
-                                                    'COMMENT', _write(scratch, 'body.md', body)))
+                    outcome['review'] = _url(github('comment', number, _write(scratch, 'body.md', body)))
                 else:
                     outcome['review'] = _url(github('approve', number, head, '', _write(scratch, 'body.md', body)))
                 record.write_text(json.dumps({'head': head, 'outcome': 'approved', 'sent': sent, 'review': outcome['review']}))
