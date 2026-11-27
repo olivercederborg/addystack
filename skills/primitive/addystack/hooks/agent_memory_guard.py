@@ -74,8 +74,8 @@ SERVICE_IDLE_PROCESSES = 10
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
 ABANDONED_WINDOW_SECONDS = 30 * 60
-# A command its agent still waits on is killed once it averages ABANDONED_CORES over this
-# longer window. An agent's server (MCP, language server) is never killed by this rule.
+# A command its agent still waits on, an agent's server included, is killed once it
+# averages ABANDONED_CORES over this longer window.
 ATTENDED_WINDOW_SECONDS = 2 * 60 * 60
 CHECKPOINT_SECONDS = 5  # CPU in a window's first this-many seconds may go uncounted
 LOG = os.path.expanduser("~/Library/Logs/agent-memory-guard.log")
@@ -406,7 +406,7 @@ class Abandoned:
         #          debt {ident: ns}, total ns, [(time, total)] oldest first)
         self.state = {}
 
-    def busy(self, commands, agents, now, wall=None, services=frozenset()):
+    def busy(self, commands, agents, now, wall=None):
         """Return (head, reason) for a command whose CPU inside the last window is over
         ABANDONED_CORES for the whole window, or None: 30 minutes for an abandoned command,
         2 hours for one an agent still waits on. `agents` maps each agent's pid to its
@@ -415,8 +415,6 @@ class Abandoned:
         found, kept = None, {}
         for head, members in commands.items():
             attended = any(agents.get(proc.ppid) == proc.parent_ident for proc in members)
-            if attended and head in services:
-                continue  # an agent's server lives as long as its session
             window = ATTENDED_WINDOW_SECONDS if attended else ABANDONED_WINDOW_SECONDS
             state = self.state.get(head)
             if state is None or state[0] != attended:
@@ -526,7 +524,7 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
     found = runaway(commands, owners.services)
     if not found and abandoned is not None:
         agents = {pid: proc.ident for pid, proc in procs.items() if is_agent(proc)}
-        found = abandoned.busy(commands, agents, now(), wall(), owners.services)
+        found = abandoned.busy(commands, agents, now(), wall())
     if not found:
         return None
     head, reason = found

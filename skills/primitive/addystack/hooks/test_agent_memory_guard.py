@@ -313,13 +313,11 @@ class AbandonedCommands(unittest.TestCase):
         self.assertEqual((found[0], minute), (201, guard.ATTENDED_WINDOW_SECONDS // 60))
         self.assertIn("busy while its agent waits on it, at 1.0 cores for 120 min", found[1])
 
-    def test_a_busy_agent_server_is_left_alone(self):
-        abandoned = guard.Abandoned()
-        for minute in range(240):
-            t = minute * 60
-            self.assertIsNone(abandoned.busy(
-                {300: [proc(300, 100, argv=("node", "mcp.js"), cpu=int(t * 1e9))]},
-                {100: 100}, t, services={300}))
+    def test_a_busy_agent_server_is_killed_after_two_hours(self):
+        # A server's classification misfires both ways under Codex, so servers get no pass.
+        found, minute = self.run_ticks(
+            180, lambda t: [proc(200, 100, argv=("node", "mcp.js"), cpu=int(t * 1e9))])
+        self.assertEqual((found[0], minute), (200, guard.ATTENDED_WINDOW_SECONDS // 60))
 
     def test_an_idle_orphan_such_as_a_dev_server_is_left_alone(self):
         found, _ = self.run_ticks(90, lambda t: self.spinning_orphan(t, cores=0.05))
