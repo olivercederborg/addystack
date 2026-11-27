@@ -246,6 +246,21 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [], "read again 20 min after the alert, so each waits for the hour")
 
+    def test_a_closed_pr_that_reopens_on_an_unread_blocker_is_judged_again(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #21 | waiting | #21 ← acme/tools#9 |"})
+        self.prs["acme/app#21"] = {"state": "OPEN", "isDraft": False, "headRefOid": "21aaaaaaa"}
+        self.prs["acme/tools#9"] = {"state": "CLOSED", "isDraft": False}
+        self.watch(7, 21)
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#9, which closed", self.sent()[0]["message"])
+        self.prs["acme/app#21"]["state"] = "CLOSED"
+        blocker = self.prs.pop("acme/tools#9")
+        self.tick("--send")  # known closed, so the finding clears though its blocker is unread
+        self.prs["acme/app#21"]["state"] = "OPEN"
+        self.prs["acme/tools#9"] = blocker
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#9, which closed", "".join(m["message"] for m in self.sent()))
+
     def test_a_wait_on_a_pr_that_merged_or_closed_is_flagged(self):
         self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
                                  "| #21 · #22 | waiting | #21 ← acme/tools#138; #22 ← acme/tools#139 |"})

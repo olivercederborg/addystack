@@ -640,7 +640,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for wait in waits:
         if not wait.blocker_pull:
             continue
-        if None in (state_of(wait.pull), state_of(wait.blocker_pull)):  # unknown, not cleared
+        if state_of(wait.pull) in (None, "OPEN") and state_of(wait.blocker_pull) is None:  # unknown, not cleared
             unread.add(f"blocker:{wait.pull}:{wait.blocker_pull}")
         elif state_of(wait.pull) == "OPEN" and state_of(wait.blocker_pull) in {"MERGED", "CLOSED"}:
             found.append((f"blocker:{wait.pull}:{wait.blocker_pull}",
