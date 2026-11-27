@@ -1,7 +1,7 @@
 """Tests for named_links.unnamed, which scripts/check_examples.py runs on the kit's
 example replies and named-links-check.py on posts, and for the modules only the
 check uses."""
-import json, os, pathlib, re, shutil, subprocess, tempfile, unittest, unittest.mock
+import json, os, pathlib, re, shutil, subprocess, sys, tempfile, unittest, unittest.mock
 
 import denied_posts, merge_go, named_links, posted_text, turn_block
 from test_hooks import HOOKS, block
@@ -309,6 +309,27 @@ class NamedLinksCheck(unittest.TestCase):
         blocker = pathlib.Path(self.folder, "file")
         blocker.write_text("")
         self.assertIsNone(self.check("Bash", bash("gh pr create -b 'see #12'"), state=str(blocker / "state")))
+
+
+class NamedLinksCheckInstall(unittest.TestCase):
+    def test_each_runtimes_entry_carries_the_route_matcher(self):
+        manifest = json.loads((HOOKS / "manifest.json").read_text())
+        for runtime in ("claude", "codex"):
+            [entry] = [entry for entry in manifest[runtime] if entry["id"] == "named-links-check"]
+            self.assertEqual(entry["matcher"], posted_text.MATCHER, runtime)
+
+    def test_only_reply_shape_installs_it(self):
+        if str(HOOKS.parent / "lib") not in sys.path:
+            sys.path.append(str(HOOKS.parent / "lib"))
+        import config, hookset
+        with tempfile.TemporaryDirectory() as folder:
+            user = pathlib.Path(folder, "addystack.jsonc")
+            for replies, on in (({"style": "reply-shape"}, True), ({}, False)):
+                user.write_text(json.dumps({"hooks": {"preset": "all"}, "replies": replies}))
+                for runtime in ("claude", "codex"):
+                    with self.subTest(replies=replies, runtime=runtime):
+                        selected = [entry.id for entry in hookset.select(config.resolve(user), runtime, "linux")]
+                        self.assertEqual("named-links-check" in selected, on)
 
 
 if __name__ == "__main__":

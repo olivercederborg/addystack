@@ -15,7 +15,8 @@
     {"id": "watch-reminder", "tags": ["workflow"], "event": "PostToolUse", "matcher": "mcp__t3-code__pull_request_update|mcp__t3-code__pull_request_create|Bash", "command": "{{kit}}/hooks/watch-reminder.py", "timeout": 10},
     {"id": "card-check", "tags": ["workflow"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/card-check.py", "timeout": 10},
     {"id": "cleanest-ask", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py", "timeout": 30},
-    {"id": "cleanest-ask-impl", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py --scope implementation", "timeout": 30}
+    {"id": "cleanest-ask-impl", "tags": ["trial"], "event": "Stop", "matcher": null, "command": "{{kit}}/hooks/cleanest-ask.py --scope implementation", "timeout": 30},
+    {"id": "named-links-check", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "PreToolUse", "matcher": "Bash|mcp__t3-code__pull_request_(create|update)|mcp__.*[Ll]inear.*__save_(issue|comment|project)|mcp__executor-.+__call", "command": "{{kit}}/hooks/named-links-check.py", "timeout": 10}
   ],
   "codex": [
     {"id": "reply-shape-context", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "SessionStart", "matcher": null, "command": "{{kit}}/hooks/reply-shape-context.py", "timeout": 10},
@@ -25,6 +26,7 @@
     {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60},
     {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60},
     {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]},
-    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]}
+    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]},
+    {"id": "named-links-check", "tags": ["replies"], "requires": "replies.style=reply-shape", "event": "PreToolUse", "matcher": "Bash|mcp__t3-code__pull_request_(create|update)|mcp__.*[Ll]inear.*__save_(issue|comment|project)|mcp__executor-.+__call", "command": "{{kit}}/hooks/named-links-check.py", "timeout": 10}
   ]
 }
