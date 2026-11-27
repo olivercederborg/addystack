@@ -169,6 +169,42 @@ class Pulls(unittest.TestCase):
                 self.assertEqual(project_md.pulls(text, origin), project_md.Pulls(refs, unread))
 
 
+class WorkerPrs(Fixture, unittest.TestCase):
+    """`worker --pr` against a checkout whose origin is acme/box."""
+    def setUp(self):
+        super().setUp()
+        checkout = self.dir / "box"
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        subprocess.run(["git", "-C", str(checkout), "remote", "add", "origin", "git@github.com:acme/box.git"], check=True)
+        (self.dir / "project.md").write_text(PROJECT.replace("Checkout: ~/skills", f"Checkout: {checkout} (on `main`)"))
+        self.before = self.text()
+
+    def test_two_repos_stacks_in_one_cell_are_refused_with_the_fix(self):
+        # The real call: another repo's stack as `tools #109`, beside the checkout's own `box #20`.
+        result = self.project("worker", "review-quality", "--pr", "tools #109 → #110 → #122 (#108 merged 5adcaad);"
+                              " box #20 → #21 → #27 (#28 merged)", code=1)
+        self.assertEqual(result.stderr, "--pr names 'tools #109', 'box #20' with no repo to resolve it against: write"
+                         " each PR outside acme/box as owner/repo#N, and give each repo's stack its own Workers row\n")
+        result = self.project("worker", "review-quality", "--pr", "acme/tools#1 acme/box#2", code=1)
+        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): give each repo's stack its own Workers row",
+                      result.stderr)
+        self.assertEqual(self.text(), self.before)
+
+    def test_one_repos_stack_per_row_is_written(self):
+        self.project("worker", "review-quality", "--pr", "acme/tools#109 → acme/tools#110 → acme/tools#122")
+        self.project("worker", "box", "--state", "running", "--pr", "#20 → #21 → #27 (#28 merged) · `fix-#12`")
+        self.assertIn("| acme/tools#109 → acme/tools#110 → acme/tools#122 | running (slot 1) |", self.text())
+        self.assertIn("| box | — | #20 → #21 → #27 (#28 merged) · `fix-#12` | running |", self.text())
+
+    def test_without_an_origin_a_bare_number_is_refused_and_other_columns_still_write(self):
+        (self.dir / "project.md").write_text(PROJECT)  # Checkout: ~/skills, no such checkout
+        self.assertIn("the checkout has no GitHub origin, so write each PR as owner/repo#N",
+                      self.project("worker", "review-quality", "--pr", "#12", code=1).stderr)
+        self.project("worker", "review-quality", "--pr", "acme/skills#12")
+        (self.dir / "project.md").write_text(self.text().replace("acme/skills#12", "web #12"))  # an old hand edit
+        self.project("worker", "review-quality", "--last", "pushed abc")
+
+
 class Queue(Fixture, unittest.TestCase):
     def setUp(self):
         super().setUp()

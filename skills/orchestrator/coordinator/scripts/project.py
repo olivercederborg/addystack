@@ -200,10 +200,23 @@ def learn(lines: list[str], text: str) -> None:
     _insert(lines, "Learnings", _dated(text))
 
 
-def worker(lines: list[str], slug: str, **columns: str | None) -> None:
+def worker(lines: list[str], slug: str, *, origin: str = "", **columns: str | None) -> None:
+    """Writes the named columns of slug's Workers row, adding the row when it's new. A
+    Branch or PR value names PRs of one repo, each resolved against origin, the checkout's
+    `owner/repo` (project_md.pulls)."""
     state = columns.get("state")
     if state is not None and not STATE.match(state):
         raise ProjectError(f"state {state!r} doesn't start with one of: {', '.join(STATES)}")
+    if columns.get("pr") is not None:
+        found = project_md.pulls(columns["pr"], origin)
+        if found.unread:
+            fix = (f"write each PR outside {origin} as owner/repo#N" if origin else
+                   "the checkout has no GitHub origin, so write each PR as owner/repo#N")
+            raise ProjectError(f"--pr names {', '.join(map(repr, found.unread))} with no repo to resolve it"
+                               f" against: {fix}, and give each repo's stack its own Workers row")
+        if len(repos := list(dict.fromkeys(ref.split("#")[0] for ref in found.refs))) > 1:
+            raise ProjectError(f"--pr names PRs in {len(repos)} repos ({', '.join(repos)}): give each repo's"
+                               " stack its own Workers row")
     for value in [slug, *(v for v in columns.values() if v is not None)]:
         if "\n" in value or not value.strip():
             raise ProjectError(f"a cell is one non-empty line: {value!r}")
@@ -460,6 +473,12 @@ def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
         refs.add(f"{repo}#{url_n or n or local}")
 
 
+def _checkout(lines: list[str]) -> Path | None:
+    """The path in the Checkout header, before any ` (on `branch`)` note."""
+    place = _header(lines, "Checkout").split(" (")[0].strip()
+    return Path(place).expanduser() if place else None
+
+
 def _origin(checkout: Path | None) -> str:
     """`owner/repo` of the checkout's GitHub origin, or ""."""
     code, out = _run(["git", "-C", str(checkout), "remote", "get-url", "origin"]) if checkout else (1, "")
@@ -496,9 +515,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         _warn(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}")
         return None
     busy = hold and lead.get("status") in ACTIVE
-    place = _header(lines, "Checkout").split(" (")[0].strip()
-    checkout = Path(place).expanduser() if place else None
-    origin = _origin(checkout)
+    origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
     watched: set[str] = set()
     _pr_refs(_listened(lines, "Watches"), origin, watched)
@@ -715,7 +732,8 @@ def main(argv: list[str]) -> int:
         elif args.command == "start":
             start(lines, args.goal, args.proof)
         elif args.command == "worker":
-            worker(lines, args.slug, **{key: getattr(args, key) for key in COLUMNS})
+            worker(lines, args.slug, origin=_origin(_checkout(lines)) if args.pr is not None else "",
+                   **{key: getattr(args, key) for key in COLUMNS})
         else:
             listen(lines, args.key, sys.stdin.read() if args.value == "-" else args.value)
         _write(path, "\n".join(lines))
