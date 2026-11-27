@@ -109,7 +109,8 @@ def run(*cmd):
 
 def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last
-    of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
+    of numbers, pr, and, for a prompt that doesn't, why: what a key picked, or that a typed
+    prompt is neither a key nor a go. A
     go is a literal go (merge_go.py), held to the PRs it names when it names one with its
     repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (user_turn.answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,

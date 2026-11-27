@@ -458,8 +458,9 @@ def user_go():
             return False, (f"{said} doesn't say it dismisses an approval, and your reply before it shows no "
                            "stop:push option that does, in its text as well as its turn block")
         key = turn_block.PICK.fullmatch(prompt)
-        if not key:
-            return False, None
+        if not key:  # as merge-gate.py says it, so the agent doesn't guess at the cause
+            return False, (f"{said} is neither a key nor a plain request to push, so it gives no go"
+                           if prompt.strip() else None)
         reply = user_turn.answered(found)
         option = turn_block.picked(reply, prompt)
         if option is None:

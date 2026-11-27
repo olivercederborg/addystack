@@ -2400,8 +2400,9 @@ class MergeGate(unittest.TestCase):
         }.items():
             with self.subTest(case=name):
                 self.assertIn("no CI on PRs", self.reason("gh pr merge 12", said=said))
-        # Nov 27, 2026: "A merge #139" and "Option A" answered a squash-merge card, and the
-        # agent, told only to ask for "merge #139", blamed a missing turn block.
+        # Nov 27, 2026: "A merge #139" answered a squash-merge card and the agent, told only
+        # to ask for "merge #139", blamed a missing turn block. "Option A" is the user's own
+        # way of picking, offered in the same thread.
         squash = {**merge, "text": "squash-merge #12 now"}
         for said in [("fix it", offer(merge), "A merge #12"), ("fix it", offer(squash), "Option A")]:
             with self.subTest(said=said[1:]):
@@ -4653,6 +4654,8 @@ class PushGate(unittest.TestCase):
             (("fix it", self.offer({**restack, "text": "push #6092 (dismisses the teammate's approval)"}, text="Restack?\n\n"), "a"),
              "doesn't name #6091"),
             (("fix it", self.offer(restack, text="Restack?\n\n"), "hold on", claude_wrote("Holding."), "a"), "picks nothing"),
+            (("fix it", self.offer(restack, text="Restack?\n\n"), "a restack it"),
+             "is neither a key nor a plain request to push"),
             (("push #6091",), None), (("push #6091, dismissing the teammate's approval?",), None),
             (("don't push #6091, it would dismiss the teammate's approval",), None),
             (("push #6091 if it dismisses nothing",), None),
