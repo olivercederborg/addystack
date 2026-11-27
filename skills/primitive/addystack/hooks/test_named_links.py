@@ -183,7 +183,16 @@ class PostedText(unittest.TestCase):
                          "Fresh DEV-4.")
         self.assertEqual(self.posts("Bash", bash("gh pr create -F b.md && rm b.md"))[0].text, "stale #99")
         self.assertEqual(self.posts("Bash", bash(command + " && rm b.md"))[0].text, "Fresh DEV-4.")
+        for check in ("node ~/.agents/skills/open-pr/scripts/check-body.mjs b.md", "wc -c b.md", "grep -n DEV b.md"):
+            with self.subTest(check=check):
+                written = "cat > b.md <<'EOF'\nFresh DEV-4.\nEOF\n"
+                self.assertEqual(self.posts("Bash", bash(f"{written}{check} && gh pr create -F b.md")),
+                                 [posted_text.Post("gh pr create", "Fresh DEV-4.")])
+                self.assertEqual(self.posts("Bash", bash(f"{check} && gh pr create -F b.md")),
+                                 [posted_text.Post("gh pr create", "stale #99")])
+        self.assertEqual(self.posts("Bash", bash("cat b.md > c.md && gh pr create -F b.md"))[0].text, "stale #99")
         for command in ("echo hi > b.md && gh pr create -F b.md", "cat >> b.md <<EOF\nx\nEOF\ngh pr create -F b.md",
+                        "sed -i '' s/x/y/ b.md && gh pr create -F b.md", "grep x a.md > b.md; gh pr create -F b.md",
                         "cp a.md b.md; gh pr create -F b.md"):
             with self.subTest(command=command):
                 self.assertEqual(self.posts("Bash", bash(command)), [])

@@ -49,6 +49,10 @@ _VALUED = {"-R", "--repo", "-t", "--title", "-b", "--body", "-F", "--body-file",
            "-T", "--template", "--recover", "--attach",
            *(f"--{change}-{what}" for change in ("add", "remove") for what in ("assignee", "label", "project", "reviewer"))}
 _SUBCOMMANDS = {"create", "new", "edit", "comment"}
+# Commands that only read the files they name, so naming the body file before gh changes
+# nothing; a redirect into it still does.
+_READS = {"cat", "grep", "rg", "wc", "head", "tail", "diff", "cmp", "ls", "stat", "file", "test", "[", "less",
+          "shasum", "sha256sum", "md5"}
 # Builtins that may change a variable they name, so its earlier value can't be trusted after.
 _SETS_VARIABLES = {"read", "unset", "declare", "typeset", "local", "readonly", "printf", "mapfile", "readarray",
                    "getopts"}
@@ -217,6 +221,8 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[Optio
         named = [place(re.sub(r"^\d*[<>|]+", "", word), at) for word in words]
         if path not in named and path not in [target for _, target in writes]:
             continue
+        if path not in [target for _, target in writes] and _reads_only(words, lead):
+            continue
         held = re.findall(r"<<\x01H(\d+)\x01", text)
         if (words[lead:lead + 1] == ["cat"] and held
                 and [target for mode, target in writes if mode != ">>"] == [path] and len(writes) == 1):
@@ -224,6 +230,15 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[Optio
         else:
             return None
     return written if wrote else _file(path)
+
+
+def _reads_only(words: List[str], lead: int) -> bool:
+    """Whether a piece's command only reads the files it names, such as open-pr's
+    check-body.mjs run before every --body-file post, or cat, grep, and wc."""
+    command = words[lead:lead + 1]
+    if command == ["node"]:
+        return words[lead + 1:lead + 2] != [] and words[lead + 1].endswith("check-body.mjs")
+    return bool(command) and command[0] in _READS
 
 
 def _file(path: str) -> Optional[str]:
