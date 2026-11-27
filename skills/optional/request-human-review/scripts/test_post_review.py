@@ -186,10 +186,14 @@ class Post(unittest.TestCase):
             return Fake.github(fake, command, *arguments)
         with patch.object(fake, 'github', dismissal_fails), self.assertRaisesRegex(ValueError, 'HTTP 502'):
             self.post(fake)
-        # Another review of this head requested changes meanwhile: the retry leaves that one.
+        # Another review of this head requested changes meanwhile: the retry leaves that one,
+        # whether it reuses its post or, with changed findings, posts again.
         fake.active = {'id': 42, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD}
         self.post(fake, retry=True)
         self.assertEqual([command for command, _, _ in fake.writes], ['review'])
+        (self.folder / 'note.md').write_text('Nit: name it total_amount_cents.')
+        self.post(fake, {'holds': False, 'draft': {'path': 'a.ts', 'line': 1, 'body_file': 'note.md'}}, retry=True)
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'review'])
         # What it would post changed, as a check that went from pending to failed does: it posts again.
         self.gate(None)
         checks = Fake(required='ci\tpending\nrequired: not all passed\n')
@@ -199,6 +203,20 @@ class Post(unittest.TestCase):
         self.assertEqual(retried['checks'], ['ci\tfail'])
         self.assertEqual([command for command, _, _ in checks.writes], ['review', 'review'])
         self.assertIn('ci\tfail', checks.writes[-1][2]['body.md'])
+
+    def test_a_retry_posts_again_when_only_an_inline_comments_text_changed(self):
+        self.gate('interface')
+        finding = {'holds': False, 'draft': {'path': 'a.ts', 'line': 1, 'body_file': 'note.md'}}
+        fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})
+        def dismissal_fails(command, *arguments):
+            if command == 'dismiss':
+                raise ValueError('github.sh dismiss failed: HTTP 502')
+            return Fake.github(fake, command, *arguments)
+        with patch.object(fake, 'github', dismissal_fails), self.assertRaisesRegex(ValueError, 'HTTP 502'):
+            self.post(fake, finding)
+        (self.folder / 'note.md').write_text('Nit: the column holds cents; name it total_cents.')
+        self.post(fake, finding, retry=True)
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'review', 'dismiss'])
 
     def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
         self.gate('interface')

@@ -225,10 +225,15 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 # that one still counts; a newer one stands.
                 record = folder / 'POSTED.json'
                 posted = json.loads(record.read_text()) if record.exists() else {}
-                sent = hashlib.sha256((body + json.dumps(drafts)).encode()).hexdigest()
+                # What it posts, inline comments' text included, which the drafts only name.
+                sent = hashlib.sha256((body + json.dumps(drafts) + ''.join(
+                    (folder / draft['body_file']).read_text() for draft in drafts)).encode()).hexdigest()
                 target = withdraw['id'] if withdraw and withdraw['state'] == 'CHANGES_REQUESTED' else None
+                if posted.get('head') == head:
+                    # A retry withdraws what the first run meant to, never a review posted since.
+                    target = posted.get('withdraw')
                 if posted.get('head') == head and posted.get('outcome') == outcome['outcome'] and posted.get('sent') == sent:
-                    outcome['review'], target = posted['review'], posted.get('withdraw')
+                    outcome['review'] = posted['review']
                 else:
                     outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
                     record.write_text(json.dumps({'head': head, 'outcome': outcome['outcome'], 'sent': sent,
