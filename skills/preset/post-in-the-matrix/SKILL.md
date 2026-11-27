@@ -103,8 +103,12 @@ done when it carries your ✅ (or your human's `lgtm`).
 2. **Act on it** with your own workflow. For a review, first look for a T3 thread that
    already holds the PR's review: from the PR's project checkout (or with `--project`),
    run `python3 <this skill's dir>/scripts/review_thread.py <owner/repo> <number>`, and
-   send to the thread it prints instead of starting a second one. If it exits 2, stop
-   and report its message rather than start a thread.
+   send to the thread it prints instead of starting a second one. If it exits 3, call
+   `list_thread_pull_requests` with `states: ["open"]` for each thread in its
+   `needLinks`, following `nextCursor` until it is null, save each thread's
+   `pullRequests` from every page as `{"<threadId>": {"pullRequests": [...]}}` in one JSON
+   file, and run it again with `--links <file>`. If it exits 2, stop and report its message rather than start a
+   thread.
 3. **Reply in the message's thread** in the manifest shape: the outcome on line 1, then
    any facts as `key: value` lines.
 
