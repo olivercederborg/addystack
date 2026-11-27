@@ -11,7 +11,8 @@ you had.
   and Codex agent, and a new one also waits while running checks use
   `checkQueue.maxCores` (10) cores or more. A waiting check is stopped at its start and
   resumed oldest first; one still waiting after 15 minutes is killed, and the agent is
-  told why. Agents also get a note before a Bash call while checks wait.
+  told why. A check idle for 30 seconds stops counting, so a watcher can't hold a slot.
+  Agents also get a note before a Bash call while checks wait.
   `"checkQueue": { "enabled": false }` turns it off. The note and Codex's notice are new
   hook entries: in a git checkout you pull yourself, run `addystack install` to add them;
   `addystack update` does it for you.

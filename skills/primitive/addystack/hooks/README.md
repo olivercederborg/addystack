@@ -150,7 +150,10 @@ every 2 seconds. On Nov 27, 2026 five agents' type checks and turbo's eight-task
 used all 18 cores and throttled the Mac. A waiting check is stopped within a tick of its
 start, never mid-run, saved to `~/.local/state/addystack/check-queue.json` first, and
 resumed oldest first, or when its agent's shell is gone; one still waiting after 15
-minutes with the queue full is killed. Every waiting check resumes when the guard starts or
+minutes with the queue full is killed. A running check idle for 30 seconds (under 0.1
+cores) stops counting toward `checkQueue.maxChecks`, so a watcher misread as a check can't
+hold a slot; one that wakes counts again without being stopped, so the count can pass the
+cap for a while. Every waiting check resumes when the guard starts or
 stops, on `"checkQueue": { "enabled": false }`, which applies after `addystack build`
 without a restart, and on any queue error. Stops and resumes go to the guard's log with an
 `event` field.

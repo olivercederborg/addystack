@@ -844,6 +844,8 @@ class AgentCommand(unittest.TestCase):
 
 
 TSC = ("node", "/x/node_modules/typescript/bin/tsc", "--noEmit")
+# CPU ns a running unit used across a 15-minute hold: one core throughout, so it's busy.
+BUSY = int(guard.HOLD_SECONDS * 1e9)
 
 
 class Queue:
@@ -1092,7 +1094,7 @@ class CheckQueue(unittest.TestCase):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))
         q.now += guard.HOLD_SECONDS
-        q.tick(q.check(1, 1000), q.check(2, 1000))
+        q.tick(q.check(1, 1000, cpu=BUSY), q.check(2, 1000))
         self.assertEqual(q.killed(), {221})
         kill = [line for line in q.lines if line.get("rule") == "queue"]
         self.assertEqual(len(kill), 1)
@@ -1113,7 +1115,7 @@ class CheckQueue(unittest.TestCase):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2, tool_call="call_9"))
         q.now += guard.HOLD_SECONDS
-        q.tick(q.check(1, 1000), q.check(2, 1000, tool_call="call_9"))
+        q.tick(q.check(1, 1000, cpu=BUSY), q.check(2, 1000, tool_call="call_9"))
         [line] = [line for line in q.lines if line.get("rule") == "queue"]
         self.assertEqual((line["tool_call_ids"], line["unit"], line["agent_pid"]), (["call_9"], "node tsc --noEmit", 100))
         self.assertIn("check queue stayed full", line["reason"])
@@ -1125,7 +1127,7 @@ class CheckQueue(unittest.TestCase):
         long = [proc(220, 100, argv=("/bin/zsh", "-lc", command)), proc(221, 220, argv=TSC, start=1000.0)]
         q.tick(q.check(1), long)
         q.now += guard.HOLD_SECONDS
-        q.tick(q.check(1, 1000), long)
+        q.tick(q.check(1, 1000, cpu=BUSY), long)
         [line] = [line for line in q.lines if line.get("rule") == "queue"]
         self.assertEqual(line["command_sha256"], hashlib.sha256(command.encode()).hexdigest())
         self.assertEqual(len(line["command"]), 500)
@@ -1188,6 +1190,59 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual(q.stopped(), {221, 231})
         q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
         self.assertEqual(q.stopped(), {231})
+
+    def idle_for(self, q, seconds, *checks, cpu=lambda tick: 0):
+        """Ticks check 1, plus checks, for `seconds`, check 1 at cpu(tick) ns."""
+        for tick in range(int(seconds / .5)):
+            q.tick(q.check(1, 1000, cpu=cpu(tick)), *checks)
+
+    def test_a_unit_idle_for_30_seconds_frees_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 29, q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})  # not yet a whole window
+        self.idle_for(q, 1.5, q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.lines[-1]["event"], "cont")
+
+    def test_an_idle_unit_that_wakes_counts_again_and_is_never_stopped(self):
+        q = Queue(self, cap=1)
+        self.idle_for(q, 31)
+        self.idle_for(q, 4, cpu=lambda tick: int(tick * .5e9))  # one core again
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+        q.tick(q.check(1, 1000, cpu=int(4e9)), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+        self.assertNotIn(211, [pid for pid, _ in q.sent])
+
+    def test_an_idle_unit_bursting_now_keeps_the_cpu_gate_closed(self):
+        q = Queue(self, cap=4, cores=1)
+        self.idle_for(q, 31)
+        self.idle_for(q, 1, cpu=lambda tick: int(tick * 1e9))  # 2 cores for the last second
+        self.assertTrue(q.governor._idle(211, q.now - .5))  # 1 CPU s over 30 s
+        q.tick(q.check(1, 1000, cpu=int(2e9)), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_with_a_failed_cpu_read_keeps_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 31, q.check(2, 1000), cpu=lambda tick: None if tick == 50 else 0)
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_late_scan_divides_by_the_idle_window(self):
+        # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
+        # it may be 0.117: read it as busy.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1))
+        q.now += 39.5
+        q.tick(q.check(1, 1000, cpu=int(3.5e9)))
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+
+    def test_an_idle_blocker_lets_a_held_unit_resume_instead_of_dying(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual((q.killed(), q.stopped()), (set(), set()))
 
     def test_memory_rules_still_kill_the_biggest_command_with_held_units(self):
         q = Queue(self, cap=1)

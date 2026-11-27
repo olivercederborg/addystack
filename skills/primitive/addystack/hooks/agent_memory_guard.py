@@ -39,7 +39,9 @@ of its start, never mid-run, saved to ~/.local/state/addystack/check-queue.json 
 resumed oldest first; one still waiting after 15 minutes with the queue full is killed,
 and agent-memory-guard-notice.py tells the agent why, as it does for every kill here. The
 next guard start, a SIGTERM, `"checkQueue": {"enabled": false}`, or any governor error
-resumes every waiting check.
+resumes every waiting check. A running check idle for 30 seconds (under 0.1 cores) stops
+counting toward maxChecks, so a watcher can't hold a slot; one that wakes counts again
+without being stopped, so the count can pass maxChecks for a while.
 
 Known limits:
 - A checker started outside an agent's commands, in the user's own terminal, isn't
@@ -49,7 +51,7 @@ Known limits:
 - A checker is the binary, or the first argument an interpreter gets that isn't an
   option, so one after an option's own argument, as in `node --require x.cjs tsc`, isn't
   queued. A watcher is told only by its first argument or a watch flag, so `vitest
-  --config v.ts watch` counts as a check and holds a slot until it exits.
+  --config v.ts watch` counts as a check and holds a slot until it idles for 30 seconds.
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
   half-second tick escapes, since macOS hides those binaries' environment; the ulimit
   backstop caps how many there can be. Work an agent hands to launchd or XPC, or starts
@@ -644,6 +646,14 @@ INTERPRETERS = {"node", "bun", "bunx", "deno", "npx"}
 WATCH_FLAGS = {"tsc": {"--watch", "-w"}, "tsgo": {"--watch", "-w"}, "vitest": {"--watch", "-w"},
                "jest": {"--watch", "--watchAll"}}
 UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finished
+# A running unit that used under IDLE_CORES over the last IDLE_SECONDS, with every CPU read
+# in them answered, stops counting toward maxChecks: a watcher the argv tests misread as a
+# check would otherwise hold a slot until it exits, and get queued checks killed. An idle
+# dev server measured under 0.05 cores (ABANDONED_CORES above); the lightest check measured,
+# a package's tsc, averaged 0.72. One that wakes counts again; it's never stopped, so the
+# count can pass maxChecks for a while, and new units wait.
+IDLE_SECONDS = 30
+IDLE_CORES = 0.1
 
 # top: the topmost heavy process's ident, the unit's id; head: its command's head;
 # members: the top and its descendants.
@@ -744,7 +754,8 @@ class Governor:
         self.enabled = True
         self.running = {}  # top -> scans missed in a row
         self.held = {}  # top -> {"members": {ident: Proc}, "since": now, "head", "text"}, oldest first
-        self.cpu = {}  # top -> (last, debt, began, [(now, total ns)])
+        # top -> (last, debt, began, [(now, total ns)], when a member's CPU read last failed)
+        self.cpu = {}
         self.last_admit = None  # monotonic time a unit last started or resumed
         self.versions = {}  # ident -> exec version of each agent process the last tick saw
         self.error = None
@@ -848,11 +859,11 @@ class Governor:
         self.versions = {proc.ident: proc.version for members in commands.values() for proc in members}
         # 5. Kill a unit held too long while the queue is still full. One held only by the
         # admission spacing gets its turn within GATE_WINDOW_SECONDS instead.
-        full = len(self.running) >= config.maxChecks or (
-            bool(self.running) and self._cores(now) >= config.maxCores)
+        busy = self._busy(now)
+        full = busy >= config.maxChecks or (bool(self.running) and self._cores(now) >= config.maxCores)
         for top, unit in list(self.held.items()):
             if full and now - unit["since"] >= HOLD_SECONDS:
-                self._kill(owners, top, unit, len(self.running))
+                self._kill(owners, top, unit, busy)
 
     def _attended(self, top, members, agents):
         """Whether an agent still waits on the unit: its parents, up from its top, still
@@ -869,9 +880,10 @@ class Governor:
         return False
 
     def _room(self, config, now):
-        """Whether one more unit may run: under the cap, and when any unit runs, nothing
-        admitted within the gate's window and running units under maxCores over it."""
-        if len(self.running) >= config.maxChecks:
+        """Whether one more unit may run: busy units under the cap, and when any unit runs,
+        idle ones included, nothing admitted within the gate's window and running units
+        under maxCores over it."""
+        if self._busy(now) >= config.maxChecks:
             return False
         if not self.running:
             return True
@@ -884,13 +896,33 @@ class Governor:
         for top in self.running:
             if top not in units:
                 continue
-            last, debt, began, marks = self.cpu.get(top) or ({}, {}, wall, [])
+            last, debt, began, marks, unread = self.cpu.get(top) or ({}, {}, wall, [], None)
             gained, last, debt = cpu_gained(units[top].members, last, debt, began)
             total = (marks[-1][1] if marks else 0) + gained
-            # Keep the newest mark at least a window old, so the window is measured whole.
-            old = [i for i, mark in enumerate(marks) if now - mark[0] >= GATE_WINDOW_SECONDS]
+            if any(proc.cpu is None for proc in units[top].members):
+                unread = now  # a failed read gains nothing, so it could pass for idle
+            # Keep the newest mark at least the idle window old, so both windows are
+            # measured whole.
+            old = [i for i, mark in enumerate(marks) if now - mark[0] >= IDLE_SECONDS]
             marks = marks[old[-1] if old else 0:] + [(now, total)]
-            self.cpu[top] = (last, debt, began, marks)
+            self.cpu[top] = (last, debt, began, marks, unread)
+
+    def _busy(self, now):
+        """How many running units count toward maxChecks: those not idle."""
+        return sum(1 for top in self.running if not self._idle(top, now))
+
+    def _idle(self, top, now):
+        """Whether the unit, tracked at least IDLE_SECONDS, used under IDLE_CORES since its
+        newest mark that old, over IDLE_SECONDS, so a late scan reads high, never low, and
+        had no failed CPU read since then."""
+        if top not in self.cpu:
+            return False
+        _, _, _, marks, unread = self.cpu[top]
+        old = [mark for mark in marks if now - mark[0] >= IDLE_SECONDS]
+        if not old or (unread is not None and unread >= old[-1][0]):
+            return False
+        since, before = old[-1]
+        return (marks[-1][1] - before) / 1e9 / IDLE_SECONDS < IDLE_CORES
 
     def _cores(self, now):
         """Cores the running units used over the last GATE_WINDOW_SECONDS: each unit's CPU
@@ -898,7 +930,7 @@ class Governor:
         tracked for less than the window counts what it used, over the whole window."""
         cores = 0
         for top in self.running:
-            marks = self.cpu.get(top, (None, None, None, []))[3]
+            marks = self.cpu.get(top, (None, None, None, [], None))[3]
             if len(marks) < 2:
                 continue
             old = [mark for mark in marks if now - mark[0] >= GATE_WINDOW_SECONDS]
@@ -912,7 +944,7 @@ class Governor:
         counts its first tick."""
         self.running[top] = 0
         _, last, debt = cpu_gained(members, {}, {}, wall)
-        self.cpu[top] = (last, debt, wall, [(now, 0)])
+        self.cpu[top] = (last, debt, wall, [(now, 0)], None)
 
     def _hold(self, owners, unit, command, now, wall):
         members = {proc.ident: proc for proc in unit.members}
