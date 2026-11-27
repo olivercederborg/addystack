@@ -5369,13 +5369,32 @@ class CardCheckUnanswerable(unittest.TestCase):
                       self.CARD + "With **b**, #12 waits for the release.\n",
                       # A letter in a code block is an example.
                       self.CARD.replace("- `b` → no: hold it until the release\n", "") +
-                      "```text\nNext: say **b** to hold it\n```\n"):
+                      "```text\nNext: say **b** to hold it\n```\n",
+                      # Shapes from 6,231 real replies (Nov 20–27, 2026) that each define their letters.
+                      "Next: `a` merge #12 · `b` leave it open.\n",
+                      "**Next**: `a`: tell me \"merged\". `b`: #12 stays a draft.\n",
+                      "Reply `a` and I'll approve it. Reply `b` and I'll post the comments only.\n",
+                      "- **a** Start a worker for the fix, or **b** ship without it.\n",
+                      "If you approve now (**a**), the push dismisses it; holding (**b**) keeps it.\n",
+                      "Option **a** removes the step. Option **b** keeps it.\n",
+                      "Next: **a**, read the issue first. **b**, stop here.\n",
+                      "**Pick**: 1. **Routes** → `a` the three main routes.\n",
+                      # A pick reported as made, and a quote, ask nothing.
+                      "You picked `a`, so I posted the draft.\n",
+                      'The reply said "say **a** or **b**" with no options.\n'):
             with self.subTest(reply=reply):
                 self.assertIsNone(self.reason(reply, options=(("decision", "merge #12"),)))
 
+    def test_sends_back_a_standing_call_named_by_letter(self):
+        # Real shapes: an open call carried in later replies by its letters alone.
+        for reply in ("#12's approval still waits on your **a** or **b**.\n",
+                      "Still open: choose `a` or `b` from two replies back.\n"):
+            with self.subTest(reply=reply):
+                self.assertIn("asks for `a` and `b`", self.reason(reply, options=None))
+
     def test_reads_what_the_reader_sees_not_the_block(self):
         # No turn block at all, and a block that defines b while the visible Next list doesn't.
-        self.assertIn("asks for `b`", self.reason("Merged #12. Say `b` to revert it.\n", options=None))
+        self.assertIn("asks for `b`", self.reason("Merged #12. Still open: your revert call, `b`.\n", options=None))
         self.assertIn("asks for `b`", self.reason(self.CARD.replace("- `b` → no: hold it until the release\n", "") +
                                                   "Or say **b**.\n"))
 

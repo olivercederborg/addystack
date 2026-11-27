@@ -37,7 +37,12 @@ and passes outside T3 or when the database can't be read.
 
 It also sends back a reply the reader can't answer from what it shows (unanswerable): one
 that asks for an option letter, marked as **a**, `a`, or **`a`**, that no line or sentence
-it shows opens with, or that points to steps or options in an earlier reply. On Nov 26 and
+it shows opens or labels (a line, a sentence, a `·` or `→` item, "Reply `a` and I'll …",
+"(**a**)"), or that points to steps or options in an earlier reply. A pick it reports as made
+("you picked `a`") and a quote ask nothing. Replayed on 6,242 T3 replies from Nov 20 to 27,
+2026, it sends back 72, and about 57 of those carry an open call by its letters alone
+("still waits on your **a** or **b**") or point to an earlier reply's steps; the rest are
+mostly one-letter code names in review findings. On Nov 26 and
 27, 2026 a coordinator re-asked open calls as "say **a** or **b**" and "following the 5
 steps in my last reply", and the user asked four times for the full question again
 (CardCheckUnanswerable replays them). It reads the text outside code fences and HTML
@@ -229,9 +234,20 @@ def wake_gap(turn, reply, thread, now):
 LETTER = re.compile(r"(?<![\w`])(?:\*\*`([a-e])`\*\*|\*\*([a-e])\*\*|`([a-e])`)(?![\w`])")
 # What may come before a letter that opens an option: a line's start past list and quote
 # markers, or a sentence's or table cell's start, with the option's own bold.
-OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:|]\**[ \t]+)(?:\*\*)?")
+OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:;|·→]\**[ \t]+)(?:\*\*)?")
 # What follows such a letter: the option's text, not "or b" or "and b".
-STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:—–-]+[ \t]*)?(?!(?:or|and|nor)\b)\w")
+STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:)*]")
+# A letter a pick verb opens, as in "Reply `a` and I'll approve it" or "Picking **a** posts the reply".
+PICKS = re.compile(r"(?:.*[\s(]|)(?:reply|say|pick|picking|answer|choose|choosing|option)[ \t]+(?:\*\*)?", re.I)
+# A letter in parentheses after what it does, as in "approve now (**a**)".
+LABEL = re.compile(r".*\w[^\n(]*\((?:\*\*)?")
+SHUT = re.compile(r"(?:\*\*)?\)")
+THEN = re.compile(r"(?:\*\*)?[ \t]+and[ \t]+(?:I|I'll|I’ll|we)\b")
+# A letter that follows a defined one in the same line, as in "**a** builds it, or **b** stops here".
+NEXT_ONE = re.compile(r".*(?:,|\bor)[ \t]*(?:\*\*)?")
+# A letter the reply reports as already picked, as in "you picked `a`" or "I sent your **a**": it asks nothing.
+PICKED = re.compile(r".*\b(?:picked|said|chose|took|taking|resolved as|sent your|went with)[ \t]+(?:\*\*)?", re.I)
+QUOTED = re.compile(r"\"[^\"\n]*\"|“[^”\n]*”")  # a quote shows someone's words, not this reply's ask
 # Steps or options the reply says live in an earlier one, as in "the 5 steps in my last reply"
 # or "the earlier App steps". Not "earlier" alone: "I got b wrong earlier" points nowhere.
 EARLIER = re.compile(r"\b(?:steps?|options?|instructions?)\b[^.\n]{0,40}?\b(?:in|from|of)\s+(?:my|the|your|our)\s+"
@@ -249,10 +265,20 @@ def unanswerable(reply):
     shown = re.sub(r"<!--.*?(?:-->|\Z)", "", shown, flags=re.S)  # the turn block, or any comment, shows nothing
     asked, defined = [], set()
     for line in shown.splitlines():
+        line = QUOTED.sub(lambda quote: " " * len(quote.group(0)), line)
+        previous = False  # whether the line's last letter was defined
         for found in LETTER.finditer(line):
             letter = next(group for group in found.groups() if group)
+            before = line[:found.start()]
+            if PICKED.fullmatch(before):
+                continue
             asked += [letter] if letter not in asked else []
-            if OPENS.fullmatch(line[:found.start()]) and STATES.match(line, found.end()):
+            states = STATES.match(line, found.end())
+            previous = bool(states and (OPENS.fullmatch(before) or PICKS.fullmatch(before)
+                                        or previous and NEXT_ONE.fullmatch(before))
+                            or PICKS.fullmatch(before) and THEN.match(line, found.end())
+                            or LABEL.fullmatch(before) and SHUT.match(line, found.end()))
+            if previous:
                 defined.add(letter)
     reasons = []
     if missing := [letter for letter in asked if letter not in defined]:
@@ -260,7 +286,7 @@ def unanswerable(reply):
         reasons.append(f"this reply asks for {' and '.join(f'`{letter}`' for letter in missing)}, but nothing it shows "
                        f"says what {does}, so the reader can't answer. List each option the reply asks for in its Next "
                        "options, with what it does")
-    if pointer := EARLIER.search(shown):
+    if pointer := EARLIER.search(QUOTED.sub("", shown)):
         reasons.append(f"this reply points to \"{pointer.group(0)}\", which the reader may no longer see. Write those "
                        "steps or options out in this reply")
     return ". ".join(reason[0].upper() + reason[1:] if at else reason for at, reason in enumerate(reasons)) or None
