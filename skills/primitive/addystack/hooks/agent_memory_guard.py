@@ -54,6 +54,11 @@ Known limits:
   option, so one after an option's own argument, as in `node --require x.cjs tsc`, isn't
   queued. A watcher is told only by its first argument or a watch flag, so `vitest
   --config v.ts watch` counts as a check and holds a slot until it idles for 30 seconds.
+- A check counts as idle only after 30 seconds with the same processes, so one that starts
+  a short-lived worker every few seconds keeps its slot, as before idle release. A worker
+  one scan missed and the next found again leaves a CPU debt on its parent (cpu_gained,
+  shared with the abandoned-command rule since v0.1.0) that hides later reaped CPU, so a
+  busy check can read idle and one more check may run.
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
   half-second tick escapes, since macOS hides those binaries' environment; the ulimit
   backstop caps how many there can be. Work an agent hands to launchd or XPC, or starts
