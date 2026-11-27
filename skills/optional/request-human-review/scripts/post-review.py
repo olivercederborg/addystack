@@ -140,6 +140,11 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     if not gates.same_diff(verdict['base'], judged, head):
         raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
     findings = review['findings']
+    # review-code's rule: a blocking call always holds. A finding that doesn't say true or false
+    # is refused, never read as not holding.
+    for finding in findings:
+        if not isinstance(finding.get('holds'), bool) or finding.get('call') == 'blocking' and not finding['holds']:
+            raise ValueError(f"finding {finding.get('title')!r}: holds is true or false, and true for a blocking call")
     holds = any(finding['holds'] for finding in findings)
     second = review.get('second_opinion') or {'status': 'missing', 'why': "the review didn't say whether it ran"}
     if second.get('status') not in gates.SECOND_OPINION:

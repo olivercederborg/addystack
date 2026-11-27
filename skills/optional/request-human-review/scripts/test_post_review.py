@@ -104,6 +104,15 @@ class Post(unittest.TestCase):
         # The required checks, then the head, are the last reads before the approval.
         self.assertEqual(fake.commands[fake.commands.index('approve') - 2:fake.commands.index('approve')], ['required', 'head'])
 
+    def test_a_finding_without_a_true_or_false_holds_or_a_blocking_one_that_doesnt_hold_posts_nothing(self):
+        for finding in ({'call': 'blocking', 'holds': None, 'title': 'totals overflow'},
+                        {'call': 'non-blocking', 'title': 'name it total_cents'},
+                        {'call': 'blocking', 'holds': False, 'title': 'totals overflow'}):
+            fake = Fake()
+            with self.subTest(finding), self.assertRaisesRegex(ValueError, 'holds is true or false'):
+                self.post(fake, finding)
+            self.assertEqual(fake.writes, [])
+
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
                {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}
