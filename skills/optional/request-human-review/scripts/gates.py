@@ -7,7 +7,8 @@ GATES.json, written by the agent from the whole PR (base...head), never a re-rev
     {"pr": 412, "base": "<sha>", "head": "<sha>",
      "decisions": [{"id": "D2" | null, "decision": "one line", "code": "path:line",
                     "gate": "one-way-door" | "pattern" | "interface" | "product" | null,
-                    "why": "what makes it a gate, or the precedent it follows as path:line"}],
+                    "why": "what makes it a gate, or the precedent it follows as path:line",
+                    "ask": "the question the human answers; a gated decision only"}],
      "sensitive": [{"area": "money-movement" | "auth" | "tenancy" | "concurrency" | "dependencies",
                     "code": "path:line"}]}
 
@@ -163,6 +164,11 @@ def decide(verdict: dict, holds: bool, required: str, second_opinion: str) -> st
     if gated(verdict) or second_opinion == 'missing':
         return 'needs-human'
     return {'passed': 'approve', 'pending': 'wait', 'failed': 'not-approved'}[required]
+
+
+def line(decision: dict) -> str:
+    """A gated decision as one Markdown list item, the same in a review and a handoff."""
+    raise NotImplementedError
 
 
 def section(verdict: dict, no_second_opinion: str | None = None) -> str:

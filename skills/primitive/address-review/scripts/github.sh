@@ -11,6 +11,7 @@
 #   github.sh target --branch B [--parent P]  the same for a branch with no PR, against P or the default branch
 #   github.sh reply N COMMENT_ID FILE     reply to a thread (its first comment's replyTo id)
 #   github.sh comment N FILE              a PR comment
+#   github.sh request N LOGIN...          request each login's review of the PR
 #   github.sh resolve THREAD_ID           resolve a review thread
 #   github.sh anchors N DRAFTS.json       label each draft's lines changed, context only, or outside the diff
 #   github.sh review N SHA DRAFTS.json [EVENT BODY]  post inline comments as one review; EVENT is
@@ -28,7 +29,7 @@
 # instead of sending it.
 set -euo pipefail
 
-usage() { grep -v '^# Copy of ' "$0" | sed -n '2,27p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { grep -v '^# Copy of ' "$0" | sed -n '2,28p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
 repo() { gh repo view --json owner,name --jq '.owner.login + "/" + .name'; }
 send() {
   if [ "${DRY_RUN:-}" = 1 ]; then printf 'DRY_RUN:'; printf ' %q' "$@"; echo; else "$@"; fi
