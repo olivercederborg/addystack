@@ -93,6 +93,19 @@ def pulls(text, origin):
     return Pulls(tuple(dict.fromkeys(refs)), tuple(dict.fromkeys(unread)))
 
 
+class Wait(NamedTuple):
+    pull: str  # the PR that waits, "owner/repo#N"
+    blocker: str  # what it waits on, as written
+    blocker_pull: str | None  # "owner/repo#N" when the blocker is one PR written alone
+
+
+def waits(cell, origin):
+    """The Waits on entries, split at `;`, that name their PR as `<PR> ← <blocker>`, such as
+    `#21 ← acme/tools#138` or `#20 ← sandbox tests`, resolved as pulls() resolves refs. Any
+    other entry, such as a call, a slot, or a worker, is free text and isn't returned."""
+    raise NotImplementedError
+
+
 def workers(lines, start, end):
     """The Workers table in lines[start:end] as rows of {column: cell}, and the rows whose
     cells don't match the header."""

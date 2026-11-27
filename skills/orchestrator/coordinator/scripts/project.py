@@ -48,6 +48,7 @@ import tempfile
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 import project_md
 import project_queue
@@ -435,6 +436,15 @@ def this_environment() -> str:
         return path.read_text().strip()
     except OSError:
         return ""
+
+
+IDLE_DRAFT = 1800  # seconds a draft may sit at one head before it needs a named wait
+
+
+class Pull(NamedTuple):
+    state: str  # "OPEN", "MERGED", or "CLOSED"
+    draft: bool
+    head: str  # the head commit's SHA
 
 
 def view_pr(ref: str) -> list | None:
