@@ -145,7 +145,7 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[str],
     if path is None:
         return None
     written = None
-    for other, (words, lead, text, at) in enumerate(pieces[:index]):
+    for words, lead, text, at in pieces[:index]:
         writes = [(mode, place(target, at)) for mode, target in _WRITE.findall(text)]
         named = [place(re.sub(r"^\d*[<>|]+", "", word), at) for word in words]
         if path not in named and path not in [target for _, target in writes]:
