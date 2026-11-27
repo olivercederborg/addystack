@@ -144,9 +144,13 @@ show the test that fails on the base and passes here, or the command output.
   payments, personal data, secrets, migrations, dependencies, or infra.
 - **Review artifact**: when the repo's PR rules or the user ask for one, build it with
   the installed skill for review artifacts and link it first in the Review guide.
-- **Links**: link issues and plans rather than copying them. Use the repo's
-  issue-linking phrase (for example `Closes EX-12`), or "Part of" when the issue isn't
-  fully done.
+- **Links**: link issues and plans rather than copying them, with the repo's
+  issue-linking phrase (for example `Closes EX-12`). In Linear, write the closing
+  phrase on every PR that carries the issue's planned work, each stack layer included:
+  Linear moves the issue when its last linked PR merges, and only if that PR closes it.
+  Write "Part of" only when work remains that no PR covers yet. In a tracker that
+  closes on the first merge, such as GitHub Issues, the closing phrase goes on the PR
+  that finishes the issue.
 - **Words**: the terms in the `domain-modeling` glossary (`CONTEXT.md`), when the repo has one.
 - **Title**: the outcome in the imperative, under 70 characters.
 - **Describe only.** Code review belongs to `verify-work` and `review-loop`. Put known
