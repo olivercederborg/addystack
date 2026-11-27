@@ -91,6 +91,17 @@ class Plan(unittest.TestCase):
         self.assertEqual([reviewer['login'] for reviewer in switched['request']], ['bob'])
         reviewed = self.plan(judged, self.facts(viewer='carol', handoffs=[earlier], engaged=['alice']), chosen=('alice',))
         self.assertEqual((reviewed['post'], reviewed['request']), (False, []))
+        back = self.plan(judged, self.facts(viewer='carol', handoffs=[earlier]))
+        self.assertEqual([reviewer['login'] for reviewer in back['request']], ['alice'])
+        bob_first = handoff.read(self.plan(judged, self.facts(viewer='carol'), chosen=('bob',))['comment'])
+        to_rule = self.plan(judged, self.facts(viewer='carol', handoffs=[bob_first]))
+        self.assertEqual([reviewer['login'] for reviewer in to_rule['request']], ['alice'])
+
+    def test_the_authors_pick_covers_only_its_own_domains(self):
+        judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
+        drafted = self.plan(judged, self.facts(viewer='carol', engaged=['alice']), chosen=('dave',), with_suggested=True)
+        self.assertEqual((drafted['uncovered'], drafted['request']),
+                         (['billing'], [{'login': 'dave', 'role': 'chosen', 'domains': []}]))
 
     def test_when_reviewers_names_only_the_author_the_handoff_says_nobody_was_asked(self):
         lonely = self.plan(verdict(decision('D1', 'packages/auth/a.ts:1')), self.facts(author='dave', rules=reviewers.parse(

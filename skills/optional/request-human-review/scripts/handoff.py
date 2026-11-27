@@ -103,13 +103,17 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     suggested = reviewers.pick(facts['rules'], placed, author, engaged, facts['load'])
     uncovered = []
     if chosen:
-        extra = reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['load'])
-        uncovered = sorted({name for reviewer in extra for name in reviewer['domains'] if name})
-        covered = sorted({decision['domain'] for decision in placed if decision['domain']} - set(uncovered))
+        # The pick's own coverage: the listed domains where it is a P1 or P2.
+        listed = sorted({decision['domain'] for decision in placed
+                         if decision['domain'] and reviewers.names(facts['rules'], decision['domain'])})
+        def covers(login):
+            return [name for name in listed if reviewers.has(reviewers.names(facts['rules'], name)[:2], login)]
+        uncovered = [name for name in listed if not any(name in covers(login) for login in chosen)]
         # Someone already requested, or who already reviewed, isn't asked again.
-        request = [{'login': login, 'role': 'chosen', 'domains': covered} for login in reviewers.unique(chosen)
+        request = [{'login': login, 'role': 'chosen', 'domains': covers(login)} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
-        request += extra if with_suggested else []
+        if with_suggested:
+            request += reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['load'])
     else:
         request = list(suggested)
     last = facts['handoffs'][-1] if facts['handoffs'] else None
@@ -117,9 +121,10 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         sorted(decision['key'] for decision in last['decisions'])
     named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
     requested = [reviewer['login'] for reviewer in request]
-    # A run that commented, then failed to request: its reviewers who were never asked, unless an
-    # author's pick now replaces them.
-    request += [reviewer for reviewer in (last['reviewers'] if same and not chosen else [])
+    # A run that commented, then failed to request: its reviewers who were never asked, when that
+    # run picked by the rule as this one does; a pick by the author replaces or is replaced.
+    retry = same and not chosen and last.get('chosen_by') == 'rule'
+    request += [reviewer for reviewer in (last['reviewers'] if retry else [])
                 if not reviewers.has([*engaged, *requested, author], reviewer['login'])]
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
     if not request and not engaged:
