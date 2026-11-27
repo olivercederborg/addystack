@@ -30,7 +30,9 @@ def parse(text: str) -> list:
         if not line or line.startswith('#'):
             continue
         # A `#` after whitespace starts an inline comment, as in CODEOWNERS.
-        pattern, *names = re.split(r'\s#', line, maxsplit=1)[0].split()
+        # A backslash escapes a space in a pattern, as in gitignore.
+        pattern, *names = re.findall(r'(?:\\.|\S)+', re.split(r'\s#', line, maxsplit=1)[0])
+        pattern = pattern.replace('\\ ', ' ')
         if current is None:
             problems.append(f'line {number}: {pattern} comes before any `## <domain>` heading')
         elif current == UNOWNED and names:
