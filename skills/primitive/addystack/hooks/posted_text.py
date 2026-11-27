@@ -44,6 +44,9 @@ _HOLD = re.compile(r"\x01([HQ])(\d+)\x01")
 _WRITE = re.compile(r"(?<![<>&])\d*(>>|>\|?)\s*([^\s<>&]+)")
 # A quoted command substitution that only prints a heredoc, gh's usual --body form.
 _CAT = re.compile(r"\$\(\s*cat\s*<<\x01H(\d+)\x01\s*\)")
+# What the shell expands in a double-quoted string, an unquoted word, or an unquoted
+# heredoc: a $ or a backtick it doesn't escape.
+_EXPANDS = re.compile(r"(?<!\\)[$`]")
 _COMMENT = re.compile(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", re.M)
 
 
@@ -64,36 +67,51 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
     command = tool_input.get("command")
     if not isinstance(command, str) or not re.search(r"\bgh\b", command):
         return []
-    bodies: List[str] = []
-    quoted: List[str] = []
+    # A heredoc's body, None when the shell expands it (an unquoted delimiter and a $ or `),
+    # so what it posts can't be known here.
+    bodies: List[Optional[str]] = []
+    quoted: List[Tuple[str, bool]] = []  # each quoted string's text, and whether the shell expands it
 
     def hold_heredoc(match: "re.Match") -> str:
         whole, delimiter = match.group(0), match.group(1)
-        opener = re.match(r"<<(-?)\s*['\"]?\w+['\"]?", whole)
+        opener = re.match(r"<<(-?)\s*(['\"]?)\w+['\"]?", whole)
         line_end = whole.index("\n")
         body = whole[line_end + 1:-len(delimiter) - 1]
         if opener.group(1):  # <<- drops each line's leading tabs
             body = re.sub(r"^\t+", "", body, flags=re.M)
-        bodies.append(body)
+        bodies.append(None if not opener.group(2) and _EXPANDS.search(body) else body)
         return f"<<\x01H{len(bodies) - 1}\x01{whole[opener.end():line_end]}\n"
 
     def hold_quoted(match: "re.Match") -> str:
         text = match.group(0)
-        quoted.append(text[1:-1] if text[0] == "'" else re.sub(r'\\([\\"$`])', r"\1", text[1:-1]))
+        if text[0] == "'":
+            quoted.append((text[1:-1], False))
+        else:
+            quoted.append((re.sub(r'\\([\\"$`])', r"\1", text[1:-1]), bool(_EXPANDS.search(text[1:-1]))))
         return f"\x01Q{len(quoted) - 1}\x01"
 
     code = _COMMENT.sub("", QUOTED.sub(hold_quoted, HEREDOC.sub(hold_heredoc, command)))
 
-    def value(word: str) -> str:
+    def value(word: str) -> Optional[str]:
         """A word's text with its quoted strings and heredoc bodies put back; a quoted
-        `"$(cat <<EOF … EOF)"` is the heredoc's body."""
+        `"$(cat <<EOF … EOF)"` is the heredoc's body. None when the shell expands any of
+        it, such as `"see $LINK"`."""
+        unknown = []
+
         def put_back(held: "re.Match") -> str:
             if held.group(1) == "H":
-                return bodies[int(held.group(2))]
-            text = quoted[int(held.group(2))]
-            cat = _CAT.fullmatch(text)
-            return bodies[int(cat.group(1))] if cat else _HOLD.sub(put_back, text)
-        return _HOLD.sub(put_back, word)
+                body = bodies[int(held.group(2))]
+            else:
+                text, expands = quoted[int(held.group(2))]
+                cat = _CAT.fullmatch(text)
+                if not cat:
+                    unknown.extend([True] if expands else [])
+                    return _HOLD.sub(put_back, text)
+                body = bodies[int(cat.group(1))]
+            unknown.extend([True] if body is None else [])
+            return body or ""
+        found = _HOLD.sub(put_back, word)
+        return None if unknown or _EXPANDS.search(_HOLD.sub("", word)) else found
 
     def place(word: str, at: Optional[str]) -> Optional[str]:
         """The absolute path a word names when run from `at`, or None."""
@@ -144,7 +162,8 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[str],
     a piece after the gh command, such as `&& rm body.md`, runs once gh has read it."""
     if path is None:
         return None
-    written = None
+    written: Optional[str] = None
+    wrote = False
     for words, lead, text, at in pieces[:index]:
         writes = [(mode, place(target, at)) for mode, target in _WRITE.findall(text)]
         named = [place(re.sub(r"^\d*[<>|]+", "", word), at) for word in words]
@@ -153,10 +172,10 @@ def _file_body(path: Optional[str], index: int, pieces: list, bodies: List[str],
         held = re.findall(r"<<\x01H(\d+)\x01", text)
         if (words[lead:lead + 1] == ["cat"] and held
                 and [target for mode, target in writes if mode != ">>"] == [path] and len(writes) == 1):
-            written = bodies[int(held[-1])]
+            written, wrote = bodies[int(held[-1])], True
         else:
             return None
-    return written if written is not None else _file(path)
+    return written if wrote else _file(path)
 
 
 def _file(path: str) -> Optional[str]:

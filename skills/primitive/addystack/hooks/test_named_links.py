@@ -133,6 +133,19 @@ class PostedText(unittest.TestCase):
                 self.assertEqual(post, posted_text.Post("gh pr comment 7", "See DEV-4."))
         self.assertEqual(self.posts("Bash", bash("printf 'see #1' | gh pr comment 7 -F -")), [])
 
+    def test_text_the_shell_expands_passes(self):
+        for command in ('LINK=x; gh pr comment 1 --body "see #12 $LINK"', "gh pr comment 1 -b see#12$X",
+                        'gh pr comment 1 -b "see #12 `date`"', "gh pr comment 1 -F - <<EOF\nsee #12 $LINK\nEOF",
+                        'gh pr create --body "$(cat <<EOF\nsee #12 $LINK\nEOF\n)"',
+                        "cat > b.md <<EOF\nsee #12 $LINK\nEOF\ngh pr create -F b.md"):
+            with self.subTest(command=command):
+                self.assertEqual(self.posts("Bash", bash(command)), [])
+        for command in ("gh pr comment 1 -b 'costs $5, see #12'", 'gh pr comment 1 -b "costs \\$5, see #12"',
+                        "gh pr comment 1 -F - <<'EOF'\ncosts $5, see #12\nEOF"):
+            with self.subTest(command=command):
+                [post] = self.posts("Bash", bash(command))
+                self.assertIn("$5, see #12", post.text)
+
     def test_a_body_file_relative_to_where_the_command_runs(self):
         pathlib.Path(self.folder, "sub").mkdir()
         pathlib.Path(self.folder, "sub", "b.md").write_text("See DEV-4.")
