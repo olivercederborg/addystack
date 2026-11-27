@@ -1,4 +1,4 @@
-# review-teammate-pr evals
+# review-code evals
 
 Twelve scenarios, each a small git repo plus `pr.json` standing in for the PR metadata:
 `fee-rows` (a first review, then a reworded draft), `held-defect` (a minor defect holds
@@ -16,7 +16,7 @@ scripted replies, and assertions are in [`evals.json`](evals.json), and
 `maintainer/evals.py` runs them.
 
 ```sh
-./setup.sh   # builds the repos in /tmp/review-teammate-pr-evals
+./setup.sh   # builds the repos in /tmp/review-code-evals
 ```
 
 ## How to run

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Builds the review-teammate-pr eval repos in /tmp. Usage: ./setup.sh [target-dir]
+# Builds the review-code eval repos in /tmp. Usage: ./setup.sh [target-dir]
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 # Resolve `..` and symlinks first, so the guard sees the path rm -rf will delete.
-out=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "${1:-/tmp/review-teammate-pr-evals}")
+out=$(python3 -c 'import os, sys; print(os.path.realpath(sys.argv[1]))' "${1:-/tmp/review-code-evals}")
 case "$out" in /tmp/?*|/private/tmp/?*) ;; *) echo "Refusing to write outside /tmp: $out" >&2; exit 1;; esac
 rm -rf "$out" && mkdir -p "$out"
 commit() { git -c user.email=eval@example.com -c user.name=eval commit -qm "$1"; }

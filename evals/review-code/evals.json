@@ -2,10 +2,10 @@
   "scenarios": [
     {
       "id": "fee-rows",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4610",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4610",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/fee-rows",
+      "cwd": "review-code/fee-rows",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and pushes succeed.",
       "turns": [
         "reword the second draft so it reads \"we should probably …\" instead",
@@ -32,10 +32,10 @@
     },
     {
       "id": "held-defect",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4612",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4612",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/held-defect",
+      "cwd": "review-code/held-defect",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
       "turns": [
         "make the file-name finding non-blocking",
@@ -50,10 +50,10 @@
     },
     {
       "id": "bot-defect",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4613",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4613",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/bot-defect",
+      "cwd": "review-code/bot-defect",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
       "turns": [
         "a"
@@ -67,10 +67,10 @@
     },
     {
       "id": "exposure",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4614",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4614",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/exposure",
+      "cwd": "review-code/exposure",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
       "turns": [],
       "assertions": [
@@ -81,10 +81,10 @@
     },
     {
       "id": "dismissed-ci",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4611",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4611",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/dismissed-ci",
+      "cwd": "review-code/dismissed-ci",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `approved`, posted no comments, the user approved it, and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head, which dismissed the user's approval.",
       "turns": [],
       "assertions": [
@@ -97,10 +97,10 @@
     },
     {
       "id": "noop-wake",
-      "skill": "review-teammate-pr",
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4610\n\nPR watch wake: vercel[bot] edited its deployment comment on #4610.",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4610\n\nPR watch wake: vercel[bot] edited its deployment comment on #4610.",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/noop-wake",
+      "cwd": "review-code/noop-wake",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. Earlier in this thread you reviewed this PR at its current head, the user approved your two drafts, you posted them as one review (they're in the JSON), and you started a PR watch. This run starts at that watch waking.",
       "turns": [],
       "assertions": [
@@ -110,11 +110,11 @@
     },
     {
       "id": "rereview-4615",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4615\n\nPR watch wake: robin-dev pushed a new commit to #4615 and replied on your comment.",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4615\n\nPR watch wake: robin-dev pushed a new commit to #4615 and replied on your comment.",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/rereview-4615",
+      "cwd": "review-code/rereview-4615",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `reviewed`, the user approved your one blocking draft, you posted it (it's in the JSON), and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head and replied on your comment.",
       "turns": [],
       "assertions": [
@@ -125,11 +125,11 @@
     },
     {
       "id": "rereview-4618",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4618\n\nPR watch wake: robin-dev pushed a new commit to #4618 and replied on your comment.",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4618\n\nPR watch wake: robin-dev pushed a new commit to #4618 and replied on your comment.",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/rereview-4618",
+      "cwd": "review-code/rereview-4618",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `reviewed`, the user approved your one blocking draft, you posted it (it's in the JSON), and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head and replied on your comment.",
       "turns": [],
       "assertions": [
@@ -140,11 +140,11 @@
     },
     {
       "id": "codex-4616",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4616",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4616",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/codex-4616",
+      "cwd": "review-code/codex-4616",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head: its findings are the chatgpt-codex-connector comments in the JSON, so don't start another. Pretend posts, approvals, and watches succeed.",
       "turns": [],
       "assertions": [
@@ -155,11 +155,11 @@
     },
     {
       "id": "codex-4617",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4617",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4617",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/codex-4617",
+      "cwd": "review-code/codex-4617",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head: its findings are the chatgpt-codex-connector comments in the JSON, so don't start another. Pretend posts, approvals, and watches succeed.",
       "turns": [],
       "assertions": [
@@ -170,11 +170,11 @@
     },
     {
       "id": "documented-contract",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4619",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4619",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/documented-contract",
+      "cwd": "review-code/documented-contract",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed.",
       "turns": [],
       "assertions": [
@@ -185,11 +185,11 @@
     },
     {
       "id": "later-milestone",
-      "skill": "review-teammate-pr",
+      "skill": "review-code",
       "tool_calls": true,
-      "prompt": "/review-teammate-pr https://github.com/example-org/example-app/pull/4620",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4620",
       "setup": "./setup.sh {cwd}/..",
-      "cwd": "rtp/later-milestone",
+      "cwd": "review-code/later-milestone",
       "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed.",
       "turns": [],
       "assertions": [
@@ -200,7 +200,7 @@
     }
   ],
   "triggers": {
-    "review-teammate-pr": {
+    "review-code": {
       "should": [
         "review https://github.com/example-org/example-app/pull/4610",
         "can you review Robin's PR",
