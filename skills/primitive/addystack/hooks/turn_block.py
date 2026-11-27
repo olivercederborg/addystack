@@ -103,10 +103,14 @@ SPACE = "\t\n\f "
 CARRIER = re.compile(r"<!--\s*turn\b")
 TICKS = re.compile(r"`+")
 BLOCK = re.compile(r"<!--\s*turn\b\s*(.*?)\s*-->\s*\Z", re.S)
-# Exactly one key, which "option" may lead ("Option A"), and only the marks a pick wears
-# around it: "a?" is a question, not a pick, and so is "a？" or "a؟" in any script.
-WRAP = r"[\s.!`*_\"'()\[\],:;~-]*"
-PICK = re.compile(rf"{WRAP}(?:option\s+)?([abc]){WRAP}", re.I)
+# Exactly one key, which "option" may lead ("Option A"), and marks around it (“a”, a ✅),
+# but no question mark: "a?" is a question, not a pick, and so is "a？" or "a؟". QUESTIONS
+# holds every character whose Unicode name says QUESTION, so no script's question passes.
+QUESTIONS = ("?\u00bf\u037e\u055e\u061f\u1367\u1945\u2047\u2048\u2049\u225f\u2370\u2753\u2754\u2a7b"
+             "\u2a7c\u2cfa\u2cfb\u2e2e\u2e54\u3244\ua60f\ua6f7\ufe16\ufe56\uff1f\U00011143\U0001e95f"
+             "\U0001fbc4\U000e003f")
+AROUND = rf"[^\w{QUESTIONS}]"
+PICK = re.compile(rf"{AROUND}*(?:option\s+)?([abc]){AROUND}*", re.I)
 WORD = re.compile(r"[^\W\d_]{3}")
 # Exactly what JS trim() drops: ECMAScript WhiteSpace and LineTerminator.
 JS_SPACE = ("\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"

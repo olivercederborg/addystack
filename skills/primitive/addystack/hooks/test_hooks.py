@@ -1,6 +1,6 @@
 """Pipe tests for the PreToolUse hooks: feed each hook the JSON Claude Code sends and
 check whether it denies."""
-import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unittest, unittest.mock, warnings
+import contextlib, dataclasses, functools, hashlib, json, os, pathlib, random, re, shlex, shutil, sqlite3, subprocess, sys, tempfile, time, unicodedata, unittest, unittest.mock, warnings
 
 import hook_parity, merge_go, resolved, t3_child, transcripts, turn_block, verdicts, workflow_triggers
 
@@ -6043,6 +6043,7 @@ class TurnBlock(unittest.TestCase):
         for prompt, option in [("a", option_a), (" A. ", option_a), ("`b`", option_b), ("b!", option_b),
                                ("Option A", option_a), ("option b.", option_b), ("option a?", None),
                                ("Option A？", None), ("a ❓", None), ("¿a", None), ("Option A؟", None), ("**a**", option_a),
+                               ("“a”", option_a), ("a ✅", option_a),
                                ("options a", None), ("a, skip 3", None), ("a and b", None), ("a?", None), ("c", None), ("", None),
                                ("ab", None), ("merge it", None), (None, None)]:
             with self.subTest(prompt=prompt):
@@ -6051,6 +6052,11 @@ class TurnBlock(unittest.TestCase):
         self.assertIsNone(turn_block.picked(self.REPLY, "a"))
         self.assertIsNone(turn_block.picked(reply + "\nmore", "a"))
         self.assertIsNone(turn_block.picked(self.REPLY + block({**self.STOP, "options": self.STOP["options"][:1]}), "b"))
+
+    def test_refuses_every_question_mark_unicode_names(self):
+        # Codex, review of #144: "a？" and then "a؟" read as a pick, one script at a time.
+        named = {chr(c) for c in range(sys.maxunicode + 1) if "QUESTION" in unicodedata.name(chr(c), "")}
+        self.assertEqual(named - set(turn_block.QUESTIONS), set())
 
     def test_runs_under_each_python(self):
         for python in PYTHONS:
