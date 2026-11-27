@@ -17,7 +17,7 @@ discovered.
 before you report if its text has left your context.
 <!-- toolkit-format:end -->
 
-Item kind here: **Decide**, one per ❓ question.
+Item kind here: **Decide**: each ❓ question is one, in place of a decision card.
 
 ## 1. Set the scope line
 
@@ -29,7 +29,7 @@ fine request: draw the goal, the must-haves, and the open questions out of it.
 Take the Bar from the request, or ask whether the smallest working pilot or lasting
 work is wanted. The plan builds the must-haves. At a pilot Bar the smallest option that
 meets the goal wins; at lasting work the design that holds up as it grows wins. Play
-the goal back in the user's words. Show the plan and questions in the first round. Keep
+the goal back in the user's words. Keep
 the user's boundaries verbatim: on the plan, or copied into the fold and named on the
 plan when the glance can't hold them.
 
@@ -214,7 +214,7 @@ When the cross-review is settled, finish with:
 - **Cross-review**: `N points · N reopened · N dropped`, with one line for each point
   kept, or `clean`.
 
-Plan-ready uses the round's shape with one question, `❓ **1 · Save this plan?**`, and every
+Plan-ready uses the round's shape with one question, `❓ **1 · Approve this plan?**`, and every
 addition the user didn't pick, including docs, tests and migrations, still a *My
 suggestion:* bullet. The user's approval accepts
 them and saves the plan, or they drop them.
