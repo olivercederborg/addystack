@@ -1085,6 +1085,19 @@ class CheckQueue(unittest.TestCase):
         self.assertAlmostEqual(q.governor._cores(q.now - .51), 10.5, places=1)
         self.assertEqual(q.stopped(), {221})
 
+    def test_the_gate_counts_a_units_first_tick(self):
+        q = Queue(self, cap=4, cores=10)
+
+        def lint(cpu):
+            shell, top = q.check(1, 1000, cpu=cpu)
+            return [shell, top._replace(argv=["/x/node_modules/.bin/oxlint"])]
+
+        for n in range(4):
+            q.tick(lint(int(n * .5 * 12e9)))
+        q.tick(lint(int(2 * 12e9)), q.check(2))
+        self.assertAlmostEqual(q.governor._cores(2.0), 12.0)
+        self.assertEqual(q.stopped(), {221})
+
     def test_the_gate_counts_a_worker_that_exited_between_scans(self):
         q = Queue(self, cap=4, cores=2)
         reaped = 0

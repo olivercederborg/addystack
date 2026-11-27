@@ -821,9 +821,9 @@ class Governor:
             holdable = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS
                         and self._attended(commands[unit.head], agents))
             if not holdable:
-                self._run(unit.top, now, wall)  # already running: never stopped
+                self._run(unit.top, unit.members, now, wall)  # already running: never stopped
             elif not self.held and self._room(config, now):
-                self._run(unit.top, now, wall)
+                self._run(unit.top, unit.members, now, wall)
                 self.last_admit = now
             else:
                 self._hold(owners, unit, commands[unit.head], now, wall)
@@ -879,9 +879,12 @@ class Governor:
             cores += (marks[-1][1] - before) / 1e9 / span
         return cores
 
-    def _run(self, top, now, wall):
+    def _run(self, top, members, now, wall):
+        """Counts the unit as running, and takes its first CPU sample now, so the gate
+        counts its first tick."""
         self.running[top] = 0
-        self.cpu[top] = ({}, {}, wall, [])
+        _, last, debt = cpu_gained(members, {}, {}, wall)
+        self.cpu[top] = (last, debt, wall, [(now, 0)])
 
     def _hold(self, owners, unit, command, now, wall):
         members = {proc.ident: proc for proc in unit.members}
@@ -898,7 +901,7 @@ class Governor:
             self._save()  # saved before it's stopped, so a crash can't strand it
         except OSError as error:
             del self.held[unit.top]
-            self._run(unit.top, now, wall)
+            self._run(unit.top, unit.members, now, wall)
             print(f"{time.strftime('%H:%M:%S')} check queue couldn't save a held unit; it runs: "
                   f"{error!r}", file=sys.stderr, flush=True)
             return
@@ -912,7 +915,7 @@ class Governor:
             members += [proc for proc in units[top].members if proc.ident not in unit["members"]]
         signal_all(members, signal.SIGCONT, self.send, self.current)
         self._forget(top)  # only once it runs, so a failed write can't strand it
-        self._run(top, now, wall)
+        self._run(top, members, now, wall)
         self.last_admit = now
         self._log("cont", unit, why=why, waited=round(now - unit["since"], 1))
 
