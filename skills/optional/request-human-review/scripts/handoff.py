@@ -255,9 +255,11 @@ def _reviewers(review: dict) -> list:
     found = []
     for go in GO.findall(review['body'] or ''):
         try:
-            found.append(json.loads(go)['reviewer'])
+            login = json.loads(go)['reviewer']
         except (json.JSONDecodeError, KeyError, TypeError):
             continue
+        if isinstance(login, str) and login:
+            found.append(login)
     return found
 
 

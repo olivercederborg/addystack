@@ -157,6 +157,7 @@ class Facts(unittest.TestCase):
                 {'type': 'Bot', 'login': 'reviewer-app[bot]',
                  'body': 'Approved on their go.\n<!-- review-decisions:go v1 {"reviewer":"dave","head":"x"} -->'},
                 {'type': 'Bot', 'login': 'reviewer-app[bot]', 'body': 'No go here.'},
+                {'type': 'Bot', 'login': 'reviewer-app[bot]', 'body': '<!-- review-decisions:go v1 {"reviewer":7} -->'},
                 {'type': 'User', 'login': 'erin', 'body': '<!-- review-decisions:go v1 {"reviewer":"frank"} -->'})),
             'pulls?state=open': 'alice\nalice\nbob\n',
             'comments': '\n'.join(json.dumps({'login': login, 'body': body}) for login, body in
