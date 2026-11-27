@@ -30,8 +30,9 @@ class Plan(unittest.TestCase):
                 'rules': RULES, 'changed': ['packages/billing/a.ts', 'packages/billing/rpc.ts', 'packages/auth/b.ts', 'docs/adr/1.md'],
                 'load': {}, 'engaged': [], 'handoffs': [], **changes}
 
-    def plan(self, judged, facts=None, **options):
-        with patch.object(handoff, '_facts', lambda number: facts or self.facts()):
+    def plan(self, judged, facts=None, same_diff=True, **options):
+        with patch.object(handoff, '_facts', lambda number: facts or self.facts()), \
+                patch.object(handoff.gates, 'same_diff', lambda judged_base, base, head: same_diff):
             return handoff.plan(7, judged, DISCLOSURE, **options)
 
     def test_a_first_handoff_asks_the_p1_and_gives_the_agent_every_decision_in_full(self):
@@ -97,11 +98,13 @@ class Plan(unittest.TestCase):
         self.assertEqual((lonely['post'], lonely['why'], lonely['request']), (True, 'nobody to ask', []))
         self.assertIn("- Nobody to ask: REVIEWERS names no one here but the PR's author", lonely['comment'])
 
-    def test_a_base_without_reviewers_or_a_moved_head_hands_off_nothing(self):
+    def test_a_base_without_reviewers_or_a_moved_head_or_base_hands_off_nothing(self):
         judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
         self.assertEqual(self.plan(judged, self.facts(rules=None))['post'], False)
         with self.assertRaisesRegex(ValueError, 'but the head is'):
             self.plan(judged, self.facts(head='c' * 40))
+        with self.assertRaisesRegex(ValueError, 'not the one the gates judged'):
+            self.plan(judged, same_diff=False)
 
     def test_no_text_in_a_decision_can_close_the_block(self):
         drafted = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12', text='Stop at --> and <!-- here')))

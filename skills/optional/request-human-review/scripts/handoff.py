@@ -80,13 +80,16 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
      'suggested': [reviewer], 'uncovered': [domain], 'comment': Markdown}.
     `chosen` is the author's pick, requested in place of the suggestion; `uncovered` names the
     gated domains it doesn't cover as a P1 or P2, and `with_suggested` requests their picks too.
-    ValueError when chosen names the PR's author, or the verdict isn't for the PR's head."""
+    ValueError when chosen names the PR's author, or the verdict isn't for the PR's head and its
+    diff against the current base."""
     facts = _facts(number)
     if reviewers.has(chosen, facts['author']):
         raise ValueError(f"{facts['author']} wrote the PR, so can't review it")
     problems = gates.check(verdict, facts['body'], facts['head'], number)
     if problems:
         raise ValueError('; '.join(problems))
+    if not gates.same_diff(verdict['base'], facts['base'], facts['head']):
+        raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
     if facts['rules'] is None:
         return {'post': False, 'why': f'no {reviewers.PATH} at the base', 'head': facts['head'], 'decisions': [],
                 'request': [], 'suggested': [], 'uncovered': [], 'comment': ''}
