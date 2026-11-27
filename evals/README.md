@@ -95,8 +95,8 @@ Give each arm its text the same way, so each pays the same cost to read it: a
 `replies.md` and `reply-shape/SKILL.md` that the player reads in place of the installed
 ones (`--rules none` drops them). Then run `evals.py table NEW --against CURRENT` and
 `evals.py table NONE --against CURRENT` with the folders' full paths. Ship the new text
-only when it ties or beats current. When none ties too, the text changes nothing, so cut
-it. The PR body gives each arm's passes with its trial count, and the words before and
+only when it beats current, or ties it for a pure speed or friction change or a cut.
+When none ties too, the text changes nothing, so cut it. The PR body gives each arm's passes with its trial count, and the words before and
 after.
 
 With one trial a side, cells show ✅ or ❌.
