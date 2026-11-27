@@ -526,8 +526,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     wake the coordinator's thread on repeats like a row, since T3 ends a thread's watches
     unannounced when the user stops or rolls back a turn, judged only on a PR it could read.
     So does an open draft at one head for IDLE_DRAFT that no Waits on entry on its row
-    names, since a draft that waits on nothing should be marked ready. A PR the tick saw
-    merged isn't read again; a closed one can reopen."""
+    names, since a draft that waits on nothing should be marked ready, and an open PR whose
+    named wait is on a PR that merged or closed. A PR the tick saw merged isn't read again;
+    a closed one can reopen."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
@@ -536,7 +537,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     busy = hold and lead.get("status") in ACTIVE
     origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    named, unwaited = [], set()
+    named, unwaited, waits = [], set(), []
     rows, odd = _workers(lines)
     for line in odd:
         if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
@@ -546,8 +547,9 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
-        waited = {wait.pull for wait in project_md.waits(row.get(COLUMNS["waits"], ""), origin)}
-        unwaited |= set(named[-1].refs) - waited
+        row_waits = project_md.waits(row.get(COLUMNS["waits"], ""), origin)
+        waits += row_waits
+        unwaited |= set(named[-1].refs) - {wait.pull for wait in row_waits}
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -626,6 +628,18 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
                       else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
+    states = {ref: known[0] for ref, known in prs.items() if known}
+
+    def state_of(ref: str) -> str | None:  # a PR only a wait names is read for it, not saved
+        if ref not in states and ref not in prs:
+            pull = view(ref)
+            states[ref] = pull.state if pull else None
+        return states.get(ref)
+
+    for wait in waits:
+        if wait.blocker_pull and state_of(wait.pull) == "OPEN" and state_of(wait.blocker_pull) in {"MERGED", "CLOSED"}:
+            found.append((f"blocker:{wait.pull}:{wait.blocker_pull}",
+                          f"{wait.pull} waits on {wait.blocker_pull}, which {states[wait.blocker_pull].lower()}"))
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found} | unread}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})

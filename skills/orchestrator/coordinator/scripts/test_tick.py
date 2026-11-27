@@ -225,6 +225,30 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [], "a named wait silences it")
 
+    def test_a_wait_on_a_pr_that_merged_or_closed_is_flagged(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
+                                 "| #21 · #22 | waiting | #21 ← acme/tools#138; #22 ← acme/tools#139 |"})
+        for n in (21, 22):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": True}
+        for n in (138, 139):
+            self.prs[f"acme/tools#{n}"] = {"state": "OPEN", "isDraft": False}
+        self.watch(7, 21, 22)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "its blocker is still open")
+        self.prs["acme/tools#138"]["state"] = "MERGED"
+        self.prs["acme/tools#139"]["state"] = "CLOSED"
+        self.tick("--send")
+        [sent] = self.sent()
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged\n", sent["message"])
+        self.assertIn("- acme/app#22 waits on acme/tools#139, which closed\n", sent["message"])
+        self.assertNotIn("acme/tools#138", self.state()["prs"], "a blocker has no merge event of its own")
+        self.prs["acme/app#21"]["state"] = "MERGED"
+        self.age(3600)
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertNotIn("acme/app#21 waits on", message, "a PR that's no longer open waits on nothing")
+        self.assertIn("- acme/app#22 waits on acme/tools#139, which closed\n", message, "repeats hourly")
+
     def test_a_push_or_leaving_draft_restarts_the_draft_clock_and_a_failed_read_keeps_it(self):
         self.write_project(rows={"| running | #12 ← review |": "| waiting | — |"})
         self.tick("--send")
