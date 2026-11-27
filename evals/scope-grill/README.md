@@ -53,7 +53,7 @@ mark an unexercised condition NOT RUN rather than passing it:
     is parked on the fold's For architect list.
   - The plan keeps at most about five built bullets, folding older ones by name. A
     *My suggestion:* item stays marked until the user accepts it. A bullet this round
-    changed leads with `New:`, and a dropped item shows once as `Dropped: …`. A page
+    changed may lead with `New:`, and a dropped item shows once as `Dropped: …`. A page
     appears only if questions or defaults change what an admin sees.
   - Every option's fold entry names what it touches (files, or a small diff of
     behavior) and has a cost line: `No extra scope`, `Drops …`, or `Adds …`, a file
