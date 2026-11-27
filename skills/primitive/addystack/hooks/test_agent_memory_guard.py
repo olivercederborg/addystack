@@ -996,6 +996,17 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual(q.stopped(), set())
         self.assertEqual(stderr.getvalue().count("check queue failed"), 1)
 
+    def test_a_unit_released_after_an_error_is_never_stopped_again(self):
+        import resolved
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = RuntimeError("transient")
+        with contextlib.redirect_stderr(io.StringIO()):
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+        q.config = resolved.CheckQueue(True, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual(q.sent, [(221, signal.SIGSTOP), (221, signal.SIGCONT)])
+
     def test_a_governor_error_never_skips_the_memory_rules(self):
         killed = []
         governor = guard.Governor(settings=lambda: 1 / 0, state=os.devnull + "/x", send=lambda *a: None,

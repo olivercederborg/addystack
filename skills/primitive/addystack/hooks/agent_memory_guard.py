@@ -752,6 +752,7 @@ class Governor:
         try:
             for top, unit in list(self.held.items()):
                 signal_all(unit["members"].values(), signal.SIGCONT, self.send, self.current)
+                self.running[top] = 0  # it runs now, so no later tick holds it again
                 self._log("release", unit, why=why)
             self.held.clear()
             self._save()
