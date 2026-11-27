@@ -5,6 +5,7 @@ Run: python3 -m unittest discover -s coordinator/scripts"""
 import json, os, pathlib, subprocess, sys, tempfile, unittest
 from datetime import date
 
+import project
 from test_tick import FAKE_GH, FAKE_T3, thread
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
@@ -507,6 +508,15 @@ queue:
         self.run_project("status")
         self.assertNotIn("acme/app#5", {call["key"] for call in self.calls("gh")})
         self.assertIn("acme/other#5", {call["key"] for call in self.calls("gh")})
+
+    def test_a_link_label_with_escaped_brackets_still_names_only_its_urls_pr(self):
+        refs: set[str] = set()
+        project._pr_refs(r"[#7, Fix \[CI\] failure](https://github.com/other/repo/pull/7)", "acme/app", refs)
+        self.assertEqual(refs, {"other/repo#7"})
+
+    def test_raw_html_in_a_cell_prints_escaped_so_the_reply_keeps_its_picks(self):
+        self.write(**{"the user's go": "the user's go <details>"})
+        self.assertIn("&lt;details>", self.run_project("status"))
 
     def test_a_project_without_a_queue_or_an_issue_column_prints_and_ticks_the_same(self):
         old = STATUS.split("## Queue")[0] + "## Decisions" + STATUS.split("## Decisions")[1]

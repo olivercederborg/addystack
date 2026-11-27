@@ -493,7 +493,7 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-PR_LINK = re.compile(r"\[[^\]]*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
+PR_LINK = re.compile(r"\[(?:\\.|[^\]\\])*\]\((https://github\.com/[\w.-]+/[\w.-]+/pull/\d+)[^)]*\)")  # a Markdown link to a PR
 
 
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
@@ -627,7 +627,7 @@ def status(lines: list[str]) -> str:
     another machine, `unresolved` for a PR whose repo isn't known); then the Queue as
     `queue show` prints it, or `no queue`; the Decisions; and the Phases lines."""
     goal = _body(lines, "Goal")
-    out = [f"◆ {lines[0].removeprefix('# ◆').strip() if lines else '?'} · {goal[0] if goal else '?'}", "",
+    out = [project_queue.shown(f"◆ {lines[0].removeprefix('# ◆').strip() if lines else '?'} · {goal[0] if goal else '?'}"), "",
            "**Needs you**"]
     try:
         items = project_queue.read(lines)
@@ -654,7 +654,7 @@ def status(lines: list[str]) -> str:
     else:
         out += ["no workers", ""]
     for name in ("Decisions", "Phases"):
-        out += [f"**{name}**", *(_body(lines, name) or ["none"]), ""]
+        out += [f"**{name}**", *([project_queue.shown(text) for text in _body(lines, name)] or ["none"]), ""]
     return "\n".join(out[:-1])
 
 
@@ -690,7 +690,7 @@ def _unit(row: dict[str, str], origin: str) -> str:
         parts.append(f"issue {issue}")
     if (waits := row.get(COLUMNS["waits"], "")) not in EMPTY:
         parts.append(f"waits on {waits}")
-    return "- " + " · ".join(parts)
+    return project_queue.shown("- " + " · ".join(parts))
 
 
 CHECK_MARKS = {"pass": "✅", "fail": "❌", "pending": "⏳", "skipping": "⏭️", "cancel": "🚫"}
