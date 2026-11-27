@@ -22,9 +22,9 @@ elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
     workflows = "workflowRun{" in a  # the query asks for it; the --jq filter names .workflowRun either way
     if s["checks"] == "unreadable" or workflows and s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    # As the --jq prints them: type, name, app, workflow or suite, creation order and bucket. A
-    # scenario row is [name, bucket, app, order, workflow id, event, suite id, type] and may
-    # stop after any field; a token that can't read workflows gets the suite.
+    # As the --jq prints them: type, name, app id, workflow or suite, creation order and bucket. A
+    # scenario row is [name, bucket, app id, order, workflow id, event, suite id, type] and may stop
+    # after any field; a token that can't read workflows gets the suite.
     def row(c):
         name, bucket = c[0], c[1]
         app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]
@@ -104,6 +104,18 @@ class Required(unittest.TestCase):
         # A check with no app and a commit status of one name stay apart.
         kinds = [["ci", "fail", "", 10], ["ci", "pass", "", 0, "", "", 1, "status"]]
         self.assertEqual(self.required(draft=False, required=["ci"], checks=kinds), "ci\tfail\nrequired: not all passed\n")
+
+    def test_a_context_required_from_one_app_counts_only_that_apps_checks(self):
+        # A ruleset's integration_id, or classic protection's app_id: another app's pass, or a
+        # commit status that can't say which app set it, isn't that check.
+        for rule in ({"required": ["ci\t15368"]}, {"classic": ["ci\t15368"]}):
+            with self.subTest(rule):
+                other = [["ci", "pass", "999", 11], ["ci", "pass", "", 0, "", "", 1, "status"]]
+                self.assertEqual(self.required(draft=False, checks=other, **rule), "ci\tnot reported\nrequired: not all passed\n")
+                mixed = [["ci", "fail", "15368", 10], ["ci", "pass", "999", 11]]
+                self.assertEqual(self.required(draft=False, checks=mixed, **rule), "ci\tfail\nrequired: not all passed\n")
+                own = [["ci", "pass", "15368", 10], ["ci", "fail", "999", 11]]
+                self.assertEqual(self.required(draft=False, checks=own, **rule), "ci\tpass\nrequired: all passed\n")
 
     def test_a_token_that_cannot_read_workflows_keeps_each_suite_and_fails_closed(self):
         # An App's token without the actions permission: a re-run stays in its suite, so its newest

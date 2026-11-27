@@ -84,13 +84,15 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     slug=$(repo)
     read -r base draft <<< "$(gh pr view "$1" --json baseRefName,isDraft --jq '"\(.baseRefName) \(.isDraft)"')"
     # `gh pr checks --required` leaves out required checks that haven't reported yet, so
-    # read the contexts from the base branch's rulesets and classic branch protection.
+    # read the contexts from the base branch's rulesets and classic branch protection, each
+    # with the app it must come from, when the rule names one.
     # A private repo without GitHub Pro can't read rulesets and answers 403 with an
     # upgrade message, which means no required checks from them. Any other 403, such as
     # a rate limit, is an error.
     err=$(mktemp)
     if ! rules=$(gh api "repos/$slug/rules/branches/$base" 2>"$err" \
-      --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context'); then
+      --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[]
+        | "\(.context)\t\(.integration_id // "")"'); then
       if ! grep -q 'Upgrade to GitHub Pro.*(HTTP 403)' "$err"; then
         cat "$err" >&2; rm -f "$err"; exit 1
       fi
@@ -101,7 +103,8 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     # endpoint needs administration read, which an App reviewer lacks, so a 403 there would
     # read as no required checks. An unprotected branch's enforcement level is off.
     classic=$(gh api "repos/$slug/branches/$base" --jq '.protection.required_status_checks // empty
-      | select(.enforcement_level != "off") | (.contexts // [])[]') || exit 1
+      | select(.enforcement_level != "off")
+      | if (.checks // []) != [] then .checks[] | "\(.context)\t\(.app_id // "")" else (.contexts // [])[] end') || exit 1
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
     # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go), which
     # keeps only each check's newest run, by name and app: an older pass never hides a re-run
@@ -112,13 +115,13 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{id app{slug}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{id app{databaseId}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
           .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
           | if .__typename == "CheckRun"
-            then ["check", .name, (.checkSuite.app.slug // ""),
+            then ["check", .name, (.checkSuite.app.databaseId // "" | tostring),
                   (if .checkSuite.workflowRun then "workflow:\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)"
                    else "suite:\(.checkSuite.id)" end),
                   (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
@@ -137,18 +140,22 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       checks=$(rollup "$1" '') || { rm -f "$err"; exit 1; }
     fi
     rm -f "$err"
-    # Rows are type, name, app, workflow or suite, creation order and bucket.
+    # Rows are type, name, app id, workflow or suite, creation order and bucket; checks keep
+    # name, app id and bucket.
     checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4
-      if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $6 } }
+      if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $3 FS $6 } }
       END { for (key in row) print row[key] }')
     # Checks of one name from two workflows, apps or suites, or a check and a status, all count,
     # so the worst of them does. The required contexts count, or every reported check when the
-    # base requires none; one that failed, was cancelled, or is running shows CI ran.
+    # base requires none; one that failed, was cancelled, or is running shows CI ran. A context
+    # that must come from one app counts only that app's checks: a commit status doesn't say
+    # which app set it, so it never counts there.
     pending=0 ran=0
     counted=${contexts:-$(printf '%s\n' "$checks" | cut -f1 | sort -u)}
-    while IFS= read -r context; do
+    while IFS=$'\t' read -r context app; do
       [ -n "$context" ] || continue
-      state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" '$1 == name { seen[$2] = 1 }
+      state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" -v app="$app" \
+        '$1 == name && (app == "" || $2 == app) { seen[$3] = 1 }
         END { split("fail cancel pending skipping pass", order, " ")
               for (i = 1; i <= 5; i++) if (order[i] in seen) { print order[i]; exit }
               print "not reported" }')
@@ -163,7 +170,7 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     # the head shows it did skip: a draft whose CI ran before it went back to draft has
     # none. The workflows come from the base tip on GitHub, so any checkout works unfetched.
     skips=""
-    if [ "$draft" = true ] && printf '%s\n' "$checks" | cut -f2 | grep -qx skipping; then
+    if [ "$draft" = true ] && printf '%s\n' "$checks" | cut -f3 | grep -qx skipping; then
       skips=$(gh api graphql -f owner="${slug%/*}" -f repo="${slug#*/}" -f expression="$base:.github/workflows" -f query='
 query($owner:String!,$repo:String!,$expression:String!){repository(owner:$owner,name:$repo){
   object(expression:$expression){... on Tree{entries{name object{... on Blob{text}}}}}}}' \
