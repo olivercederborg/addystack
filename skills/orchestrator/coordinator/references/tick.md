@@ -28,6 +28,8 @@ the rest:
   watch, or a stack-dismissed one. T3 ends a thread's watches unannounced when the user
   stops or rolls back a turn. Call `watch_pull_request` on it. When T3's state database
   can't be read, the tick skips this check and logs why.
+- **Old Watches line**: Listening still lists Watches, which T3's watch state replaced:
+  remove it with `project.py <folder> listen Watches none`.
 - **Owner**: a ref the tick can't resolve to one repo: a word then `#N` (`web #20`),
   `repo#N` for a repo other than the checkout's, a `#N` an arrow joins to such a ref, or a
   `#N` once the checkout is gone or has no GitHub origin. `#N`, the checkout's own `repo#N`, and a range `#20–#22` resolve

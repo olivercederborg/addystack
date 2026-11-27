@@ -125,10 +125,12 @@ class Project(Fixture, unittest.TestCase):
         refused = self.project("listen", "Watches", "#1 (owner a)", code=1)
         self.assertIn("call `watch_pull_request` on each open Worker PR, and the tick flags one T3 isn't watching",
                       refused.stderr)
+        self.project("listen", "Watches", "none")
+        self.assertNotIn("- Watches:", self.text(), "`none` removes an old project's line")
         self.project("listen", "Heartbeat", "none")
         self.project("listen", "Startup", "scheduled-task:st")
         self.assertEqual(self.text(), PROJECT.replace("- Heartbeat: scheduled-task:hb", "- Heartbeat: none")
-                         .replace("- Watches: none\n", "- Watches: none\n- Startup: scheduled-task:st\n"))
+                         .replace("- Watches: none\n", "- Startup: scheduled-task:st\n"))
 
     def test_init_writes_a_skeleton_the_edits_work_on(self):
         init = ["init", "--project", "p", "--coordinator", "<t3-thread://v2/e/c>", "--checkout", "~/p",

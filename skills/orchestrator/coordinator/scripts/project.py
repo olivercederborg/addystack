@@ -250,11 +250,15 @@ def listen(lines: list[str], key: str, value: str) -> None:
     start, end = _section(lines, "Listening")
     if not key.strip() or ":" in key or not value.strip() or "\n" in value.strip():
         raise ProjectError("listen takes a KEY without a colon and a one-line VALUE")
-    if key.strip() == "Watches":
-        raise ProjectError("T3 keeps the watches, not project.md: call `watch_pull_request` on each open "
-                           "Worker PR, and the tick flags one T3 isn't watching")
-    line = _bullet(f"{key}: {value.strip()}")
     found = [i for i in range(start + 1, end) if lines[i].startswith(f"- {key}:")]
+    if key.strip() == "Watches":  # an old project's line: `none` removes it
+        if value.strip() != "none":
+            raise ProjectError("T3 keeps the watches, not project.md: call `watch_pull_request` on each open "
+                               "Worker PR, and the tick flags one T3 isn't watching")
+        for i in reversed(found):
+            del lines[i]
+        return
+    line = _bullet(f"{key}: {value.strip()}")
     if found:
         lines[found[0]] = line
     else:
@@ -571,6 +575,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         return [], {**state, "threads": threads}
     events = []
     wakes, unread = watching(coordinator.group(2)), set()
+    if wakes is None:  # unknown, not cleared: each unwatched finding keeps its repeat clock
+        unread |= {key for key in state.get("sent", {}) if key.startswith("unwatched:")}
+    if _listened(lines, "Watches"):
+        found.append(("legacy:watches", "Listening still has a Watches line, which T3's own watch state replaced: "
+                                        "remove it with `project.py <folder> listen Watches none`"))
     if wakes is None:
         _warn("tick: can't tell which PRs T3 watches for the coordinator, so the tick skips its unwatched-PR check")
     for ref in sorted(refs):

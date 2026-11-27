@@ -270,13 +270,26 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
 
-    def test_a_legacy_watches_line_is_ignored_and_kept(self):
+    def test_a_legacy_watches_line_is_named_until_removed(self):
         self.write_project(rows={"- Startup: none\n": "- Startup: none\n- Watches: acme/app#99 (the user)\n"})
         before = (self.dir / "project.md").read_text()
         self.tick("--send")
-        self.assertEqual(self.sent(), [])
-        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#7"])
-        self.assertEqual((self.dir / "project.md").read_text(), before)
+        self.assertIn("remove it with `project.py <folder> listen Watches none`", self.sent()[0]["message"])
+        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#7"], "its PRs aren't read")
+        self.assertEqual((self.dir / "project.md").read_text(), before, "the tick writes no project.md")
+
+    def test_an_unreadable_t3_keeps_an_unwatched_findings_clock(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        (self.fake / "userdata" / "statev2.sqlite").unlink()
+        self.age(1200)
+        self.tick("--send")
+        self.watch(7)
+        self.age(1200)
+        self.tick("--send")
+        self.assertNotIn("acme/app#12: open", "".join(m["message"] for m in self.sent()),
+                         "T3 read again 40 min after the alert, so it waits for the hour")
 
     def test_one_pr_written_two_ways_or_in_a_range_is_checked_once_each(self):
         self.write_project(rows={"`export` · #12": "`export` · #12, acme/app#12, app#12, #20–#22"})
