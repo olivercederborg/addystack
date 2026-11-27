@@ -23,9 +23,8 @@ class Fake:
     """github.sh and the PR as GitHub would answer them, recording every write."""
 
     def __init__(self, required='no required checks on main\nrequired: all passed\n', heads=(), viewer='reviewer-app[bot]',
-                 active=None, threads=(), approved=None, latest=None):
+                 active=None, threads=()):
         self.required, self.heads, self.viewer, self.active = required, list(heads), viewer, active
-        self.approved, self.latest = approved, latest or approved or {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
         self.threads = list(threads)
         self.writes, self.commands = [], []
 
@@ -38,7 +37,8 @@ class Fake:
         if command == 'required':
             return self.required() if callable(self.required) else self.required
         if command == 'reviewed':
-            return json.dumps({**self.latest, 'active': self.active, 'approved': self.approved}) + '\n'
+            latest = {'id': 50, 'state': 'COMMENTED', 'commit_id': BASE}
+            return json.dumps({**latest, 'active': self.active}) + '\n'
         if command == 'threads':
             return ''.join(json.dumps(thread) + '\n' for thread in self.threads)
         files = {}
@@ -239,90 +239,6 @@ class Post(unittest.TestCase):
         (self.folder / 'GATES.json').write_text(json.dumps({'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [], 'decisions': []}))
         with self.assertRaisesRegex(ValueError, 'D1 from the Decisions table has no entry'):
             self.post(Fake())
-
-
-class Carry(unittest.TestCase):
-    """--carry: a rebase that leaves the PR's own diff as this App approved it is approved again
-    with no review run, and anything that doesn't hold posts nothing."""
-
-    APPROVED = 'd' * 40
-
-    def carry(self, fake, *, expected=None, head=HEAD, draft=False, state='OPEN', diffs=None, retargeted=False, bases=('b' * 40,)):
-        diffs = diffs or {self.APPROVED: 'same', head: 'same'}
-        bases, self.compared = list(bases), []
-        def pr(number, fields=''):
-            return {'headRefOid': head, 'baseRefName': 'main', 'baseRefOid': bases.pop(0) if len(bases) > 1 else bases[0],
-                    'state': state, 'isDraft': draft}
-        with patch.object(post_review, 'github', fake.github), \
-                patch.object(post_review, 'retargeted', lambda number, since: retargeted), \
-                patch.object(post_review, 'pr', pr), \
-                patch.object(post_review, 'fetch', lambda *arguments: None), \
-                patch.object(post_review.gates, 'own_diff', lambda base, commit: self.compared.append(base) or diffs[commit]):
-            return post_review.carry(7, self.APPROVED, expected)
-
-    def approved_at(self, sha):
-        return {'id': 40, 'state': 'DISMISSED', 'commit_id': sha, 'submitted_at': '2026-11-26T10:00:00Z'}
-
-    def test_an_unchanged_diff_this_app_approved_is_approved_again(self):
-        fake = Fake(approved=self.approved_at(self.APPROVED))
-        outcome = self.carry(fake)
-        self.assertEqual((outcome['outcome'], outcome['carried_from']), ('approved', self.APPROVED))
-        # Both fingerprints are against the base commit the PR read named, not the branch's tip later.
-        self.assertEqual(set(self.compared), {'b' * 40})
-        (command, arguments, files), = fake.writes
-        self.assertEqual((command, arguments[:3]), ('approve', ['7', HEAD, '']))
-        self.assertIn("byte-identical", files['body.md'])
-        # The required checks, then the head, are the last reads before the approval.
-        self.assertEqual(fake.commands[-3:-1], ['required', 'head'])
-
-    def test_anything_that_does_not_hold_posts_nothing(self):
-        cases = [
-            ("the PR's own diff changed", dict(diffs={APPROVED: 'old', HEAD: 'new'})),
-            ('this App has no approval at', dict(approved=None)),
-            ('this App reviewed again after its approval at', dict(latest={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': APPROVED})),
-            ('this App reviewed again after its approval at', dict(latest={'id': 42, 'state': 'COMMENTED', 'commit_id': APPROVED})),
-            ('the PR moved to another base branch after the approval', dict(retargeted=True)),
-            ('the head is the approved commit', dict(head=APPROVED)),
-            ('the PR changed while the carry was proved', dict(bases=('b' * 40, 'e' * 40))),
-            ('the PR is closed or a draft', dict(draft=True)),
-            ('required checks did not pass', dict(required='ci\tfail\nrequired: not all passed\n')),
-        ]
-        for why, case in cases:
-            with self.subTest(why=why):
-                fake = Fake(approved=case.get('approved', self.approved_at(self.APPROVED)), latest=case.get('latest'),
-                            required=case.get('required', 'no required checks on main\nrequired: all passed\n'))
-                outcome = self.carry(fake, head=case.get('head', HEAD), draft=case.get('draft', False), diffs=case.get('diffs'),
-                                     retargeted=case.get('retargeted', False), bases=case.get('bases', ('b' * 40,)))
-                self.assertEqual(outcome['outcome'], 'not-carried')
-                self.assertIn(why, outcome['why'])
-                self.assertEqual(fake.writes, [])
-
-    def test_a_base_change_counts_only_after_the_approval(self):
-        events = subprocess.CompletedProcess([], 0, '2026-11-26T09:00:00Z\n2026-11-26T11:00:00Z\n', '')
-        with patch.object(post_review.subprocess, 'run', return_value=events) as run:
-            self.assertTrue(post_review.retargeted(7, '2026-11-26T10:00:00Z'))
-            self.assertTrue(post_review.retargeted(7, '2026-11-26T11:00:00Z'), 'the same second counts')
-            self.assertFalse(post_review.retargeted(7, '2026-11-26T12:00:00Z'))
-        # The issue events list records base changes, GitHub's automatic ones too.
-        command = run.call_args.args[0]
-        self.assertEqual(command[3], 'repos/{owner}/{repo}/issues/7/events')
-        self.assertIn('automatic_base_change_succeeded', command[5])
-
-    def test_a_head_newer_than_the_caller_expects_is_left_to_its_own_push(self):
-        fake = Fake(approved=self.approved_at(self.APPROVED))
-        self.assertEqual(self.carry(fake, expected=NEWER), {'outcome': 'superseded', 'head': HEAD})
-        self.assertEqual((fake.writes, fake.commands), ([], ['viewer']))
-        self.assertEqual(self.carry(Fake(approved=self.approved_at(self.APPROVED)), expected=HEAD)['outcome'], 'approved')
-
-    def test_pending_checks_and_a_moved_head_post_nothing(self):
-        pending = Fake(approved=self.approved_at(self.APPROVED), required='ci\tpending\nrequired: not all passed\n')
-        self.assertEqual(self.carry(pending)['outcome'], 'pending')
-        moved = Fake(approved=self.approved_at(self.APPROVED), heads=[NEWER])
-        self.assertEqual(self.carry(moved), {'outcome': 'superseded', 'head': NEWER})
-        self.assertEqual(pending.writes + moved.writes, [])
-
-
-APPROVED = Carry.APPROVED
 
 
 if __name__ == '__main__':

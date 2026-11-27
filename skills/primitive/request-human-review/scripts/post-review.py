@@ -23,21 +23,11 @@ approves: the PR goes to a person.
 It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?}, where
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
-push starts its own review). Exit 0 decided (posted, or with --carry, posted nothing and said
-why), 3 superseded, 1 refused or failed.
-
-    post-review.py N --carry APPROVED_SHA [--head HEAD_SHA]
-
-re-approves, with no review run, a PR this App approved at APPROVED_SHA whose own diff is
-byte-identical now (gates.own_diff), once its required checks pass on the head. Run it in the
-repository's checkout. Its Outcome is approved (with carried_from), not-carried with why (the
-caller reviews instead), pending (the checks haven't finished; try again later), or superseded
-(the head isn't HEAD_SHA, or moved before the write; that push decides).
+push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed.
 """
 from __future__ import annotations
 
 import argparse
-from datetime import datetime
 import json
 from pathlib import Path
 import subprocess
@@ -219,100 +209,13 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     return outcome
 
 
-SNAPSHOT = 'headRefOid,baseRefName,baseRefOid,state,isDraft'
-
-
-def fetch(base: str, number: int, approved: str) -> None:
-    """The base commit, the PR's head and the approved commit, into the checkout this runs in."""
-    result = subprocess.run(['git', 'fetch', '--quiet', 'origin', base, f'pull/{number}/head', approved],
-                            capture_output=True, text=True, timeout=600)
-    if result.returncode:
-        raise ValueError(f'git fetch failed: {_error(result.stderr)}')
-
-
-def retargeted(number: int, since: str) -> bool:
-    """Whether the PR's base branch changed at or after `since`, an ISO time: by hand, or by GitHub
-    when the base branch was merged and deleted, as the issue events list records them. The same
-    second counts, since GitHub's times have no finer grain."""
-    result = subprocess.run(['gh', 'api', '--paginate', f'repos/{{owner}}/{{repo}}/issues/{number}/events', '--jq',
-                             '.[] | select(.event == "base_ref_changed" or .event == "automatic_base_change_succeeded") '
-                             '| .created_at'], capture_output=True, text=True, timeout=120)
-    if result.returncode:
-        raise ValueError(f'gh api issue events failed: {_error(result.stderr)}')
-    changed = [datetime.fromisoformat(line.strip().replace('Z', '+00:00')) for line in result.stdout.splitlines() if line.strip()]
-    return any(at >= datetime.fromisoformat(since.replace('Z', '+00:00')) for at in changed)
-
-
-def carry(number: int, approved: str, expected: str | None = None) -> dict:
-    """Re-approve a PR whose own diff is byte-identical to the one this App approved at `approved`:
-    re-proves the approval and the identical diff, re-reads the PR, head and required checks, then
-    approves with no review run. Anything that doesn't hold posts nothing: not-carried says why, so
-    the caller reviews instead, and pending means the checks haven't finished, so the caller tries
-    again later. With `expected`, only that head is carried: a newer one is superseded, so its own
-    push, and its wait, decide what happens to it."""
-    viewer = github('viewer').strip()
-    if not viewer.endswith('[bot]'):
-        raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
-    # The base's commit, not only its name: the fingerprints are proved against that one commit.
-    current = pr(number, SNAPSHOT)
-    head = current['headRefOid']
-    if expected and head != expected:
-        return {'outcome': 'superseded', 'head': head}
-    if current['state'] != 'OPEN' or current['isDraft']:
-        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR is closed or a draft'}
-    if head == approved:
-        return {'outcome': 'not-carried', 'head': head, 'why': 'the head is the approved commit, so nothing moved'}
-    earlier = github('reviewed', number).strip()
-    approval = json.loads(earlier).get('approved') if earlier else None
-    if not approval or approval['commit_id'] != approved:
-        return {'outcome': 'not-carried', 'head': head, 'why': f'this App has no approval at {approved[:7]}'}
-    # Any review after the approval, such as a request for changes or a needs-human comment, is
-    # this App's last word, which a carry must not lift.
-    if json.loads(earlier)['id'] != approval['id']:
-        return {'outcome': 'not-carried', 'head': head, 'why': f'this App reviewed again after its approval at {approved[:7]}'}
-    # The fingerprint is against today's base, so a PR moved to another base could match with
-    # code the approval never saw.
-    if retargeted(number, approval['submitted_at']):
-        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR moved to another base branch after the approval'}
-    base = current['baseRefOid']
-    fetch(base, number, approved)
-    if gates.own_diff(base, approved) != gates.own_diff(base, head):
-        return {'outcome': 'not-carried', 'head': head, 'why': "the PR's own diff changed"}
-    state, checks = required(number)
-    if state == 'pending':
-        return {'outcome': 'pending', 'head': head, 'checks': checks}
-    if state == 'failed':
-        return {'outcome': 'not-carried', 'head': head, 'why': 'required checks did not pass', 'checks': checks}
-    # Right before the write: a push since the head was read starts its own review, and a PR
-    # retargeted, moved on, closed or turned draft meanwhile no longer matches what was proved.
-    moved = github('head', number).strip()
-    if moved != head:
-        return {'outcome': 'superseded', 'head': moved}
-    if pr(number, SNAPSHOT) != current:
-        return {'outcome': 'not-carried', 'head': head, 'why': 'the PR changed while the carry was proved'}
-    with tempfile.TemporaryDirectory() as scratch:
-        body = Path(scratch) / 'body.md'
-        body.write_text('<sub>`AGENT`</sub><br>\n'
-                        f"Same change as the approval at `{approved[:7]}`: after the rebase the PR's own diff is "
-                        'byte-identical, file modes and binary files included, and the required checks pass on '
-                        'this head, so the approval carries over without a review run.\n')
-        review = github('approve', number, head, '', body).strip()
-    return {'outcome': 'approved', 'head': head, 'review': review, 'carried_from': approved}
-
-
 def main(arguments) -> int:
     parser = argparse.ArgumentParser(description='Post an unattended review outcome as the App.')
     parser.add_argument('number', type=int)
-    parser.add_argument('review', type=Path, nargs='?')
+    parser.add_argument('review', type=Path)
     parser.add_argument('--wait', type=int, default=0, help='seconds to wait for pending required checks')
-    parser.add_argument('--carry', metavar='APPROVED_SHA', help="re-approve an unchanged diff this App approved")
-    parser.add_argument('--head', metavar='HEAD_SHA', help='with --carry: carry only onto this head')
     args = parser.parse_args(arguments)
-    if (args.review is None) == (args.carry is None):
-        parser.error('give REVIEW.json or --carry APPROVED_SHA')
-    if args.head and not args.carry:
-        parser.error('--head goes with --carry')
-    outcome = carry(args.number, args.carry, args.head) if args.carry else post(args.number, args.review, args.wait)
+    outcome = post(args.number, args.review, args.wait)
     print(json.dumps(outcome))
     return 3 if outcome['outcome'] == 'superseded' else 0
 
