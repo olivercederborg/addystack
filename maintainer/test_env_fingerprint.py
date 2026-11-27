@@ -1,4 +1,9 @@
-import copy, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, tomllib, unittest, unittest.mock
+import copy, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, unittest, unittest.mock
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.9 and 3.10, where env_fingerprint compares config.toml as text
+    tomllib = None
 
 import env_fingerprint as fp
 import kit_path  # env_fingerprint put maintainer/ on the path.
@@ -713,6 +718,7 @@ class TrackedChanges(unittest.TestCase):
             with self.subTest(profile=profile):
                 self.assertIn("yadm: M .codex/config.toml", self.drift(profile, *args))
 
+    @unittest.skipIf(tomllib is None, "needs tomllib, Python 3.11+, to compare config.toml as TOML")
     def test_the_keys_the_codex_app_rewrites_are_not_drift(self):
         lock = self.home.lock(StrictSandbox.sandbox_ready)
         self.config.write_text(self.config.read_text().replace("26.930.21537", "26.1007.71326") + self.VOLATILE)
@@ -739,6 +745,7 @@ class TrackedChanges(unittest.TestCase):
                 self.config.write_text(change(self.config.read_text()) + self.VOLATILE)
                 self.assertIn("yadm: M .codex/config.toml", self.drift())
 
+    @unittest.skipIf(tomllib is None, "needs tomllib, Python 3.11+, to compare config.toml as TOML")
     def test_a_utf8_config_is_read_as_utf8_whatever_the_locale(self):
         self.config.write_text(self.config.read_text() + '[projects."/tmp/\u00e6"]\ntrust_level = "untrusted"\n',
                                encoding="utf-8")
@@ -754,6 +761,7 @@ class TrackedChanges(unittest.TestCase):
         self.yadm("add", ".codex/config.toml")
         self.assertNotIn("yadm: M .codex/config.toml", self.drift())
 
+    @unittest.skipIf(tomllib is None, "needs tomllib, Python 3.11+, to compare config.toml as TOML")
     def test_shapes_and_types_the_codex_app_never_writes_are_drift(self):
         """Only the leaf keys the app writes drop out: a trust level, a hook's trusted hash,
         and the version, each a string. Anything else in those tables, or a value of another
