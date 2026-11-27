@@ -206,10 +206,10 @@ the line: merge-gate takes a go only from the user's latest prompt in the mergin
 transcript, never a worker's. Run it once the repo's trust
 ([workflow](references/workflow.md)) allows: in a `gate` repo when the worker reports
 merge-ready, else in the turn the user gives the go, the `stop:merge` option's text, or
-one they already gave. First run `gh pr ready <N>` on each draft the line merges, from
+one they already gave. First run `gh pr ready <N>` on each draft it merges, from
 the checkout it `cd`s into. When readying starts CI the line waits on or a
 [review App](references/workflow.md#review-app)'s review, watch them; run the line
-once each is done (CI green, App approved), asking again if merge-gate wants a go.
+once each is done (CI green, the review passed), asking again if merge-gate wants a go.
 
 **Done when:** each merged PR's state is `MERGED` in `gh pr view`, recorded in Workers.
 
