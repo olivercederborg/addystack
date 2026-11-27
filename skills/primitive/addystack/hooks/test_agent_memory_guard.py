@@ -276,12 +276,12 @@ class AbandonedCommands(unittest.TestCase):
     """Abandoned.busy() over a timeline of ticks; `cores` is how busy each process is."""
     WINDOW = guard.ABANDONED_WINDOW_SECONDS
 
-    def run_ticks(self, minutes, members, abandoned=None):
-        """Tick once a minute; `members(t)` is the command's processes at second t.
-        Returns the first kill found and the minute it came."""
+    def run_ticks(self, minutes, members, abandoned=None, start=0):
+        """Tick once a minute from second `start`; `members(t)` is the command's processes
+        at second t. Returns the first kill found and the minute it came."""
         abandoned = abandoned or guard.Abandoned()
         for minute in range(minutes + 1):
-            t = minute * 60
+            t = start + minute * 60
             found = abandoned.busy({200: members(t)}, {100: 100}, t)
             if found:
                 return found, minute
@@ -334,7 +334,7 @@ class AbandonedCommands(unittest.TestCase):
             t = minute * 60
             self.assertIsNone(abandoned.busy(
                 {200: [proc(200, 100)] + self.spinning_orphan(t)}, {100: 100}, t))
-        found, minute = self.run_ticks(60, lambda t: self.spinning_orphan(t + 3600), abandoned)
+        found, minute = self.run_ticks(60, self.spinning_orphan, abandoned, start=3600)
         self.assertEqual((found[0], minute), (200, self.WINDOW // 60))
 
     def test_a_late_joiner_s_earlier_cpu_does_not_count(self):
