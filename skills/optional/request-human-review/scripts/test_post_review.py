@@ -114,6 +114,12 @@ class Post(unittest.TestCase):
                 self.post(fake, finding)
             self.assertEqual(fake.writes, [])
 
+    def test_a_retry_keeps_the_approval_this_head_already_has(self):
+        fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
+        outcome = self.post(fake)
+        self.assertEqual((outcome['outcome'], outcome['review']), ('approved', f'review 61, already approving {HEAD[:7]}'))
+        self.assertEqual(fake.writes, [])
+
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
                {'path': 'db/schema.ts', 'line': 12, 'body_file': 'note.md'}}

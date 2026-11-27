@@ -27,7 +27,8 @@ base branch while the checks were waited on; nothing posted, since that push or 
 starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
 GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
 review is recorded in POSTED.json beside REVIEW.json, so a run retried after a failed
-withdrawal finishes it without posting the review again.
+withdrawal finishes it without posting the review again; a retried approval finds this App's
+approval of the head and keeps it.
 """
 from __future__ import annotations
 
@@ -196,10 +197,15 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             if action == 'approve':
                 # No inline comments: an open thread would hold the merge until someone resolves it.
                 body += _notes(findings, 'Notes that don\'t hold the approval', folder)
-                outcome['review'] = _url(github('approve', number, head, '', _write(scratch, 'body.md', body)))
+                # A retry after a run that approved this head, then stopped, keeps that approval
+                # rather than posting a second one.
+                if active and active['state'] == 'APPROVED' and active['commit_id'] == head:
+                    outcome['review'] = f"review {active['id']}, already approving {head[:7]}"
+                else:
+                    outcome['review'] = _url(github('approve', number, head, '', _write(scratch, 'body.md', body)))
                 outcome['outcome'] = 'approved'
-                # Once approved, a thread it can't resolve is named, never a failure: a retry
-                # would post a second approval.
+                # Once approved, a thread it can't resolve is named, never a failure: the
+                # approval already counts.
                 for thread in threads:
                     try:
                         github('resolve', thread)
