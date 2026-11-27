@@ -4592,6 +4592,7 @@ class PushGate(unittest.TestCase):
 
     def dismisses(self, reason, approved="2026-11-24 11:25"):
         self.assertIsNotNone(reason)
+        self.assertNotIn('the user\'s ""', reason)  # no prompt is no typed reply to name
         self.assertIn(f"pushing `{self.BRANCH}` moves #6119 from {self.remote_head[:10]} to {self.local[:10]}, which "
                       f"dismisses teammate's approval (submitted {approved} UTC)", reason)
         self.assertIn('ask the user first with a `stop:push` option that names #6119 and the dismissal, such as '
