@@ -145,6 +145,24 @@ class DaggerOrHost(unittest.TestCase):
         self.assertEqual(calls, [LIST, RUN])
         self.assertFalse(self.ran.exists())
 
+    def test_maintainers_suite_runs_after_the_kits_checks(self):
+        ran = pathlib.Path(self.folder.name, "maintainer-ran")
+        (self.repo / "maintainer").mkdir()
+        (self.repo / "maintainer" / "test_m.py").write_text(
+            "import pathlib, unittest\nclass M(unittest.TestCase):\n"
+            f"    def test_runs(self):\n        pathlib.Path({str(ran)!r}).touch()\n")
+        run, calls = self.push()
+        self.assertEqual(run.returncode, 0, run.stderr)
+        self.assertEqual(calls, [LIST, RUN])
+        self.assertTrue(ran.exists())
+
+    def test_a_failing_maintainer_suite_blocks_the_push(self):
+        (self.repo / "maintainer").mkdir()
+        (self.repo / "maintainer" / "test_m.py").write_text(
+            "import unittest\nclass M(unittest.TestCase):\n    def test_fails(self):\n        self.fail('x')\n")
+        run, _ = self.push()
+        self.assertNotEqual(run.returncode, 0)
+
     def test_a_failed_check_blocks_the_commit(self):
         run, calls = self.push(check=1)
         self.assertEqual(run.returncode, 1)
@@ -378,7 +396,7 @@ class PreCommit(unittest.TestCase):
     def test_runs_the_touched_skills_suite_and_never_dagger(self):
         run, ran = self.commit("skills/primitive/one/assets/a.json")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])  # the workshop's always run
+        self.assertEqual(ran, ["skills/primitive/one/scripts"])
         self.assertFalse(self.log.exists())
 
     def test_runs_a_touched_skills_suite_and_leaves_the_slow_ones_to_push(self):
@@ -387,7 +405,7 @@ class PreCommit(unittest.TestCase):
         run, ran = self.commit("shared/views.md", "scripts/check-x.py", ".githooks/pre-push",
                                "skills/primitive/addystack/hooks/a.py", "skills/orchestrator/two/references/a.json")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(ran, ["maintainer", "skills/orchestrator/two/scripts"])
+        self.assertEqual(ran, ["skills/orchestrator/two/scripts"])
 
     def test_a_docs_only_commit_runs_no_kit_suite(self):
         # A skill's Markdown outside scripts/ keeps Dagger's cached result, so it runs no
@@ -395,12 +413,21 @@ class PreCommit(unittest.TestCase):
         run, ran = self.commit("README.md", "CHANGELOG.md", "skills/primitive/one/SKILL.md",
                                "skills/orchestrator/two/references/views.md")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(ran, ["maintainer"])
+        self.assertEqual(ran, [])
 
     def test_markdown_in_a_skills_scripts_runs_its_suite(self):
         run, ran = self.commit("skills/primitive/one/scripts/fixture.md")
         self.assertEqual(run.returncode, 0, run.stderr)
-        self.assertEqual(ran, ["maintainer", "skills/primitive/one/scripts"])
+        self.assertEqual(ran, ["skills/primitive/one/scripts"])
+
+    def test_a_maintainer_or_evals_change_runs_maintainers_suite(self):
+        # maintainer/'s tests read evals/, so an eval edit runs them too.
+        for path in ("maintainer/evals.py", "evals/build/README.md"):
+            with self.subTest(path=path):
+                self.ran["maintainer"].unlink(missing_ok=True)
+                run, ran = self.commit(path)
+                self.assertEqual(run.returncode, 0, run.stderr)
+                self.assertEqual(ran, ["maintainer"])
 
     def test_a_failing_touched_suite_blocks_the_commit(self):
         self.write("skills/primitive/one/scripts/test_fail.py",
