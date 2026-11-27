@@ -153,9 +153,10 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
                   if login.lower() != author.lower()]
         return (any(name in reviewer['domains'] for reviewer in request) or name in held
                 or any(reviewers.has(owners, login) for login in asked) or (not owners and bool(asked)))
-    # Domains the pick left with nobody, because everyone else was away or already asked.
-    unfilled = [] if chosen else list(dict.fromkeys(decision['domain'] for decision in placed
-                                                     if not filled(decision['domain'])))
+    # Domains the pick left with nobody, because everyone else was away or already asked. An
+    # author's own pick without --with-suggested leaves its domains to them: that's `uncovered`.
+    unfilled = [] if chosen and not with_suggested else list(dict.fromkeys(
+        decision['domain'] for decision in placed if not filled(decision['domain'])))
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:

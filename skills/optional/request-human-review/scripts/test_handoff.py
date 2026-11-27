@@ -192,6 +192,11 @@ class Plan(unittest.TestCase):
         chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
         self.assertNotIn('Away, so not asked', chosen['comment'])
+        # With --with-suggested, a domain the suggestion can't fill is named too.
+        both = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
+                         self.facts(viewer='carol', standing=standing(away={'bob', 'dave'})), chosen=('alice',),
+                         with_suggested=True)
+        self.assertEqual(handoff.read(both['comment'])['unfilled'], ['auth'])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
