@@ -248,6 +248,12 @@ class Tick(unittest.TestCase):
         message = self.sent()[0]["message"]
         self.assertNotIn("acme/app#21 waits on", message, "a PR that's no longer open waits on nothing")
         self.assertIn("- acme/app#22 waits on acme/tools#139, which closed\n", message, "repeats hourly")
+        saved = self.prs.pop("acme/app#22")  # closed meanwhile, but its read fails
+        self.age(3600)
+        self.tick("--send")
+        self.assertNotIn("acme/app#22 waits on", "".join(m["message"] for m in self.sent()),
+                         "a wait is judged on fresh reads only")
+        self.prs["acme/app#22"] = saved
 
     def test_a_push_or_leaving_draft_restarts_the_draft_clock_and_a_failed_read_keeps_it(self):
         self.write_project(rows={"| running | #12 ← review |": "| waiting | — |"})

@@ -589,7 +589,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
                                         "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
-    events, drafts, clocks = [], {}, state.get("drafts", {})
+    events, drafts, clocks, stale = [], {}, state.get("drafts", {}), set()
     saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
     wakes, unread = watching(coordinator.group(2)), set()
     if wakes is None:  # unknown, not cleared: each unwatched finding keeps its repeat clock
@@ -609,6 +609,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if not pull:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
             unread.add(f"unwatched:{ref}")
+            stale.add(ref)
             if ref in clocks:
                 drafts[ref] = clocks[ref]  # keep its clock, but judge nothing on a stale look
         elif pull.state == "OPEN" and pull.draft:
@@ -628,10 +629,10 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
                       else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
-    states = {ref: known[0] for ref, known in prs.items() if known}
+    states = {ref: known[0] for ref, known in prs.items() if known and ref not in stale}  # judged on fresh reads only
 
     def state_of(ref: str) -> str | None:  # a PR only a wait names is read for it, not saved
-        if ref not in states and ref not in prs:
+        if ref not in states and ref not in prs and ref not in stale:
             pull = view(ref)
             states[ref] = pull.state if pull else None
         return states.get(ref)

@@ -202,7 +202,8 @@ class Waits(unittest.TestCase):
 
     def test_a_blocker_pull_is_one_pr_written_alone(self):
         cases = [("https://github.com/acme/tools/pull/9", "acme/tools#9"), ("#9", "acme/box#9"),
-                 ("acme/tools#9 and a review", None), ("tools #9", None), ("#9 #10", None)]
+                 ("acme/tools#9 and a review", None), ("tools #9", None), ("#9 #10", None),
+                 ("acme/tools#9 (since 2026-11-27 10:00 UTC)", "acme/tools#9")]  # the wait's start is a note
         for blocker, pull in cases:
             with self.subTest(blocker):
                 self.assertEqual(project_md.waits(f"#5 ← {blocker}", "acme/box"),
@@ -210,7 +211,7 @@ class Waits(unittest.TestCase):
 
     def test_every_other_entry_is_free_text(self):
         cases = ["—", "#12 open", "the user's call on retries", "slot 2; worker review", "web #20 ← review",
-                 "tools#4 ← review", " ← review"]
+                 "tools#4 ← review", " ← review", "#12 ←"]
         for cell in cases:
             with self.subTest(cell):
                 self.assertEqual(project_md.waits(cell, "acme/box"), [])
