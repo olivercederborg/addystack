@@ -198,7 +198,9 @@ class Rework(unittest.TestCase):
 
 
 def git(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True).stdout.strip()
+    """git in repo, never signing, whatever the runner's config asks."""
+    return subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false", *args],
+                          capture_output=True, text=True, check=True).stdout.strip()
 
 
 class Lineages(unittest.TestCase):
@@ -249,7 +251,8 @@ class Unproven(unittest.TestCase):
                        "GIT_COMMITTER_EMAIL": "t@example.com"}
                 (repo / f"{name.rstrip('2')}.txt").write_text(name.rstrip("2"))
                 subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-                subprocess.run(["git", "-C", str(repo), "commit", "-qm", name], check=True, env=env)
+                subprocess.run(["git", "-C", str(repo), "-c", "commit.gpgsign=false", "commit", "-qm", name],
+                               check=True, env=env)
                 heads[name] = git(repo, "rev-parse", "HEAD")
             rows = [["p1", heads["old"], heads["base"], "2026-10-26T08:00:00Z", "done", "restacked", {}],
                     ["p2", heads["new"], heads["old"], "2026-10-28T08:00:00Z", "done", "fresh", {}],

@@ -21,7 +21,8 @@ VERSIONS = {"claude": "2.1.316 (Claude Code)", "codex": "codex-cli 0.166.0", "t3
 
 
 def git(*args, cwd=None):
-    return subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.com", *args], cwd=cwd,
+    return subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.com", "-c", "commit.gpgsign=false",
+                           "-c", "tag.gpgsign=false", *args], cwd=cwd,
                           check=True, capture_output=True, text=True).stdout.strip()
 
 
