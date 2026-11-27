@@ -24,8 +24,9 @@ def built(folder, rules):
 def run(skill=100, replies=100, state=None, installed=None, deep=False):
     """Runs a copy of the check against rules files of these sizes; None leaves one out.
     state is the ADDYSTACK_STATE folder, a missing one by default; installed is the
-    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default; deep puts
-    the copy in a folder whose path passes 200 characters."""
+    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default, or "own"
+    for the checkout's own copy; deep puts the copy in a folder whose path passes 200
+    characters."""
     temp = pathlib.Path(tempfile.mkdtemp())
     root = temp / ("checkout-" + "x" * 200) if deep else temp
     try:
@@ -42,7 +43,8 @@ def run(skill=100, replies=100, state=None, installed=None, deep=False):
         if replies is not None:
             (root / "replies.md").write_text("x" * replies)
         env = {**os.environ, "ADDYSTACK_STATE": state or str(root / "no-state"),
-               "REPLY_SHAPE_SKILL": installed or str(root / "no-installed-skill")}
+               "REPLY_SHAPE_SKILL": str(reply_shape / "SKILL.md") if installed == "own"
+               else installed or str(root / "no-installed-skill")}
         return subprocess.run([str(root / "scripts" / "check-reply-budget.py")],
                               capture_output=True, text=True, env=env)
     finally:
@@ -128,6 +130,12 @@ class CheckReplyBudget(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn("reply-shape: 8,001 of 8,000", result.stdout)
         self.assertIn("rules: 8,001 of 8,000", result.stdout)
+
+    def test_a_checkout_copy_the_hook_loads_counts_its_real_path(self):
+        result = run(skill=7_850, replies=None, installed="own", deep=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("reply-shape: 8,000 of 8,000", result.stdout)
+        self.assertIn("reply-shape: over the budget", result.stderr)
 
     def test_checks_the_reply_shape_the_hook_loads(self):
         with tempfile.TemporaryDirectory() as folder:
