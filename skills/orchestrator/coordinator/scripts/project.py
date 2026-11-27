@@ -45,9 +45,10 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 
+import project_md
 import project_queue
 import turn_block
 
@@ -55,7 +56,6 @@ STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done",
           "replaced by <worker>", "absorbed into <worker>")
 STATE = re.compile(r"(queued|overdue|unknown|running|waiting|stuck|done|dropped)\b|(replaced by|absorbed into) \S")
 COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect"}
-CELL = re.compile(r"(?<!\\)\|")
 
 SKELETON = """# ◆ {project}
 
@@ -179,8 +179,7 @@ def _bullet(text: str) -> str:
     return "- " + text.replace("\r\n", "\n").replace("\r", "\n").strip().replace("\n", "\n  ")
 
 
-def _cells(row: str) -> list[str]:
-    return [cell.strip() for cell in CELL.split(row.strip())[1:-1]]
+_cells = project_md.cells
 
 
 def _row(cells: list[str]) -> str:
@@ -374,12 +373,8 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 # the coordinator's model wakes only for news T3 doesn't deliver. A heartbeat that woke it
 # hourly took no action on 91% of its turns.
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
-THREAD_ROW = re.compile(r"(running|overdue|unknown)\b")  # a row whose thread should be running
 PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
-LINK = re.compile(r"t3-thread://v2/([^/>\s)]+)/([^>\s)]+)")  # bare, in <…>, or a Markdown link's (…)
-# A PR as its URL, owner/repo#N, repo#N (the checkout's owner), or #N (the checkout's repo).
-PR_REF = re.compile(r"github\.com/([\w.-]+/[\w.-]+)/pull/(\d+)|(?<![\w/.-])([\w.-]+(?:/[\w.-]+)?)#(\d+)\b"
-                    r"|(?<![\w/#])#(\d+)\b")
+LINK, PR_REF, THREAD_ROW = project_md.LINK, project_md.PR_REF, project_md.THREAD_ROW
 REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
@@ -394,19 +389,39 @@ def _run(args: list[str], cwd: Path | None = None, stdin: str | None = None) -> 
     return done.returncode, done.stdout if done.returncode == 0 else done.stderr
 
 
+def _warn(text: str) -> None:
+    """A line for the timer's log, which has no times of its own, stamped in UTC."""
+    print(f"{datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ} {text}", file=sys.stderr)
+
+
 def show_thread(thread: str) -> dict | None:
-    """The thread's state from `t3 thread show`, or None when it can't be read."""
+    """The thread's state from `t3 thread show`, or None when it can't be read, with the
+    CLI's reason in the log."""
     code, out = _run(["t3", "thread", "show", thread, "--json", "--messages", "0"])
     try:
         return json.loads(out)["thread"] if code == 0 else None
     except (ValueError, KeyError, TypeError):
         return None
+    finally:
+        if code:
+            _warn(f"tick: `t3 thread show {thread}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
+
+
+def this_environment() -> str:
+    """This machine's T3 environment id, or "" when unknown."""
+    path = Path(os.environ.get("T3CODE_HOME", "~/.t3")).expanduser() / "userdata" / "environment-id"
+    try:
+        return path.read_text().strip()
+    except OSError:
+        return ""
 
 
 def view_pr(ref: str) -> list | None:
     """[state, isDraft] of `owner/repo#N`; None when unread."""
     repo, number = ref.split("#")
     code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "state,isDraft"])
+    if code:
+        _warn(f"tick: `gh pr view {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
     try:
         pr = json.loads(out) if code == 0 else None
         return [pr["state"], pr["isDraft"]] if pr else None
@@ -423,18 +438,7 @@ def _header(lines: list[str], field: str) -> str:
 
 def _workers(lines: list[str]) -> tuple[list[dict[str, str]], list[str]]:
     """The Workers rows as {column: cell}, and the rows whose cells don't match the header."""
-    start, end = _section(lines, "Workers")
-    table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
-    if len(table) < 2:
-        return [], []
-    header, rows, odd = _cells(lines[table[0]]), [], []
-    for i in table[2:]:
-        cells = _cells(lines[i])
-        if len(cells) == len(header):
-            rows.append(dict(zip(header, cells)))
-        else:
-            odd.append(lines[i])
-    return rows, odd
+    return project_md.workers(lines, *_section(lines, "Workers"))
 
 
 def _listened(lines: list[str], key: str) -> str:
@@ -449,8 +453,7 @@ def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    text = re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
-        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
+    text = project_md.ranges(text)
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
         repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
@@ -490,7 +493,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
-        print(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}", file=sys.stderr)
+        _warn(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}")
         return None
     busy = hold and lead.get("status") in ACTIVE
     place = _header(lines, "Checkout").split(" (")[0].strip()
@@ -523,7 +526,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             continue
         now_seen = show(thread)
         if now_seen is None:
-            print(f"tick: can't read thread {thread}", file=sys.stderr)
+            _warn(f"tick: can't read thread {thread}")
             if thread in seen:
                 threads[thread] = seen[thread]  # keep its last look, so a stall stays timed
             found.append((f"unread:{thread}", f"{slug}: `t3 thread show` can't read its thread"))
@@ -554,7 +557,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         known = state.get("prs", {}).get(ref)
         prs[ref] = view(ref) or known
         if prs[ref] is known:
-            print(f"tick: can't read PR {ref}", file=sys.stderr)
+            _warn(f"tick: can't read PR {ref}")
         if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
             found.append((f"watch:{ref}", f"{ref}: {prs[ref][0].lower()}, and still under Watches"))
         elif known and prs[ref] != known:
@@ -588,6 +591,14 @@ def _tick(folder: Path, lines: list[str], send: bool) -> int:
     """Runs tick: with --send only while Listening's Heartbeat is `tick`, saving the state
     only after the message went out, so a failed send is retried next tick."""
     if send and _listened(lines, "Heartbeat") != "tick":
+        return 0
+    # A copy of a project whose coordinator runs on another machine: T3 here can't read or
+    # message its thread, and that machine's timer ticks it.
+    lead, here = LINK.search(_header(lines, "Coordinator")), this_environment()
+    if lead and here and lead.group(1) != here:
+        if not send:
+            print(f"its coordinator's thread is on environment {lead.group(1)}, not this machine's {here}, "
+                  "so that machine's timer ticks it")
         return 0
     store = folder / "tick.json"
     try:

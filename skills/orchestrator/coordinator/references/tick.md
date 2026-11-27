@@ -37,7 +37,9 @@ Watches stops it.
 While the coordinator's own thread runs, the tick still times its workers but sends
 nothing and leaves PRs for later, so its turn settles first. `tick.json` beside
 `project.md` holds what it last saw; a failed send leaves it unchanged, so the next tick
-sends again. A thread or PR it can't read is named on stderr, in the timer's log.
+sends again. A thread or PR it can't read is named on stderr, in the timer's log, with the time
+and the CLI's reason. A copy of a project whose coordinator is on another machine's
+environment is skipped: T3 here can't read that thread, and that machine's timer ticks it.
 
 ## Install
 

@@ -5169,6 +5169,204 @@ class CardCheck(unittest.TestCase):
                                                 text=True, check=True).stdout, "")
 
 
+class CardCheckWakes(unittest.TestCase):
+    """card-check.py on a `running` reply, against T3's record of what will wake its thread."""
+    THREAD = "thread-coordinator"
+    LATER = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + 300))  # within a 6-minute eta
+    MUCH_LATER = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + 7200))
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.dir = pathlib.Path(folder.name)
+
+    def db(self, links=(), tasks=(), items=(), timers=(), other_tasks=()):
+        """T3's state database: the thread's PR links, pending tasks on its active provider
+        thread (other_tasks on an older one), turn items as (type, status, run status, input),
+        and scheduled tasks as (thread_mode, enabled, next_run_at)."""
+        path = self.dir / f"state-{hashlib.sha1(repr((links, tasks, items, timers, other_tasks)).encode()).hexdigest()[:8]}.sqlite"
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
+            db.execute("create table orchestration_v2_projection_threads (thread_id text, payload_json text, "
+                       "active_provider_thread_id text, deleted_at text)")
+            db.execute("create table orchestration_v2_projection_provider_threads (thread_id text, provider_thread_id text, payload_json text)")
+            db.execute("create table orchestration_v2_projection_turn_items (thread_id text, run_id text, ordinal integer, "
+                       "type text, status text, payload_json text)")
+            db.execute("create table orchestration_v2_projection_runs (run_id text, status text)")
+            db.execute("create table scheduled_tasks (thread_id text, enabled integer, thread_mode text, next_run_at text)")
+            db.execute("insert into orchestration_v2_projection_threads values (?, ?, 'p2', null)",
+                       (self.THREAD, json.dumps({"pullRequests": list(links)})))
+            db.executemany("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
+                           [(self.THREAD, "p1", json.dumps({"pendingBackgroundTasks": list(other_tasks)})),
+                            (self.THREAD, "p2", json.dumps({"pendingBackgroundTasks": list(tasks)}))])
+            for at, (kind, status, run_status, given, *call) in enumerate(items):
+                db.execute("insert into orchestration_v2_projection_runs values (?, ?)", (f"run-{at}", run_status))
+                db.execute("insert into orchestration_v2_projection_turn_items values (?, ?, ?, ?, ?, ?)",
+                           (self.THREAD, f"run-{at}", at, kind, status, json.dumps(
+                               {"input": given, **({"toolName": call[0], "output": call[1]} if call else {})})))
+            db.executemany("insert into scheduled_tasks (thread_id, thread_mode, enabled, next_run_at) values (?, ?, ?, ?)", [(self.THREAD, *timer) for timer in timers])
+        return str(path)
+
+    def run_hook(self, db, state="running", eta=None, active=False, env=None, options=(), said="CI is running on #6153."):
+        value = {"state": state, "elapsed": "3 min", **({"eta": eta} if eta else {})} if state == "running" else {
+            "state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "push the fixes"}],
+            "options": [{"key": key, "class": cls, "text": text} for key, (cls, text) in zip("ab", options)]}
+        reply = f"⏳ {said}\n\n" + block(value)
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
+               "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate"), **(env or {})}
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
+                             input=json.dumps({"hook_event_name": "Stop", "last_assistant_message": reply,
+                                               "stop_hook_active": active})).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    WATCH = {"repository": "o/r", "number": 6153, "source": "agent", "watch": {"until": "merged", "checksPending": True}}
+
+    def test_sends_back_a_running_reply_nothing_will_wake(self):
+        # Nov 26, 2026: a user's Stop at 09:43 cleared the five watches the 12:02 and 12:27 replies waited on.
+        cleared = {**self.WATCH, "watch": None}
+        for name, db in (("no state", self.db()), ("Stop-cleared watch", self.db(links=[cleared])),
+                         ("stack-dismissed watch", self.db(links=[{**self.WATCH, "source": "stack-dismissed"}])),
+                         ("task on an old provider thread", self.db(other_tasks=[{"taskId": "b1", "kind": "command"}])),
+                         ("finished child", self.db(items=[("subagent", "completed", "completed", None)])),
+                         ("persistent tool", self.db(items=[("dynamic_tool", "running", "completed", {"persistent": True})])),
+                         ("rolled-back run", self.db(items=[("subagent", "running", "rolled_back", None)])),
+                         ("timer in a new thread", self.db(timers=[("new_thread", 1, self.LATER)])),
+                         ("paused timer", self.db(timers=[("continue", 0, self.LATER)])),
+                         ("spent timer", self.db(timers=[("continue", 1, None)]))):
+            with self.subTest(name):
+                reason = self.run_hook(db)
+                self.assertIn("This reply's turn block is `running`, but nothing in T3 will wake this thread", reason)
+                self.assertIn("`wasWatching: false`", reason)
+                self.assertIn("Send your whole reply again with the wake set.", reason)
+                self.assertIsNone(self.run_hook(db, active=True))  # once per stop
+
+    def test_passes_each_wake_t3_holds(self):
+        for name, db in (("watched PR", self.db(links=[self.WATCH])),
+                         ("background command", self.db(tasks=[{"taskId": "b1", "kind": "command", "awaited": True}])),
+                         ("monitor", self.db(tasks=[{"taskId": "m1", "kind": "monitor"}])),
+                         ("native subagent", self.db(tasks=[{"taskId": "a1", "kind": "subagent"}])),
+                         ("delegated child", self.db(items=[("subagent", "running", "completed", None)])),
+                         ("background tool", self.db(items=[("dynamic_tool", "running", "completed", {"x": 1})])),
+                         ("timer on this thread", self.db(timers=[("continue", 1, self.MUCH_LATER)])),
+                         # T3 runs a fresh_session task in the same thread with a fresh context.
+                         ("fresh-session timer", self.db(timers=[("fresh_session", 1, self.MUCH_LATER)]))):
+            with self.subTest(name):
+                self.assertIsNone(self.run_hook(db))
+
+    def test_an_eta_needs_a_timer_by_then_or_a_pending_task(self):
+        # Nov 20, 2026: a live watch on #6086 sent no wake after a 36-second Lint re-run, eta 6 min.
+        watched = self.db(links=[self.WATCH])
+        for eta in ("6 min", "about 6 minutes", "~1 h 30 min", "45m", "1 day", "2 weeks"):  # review-loop r3: days, weeks
+            with self.subTest(eta=eta):
+                reason = self.run_hook(watched, eta=eta)
+                self.assertIn(f"This reply's eta is {eta}, but only a PR watch will wake this thread", reason)
+        self.assertIn("eta is 6 min", self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, self.MUCH_LATER)]),
+                                                    eta="6 min"))
+        late = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime(time.time() + 900))  # review-loop r1: 15 min late
+        self.assertIn("eta is 6 min", self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, late)]), eta="6 min"))
+        for name, db, eta in (("timer by the eta", self.db(links=[self.WATCH], timers=[("continue", 1, self.LATER)]), "6 min"),
+                              ("timer by a 2 h eta", self.db(timers=[("continue", 1, self.MUCH_LATER)]), "2 h"),
+                              ("pending child", self.db(items=[("subagent", "running", "completed", None)]), "6 min"),
+                              ("clock time", watched, "by 15:30"), ("no number", watched, "soon")):
+            with self.subTest(name):
+                self.assertIsNone(self.run_hook(db, eta=eta))
+
+    WATCHED = ("dynamic_tool", "completed", "completed", {"repository": "o/r", "number": 6153},
+               "mcp__t3-code__watch_pull_request", {"content": "{\"wasWatching\": false}"})
+
+    def test_sends_back_a_named_pr_whose_watch_t3_ended(self):
+        # Nov 26, 2026, 12:27: "#6153's browser tests are re-running", while #6253's later watch still ran.
+        ended = {"repository": "o/r", "number": 6153, "source": "agent", "watch": None, "snapshot": {"state": "open"}}
+        other = {**self.WATCH, "number": 6253}
+        db = self.db(links=[ended, other], items=[self.WATCHED])
+        reason = self.run_hook(db)
+        self.assertIn("This reply names #6153, which this thread watched and never unwatched, but T3 no longer "
+                      "watches it", reason)
+        unwatched = ("dynamic_tool", "completed", "completed", {"url": "https://github.com/o/r/pull/6153"},
+                     "mcp__t3-code__unwatch_pull_request", {"content": "{}"})
+        denied = (*unwatched[:4], "mcp__t3-code__unwatch_pull_request",
+                  {"content": "PreToolUse:mcp__t3-code__unwatch_pull_request hook error: Unwatch gate: ..."})
+        for name, kwargs in (("unwatched on purpose", {"db": self.db(links=[ended, other], items=[self.WATCHED, unwatched])}),
+                             ("merged", {"db": self.db(links=[{**ended, "snapshot": {"state": "merged"}}, other],
+                                                       items=[self.WATCHED])}),
+                             ("not named", {"db": db, "said": "CI is running on #6253."}),
+                             ("never watched here", {"db": self.db(links=[ended, other])})):
+            with self.subTest(name):
+                self.assertIsNone(self.run_hook(**kwargs))
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, denied])))
+        # review-loop r1 on 549f8b0: a qualified or URL reference names it too, and an unwatch of
+        # another repo's #6153 doesn't end this one's.
+        for said in ("CI is running on o/r#6153.", "CI is running on r#6153.", "CI is running on #6152–#6154.",
+                     "CI is running on https://github.com/o/r/pull/6153."):
+            with self.subTest(said=said):
+                self.assertIn("names #6153", self.run_hook(db, said=said))
+        self.assertIsNone(self.run_hook(db, said="CI is running on o/other#6153."))
+        elsewhere = (*unwatched[:3], {"repository": "o/other", "number": 6153}, *unwatched[4:])
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, elsewhere])))
+        # review-loop r2: an unwatch aimed at another thread leaves this one's ended watch, and a
+        # short repository matches the owner/repo T3 resolved it to.
+        aimed = (*unwatched[:3], {"url": "https://github.com/o/r/pull/6153", "threadId": "thread-other"}, *unwatched[4:])
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[self.WATCHED, aimed])))
+        resolved = json.dumps({"host": "github.com", "repository": "o/r", "number": 6153, "watching": True})
+        short = ("dynamic_tool", "completed", "completed", {"repository": "r", "number": 6153},
+                 "mcp__t3-code__watch_pull_request", {"content": resolved, "structuredContent": json.loads(resolved)})
+        self.assertIn("names #6153", self.run_hook(self.db(links=[ended, other], items=[short])))
+
+    def test_sends_back_a_coordinator_whose_worker_runs_on_another_machine(self):
+        # Nov 23, 2026: a worker on a linked machine finished at 15:27, and the Mac coordinator heard nothing until 17:30.
+        folder = self.dir / "orchestrate" / "ox-migration"
+        folder.mkdir(parents=True)
+        mac, linked = "env-this", "env-linked"
+        def write(state, place=linked, coordinator=self.THREAD):
+            (folder / "project.md").write_text(
+                f"# ◆ ox-migration\n\nCoordinator: <t3-thread://v2/{mac}/{coordinator}> · Checkout: ~/x\n\n"
+                "## Decisions\n\n| Thread | State |\n|---|---|\n| <t3-thread://v2/other/x> | running |\n\n## Workers\n\n"
+                "| Worker | Thread | Branch or PR | State | Waits on | Last side effect |\n|---|---|---|---|---|---|\n"
+                f"| split-40 | <t3-thread://v2/{place}/mcp:launch:abc> | #6153 | {state} | none | pushed |\n")
+        watched = self.db(links=[self.WATCH])
+        write("running, started 14:44")
+        self.assertIn("Workers says split-40 runs on another machine", self.run_hook(watched))
+        self.assertIsNone(self.run_hook(self.db(links=[self.WATCH], timers=[("continue", 1, self.LATER)])))
+        # Nov 25, 2026: review-70's row held a bare id, `--thread "mcp:launch:6c2262…"`, for a linked machine's thread.
+        bare = (folder / "project.md").read_text().replace(f"<t3-thread://v2/{linked}/mcp:launch:abc>", "mcp:launch:abc")
+        (folder / "project.md").write_text(bare)
+        self.assertIn("Workers says split-40 runs on another machine", self.run_hook(watched))
+        with contextlib.closing(sqlite3.connect(watched)) as db, db:  # a thread T3 here knows is local
+            db.execute("insert into orchestration_v2_projection_threads values ('mcp:launch:abc', '{}', null, null)")
+        self.assertIsNone(self.run_hook(watched))
+        # review-loop r1: a row whose cells don't match the header is the tick's to flag, as project.py skips it.
+        (folder / "project.md").write_text(bare.replace("| #6153 | running", "| #6153 | extra | running"))
+        self.assertIsNone(self.run_hook(self.db(links=[{**self.WATCH, "number": 6155}])))
+        watched = self.db(links=[{**self.WATCH, "number": 6154}])
+        for name, args in (("done", ("done: PR opened",)), ("on this machine", ("running", mac)),
+                           ("another coordinator", ("running", linked, "thread-other"))):
+            with self.subTest(name):
+                write(*args)
+                self.assertIsNone(self.run_hook(watched))
+
+    def test_fails_open_and_checks_only_running_replies_in_t3(self):
+        empty = self.db()
+        outside = {k: "" for k in ("T3CODE_THREAD_ID", "T3CODE_CLI_PATH")}
+        # review-loop r3: T3CODE_HOME moves T3's data directory, and the database with it.
+        home = self.dir / "home"
+        (home / "userdata").mkdir(parents=True)
+        shutil.copy(empty, home / "userdata" / "statev2.sqlite")
+        self.assertIn("nothing in T3 will wake", self.run_hook("", env={"T3CODE_HOME": str(home)}))
+        for name, kwargs in (("no database", {"db": str(self.dir / "missing.sqlite")}),
+                             ("unknown thread", {"db": empty, "env": {"T3CODE_THREAD_ID": "thread-other"}}),
+                             ("outside T3", {"db": empty, "env": outside}),
+                             ("not a T3 database", {"db": str(HOOKS / "card-check.py")}),
+                             ("stop reply", {"db": empty, "state": "stop", "options": [("decision", "fix it")]})):
+            with self.subTest(name):
+                self.assertIsNone(self.run_hook(**kwargs))
+
+    def test_a_stop_reply_gets_only_the_push_check(self):
+        # A running block carries no options, so the two checks never meet on one reply.
+        reason = self.run_hook(self.db(), state="stop", options=[("stop:push", "push #12 once CI is green (dismisses "
+                                                                               "the reviewer's approval)")])
+        self.assertIn("is stop:push, but push-gate would refuse it", reason)
+        self.assertNotIn("wake", reason)
+
+
 class VerdictStamp(unittest.TestCase):
     HOOK = "verdict-stamp.py"
 
