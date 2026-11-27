@@ -152,6 +152,19 @@ class Post(unittest.TestCase):
             self.post(fake, base=NEWER, diffs={NEWER: 'more'})
         self.assertEqual(fake.writes, [])
 
+    def test_a_retry_after_a_failed_withdrawal_posts_the_review_once(self):
+        self.gate('interface')
+        fake = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})
+        def dismissal_fails(command, *arguments):
+            if command == 'dismiss':
+                raise ValueError('github.sh dismiss failed: HTTP 502')
+            return Fake.github(fake, command, *arguments)
+        with patch.object(fake, 'github', dismissal_fails), self.assertRaisesRegex(ValueError, 'HTTP 502'):
+            self.post(fake)
+        outcome = self.post(fake, retry=True)
+        self.assertEqual(outcome['outcome'], 'needs-human')
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'dismiss'])
+
     def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
         self.gate('interface')
         failing = Fake(active={'id': 41, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD})

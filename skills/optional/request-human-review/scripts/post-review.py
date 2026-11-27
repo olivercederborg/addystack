@@ -24,7 +24,9 @@ It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?},
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved; nothing posted, since the
 push starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
-GATES.json for another PR, or for a diff the PR no longer has against its base.
+GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
+review is recorded in POSTED.json beside REVIEW.json, so a run retried after a failed
+withdrawal finishes it without posting the review again.
 """
 from __future__ import annotations
 
@@ -213,7 +215,15 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 event = 'REQUEST_CHANGES' if action == 'request-changes' else 'COMMENT'
                 outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
                                       'not-approved': 'not-approved'}[action]
-                outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
+                # A run that posted this review and then stopped before withdrawing the earlier one
+                # left a record: a retry finishes the withdrawal instead of posting it twice.
+                record = folder / 'POSTED.json'
+                posted = json.loads(record.read_text()) if record.exists() else {}
+                if posted.get('head') == head and posted.get('outcome') == outcome['outcome']:
+                    outcome['review'] = posted['review']
+                else:
+                    outcome['review'] = github('review', number, head, drafts_path, event, _write(scratch, 'body.md', body)).strip()
+                    record.write_text(json.dumps({'head': head, 'outcome': outcome['outcome'], 'review': outcome['review']}))
                 if withdraw and withdraw['state'] == 'CHANGES_REQUESTED':
                     github('dismiss', number, withdraw['id'], _write(scratch, 'dismissal.md', notice))
         finally:
