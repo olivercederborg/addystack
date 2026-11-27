@@ -146,10 +146,22 @@ class OneWayDoors(unittest.TestCase):
         self.assertEqual(self.problems(paying, {'docs/pull_request_template.md': 'One-way doors include sent emails.\n'}),
                          [])
 
-    def test_the_template_github_reads_first_wins(self):
+    def test_only_the_template_github_uses_counts(self):
         self.base({'docs/PULL_REQUEST_TEMPLATE.md': 'One-way doors include auth.\n',
                    'PULL_REQUEST_TEMPLATE.md': 'One-way doors include money movement.\n'})
         self.assertEqual(gates.one_way_doors('HEAD', str(self.repo)), ('PULL_REQUEST_TEMPLATE.md:1', 'money movement'))
+        # A .github/ template shadows the root's, even when it lists none.
+        self.base({'.github/pull_request_template.md': '## Risk\n'})
+        self.assertIsNone(gates.one_way_doors('HEAD', str(self.repo)))
+
+    def test_a_wrapped_list_and_an_area_s_own_words_are_read(self):
+        signing_in = verdict(sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
+                                        {'area': 'auth', 'code': 'auth.ts:1'}])
+        problems = self.problems(signing_in, {'.github/PULL_REQUEST_TEMPLATE.md':
+                                              '## Risk\n\nOne-way doors include sent emails, changes to\n'
+                                              'authentication or authorization, and money\nmovement.\n'})
+        self.assertEqual([problem.split(' is ')[0] for problem in problems], ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
+        self.assertIn('by .github/PULL_REQUEST_TEMPLATE.md:3:', problems[0])
 
     def test_a_review_in_a_subfolder_reads_the_repository_s_template(self):
         base = self.base({'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE, 'src/pay.ts': ''})

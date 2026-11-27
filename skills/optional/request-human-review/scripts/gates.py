@@ -45,6 +45,10 @@ TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
 DOORS = re.compile(r'one-way doors (?:include|are):? ([^.]+)', re.I)
 TEMPLATE = re.compile(r'(\.github/|docs/)?pull_request_template\.md', re.I)
 TEMPLATE_FOLDERS = ('.github/', '', 'docs/')
+# The words such a list uses for each sensitive area.
+TERMS = {'money-movement': ('money movement',), 'auth': ('auth', 'authentication', 'authorization'),
+         'tenancy': ('tenancy',), 'concurrency': ('concurrency', 'retries', 'idempotency', 'races'),
+         'dependencies': ('dependency', 'dependencies')}
 
 
 def load(path) -> dict:
@@ -84,19 +88,22 @@ def check(verdict: dict, pr_body: str, head: str, number: int | None = None) -> 
 
 def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
     """The repository's own one-way doors at base, as ("path:line", "the list"): the "One-way doors
-    include …" sentence of its PR template, read from .github/, the root, then docs/, as GitHub
-    does. None when no template lists them."""
+    include …" sentence of the PR template GitHub uses, the first in .github/, the root, then
+    docs/. None when that template lists none, or there is none."""
     def git(*arguments):
         return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
                               timeout=60).stdout
     # --full-tree: the paths are the repository's, whatever folder the review runs in.
     templates = [path for path in git('ls-tree', '--full-tree', '--name-only', base, '--', './', '.github/', 'docs/')
                  .splitlines() if TEMPLATE.fullmatch(path)]
-    for path in sorted(templates, key=lambda path: TEMPLATE_FOLDERS.index(path[:path.rfind('/') + 1])):
-        for number, text in enumerate(git('show', f'{base}:{path}').splitlines(), 1):
-            if match := DOORS.search(text):
-                return f'{path}:{number}', match.group(1)
-    return None
+    if not templates:
+        return None
+    path = min(templates, key=lambda path: TEMPLATE_FOLDERS.index(path[:path.rfind('/') + 1]))
+    # The whole file: a Markdown sentence can wrap across lines.
+    text = git('show', f'{base}:{path}')
+    if not (match := DOORS.search(text)):
+        return None
+    return f'{path}:{text.count(chr(10), 0, match.start()) + 1}', ' '.join(match.group(1).split())
 
 
 def doors(verdict: dict, base: str, cwd: str = '.') -> list:
@@ -110,7 +117,7 @@ def doors(verdict: dict, base: str, cwd: str = '.') -> list:
     covered = {decision['code'] for decision in verdict['decisions'] if decision['gate'] == 'one-way-door'}
     return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
             'decision at that code' for entry in verdict['sensitive']
-            if re.search(rf'\b{entry["area"].replace("-", " ")}\b', listed, re.I) and entry['code'] not in covered]
+            if re.search(rf'\b(?:{"|".join(TERMS[entry["area"]])})\b', listed, re.I) and entry['code'] not in covered]
 
 
 def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
