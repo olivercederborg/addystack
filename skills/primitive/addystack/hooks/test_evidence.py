@@ -15,6 +15,7 @@ GIF = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x80\x80\x80\x00\x00\x00"
 CAPTURES = {"shot.png": PNG, "shot.gif": GIF, "shot.jpg": b"\xff\xd8\xff\xe0\x00\x10JFIF\x00",
             "shot.webp": b"RIFF\x24\x00\x00\x00WEBPVP8 ", "run.mp4": b"\x00\x00\x00\x18ftypisom",
             "run.mov": b"\x00\x00\x00\x14ftypqt  ", "run.webm": b"\x1a\x45\xdf\xa3\x9f"}
+APP = "export const App = () => <main />\n"
 
 
 class Repo(unittest.TestCase):
@@ -55,7 +56,7 @@ class Repo(unittest.TestCase):
 class Classify(Repo):
     def test_each_kind_has_a_diff_that_triggers_it(self):
         cases = {
-            "ui": ({"src/App.tsx": "x\n", "Sources/Home.swift": "import SwiftUI\n"}, "Change",
+            "ui": ({"src/App.tsx": APP, "Sources/Home.swift": "import SwiftUI\n"}, "Change",
                    ["Sources/Home.swift: imports SwiftUI", "src/App.tsx: UI file"]),
             "contract": ({"api/openapi.yaml": "x\n", "src/api.ts": "export function list(page: number) {}\n"},
                          "Change", ["api/openapi.yaml: API schema",
@@ -127,6 +128,20 @@ class Classify(Repo):
 
     def test_deleting_a_file_still_counts(self):
         self.assertEqual(self.classify({"src/api.ts": None}), {"contract": ["src/api.ts: changes or removes `export function list() {}`"]})
+
+    def test_a_tsx_file_without_jsx_is_not_ui(self):
+        self.assertEqual(self.classify({"src/bot.tsx": "const skills = new Set<Skill>();\n"}), {})
+        for jsx in ("<>{x}</>", "<div>x</div>", "<Icon />"):
+            with self.subTest(jsx=jsx):
+                self.setUp()
+                self.assertEqual(self.classify({"src/View.jsx": f"export const View = () => {jsx}\n"}),
+                                 {"ui": ["src/View.jsx: UI file"]})
+
+    def test_deleting_a_risky_file_needs_no_mutants(self):
+        self.base = self.change({"src/auth/check.ts": "function check() {}\n"}, "Add the check")
+        self.assertEqual(self.classify({"src/auth/check.ts": None}), {})
+        self.assertEqual(self.classify({"src/auth/check.ts": "function check() { return 1 }\n"}),
+                         {"mutants": ["src/auth/check.ts: auth path"]})
 
     def test_a_member_inside_a_multi_line_exported_type_is_contract(self):
         self.base = self.change({"src/user.ts": "export interface User {\n  id: string\n  displayName: string\n}\n\n"
@@ -258,7 +273,7 @@ class Recording(Repo):
 
     def test_done_needs_each_kind_its_change_needs(self):
         kills = "killed: flip a\nkilled: drop b\nkilled: drop c\n"
-        cases = {"ui": ({"src/App.tsx": "x\n"}, "Change", "shot.png", PNG),
+        cases = {"ui": ({"src/App.tsx": APP}, "Change", "shot.png", PNG),
                  "parity": ({"src/util.ts": "x\n"}, "Migrate errors to v4", "parity.log", "same outcomes\n"),
                  "contract": ({"src/api.ts": None}, "Change", "exports.diff", "-list\n"),
                  "mutants": ({"src/auth/login.ts": "x\n"}, "Change", "mutants.log", kills),
@@ -279,7 +294,7 @@ class Recording(Repo):
                 self.assertEqual(found, receipt)
 
     def test_a_check_not_run_here_backs_not_verified_only(self):
-        head = self.change({"src/App.tsx": "x\n"})
+        head = self.change({"src/App.tsx": APP})
         with self.assertRaisesRegex(verdicts.VerdictError, r"ui \(src/App.tsx: UI file\): not run here \(no simulator\)"):
             self.record(head, evidence={"ui": ["not-run:no simulator"]})
         receipt = self.record(head, "not-verified", evidence={"ui": ["not-run:no simulator"]}, findings=["no simulator"])
@@ -474,7 +489,7 @@ class Recording(Repo):
         self.assertNotEqual(run("record", self.base, head).returncode, 0)
 
     def test_the_cli_refuses_and_classifies(self):
-        head = self.change({"src/App.tsx": "x\n", "src/api.ts": None}, "Change")
+        head = self.change({"src/App.tsx": APP, "src/api.ts": None}, "Change")
         refused = self.cli("record", self.base, head)
         self.assertEqual((refused.returncode, refused.stdout), (1, ""))
         self.assertEqual(refused.stderr, "Done needs evidence: ui (src/App.tsx: UI file) → --evidence ui=<capture>; "
