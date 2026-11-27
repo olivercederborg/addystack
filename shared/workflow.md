@@ -86,8 +86,8 @@ A repo's trust is the `trust` field of its policy, from
 `<kit>/bin/addystack policy --repo <checkout>`. The user's config sets it per repo, and a repo's
 own `.agents/addystack.jsonc` can only make it stricter.
 
-- **`draft`**: autopilot ends at a draft stack. The user requests reviewers and merges,
-  or tells the agent to, in their latest message. Asking to merge covers marking ready.
+- **`draft`**: autopilot ends at a draft stack. The user marks it ready and merges, or
+  tells the agent to, in their latest message. Asking to merge covers marking ready.
 - **`merge on go`** (`merge-on-go`): the agent marks ready and merges a verified stack
   when the user's go names merging ("merge it and start next"), whether that's their
   latest message or the go that started the run.
@@ -105,6 +105,25 @@ own `.agents/addystack.jsonc` can only make it stricter.
     with `cd <checkout> && …` on a literal, unquoted path.
   - Codex runs the hook only while its `/hooks` entry is trusted, and skips a changed
     entry until it's trusted again. Until then, `gate` works like `merge on go` in Codex.
+
+## Review App
+
+A repo whose policy sets `review`, as `"review": {"app": "<slug>"}` from the repo's own
+`.agents/addystack.jsonc`, is reviewed by that GitHub App: it reviews every ready PR, and
+its approval is the one the repo requires. After a PR is marked ready, the next wait is
+that App's review, never a person's. On each wake, read it with
+`scripts/github.sh reviewed <N> '<slug>[bot]'`:
+
+- **Approved**: `active` is an approval whose `commit_id` is `scripts/github.sh head <N>`.
+  Go on to the merge line, as the repo's trust allows.
+- **Changes requested**: handle its threads as any reviewer's, then push.
+- **Needs a human**: its latest review's body, in `scripts/github.sh feedback <N>`,
+  carries **Needs a human**. That's the App's handoff: report the decisions it names to
+  the user and keep waiting. Don't request a reviewer; that stays a stop.
+- **Pushed since**: a push can dismiss the App's approval and starts its re-review, so
+  wait for its review of the new head.
+
+Without `review`, a ready PR waits on reviewers as before.
 
 ## Two tracks
 

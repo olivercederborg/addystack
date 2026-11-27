@@ -200,17 +200,16 @@ top item or the one-line status.
 
 The PR's worker gets each PR merge-ready: restacked, verify-work Done, and checks green,
 or not run on a draft whose CI starts on ready. It fixes what
-`<kit>/hooks/merge-gate.py --dry-run '<line>'` (`<kit>`: the addystack skill's folder)
-names on the line
-`scripts/stack.sh where #N` prints until only a go or that CI is left. You run the line,
-since merge-gate takes a go only from the user's own latest prompt in the transcript
-that merges, never a worker's. Run it once the repo's trust value in
+`<kit>/hooks/merge-gate.py --dry-run '<line>'` (`<kit>`: addystack's folder) names on
+the line `scripts/stack.sh where #N` prints until only a go or that CI is left. You run
+the line: merge-gate takes a go only from the user's latest prompt in the merging
+transcript, never a worker's. Run it once the repo's trust in
 [workflow](references/workflow.md) allows: in a `gate` repo when the worker reports
-merge-ready, otherwise in the turn the user gives the go, the `stop:merge` option's
-text, or one they already gave. First run `gh pr ready <N>` for each draft the line
-merges, from the checkout it `cd`s into. When readying starts CI the line waits on,
-watch those PRs and run the line on the wake that finds them green, asking again if
-merge-gate wants a go.
+merge-ready, else in the turn the user gives the go, the `stop:merge` option's text, or
+one they already gave. First run `gh pr ready <N>` for each draft the line merges, from
+the checkout it `cd`s into. When readying starts CI or a
+[review App](references/workflow.md#review-app) the line waits on, watch them and run the
+line on the wake finding them green and approved, asking again if merge-gate wants a go.
 
 **Done when:** each merged PR's state is `MERGED` in `gh pr view` and recorded in Workers.
 
