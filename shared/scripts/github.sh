@@ -102,23 +102,29 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     classic=$(gh api "repos/$slug/branches/$base" --jq '.protection.required_status_checks // empty
       | select(.enforcement_level != "off") | (.contexts // [])[]') || exit 1
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
-    # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go). Read
-    # here rather than through gh pr checks, which also asks for each check's workflow run,
-    # which a token without the actions permission, such as an App's, may not read. Checks it
-    # can't read are an error, never none.
+    # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go), which
+    # keeps only each check's newest run, by name and app: an older pass never hides a re-run
+    # that is pending or failed. Read here rather than through gh pr checks, which also asks for
+    # each check's workflow run, which a token without the actions permission, such as an App's,
+    # may not read. Checks it can't read are an error, never none.
     checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion startedAt checkSuite{app{slug}}} ... on StatusContext{context state}}}}}}}}}}' \
       --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
         elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
         elif . == "CANCELLED" then "cancel" else "pending" end;
         .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
-        | if .__typename == "CheckRun" then "\(.name)\t\((if .status == "COMPLETED" then .conclusion else .status end) | bucket)"
-          else "\(.context)\t\(.state | bucket)" end') || exit 1
-    # A check can run more than once (a cancelled duplicate); its best state counts. The
-    # required contexts count, or every reported check when the base requires none; one
-    # that failed, was cancelled, or is running shows CI ran.
+        | if .__typename == "CheckRun"
+          then "\(.name)\t\(.checkSuite.app.slug // "")\t\(.startedAt // "")\t\((if .status == "COMPLETED" then .conclusion else .status end) | bucket)"
+          else "\(.context)\t\t\t\(.state | bucket)" end') || exit 1
+    # Rows are name, app, start and bucket; a run not started yet sorts first, as in gh.
+    checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2
+      if (!(key in at) || $3 >= at[key]) { at[key] = $3; row[key] = $1 FS $4 } }
+      END { for (key in row) print row[key] }')
+    # Two apps can report a check of one name; the best of theirs counts. The required
+    # contexts count, or every reported check when the base requires none; one that failed,
+    # was cancelled, or is running shows CI ran.
     pending=0 ran=0
     counted=${contexts:-$(printf '%s\n' "$checks" | cut -f1 | sort -u)}
     while IFS= read -r context; do

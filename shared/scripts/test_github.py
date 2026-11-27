@@ -21,7 +21,8 @@ elif a.startswith("api repos/o/r/branches/main --jq"):
 elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a and "workflowRun" not in a:
     if s["checks"] == "unreadable":
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    print("\n".join(f"{name}\t{bucket}" for name, bucket in s["checks"]))
+    # As the --jq prints them: name, app, start and bucket; a scenario row may leave out the last two.
+    print("\n".join(f"{c[0]}\t{c[2] if len(c) > 2 else ''}\t{c[3] if len(c) > 3 else ''}\t{c[1]}" for c in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
 else:
@@ -73,6 +74,16 @@ class Required(unittest.TestCase):
     def test_a_running_required_check_is_not_all_passed(self):
         self.assertEqual(self.required(required=["ci"], checks=[["build", "skipping"], ["ci", "pending"]]),
                          "ci\tpending\nworkflows that skip drafts: ci.yml\nrequired: not all passed\n")
+
+    def test_a_checks_newest_run_counts_not_an_older_pass(self):
+        rerun = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pending", "github-actions", "2026-11-27T10:05:00Z"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=rerun), "ci\tpending\nrequired: not all passed\n")
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=rerun[::-1]), "ci\tpending\nrequired: not all passed\n")
+        # A pass after a failure counts; two apps' checks of one name keep the better one.
+        fixed = [["ci", "fail", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pass", "github-actions", "2026-11-27T10:05:00Z"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=fixed), "ci\tpass\nrequired: all passed\n")
+        apps = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z"], ["ci", "pending", "other-ci", "2026-11-27T09:00:00Z"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=apps), "ci\tpass\nrequired: all passed\n")
 
     def test_a_ready_pr_or_a_base_that_never_skips_drafts_is_unchanged(self):
         for label, kwargs in {"ready": {"draft": False}, "no draft workflows": {"workflows": ()}}.items():
