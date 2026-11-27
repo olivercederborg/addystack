@@ -112,36 +112,37 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion startedAt checkSuite{'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{databaseId app{slug}'"$2"'}} ... on StatusContext{context state}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
           .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
           | if .__typename == "CheckRun"
-            then [.name, (.checkSuite.app.slug // ""), (.checkSuite.workflowRun.workflow.name // ""),
-                  (.checkSuite.workflowRun.event // ""), (.startedAt // ""),
-                  ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
-            else [.context, "", "", "", "", (.state | bucket)] | join("\t") end'
+            then ["check", .name, (.checkSuite.app.slug // ""),
+                  (if .checkSuite.workflowRun then "workflow:\(.checkSuite.workflowRun.workflow.name)/\(.checkSuite.workflowRun.event)"
+                   else "suite:\(.checkSuite.databaseId)" end),
+                  (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
+            else ["status", .context, "", "", "0", (.state | bucket)] | join("\t") end'
     }
-    # gh pr checks keeps each check's newest run by name, workflow and event (aggregate.go's
-    # eliminateDuplicates), so an older pass never hides a re-run that is pending or failed.
-    # Reading a run's workflow needs the actions permission, which an App's token may lack;
-    # without it, runs group by name and app, so one app's same-named jobs in two workflows
-    # count as one check.
+    # Each check counts by its newest run, by creation order, which a missing or equal start time
+    # can't settle. Runs of one check share a type, a name, an app, and a workflow and event, as
+    # gh pr checks groups them (aggregate.go's eliminateDuplicates), so an older pass never hides
+    # a re-run that is pending or failed. Reading a run's workflow needs the actions permission,
+    # which an App's token may lack; without it, a check suite (one workflow run and its re-runs)
+    # stands in, so two runs of one workflow from two events count as two checks.
     err=$(mktemp)
-    if ! checks=$(rollup "$1" 'app{slug} workflowRun{event workflow{name}}' 2>"$err"); then
+    if ! checks=$(rollup "$1" ' workflowRun{event workflow{name}}' 2>"$err"); then
       grep -q 'Resource not accessible by integration' "$err" || { cat "$err" >&2; rm -f "$err"; exit 1; }
-      checks=$(rollup "$1" 'app{slug}') || { rm -f "$err"; exit 1; }
+      checks=$(rollup "$1" '') || { rm -f "$err"; exit 1; }
     fi
     rm -f "$err"
-    # Rows are name, app, workflow, event, start and bucket. A run not started yet is the
-    # newest of its check, as its start is still to come.
-    checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4; start = ($5 == "" ? "9999-12-31T23:59:59Z" : $5)
-      if (!(key in at) || start >= at[key]) { at[key] = start; row[key] = $1 FS $6 } }
+    # Rows are type, name, app, workflow or suite, creation order and bucket.
+    checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4
+      if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $6 } }
       END { for (key in row) print row[key] }')
-    # Two workflows or apps can report a check of one name; the worst of theirs counts. The
-    # required contexts count, or every reported check when the base requires none; one that
-    # failed, was cancelled, or is running shows CI ran.
+    # Checks of one name from two workflows, apps or suites, or a check and a status, all count,
+    # so the worst of them does. The required contexts count, or every reported check when the
+    # base requires none; one that failed, was cancelled, or is running shows CI ran.
     pending=0 ran=0
     counted=${contexts:-$(printf '%s\n' "$checks" | cut -f1 | sort -u)}
     while IFS= read -r context; do

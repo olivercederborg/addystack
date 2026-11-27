@@ -22,12 +22,15 @@ elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
     workflows = "workflowRun{" in a  # the query asks for it; the --jq filter names .workflowRun either way
     if s["checks"] == "unreadable" or workflows and s.get("no_actions"):
         sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
-    # As the --jq prints them: name, app, workflow, event, start and bucket. A scenario row is
-    # [name, bucket, app, start, workflow, event], and may stop after any field; a token that
-    # can't read workflows gets none.
-    def field(c, i):
-        return c[i] if len(c) > i and (workflows or i < 4) else ""
-    print("\n".join("\t".join([c[0], field(c, 2), field(c, 4), field(c, 5), field(c, 3), c[1]]) for c in s["checks"]))
+    # As the --jq prints them: type, name, app, workflow or suite, creation order and bucket. A
+    # scenario row is [name, bucket, app, order, workflow, event, suite, type] and may stop after
+    # any field; a token that can't read workflows gets the suite.
+    def row(c):
+        name, bucket = c[0], c[1]
+        app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]
+        group = f"workflow:{workflow}/{event}" if workflows and workflow else f"suite:{suite}"
+        return "\t".join([kind, name, app, "" if kind == "status" else group, str(order), bucket])
+    print("\n".join(row(c) for c in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
 else:
@@ -81,34 +84,36 @@ class Required(unittest.TestCase):
                          "ci\tpending\nworkflows that skip drafts: ci.yml\nrequired: not all passed\n")
 
     def test_a_checks_newest_run_counts_not_an_older_pass(self):
-        rerun = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
-                 ["ci", "pending", "github-actions", "2026-11-27T10:05:00Z", "CI", "pull_request"]]
+        # Newest by creation order, whatever the rows' order; a run not started yet is newer too.
+        rerun = [["ci", "pass", "github-actions", 10, "CI", "pull_request", 1], ["ci", "pending", "github-actions", 11, "CI", "pull_request", 1]]
         for checks in (rerun, rerun[::-1]):
             self.assertEqual(self.required(draft=False, required=["ci"], checks=checks), "ci\tpending\nrequired: not all passed\n")
-        # A pass after a failure counts, and a re-run not started yet is newer than any that did.
-        fixed = [["ci", "fail", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
-                 ["ci", "pass", "github-actions", "2026-11-27T10:05:00Z", "CI", "pull_request"]]
+        fixed = [["ci", "fail", "github-actions", 10, "CI", "pull_request", 1], ["ci", "pass", "github-actions", 11, "CI", "pull_request", 2]]
         self.assertEqual(self.required(draft=False, required=["ci"], checks=fixed), "ci\tpass\nrequired: all passed\n")
-        queued = [["ci", "pass", "github-actions", "2026-11-27T10:00:00Z", "CI", "pull_request"],
-                  ["ci", "pending", "github-actions", "", "CI", "pull_request"]]
-        self.assertEqual(self.required(draft=False, required=["ci"], checks=queued), "ci\tpending\nrequired: not all passed\n")
+        # A skipped run that never started is older than a later failure: order is creation, not start.
+        skipped = [["ci", "skipping", "github-actions", 10, "CI", "pull_request", 1], ["ci", "fail", "github-actions", 11, "CI", "pull_request", 2]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=skipped), "ci\tfail\nrequired: not all passed\n")
 
-    def test_one_name_from_two_workflows_or_apps_counts_its_worst(self):
-        workflows = [["deploy", "fail", "github-actions", "2026-11-27T10:00:00Z", "Preview", "pull_request"],
-                     ["deploy", "pass", "github-actions", "2026-11-27T10:05:00Z", "Deploy", "pull_request"]]
+    def test_one_name_from_two_workflows_apps_or_kinds_counts_its_worst(self):
+        workflows = [["deploy", "fail", "github-actions", 10, "Preview", "pull_request", 1],
+                     ["deploy", "pass", "github-actions", 11, "Deploy", "pull_request", 2]]
         self.assertEqual(self.required(draft=False, required=["deploy"], checks=workflows),
                          "deploy\tfail\nrequired: not all passed\n")
-        apps = [["ci", "pass", "github-actions", "2026-11-27T10:05:00Z"], ["ci", "pending", "other-ci", "2026-11-27T09:00:00Z"]]
+        apps = [["ci", "pass", "github-actions", 11], ["ci", "pending", "other-ci", 10]]
         self.assertEqual(self.required(draft=False, required=["ci"], checks=apps), "ci\tpending\nrequired: not all passed\n")
+        # A check with no app and a commit status of one name stay apart.
+        kinds = [["ci", "fail", "", 10], ["ci", "pass", "", 0, "", "", 1, "status"]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=kinds), "ci\tfail\nrequired: not all passed\n")
 
-    def test_a_token_that_cannot_read_workflows_groups_by_name_and_app(self):
-        # An App's token without the actions permission: the newest run of the app's check counts.
-        runs = [["Linear issue", "fail", "github-actions", "2026-11-27T10:00:00Z", "Linear", "pull_request"],
-                ["Linear issue", "pass", "github-actions", "2026-11-27T10:05:00Z", "Linear", "pull_request_target"]]
-        self.assertEqual(self.required(draft=False, required=["Linear issue"], checks=runs, no_actions=True),
-                         "Linear issue\tpass\nrequired: all passed\n")
-        self.assertEqual(self.required(draft=False, required=["Linear issue"], checks=runs),
-                         "Linear issue\tfail\nrequired: not all passed\n")
+    def test_a_token_that_cannot_read_workflows_keeps_each_suite_and_fails_closed(self):
+        # An App's token without the actions permission: a re-run stays in its suite, so its newest
+        # counts; two suites of one name may be two workflows, so the worst counts.
+        rerun = [["Lint", "fail", "github-actions", 10, "CI", "pull_request", 1], ["Lint", "pass", "github-actions", 11, "CI", "pull_request", 1]]
+        self.assertEqual(self.required(draft=False, required=["Lint"], checks=rerun, no_actions=True),
+                         "Lint\tpass\nrequired: all passed\n")
+        two = [["ci", "fail", "github-actions", 10, "Test", "pull_request", 1], ["ci", "pass", "github-actions", 11, "Build", "pull_request", 2]]
+        self.assertEqual(self.required(draft=False, required=["ci"], checks=two, no_actions=True),
+                         "ci\tfail\nrequired: not all passed\n")
 
     def test_a_ready_pr_or_a_base_that_never_skips_drafts_is_unchanged(self):
         for label, kwargs in {"ready": {"draft": False}, "no draft workflows": {"workflows": ()}}.items():
