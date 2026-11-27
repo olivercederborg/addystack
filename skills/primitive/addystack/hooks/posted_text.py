@@ -20,7 +20,10 @@ Known limits, each a missed or extra reminder, never a lost post:
   comment to the same PR number in another checkout, in one session, passes as a retry.
 - gh's -R or --repo before the pr subcommand (`gh -R o/r pr comment`) isn't read as a post.
 - A heredoc written to the body file inside an if, a loop, or after `||` is read as if it
-  ran."""
+  ran.
+- A variable set in an && chain (`cd repo && S=/tmp/x`) is read as set after the chain
+  ends, as agents write it before a later gh line; had it not run, gh would read another
+  path."""
 import os, re, stat
 from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
@@ -46,6 +49,9 @@ _VALUED = {"-R", "--repo", "-t", "--title", "-b", "--body", "-F", "--body-file",
            "-T", "--template", "--recover", "--attach",
            *(f"--{change}-{what}" for change in ("add", "remove") for what in ("assignee", "label", "project", "reviewer"))}
 _SUBCOMMANDS = {"create", "new", "edit", "comment"}
+# Builtins that may change a variable they name, so its earlier value can't be trusted after.
+_SETS_VARIABLES = {"read", "unset", "declare", "typeset", "local", "readonly", "printf", "mapfile", "readarray",
+                   "getopts"}
 # Placeholders for a heredoc body (H) and a quoted string (Q): no character Walk splits on.
 _HOLD = re.compile(r"\x01([HQ])(\d+)\x01")
 # A write to a file: `> f`, `>| f`, `1>f`, or an append, `>> f`, whose result it can't place.
@@ -147,18 +153,26 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
 
     walk = Walk(code, cwd or "")
     # Variables the command sets before each piece, as agents keep a body file's folder in
-    # one (S=/tmp/x && gh pr edit 5 --body-file $S/body.md); None for one it can't read, or
-    # one set where it may not hold, such as inside an if or after ||.
+    # one (S=/tmp/x && gh pr edit 5 --body-file $S/body.md); None for one it can't read, one
+    # set where it may not hold (inside an if, a subshell, or after ||), and one a later
+    # command may change (read, unset, a for loop, eval).
     env: Dict[str, Optional[str]] = {}
     pieces = []  # (words, lead, the piece's text, (its cwd or None, the variables set before it))
     for at, words, lead in walk:
         known = bool(cwd) and "dir" not in walk.unknown
         pieces.append((words, lead, walk.pieces[at], (walk.cwd if known else None, dict(env))))
-        sets = words[:lead] if lead == len(words) else words[lead + 1:] if words[lead] == "export" else []
+        command_word = words[lead] if lead < len(words) else None
+        if command_word in ("eval", "source", "."):
+            env = dict.fromkeys(env)
+        elif command_word in _SETS_VARIABLES or words[:1] in (["for"], ["select"]):
+            for word in words:
+                if word.partition("=")[0] in env:
+                    env[word.partition("=")[0]] = None
+        sets = words[:lead] if lead == len(words) else words[lead + 1:] if command_word == "export" else []
         for word in sets:
             if ASSIGNMENT.match(word):
                 name, _, given = word.partition("=")
-                env[name] = None if walk.unsure("var " + name, f"sets {name}") else value(given, env)
+                env[name] = None if walk.may_not_run() else value(given, env)
 
     found_posts = []
     for index, (words, lead, text, at) in enumerate(pieces):

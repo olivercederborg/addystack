@@ -158,7 +158,11 @@ class PostedText(unittest.TestCase):
         command = f"S={folder} && cat > $S/new.md <<'EOF'\nFresh DEV-5.\nEOF\ngh pr create --body-file $S/new.md"
         self.assertEqual(self.posts("Bash", bash(command)), [posted_text.Post("gh pr create", "Fresh DEV-5.")])
         self.assertEqual(self.posts("Bash", bash('B="see DEV-6"; gh pr comment 1 -b "$B"'))[0].text, "see DEV-6")
-        for command in ("gh pr edit 5 -F $UNSET/b.md", f"if x; then S={folder}; fi; gh pr edit 5 -F $S/b.md",
+        self.assertEqual(self.posts("Bash", bash(f"cd {folder} && S={folder}\ngh pr edit 5 -F $S/b.md"))[0].text, "See DEV-4.")
+        for command in ("B='see #13'; read -r B <<<'see #12'; gh pr comment 1 -b \"$B\"",
+                        "B='see #13'; for B in x; do :; done; gh pr comment 1 -b \"$B\"",
+                        "B='see #13'; eval \"$X\"; gh pr comment 1 -b \"$B\"",
+                        "gh pr edit 5 -F $UNSET/b.md", f"if x; then S={folder}; fi; gh pr edit 5 -F $S/b.md",
                         f"true || S={folder}; gh pr edit 5 -F $S/b.md", "S=$(pwd); gh pr edit 5 -F $S/b.md"):
             with self.subTest(command=command):
                 self.assertEqual(self.posts("Bash", bash(command)), [])
