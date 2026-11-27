@@ -422,8 +422,11 @@ def offered(reply):
     found = turn_block.certain(reply) if isinstance(reply, str) else None
     if found is None or found != turn_block.certain(reply.strip(turn_block.JS_SPACE)):
         return ()
-    shown = turn_block.before_block(reply).replace("’", "'")  # any spelling parse takes, such as `<!--turn`
-    return tuple(option for option in found if option.cls == "stop:push" and option.text.replace("’", "'") in shown
+    # Both as the renderer reads lines (before_block's text is lines_ended), and above any
+    # spelling of the block's opener parse takes, such as `<!--turn`.
+    seen = lambda text: turn_block.lines_ended(text).replace("’", "'")
+    shown = seen(turn_block.before_block(reply))
+    return tuple(option for option in found if option.cls == "stop:push" and seen(option.text) in shown
                  and (go := literal_go(option.text)) and not unmet(go))
 
 

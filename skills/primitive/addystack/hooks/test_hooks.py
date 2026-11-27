@@ -5153,6 +5153,11 @@ class PushGate(unittest.TestCase):
                 {"state": "stop", "options": [go]}, "a standing name over 80 characters")) + " -->")
             with self.subTest(opener=opener):
                 self.assertIsNotNone(self.reason(self.COORDINATOR, said=("fix it", hidden, "push #6119"), cwd=self.dir))
+        # review-loop r3 (Codex): a shown option that wraps with CRLF still counts as shown.
+        crlf = {**go, "text": "push #6119\r\n(dismisses teammate's approval)"}
+        shown = claude_wrote("Next: a → " + crlf["text"] + "\r\n\r\n" + block({"state": "stop", "needs": [
+            {"id": 1, "kind": "decide", "name": "push #6119"}], "options": [crlf]}))
+        self.assertIsNone(self.reason(self.COORDINATOR, said=("fix it", shown, "push #6119"), cwd=self.dir))
         bad = claude_wrote(self.CARD + block({"state": "stop", "options": [{**go, "class": "push"}]}))
         self.assertIn('picks nothing: your reply before it has no valid turn block (options[0].class "push" is not one of',
                       self.reason(self.COORDINATOR, said=("fix it", bad, "a"), cwd=self.dir))
