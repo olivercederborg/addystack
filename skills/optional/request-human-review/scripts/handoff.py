@@ -146,7 +146,7 @@ def send(number: int, plan: dict, github=github) -> dict:
             path = Path(folder) / 'handoff.md'
             path.write_text(plan['comment'])
             url = github('comment', number, path).strip().splitlines()[-1]
-    logins = list(dict.fromkeys(reviewer['login'] for reviewer in plan['request']))
+    logins = reviewers.unique(reviewer['login'] for reviewer in plan['request'])
     if logins:
         github('request', number, *logins)
     return {'comment': url, 'requested': logins}
