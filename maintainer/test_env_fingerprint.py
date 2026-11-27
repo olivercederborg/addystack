@@ -42,6 +42,13 @@ class FakeHome:
 
     def __init__(self, test):
         self.test = test
+        # Claude Code's and Codex's folders follow these, so an inherited one would put the
+        # fixture's settings in the real folder.
+        environ = unittest.mock.patch.dict(os.environ)
+        environ.start()
+        test.addCleanup(environ.stop)
+        for name in ("CLAUDE_CONFIG_DIR", "CODEX_HOME"):
+            os.environ.pop(name, None)
         self.home = pathlib.Path(tempfile.mkdtemp()).resolve()
         test.addCleanup(shutil.rmtree, self.home)
         self.bin = self.home / "bin"
@@ -54,6 +61,8 @@ class FakeHome:
         self.build_yadm()
 
     def file(self, relative, text, mode=None):
+        if pathlib.Path(relative).is_absolute():
+            raise ValueError(f"{relative} is outside the fake home")
         path = self.home / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
