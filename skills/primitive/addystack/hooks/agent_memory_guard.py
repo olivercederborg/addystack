@@ -22,7 +22,13 @@ once it averages over half a core for 30 minutes. Added after Nov 2, 2026: an ag
 Vitest runs hung in a busy loop, and each `pkill` of the main Vitest process left its fork
 worker spinning under launchd, since a fork worker exits only when it next messages its
 parent. Ten of them ran at 100% CPU for 15 hours. Idle leftovers, such as a dev server an
-agent started with `nohup`, stay.
+agent started with `nohup`, stay. A command its agent still waits on, its servers
+included, gets 2 hours at that rate, and dies only while still busy in its last 30
+minutes, so a dev server's first build doesn't kill it: on Nov 27, 2026 two `bun` probe
+scripts Codex started without a shell spun at 100% CPU for 9 and 11 hours under a live
+Codex, long after their threads finished. Claude Code in a terminal sets no time limit on
+a background command, so 2 hours is a budget, not an agent's cap: in November 2026 no Codex
+rollout on one Mac polled one command for more than 37 minutes.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
@@ -38,17 +44,24 @@ Known limits:
   toward the total. Under Codex it also needs a readable environment without the agent
   mark, so a Codex server that's an Apple binary, such as Xcode's mcpbridge, counts in
   full, and a command Codex starts with a cleared environment and no shell gets the
-  allowance. So does a Claude command that `exec`s out of its wrapper shell.
+  allowance. So does a Claude command that `exec`s out of its wrapper shell. The CPU rule
+  doesn't use this split, so a server over half a core for 2 hours dies like a command.
 - An orphan in a process group led by an installed app's own executable (under
   /Applications/, the one its bundle's Info.plist names) isn't agent work by its
   environment alone, since an app such as OrbStack starts its VM with the environment of whichever
   command woke it.
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
-  counts toward the total.
-- A CPU-heavy job an agent starts with `nohup` or `&` and doesn't wait on is abandoned
-  too, and dies after 30 minutes; run it as a background task the agent tracks.
+  counts toward the total, and like Xcode's mcpbridge falls under the 2-hour CPU rule.
+  It's one process under each Codex app-server, so killing it fails the `exec` calls of
+  every Codex thread on that app-server, not only the one that kept it busy.
+- A CPU-heavy job an agent starts dies at over half a core: after 30 minutes when the
+  agent doesn't wait on it (`nohup` or `&`), after 2 hours, still busy in the last 30
+  minutes, when it does, a background task it tracks included. Run a longer one in a terminal, outside the agent.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
-  saw it."""
+  saw it.
+- When the guard starts, or a command moves between waited-on and abandoned, a worker that
+  has exited but isn't reaped yet when that first scan reads it counts all its CPU once its
+  parent reaps it, CPU from before the window included."""
 import ctypes, ctypes.util, hashlib, json, os, plistlib, signal, struct, subprocess, sys, time
 from collections import namedtuple
 
@@ -71,6 +84,10 @@ SERVICE_IDLE_PROCESSES = 10
 # spinning Vitest worker uses 1 core; an idle dev server, under 0.05.
 ABANDONED_CORES = 0.5
 ABANDONED_WINDOW_SECONDS = 30 * 60
+# A command its agent still waits on, an agent's server included, is killed once it
+# averages ABANDONED_CORES over this longer window and over the last
+# ABANDONED_WINDOW_SECONDS of it.
+ATTENDED_WINDOW_SECONDS = 2 * 60 * 60
 CHECKPOINT_SECONDS = 5  # CPU in a window's first this-many seconds may go uncounted
 LOG = os.path.expanduser("~/Library/Logs/agent-memory-guard.log")
 
@@ -390,25 +407,31 @@ class Abandoned:
     only that ancestor's reaped CPU repays, so the total never drops or counts it twice,
     even when a scan reads the parent before the reap. The window is 30 minutes of awake
     time, on the monotonic clock, which stops while the Mac sleeps: CPU only burns while
-    it's awake. Process start times are compared with the wall clock. A command whose
-    shell comes back to an agent starts over."""
+    it's awake. Process start times are compared with the wall clock. A command an agent
+    still waits on, its shell or itself a direct child of a live agent, is measured the
+    same way over the 2-hour window, and must average over half a core in its last 30
+    minutes too; one that moves between the two states starts over."""
 
     def __init__(self):
-        # head -> (wall time first seen abandoned,
+        # head -> (attended, wall time first seen in that state,
         #          last {ident: (cpu ns, reaped ns, parent ident)},
         #          debt {ident: ns}, total ns, [(time, total)] oldest first)
         self.state = {}
 
     def busy(self, commands, agents, now, wall=None):
-        """Return (head, reason) for an abandoned command whose CPU inside the last window
-        is over ABANDONED_CORES for the whole window, or None. `agents` maps each agent's
-        pid to its kernel id, so a reused pid can't pass for one."""
+        """Return (head, reason) for a command whose CPU inside the last window is over
+        ABANDONED_CORES for the whole window, or None: 30 minutes for an abandoned command,
+        2 hours and its last 30 minutes for one an agent still waits on. `agents` maps each agent's pid to its
+        kernel id, so a reused pid can't pass for one."""
         wall = now if wall is None else wall
         found, kept = None, {}
         for head, members in commands.items():
-            if any(agents.get(proc.ppid) == proc.parent_ident for proc in members):
-                continue  # its shell is alive, so an agent still waits on it
-            began, last, debt, total, marks = self.state.get(head, (wall, {}, {}, 0, []))
+            attended = any(agents.get(proc.ppid) == proc.parent_ident for proc in members)
+            window = ATTENDED_WINDOW_SECONDS if attended else ABANDONED_WINDOW_SECONDS
+            state = self.state.get(head)
+            if state is None or state[0] != attended:
+                state = (attended, wall, {}, {}, 0, [])
+            _, began, last, debt, total, marks = state
             seen, debt, here = {}, dict(debt), {proc.ident for proc in members}
             for ident in last.keys() - here:
                 # The nearest ancestor still here reaps it, directly or through parents
@@ -438,18 +461,25 @@ class Abandoned:
                 seen[proc.ident] = (proc.cpu, proc.reaped, proc.parent_ident)
             if not marks or now - marks[-1][0] >= CHECKPOINT_SECONDS:
                 marks = marks + [(now, total)]
-            while now - marks[0][0] > ABANDONED_WINDOW_SECONDS:
+            while now - marks[0][0] > window:
                 marks.pop(0)  # only CPU inside the window counts
-            kept[head] = (began, seen, debt, total, marks)
+            kept[head] = (attended, began, seen, debt, total, marks)
             since, before = marks[0]
-            if found or now - since < ABANDONED_WINDOW_SECONDS - CHECKPOINT_SECONDS:
+            if found or now - since < window - CHECKPOINT_SECONDS:
                 continue
             # Divided by the whole window, CPU from its first few seconds is left out, so
             # this never reads above the true average.
-            cores = (total - before) / 1e9 / ABANDONED_WINDOW_SECONDS
+            cores = (total - before) / 1e9 / window
+            if attended:
+                # It must still be busy: a build before its server starts (`next build &&
+                # next start`) doesn't kill the server once it idles.
+                _, recent = next(mark for mark in marks
+                                 if now - mark[0] <= ABANDONED_WINDOW_SECONDS)
+                if (total - recent) / 1e9 / ABANDONED_WINDOW_SECONDS <= ABANDONED_CORES:
+                    continue
             if cores > ABANDONED_CORES:
-                found = head, (f"abandoned by its agent, at {cores:.1f} cores for "
-                               f"{ABANDONED_WINDOW_SECONDS // 60} min")
+                label = "busy while its agent waits on it" if attended else "abandoned by its agent"
+                found = head, f"{label}, at {cores:.1f} cores for {window // 60} min"
         self.state = kept
         return found
 
