@@ -23,10 +23,12 @@ Vitest runs hung in a busy loop, and each `pkill` of the main Vitest process lef
 worker spinning under launchd, since a fork worker exits only when it next messages its
 parent. Ten of them ran at 100% CPU for 15 hours. Idle leftovers, such as a dev server an
 agent started with `nohup`, stay. A command its agent still waits on, its servers
-included, gets 2 hours at that rate, the longest Claude Code's Bash tool waits, and dies
-only while still busy in its last 30 minutes, so a dev server's first build doesn't kill
-it: on Nov 27, 2026 two `bun` probe scripts Codex started without a shell spun at 100%
-CPU for 9 and 11 hours under a live Codex, long after their threads finished.
+included, gets 2 hours at that rate, and dies only while still busy in its last 30
+minutes, so a dev server's first build doesn't kill it: on Nov 27, 2026 two `bun` probe
+scripts Codex started without a shell spun at 100% CPU for 9 and 11 hours under a live
+Codex, long after their threads finished. Neither agent caps the wait, as Claude Code in a
+terminal sets no time limit on a background command, so 2 hours is a budget: in November
+2026 no Codex rollout on one Mac polled one command for more than 37 minutes.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
