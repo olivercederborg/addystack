@@ -67,10 +67,14 @@ class Annotations(unittest.TestCase):
 class CheckQueueFields(unittest.TestCase):
     """The checkQueue keys agree everywhere they're listed."""
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_schema_keys_match_resolved_and_config_fields(self):
-        pass
-
+        sys.path.insert(0, str(KIT / "lib"))
+        import config
+        declared = set(SCHEMA["properties"]["checkQueue"]["properties"])
+        self.assertEqual(declared, {f.name for f in dataclasses.fields(resolved.CheckQueue)})
+        self.assertEqual(declared, set(config.CheckQueue.__annotations__))
+        self.assertEqual(SCHEMA["properties"]["checkQueue"]["default"],
+                         {key: node["default"] for key, node in SCHEMA["properties"]["checkQueue"]["properties"].items()})
 
 
 if __name__ == "__main__":

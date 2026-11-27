@@ -20,5 +20,8 @@
   // Files next to this one, such as "taste.md" and "global.md". Each named file must exist.
   "judgment": { "principles": { "exclude": [] }, "taste": null },
   "instructions": null,
-  "hooks": { "preset": "recommended", "enable": [], "disable": [] }
+  "hooks": { "preset": "recommended", "enable": [], "disable": [] },
+
+  // macOS: how many heavy checks (tsc, eslint, vitest…) all agents run at once.
+  "checkQueue": { "enabled": true, "maxChecks": 4, "maxCores": 10 }
 }

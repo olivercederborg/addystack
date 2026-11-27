@@ -21,7 +21,8 @@ class Init(Home):
     def test_yes_writes_the_detected_defaults_and_the_installed_schema(self):
         self.assertIn("next: addystack install", self.ok("init", "--yes").stdout)
         self.assertEqual(self.parsed(), {"$schema": str(SCHEMA), "version": 1, "identity": {"name": "Sam"},
-                                         "hosts": {"claude": True, "codex": True, "t3": False}})
+                                         "hosts": {"claude": True, "codex": True, "t3": False},
+                                         "checkQueue": {"maxChecks": 4}})
         self.assertIn("ok    config: valid, layers defaults, user", self.ok("install").stdout)
 
     def test_a_host_not_on_path_is_written_disabled(self):
@@ -58,21 +59,16 @@ class Init(Home):
         self.assertEqual(self.parsed()["identity"], {"name": "Sam"})
         self.assertEqual((self.config.parent / "addystack.jsonc.bak").read_text(), '{ "identity": { "name": "Kept" } }')
 
+    def test_init_writes_the_check_queue_cap(self):
+        self.ok("init", "--yes")
+        self.assertEqual(self.parsed()["checkQueue"], {"maxChecks": 4})
+
     def test_without_yes_or_a_terminal_it_writes_nothing(self):
         before = self.snapshot()
         result = self.cli("init")
         self.assertEqual(result.returncode, 2)
         self.assertIn("pass --yes", result.stderr)
         self.assertEqual(self.snapshot(), before)
-
-
-class InitCheckQueue(unittest.TestCase):
-    """addystack init writes the check queue's cap."""
-
-    @unittest.skip("check queue: contract only, not built yet")
-    def test_init_writes_the_check_queue_cap(self):
-        pass
-
 
 
 if __name__ == "__main__":
