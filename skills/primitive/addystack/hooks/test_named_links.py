@@ -1,9 +1,9 @@
 """Tests for named_links.unnamed, which scripts/check_examples.py runs on the kit's
 example replies and named-links-check.py on posts, and for the modules only the
 check uses."""
-import os, pathlib, re, shutil, tempfile, unittest
+import json, os, pathlib, re, shutil, tempfile, unittest, unittest.mock
 
-import merge_go, named_links, posted_text, turn_block
+import denied_posts, merge_go, named_links, posted_text, turn_block
 from test_hooks import block
 
 NAMED = "[DEV-4024, Close split exports](https://linear.app/acme/issue/DEV-4024)"
@@ -208,6 +208,39 @@ class PostedText(unittest.TestCase):
             self.assertTrue(re.fullmatch(posted_text.MATCHER, tool), tool)
         for tool in ("Read", "mcp__t3-code__pull_request_merge", "mcp__linear__get_issue", "mcp__executor-x__execute"):
             self.assertFalse(re.fullmatch(posted_text.MATCHER, tool), tool)
+
+
+class DeniedPosts(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.folder)
+        patcher = unittest.mock.patch.dict(os.environ, {"ADDYSTACK_STATE": self.folder})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_a_repeat_passes_and_another_session_or_target_is_new(self):
+        self.assertTrue(denied_posts.first("s1", "gh pr create", "see #12"))
+        self.assertFalse(denied_posts.first("s1", "gh pr create", "see #12"))
+        self.assertTrue(denied_posts.first("s2", "gh pr create", "see #12"))
+        self.assertTrue(denied_posts.first("s1", "gh pr comment 3", "see #12"))
+        self.assertTrue(denied_posts.first("s1", "gh pr create", "see #13"))
+        record = pathlib.Path(self.folder, "named-links-denied.json").read_text()
+        self.assertNotIn("#12", record)
+
+    def test_the_record_keeps_the_newest_200(self):
+        for number in range(205):
+            denied_posts.first("s", "t", str(number))
+        self.assertEqual(len(json.loads(pathlib.Path(self.folder, "named-links-denied.json").read_text())), 200)
+        self.assertFalse(denied_posts.first("s", "t", "204"))
+        self.assertTrue(denied_posts.first("s", "t", "0"))
+
+    def test_no_session_or_an_unusable_record_passes(self):
+        self.assertFalse(denied_posts.first(None, "t", "x"))
+        self.assertFalse(denied_posts.first("", "t", "x"))
+        pathlib.Path(self.folder, "named-links-denied.json").write_text("not json")
+        self.assertFalse(denied_posts.first("s", "t", "x"))
+        os.environ["ADDYSTACK_STATE"] = os.path.join(self.folder, "named-links-denied.json", "under-a-file")
+        self.assertFalse(denied_posts.first("s", "t", "y"))
 
 
 if __name__ == "__main__":
