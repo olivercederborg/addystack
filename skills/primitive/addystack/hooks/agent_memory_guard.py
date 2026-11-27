@@ -26,9 +26,9 @@ agent started with `nohup`, stay. A command its agent still waits on, its server
 included, gets 2 hours at that rate, and dies only while still busy in its last 30
 minutes, so a dev server's first build doesn't kill it: on Nov 27, 2026 two `bun` probe
 scripts Codex started without a shell spun at 100% CPU for 9 and 11 hours under a live
-Codex, long after their threads finished. Neither agent caps the wait, as Claude Code in a
-terminal sets no time limit on a background command, so 2 hours is a budget: in November
-2026 no Codex rollout on one Mac polled one command for more than 37 minutes.
+Codex, long after their threads finished. Claude Code in a terminal sets no time limit on
+a background command, so 2 hours is a budget, not an agent's cap: in November 2026 no Codex
+rollout on one Mac polled one command for more than 37 minutes.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
