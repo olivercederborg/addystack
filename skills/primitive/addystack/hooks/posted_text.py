@@ -124,7 +124,7 @@ def _bash(found: "re.Match", tool_input: dict, cwd: Optional[str]) -> List[Post]
             continue
         if name in ("-b", "--body"):
             body = value(given)
-        elif given == "-":  # stdin: only a heredoc on this gh command places it
+        elif value(given) == "-":  # stdin: only a heredoc on this gh command places it
             held = re.findall(r"<<\x01H(\d+)\x01", text)
             body = bodies[int(held[-1])] if held else None
         else:

@@ -127,8 +127,10 @@ class PostedText(unittest.TestCase):
         command = 'gh pr create --title t --body "$(cat <<\'EOF\'\n## Summary\nCloses #12 "quoted"\nEOF\n)"'
         [post] = self.posts("Bash", bash(command))
         self.assertIn('Closes #12 "quoted"', post.text)
-        [post] = self.posts("Bash", bash("gh pr comment 7 --body-file - <<'EOF'\nSee DEV-4.\nEOF"))
-        self.assertEqual(post, posted_text.Post("gh pr comment 7", "See DEV-4."))
+        for dash in ("-", "'-'", '"-"'):
+            with self.subTest(dash=dash):
+                [post] = self.posts("Bash", bash(f"gh pr comment 7 --body-file {dash} <<'EOF'\nSee DEV-4.\nEOF"))
+                self.assertEqual(post, posted_text.Post("gh pr comment 7", "See DEV-4."))
         self.assertEqual(self.posts("Bash", bash("printf 'see #1' | gh pr comment 7 -F -")), [])
 
     def test_a_body_file_relative_to_where_the_command_runs(self):
