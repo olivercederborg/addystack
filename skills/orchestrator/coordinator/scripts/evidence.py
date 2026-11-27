@@ -39,6 +39,12 @@ PLACEHOLDER = {"ui": "<capture>", "parity": "<log>", "contract": "<diff>", "muta
                "idiom": "<sources>", "toolchain": "<log>"}
 
 UI_FILE = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|sass|less|html|storyboard|xib)$")
+# A .tsx or .jsx file renders only when it has JSX: a closing tag, a self-closing tag
+# (whose attributes may hold an arrow function), or a fragment. A generic such as
+# `Set<Item>()` or a regex such as `/>/g` has none. Comments and strings aren't parsed, so
+# a tag written in one still counts, which errs toward asking for UI.
+JSX_FILE = re.compile(r"\.(tsx|jsx)$")
+JSX = re.compile(r"</[\w$>]|<[\w$](?:[^<>]|=>)*/>|<>")
 UI_SWIFT = re.compile(r"^\s*import\s+(SwiftUI|UIKit)\b", re.M)
 SCHEMA_FILE = re.compile(r"(^|/)(openapi|swagger)[^/]*$|\.schema\.json$|\.(proto|graphql|gql)$|\.d\.ts$")
 EXPORTING_FILE = re.compile(r"\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$")
@@ -101,12 +107,21 @@ def _git(cwd: Path, *args: str) -> str:
     return result.stdout.decode(errors="replace")
 
 
-def _content(cwd: Path, base: str, head: str, path: str) -> str:
-    """The file at head, or at base when the change deleted it."""
-    for rev in (head, base):
-        result = subprocess.run(["git", "cat-file", "-p", f"{rev}:{path}"], cwd=cwd, capture_output=True)
-        if not result.returncode:
-            return result.stdout.decode(errors="replace")
+def _content(cwd: Path, base: str, head: str, path: str) -> str | None:
+    """The file at head, or at the merge base `base...head` diffs against when the change
+    deleted it, following tracked symlinks to their target at that revision. None when the
+    path is there but its content can't be read, such as a link leaving the tree."""
+    fork = subprocess.run(["git", "merge-base", base, head], cwd=cwd, capture_output=True, text=True).stdout.strip()
+    for rev in (head, fork or base):
+        result = subprocess.run(["git", "cat-file", "--batch", "--follow-symlinks", "-z"], cwd=cwd,
+                                capture_output=True, input=f"{rev}:{path}\0".encode())
+        header, _, body = result.stdout.partition(b"\n")
+        kind = header.split()
+        # "<oid> blob <size>", or "<object> missing" when the path isn't at this revision.
+        if len(kind) == 3 and kind[1] == b"blob" and kind[2].isdigit():
+            return body[:int(kind[2])].decode(errors="replace")
+        if not header.endswith(b" missing"):
+            return None
     return ""
 
 
@@ -167,24 +182,29 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
     """Each kind of evidence `base...head` needs, with the reasons, in KINDS order; a kind
     with no reason is left out."""
     files = [path for path in _git(cwd, "diff", "--name-only", "-z", f"{base}...{head}").split("\0") if path]
+    # A deleted file has no code left to mutate; its removed exports still count as contract.
+    deleted = set(_git(cwd, "diff", "--name-only", "--diff-filter=D", "-z", f"{base}...{head}").split("\0"))
     reasons: dict[str, list[str]] = {kind: [] for kind in KINDS}
     for path in files:
         name, is_test = PurePosixPath(path).name, bool(TEST_FILE.search(path))
-        if not is_test and UI_FILE.search(path):
+        if not is_test and UI_FILE.search(path) and (not JSX_FILE.search(path)
+                                                     or (text := _content(cwd, base, head, path)) is None or JSX.search(text)):
             reasons["ui"].append(f"{path}: UI file")
-        elif not is_test and path.endswith(".swift") and (ui := UI_SWIFT.search(_content(cwd, base, head, path))):
+        elif not is_test and path.endswith(".swift") and (ui := UI_SWIFT.search(_content(cwd, base, head, path) or "")):
             reasons["ui"].append(f"{path}: imports {ui.group(1)}")
         if not is_test and SCHEMA_FILE.search(path):
             reasons["contract"].append(f"{path}: API schema")
-        if not is_test and CODE_FILE.search(path) and (word := next((w for w in _words(path) if w in RISKY_WORDS), None)):
+        if is_test or path in deleted:
+            pass
+        elif CODE_FILE.search(path) and (word := next((w for w in _words(path) if w in RISKY_WORDS), None)):
             reasons["mutants"].append(f"{path}: {word} path")
-        elif not is_test and (path.endswith(".sql") or name == "schema.prisma"):
+        elif path.endswith(".sql") or name == "schema.prisma":
             reasons["mutants"].append(f"{path}: {'SQL' if path.endswith('.sql') else 'Prisma schema'}")
         if TOOLCHAIN_FILE.search(path):
             reasons["toolchain"].append(f"{path}: dev toolchain config")
         if DEPLOY_FILE.search(path):
             reasons["deploy"].append(f"{path}: deploy config")
-        elif WORKFLOW.match(path) and DEPLOYS.search(name + _content(cwd, base, head, path)):
+        elif WORKFLOW.match(path) and DEPLOYS.search(name + (_content(cwd, base, head, path) or "")):
             reasons["deploy"].append(f"{path}: deploy workflow")
     # A file the change only deletes introduces no pattern.
     kept = _git(cwd, "diff", "--name-only", "--diff-filter=d", "-z", f"{base}...{head}").split("\0")
