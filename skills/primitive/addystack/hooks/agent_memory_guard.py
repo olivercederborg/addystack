@@ -23,9 +23,10 @@ Vitest runs hung in a busy loop, and each `pkill` of the main Vitest process lef
 worker spinning under launchd, since a fork worker exits only when it next messages its
 parent. Ten of them ran at 100% CPU for 15 hours. Idle leftovers, such as a dev server an
 agent started with `nohup`, stay. A command its agent still waits on, its servers
-included, gets 2 hours at that rate, the longest Claude Code's Bash tool waits: on Nov 27,
-2026 two `bun` probe scripts Codex started without a shell spun at 100% CPU for 9 and 11
-hours under a live Codex, long after their threads finished.
+included, gets 2 hours at that rate, the longest Claude Code's Bash tool waits, and dies
+only while still busy in its last 30 minutes, so a dev server's first build doesn't kill
+it: on Nov 27, 2026 two `bun` probe scripts Codex started without a shell spun at 100%
+CPU for 9 and 11 hours under a live Codex, long after their threads finished.
 
 Known limits:
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
@@ -50,8 +51,8 @@ Known limits:
 - Codex's code-mode host, a small long-lived server T3 starts with the agent mark,
   counts toward the total.
 - A CPU-heavy job an agent starts dies at over half a core: after 30 minutes when the
-  agent doesn't wait on it (`nohup` or `&`), after 2 hours when it does, a background
-  task it tracks included. Run a longer one in a terminal, outside the agent.
+  agent doesn't wait on it (`nohup` or `&`), after 2 hours, still busy in the last 30
+  minutes, when it does, a background task it tracks included. Run a longer one in a terminal, outside the agent.
 - A worker whose parent exits before reaping it loses the CPU it used after the last tick
   saw it.
 - When the guard starts, or a command moves between waited-on and abandoned, a worker that
@@ -80,7 +81,8 @@ SERVICE_IDLE_PROCESSES = 10
 ABANDONED_CORES = 0.5
 ABANDONED_WINDOW_SECONDS = 30 * 60
 # A command its agent still waits on, an agent's server included, is killed once it
-# averages ABANDONED_CORES over this longer window.
+# averages ABANDONED_CORES over this longer window and over the last
+# ABANDONED_WINDOW_SECONDS of it.
 ATTENDED_WINDOW_SECONDS = 2 * 60 * 60
 CHECKPOINT_SECONDS = 5  # CPU in a window's first this-many seconds may go uncounted
 LOG = os.path.expanduser("~/Library/Logs/agent-memory-guard.log")
@@ -403,7 +405,8 @@ class Abandoned:
     time, on the monotonic clock, which stops while the Mac sleeps: CPU only burns while
     it's awake. Process start times are compared with the wall clock. A command an agent
     still waits on, its shell or itself a direct child of a live agent, is measured the
-    same way over the 2-hour window; one that moves between the two states starts over."""
+    same way over the 2-hour window, and must average over half a core in its last 30
+    minutes too; one that moves between the two states starts over."""
 
     def __init__(self):
         # head -> (attended, wall time first seen in that state,
@@ -414,7 +417,7 @@ class Abandoned:
     def busy(self, commands, agents, now, wall=None):
         """Return (head, reason) for a command whose CPU inside the last window is over
         ABANDONED_CORES for the whole window, or None: 30 minutes for an abandoned command,
-        2 hours for one an agent still waits on. `agents` maps each agent's pid to its
+        2 hours and its last 30 minutes for one an agent still waits on. `agents` maps each agent's pid to its
         kernel id, so a reused pid can't pass for one."""
         wall = now if wall is None else wall
         found, kept = None, {}
@@ -463,6 +466,13 @@ class Abandoned:
             # Divided by the whole window, CPU from its first few seconds is left out, so
             # this never reads above the true average.
             cores = (total - before) / 1e9 / window
+            if attended:
+                # It must still be busy: a build before its server starts (`next build &&
+                # next start`) doesn't kill the server once it idles.
+                _, recent = next(mark for mark in marks
+                                 if now - mark[0] <= ABANDONED_WINDOW_SECONDS)
+                if (total - recent) / 1e9 / ABANDONED_WINDOW_SECONDS <= ABANDONED_CORES:
+                    continue
             if cores > ABANDONED_CORES:
                 label = "busy while its agent waits on it" if attended else "abandoned by its agent"
                 found = head, f"{label}, at {cores:.1f} cores for {window // 60} min"

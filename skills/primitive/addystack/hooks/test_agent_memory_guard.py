@@ -313,6 +313,17 @@ class AbandonedCommands(unittest.TestCase):
         self.assertEqual((found[0], minute), (201, guard.ATTENDED_WINDOW_SECONDS // 60))
         self.assertIn("busy while its agent waits on it, at 1.0 cores for 120 min", found[1])
 
+    def test_a_waited_on_command_that_built_then_idles_is_left_alone(self):
+        # `next build && next start`: 6 cores for 12 minutes, 0.6 cores over 2 hours, then
+        # serving at 0.01 cores.
+        abandoned = guard.Abandoned()
+        for minute in range(240):
+            t = minute * 60
+            cpu = 6 * min(t, 720) + 0.01 * max(0, t - 720)
+            self.assertIsNone(abandoned.busy(
+                {201: [proc(201, 90, argv=("sh", "-c", "next build && next start"),
+                            cpu=int(cpu * 1e9))]}, {90: 90}, t))
+
     def test_a_busy_agent_server_is_killed_after_two_hours(self):
         # A server's classification misfires both ways under Codex, so servers get no pass.
         found, minute = self.run_ticks(
