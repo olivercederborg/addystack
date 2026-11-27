@@ -16,9 +16,10 @@ import subprocess
 import sys
 import tempfile
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "maintainer"))
-import kit_path  # noqa: E402
-sys.path[:0] = [str(kit_path.tool() / "lib"), str(kit_path.tool() / "hooks")]
+# The renderer of the checkout this script ships in, whatever ADDYSTACK_KIT says: an older
+# kit lacks built_parts. The arms' text still comes from KIT_REPO at each revision.
+TOOL = pathlib.Path(__file__).resolve().parents[2] / "skills" / "primitive" / "addystack"
+sys.path[:0] = [str(TOOL / "lib"), str(TOOL / "hooks")]
 import render as kit_render  # noqa: E402
 import resolved  # noqa: E402
 
@@ -87,9 +88,9 @@ def main(argv):
         state = resolved.STATE.expanduser().parent
         router, principles = render(repo, "origin/main", "", built)
         router = router.replace("@principles.md", f"@{kit_render._home(state / 'principles.md')}")
-        live_principles = state / "principles.md"
-        same = router == (state / "router.md").read_text() and principles == (
-            live_principles.read_text() if live_principles.exists() else None)
+        # A build without the part leaves an older principles.md behind, unimported.
+        same = router == (state / "router.md").read_text() and (
+            principles is None or principles == (state / "principles.md").read_text())
         print("matches the live router and principles" if same else "differs from the live files")
         return 0 if same else 1
     out, rest = pathlib.Path(argv[1]).resolve(), argv[2:]
