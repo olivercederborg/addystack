@@ -242,6 +242,13 @@ class Anchors(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("api --method PUT repos/o/r/pulls/7/reviews/42/dismissals -f event=DISMISS -F message=@", result.stdout)
 
+    def test_request_asks_each_login_in_one_call(self):
+        result = self.run_script("request", "7", "alice", "bob")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(r"api --method POST repos/o/r/pulls/7/requested_reviewers -f reviewers\[\]=alice "
+                      r"-f reviewers\[\]=bob", result.stdout)
+        self.assertEqual(self.run_script("request", "7").returncode, 2)
+
 
 REVIEWED_GH = r"""#!/usr/bin/env python3
 import os, sys

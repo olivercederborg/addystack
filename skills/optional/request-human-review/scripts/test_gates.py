@@ -30,7 +30,7 @@ def verdict(*decisions, sensitive=()):
 
 def decision(id_, gate=None, code='a.ts:1'):
     return {'id': id_, 'decision': f'{id_ or "found"} call', 'code': code, 'gate': gate,
-            'why': 'adds a column' if gate else 'follows export.ts:9'}
+            'why': 'adds a column' if gate else 'follows export.ts:9', **({'ask': 'Keep the column?'} if gate else {})}
 
 
 class Load(unittest.TestCase):
@@ -51,7 +51,8 @@ class Load(unittest.TestCase):
         bad['head'] = 'abc'
         with self.assertRaises(ValueError) as raised:
             gates.load(self.write(bad))
-        for named in ('head is not a full commit SHA', "D1: gate 'risky'", 'D1: decision is empty', "'payments'"):
+        for named in ('head is not a full commit SHA', "D1: gate 'risky'", 'D1: decision is empty', 'D1: ask is empty',
+                      "'payments'"):
             self.assertIn(named, str(raised.exception))
 
 

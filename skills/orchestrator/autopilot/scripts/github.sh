@@ -263,6 +263,14 @@ query($owner:String!,$repo:String!,$expression:String!){repository(owner:$owner,
     [ $# = 2 ] || usage
     send gh pr comment "$1" --body-file "$2"
     ;;
+  request)
+    [ $# -ge 2 ] || usage
+    n=$1; shift
+    fields=()
+    for login in "$@"; do fields+=(-f "reviewers[]=$login"); done
+    send gh api --method POST "repos/$(repo)/pulls/$n/requested_reviewers" "${fields[@]}" \
+      --jq '[.requested_reviewers[].login] | join(" ")'
+    ;;
   resolve)
     [ $# = 1 ] || usage
     send gh api graphql -f threadId="$1" \

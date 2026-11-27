@@ -1,6 +1,6 @@
 ---
 name: request-human-review
-description: Decides whether a PR needs a human's approval, and acts on it. With --unattended it reviews a PR as an App with nobody in the loop and posts the outcome (approve, request changes, or name the decisions that need a human), or answers a comment; a PR's author learns which decisions need a human. Use for an App's unattended review, or when an author asks whether their PR needs a human reviewer.
+description: Decides whether a PR needs a human's approval, and acts on it. With --unattended it reviews a PR as an App with nobody in the loop and posts the outcome (approve, request changes, or hand the decisions that need a human to a reviewer it requests), or answers a comment; a PR's author learns which decisions need a human and can request one. Use for an App's unattended review, or when an author asks whether their PR needs a human reviewer.
 compatibility: Requires git, gh (authenticated), jq, and python3.
 disable-model-invocation: true
 metadata:
@@ -73,8 +73,9 @@ that is an item of it with no one-way-door decision at that area's code.
 - Then read the diff and the issue for decisions the table lacks, and give each an entry
   with `"id": null`.
 - For each entry, name its gate, or `null` with the precedent it follows as `path:line`
-  at the base. A gate's `why` says what makes it one. When unsure whether something is a
-  pattern, look for a sibling at the base; none found is a gate.
+  at the base. A gate's `why` says what makes it one, and its `ask` is the question the
+  person answers, such as "Should totals be a public RPC?". When unsure whether something
+  is a pattern, look for a sibling at the base; none found is a gate.
 - List each sensitive area the diff touches with its `path:line`.
 
 Write `GATES.json` in a folder of its own (`mktemp -d`), so reviews that run side by side
@@ -109,7 +110,7 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 | Outcome | When | It posts |
 |---|---|---|
 | `changes-requested` | a finding holds the approval | a request for changes with the inline comments |
-| `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run |
+| `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run, then the handoff |
 | `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body. When this App's approval of the head already stands, the same body as a comment saying so |
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
 | `superseded` | the head moved, or the PR moved to another base branch | nothing: the push or retarget starts its own review |
@@ -119,10 +120,29 @@ it resolves the App's own open threads it read before, and names any it couldn't
 any other outcome it withdraws the App's review that still counts: an approval before
 posting, so only an approval outcome leaves one in place, and a request for changes after
 its replacement posted, so a failed post never lifts the block. It needs the App to be
-allowed to dismiss its own reviews. End with its Outcome line.
+allowed to dismiss its own reviews.
+
+The **handoff** follows a needs-human review, through `scripts/handoff.py`: a PR comment
+that gives the agent running the human's review every gated decision in full, then a
+review request. It reads `.github/REVIEWERS` at the PR's base: each decision's domain is
+the one its code is in, or the PR's main change's when its file is in no domain, such as an
+ADR. It asks the P1 of the domain with the most decisions, and another person only for a
+domain the first isn't P1 or P2 of; a domain with nobody listed goes to whoever the file
+names with the fewest open requests. Someone already requested or who already reviewed
+covers the domains they're P1 or P2 of. A re-review with the same decisions as its own last
+handoff posts no new one. A base without REVIEWERS hands off nothing. End with its Outcome
+line.
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a
-decision the table lacks to it. Write nothing to GitHub.
+decision the table lacks to it. When a decision needs a human, draft the handoff with
+`scripts/handoff.py <PR> GATES.json` and show its suggested reviewer and why. The author
+may name the reviewer instead (`--reviewer LOGIN`), anyone with write access but
+themselves; when the draft's `uncovered` lists domains, say in one line that their pick
+isn't P1 or P2 there and offer to request those domains' picks too (`--with-suggested`),
+with only their pick as the default. After their go, rerun it with `--disclosure` set to the
+disclosure line and `--send`. An unattended review still hands off on its own later, and
+may still request a domain's P1 the author's pick doesn't cover.
 
-**Done when:** the reviewer printed one Outcome, or the author has the gated decisions.
+**Done when:** the reviewer printed one Outcome, or the author has the gated decisions and,
+after their go, the handoff's comment and request.

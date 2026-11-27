@@ -65,7 +65,7 @@ def load(path) -> dict:
         name = decision.get('id') or f'decision {index + 1}'
         if decision.get('gate') not in (*GATES, None):
             problems.append(f'{name}: gate {decision.get("gate")!r} is not one of {", ".join(GATES)}, or null')
-        for field in ('decision', 'code', 'why'):
+        for field in ('decision', 'code', 'why') + (('ask',) if decision.get('gate') else ()):
             if not str(decision.get(field) or '').strip():
                 problems.append(f'{name}: {field} is empty')
     for entry in verdict.get('sensitive', []):
@@ -168,7 +168,8 @@ def decide(verdict: dict, holds: bool, required: str, second_opinion: str) -> st
 
 def line(decision: dict) -> str:
     """A gated decision as one Markdown list item, the same in a review and a handoff."""
-    raise NotImplementedError
+    label = decision['id'] or 'Not in the Decisions table'
+    return f'- **{label}** · {GATES[decision["gate"]]}: {decision["decision"]} · `{decision["code"]}` · {decision["why"]}'
 
 
 def section(verdict: dict, no_second_opinion: str | None = None) -> str:
@@ -176,10 +177,7 @@ def section(verdict: dict, no_second_opinion: str | None = None) -> str:
     the review's second opinion didn't run."""
     lines = ['**Needs a human.** ' + ("These decisions need a person's approval; the rest of the PR follows "
                                      'established patterns:' if gated(verdict) else 'A person approves this PR:'), '']
-    for decision in gated(verdict):
-        label = decision['id'] or 'Not in the Decisions table'
-        lines.append(f'- **{label}** · {GATES[decision["gate"]]}: {decision["decision"]} · `{decision["code"]}` · '
-                     f'{decision["why"]}')
+    lines += [line(decision) for decision in gated(verdict)]
     if no_second_opinion is not None:
         lines.append(f"- **Second opinion** · the other provider's review didn't run ({no_second_opinion}), "
                      'so a person reviews in its place')
