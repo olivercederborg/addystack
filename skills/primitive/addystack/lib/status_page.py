@@ -69,7 +69,10 @@ def plist_text(resolved: Resolved) -> Optional[str]:
         "ProgramArguments": ["/usr/bin/python3", str(server), "--port", str(PORT)],
         "RunAtLoad": True,
         "KeepAlive": True,
-        "EnvironmentVariables": {"ADDYSTACK_STATUS_SHA256": _digest(server.parent)},
+        # T3CODE_HOME, when set, names where T3 keeps this machine's id, which the server
+        # compares with each coordinator's link to say whether its tick runs here.
+        "EnvironmentVariables": {"ADDYSTACK_STATUS_SHA256": _digest(server.parent),
+                                 **({"T3CODE_HOME": os.environ["T3CODE_HOME"]} if "T3CODE_HOME" in os.environ else {})},
         "StandardErrorPath": str(Path.home() / LOG),
     }).decode()
 

@@ -1052,6 +1052,14 @@ class StatusPage(Home):
         printed = self.ok("status-page")
         self.assertEqual((printed.stdout, printed.stderr), ("", ""))
 
+    def test_the_agent_keeps_the_t3_data_folder_install_ran_with(self):
+        self.page()
+        self.serve()
+        self.env["T3CODE_HOME"] = str(self.home / "t3-elsewhere")
+        self.cli("install")
+        environment = plistlib.loads(self.plist.read_bytes())["EnvironmentVariables"]
+        self.assertEqual(environment["T3CODE_HOME"], str(self.home / "t3-elsewhere"))
+
     def test_on_writes_and_starts_it_and_records_it_then_a_second_install_changes_nothing(self):
         self.page()
         self.serve()
