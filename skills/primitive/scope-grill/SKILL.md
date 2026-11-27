@@ -198,7 +198,7 @@ fails (auth or timeout), say so and continue.
 When the cross-review is settled, finish with:
 
 - **Decisions**: one line each, numbered `D1.`, with its cost line. One the user
-  didn't pick, such as an assumption, starts *My suggestion:*.
+  didn't pick, such as an assumption or a *My suggestion:* item, ends `[assumed]`.
 - **Resulting shape**: one combined `diff` of the file tree the plan touches.
 - **For architect**: the structure questions parked for `architect`, or none.
 - **Scope and size**: the size trail and each widening with the answer that caused it.
