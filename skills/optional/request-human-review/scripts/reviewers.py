@@ -89,12 +89,18 @@ def place(rules: list, decisions: list, changed: list) -> list:
             for decision in decisions]
 
 
+def has(logins, login: str) -> bool:
+    """Whether login is among logins: GitHub logins ignore case, and REVIEWERS is typed by hand."""
+    return login.lower() in {other.lower() for other in logins}
+
+
 def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> list:
     """The reviewers to request, from domains with the most decisions to the fewest. A domain
     an engaged or already picked login covers, as its P1 or P2, adds nobody; otherwise its
     P1, or its P2 when the P1 is the author. A domain that is None or lists nobody but the
     author is covered by anyone engaged or picked, and otherwise takes the fallback: everyone
     the file names but the author, with the fewest open requests in `load`, then by name."""
+    load = {login.lower(): count for login, count in load.items()}
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
@@ -104,19 +110,20 @@ def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> l
     for name in order:
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
         priority = names(rules, name)[:2] if name else []
-        if covering := [reviewer for reviewer in picked if reviewer['login'] in priority]:
+        if covering := [reviewer for reviewer in picked if has(priority, reviewer['login'])]:
             covering[0]['domains'].append(name)
             continue
-        if any(login in priority for login in asked):
+        if any(has(priority, login) for login in asked):
             continue
-        if candidates := [login for login in priority if login != author]:
+        if candidates := [login for login in priority if login.lower() != author.lower()]:
             role = 'P1' if candidates[0] == priority[0] else 'P2'
             picked.append({'login': candidates[0], 'role': role, 'domains': [name]})
             continue
         if asked:
             continue
-        pool = [login for login in dict.fromkeys(n for rule in rules for n in rule['names']) if login != author]
+        pool = [login for login in dict.fromkeys(n for rule in rules for n in rule['names'])
+                if login.lower() != author.lower()]
         if pool:
-            login = min(pool, key=lambda login: (load.get(login, 0), login.lower()))
+            login = min(pool, key=lambda login: (load.get(login.lower(), 0), login.lower()))
             picked.append({'login': login, 'role': 'fallback', 'domains': [name] if name else []})
     return picked

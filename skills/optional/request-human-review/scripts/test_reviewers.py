@@ -113,6 +113,12 @@ class Pick(unittest.TestCase):
         self.assertEqual(self.pick('billing-invoices', author='carol', load={'alice': 2, 'bob': 2, 'dave': 1, 'Erin': 1}),
                          [('dave', 'fallback', ['billing-invoices'])])
 
+    def test_logins_match_whatever_their_case(self):
+        self.assertEqual(self.pick('billing', author='Alice'), [('bob', 'P2', ['billing'])])
+        self.assertEqual(self.pick('billing', engaged=['Alice']), [])
+        self.assertEqual(self.pick('web', load={'Alice': 0, 'BOB': 1, 'carol': 1, 'dave': 1, 'erin': 1}),
+                         [('alice', 'fallback', ['web'])])
+
     def test_someone_already_asked_who_covers_a_domain_adds_nobody(self):
         self.assertEqual(self.pick('billing', engaged=['bob']), [])
         self.assertEqual(self.pick('billing', 'auth', engaged=['bob']), [('dave', 'P1', ['auth'])])

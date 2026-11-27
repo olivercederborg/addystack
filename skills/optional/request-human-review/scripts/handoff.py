@@ -82,7 +82,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     gated domains it doesn't cover as a P1 or P2, and `with_suggested` requests their picks too.
     ValueError when chosen names the PR's author, or the verdict isn't for the PR's head."""
     facts = _facts(number)
-    if facts['author'] in chosen:
+    if reviewers.has(chosen, facts['author']):
         raise ValueError(f"{facts['author']} wrote the PR, so can't review it")
     problems = gates.check(verdict, facts['body'], facts['head'], number)
     if problems:
@@ -110,12 +110,12 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     last = facts['handoffs'][-1] if facts['handoffs'] else None
     same = last is not None and sorted(decision['key'] for decision in placed) == \
         sorted(decision['key'] for decision in last['decisions'])
-    named = {reviewer['login'] for reviewer in last['reviewers']} if same else set()
-    requested = {reviewer['login'] for reviewer in request}
+    named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
+    requested = [reviewer['login'] for reviewer in request]
     # A run that commented, then failed to request: its reviewers who were never asked.
     request += [reviewer for reviewer in (last['reviewers'] if same else [])
-                if reviewer['login'] not in engaged and reviewer['login'] not in requested and reviewer['login'] != author]
-    new = [reviewer for reviewer in request if reviewer['login'] not in named]
+                if not reviewers.has([*engaged, *requested, author], reviewer['login'])]
+    new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
     if not same:
         why = 'decisions changed' if last else 'first handoff'
     else:
@@ -226,7 +226,8 @@ def _facts(number: int) -> dict:
     return {'viewer': viewer, 'author': author, 'body': pr['body'] or '', 'base': pr['base']['sha'],
             'head': pr['head']['sha'], 'rules': None if text is None else reviewers.parse(text),
             'changed': _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/files?per_page=100', '--jq', '.[].filename')),
-            'load': load, 'engaged': [login for login in dict.fromkeys(requested + reviewed) if login != author],
+            'load': load, 'engaged': [login for login in dict.fromkeys(requested + reviewed)
+                                      if login.lower() != author.lower()],
             'handoffs': [block for block in (read(comment['body']) for comment in comments
                                              if comment['login'] == viewer) if block]}
 
