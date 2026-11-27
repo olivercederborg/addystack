@@ -938,6 +938,26 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual(q.lines[-1]["event"], "cont")
         self.assertEqual(q.lines[-1]["why"], "its agent's shell is gone")
 
+    def test_a_held_unit_under_a_shared_host_resumes_when_its_shell_is_gone(self):
+        # Codex's code-mode host is one long-lived child of Codex that runs every command.
+        q = Queue(self, cap=1)
+        host = proc(300, 90, argv=("codex-code-mode",), marked=True)
+        shell = proc(301, 300, argv=("/bin/zsh", "-lc", "bun run typecheck"), marked=True)
+        check = proc(302, 301, pgid=301, argv=TSC, marked=True, start=1000)
+        blocker = [proc(200, 90, argv=("/bin/zsh", "-lc", "check 1")), proc(201, 200, argv=TSC, start=1000)]
+
+        def step(procs, now):
+            procs = snapshot(CODEX, *procs)
+            commands = q.owners.attribute(procs)
+            agents = {pid: p.ident for pid, p in procs.items() if guard.is_agent(p)}
+            q.governor.tick(q.owners, commands, agents, now, 1000 + now)
+
+        step([*blocker, host, shell, check], 0)
+        self.assertEqual(sorted(q.governor.held), [302])
+        step([*blocker, host, check._replace(ppid=1, parent_ident=1)], .5)
+        self.assertEqual(q.governor.held, {})
+        self.assertEqual(q.sent[-1], (302, signal.SIGCONT))
+
     def test_disabling_resumes_held_units_on_the_next_tick(self):
         import resolved
         q = Queue(self, cap=1)

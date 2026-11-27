@@ -798,7 +798,7 @@ class Governor:
             if top not in units:
                 continue
             members = units[top].members
-            if not self._attended(commands[unit["head"]], agents):
+            if not self._attended(top, commands[unit["head"]], agents):
                 self._resume(top, units, now, wall, "its agent's shell is gone")
                 continue
             joined = [proc for proc in members if proc.ident not in unit["members"]]
@@ -819,7 +819,7 @@ class Governor:
         for unit in sorted(new, key=lambda unit: tops[unit.top].start):
             top = tops[unit.top]
             holdable = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS
-                        and self._attended(commands[unit.head], agents))
+                        and self._attended(unit.top, commands[unit.head], agents))
             if not holdable:
                 self._run(unit.top, unit.members, now, wall)  # already running: never stopped
             elif not self.held and self._room(config, now):
@@ -835,10 +835,19 @@ class Governor:
             if full and now - unit["since"] >= HOLD_SECONDS:
                 self._kill(owners, top, unit, len(self.running))
 
-    def _attended(self, members, agents):
-        """Whether an agent still waits on the command: its shell, or itself, is a live
-        agent's direct child."""
-        return any(agents.get(proc.ppid) == proc.parent_ident for proc in members)
+    def _attended(self, top, members, agents):
+        """Whether an agent still waits on the unit: its parents, up from its top, still
+        reach a live agent. Under a server an agent keeps, such as Codex's code-mode host,
+        the host outlives each command's shell, so the command's other members can't tell."""
+        by_ident = {proc.ident: proc for proc in members}
+        proc, seen = by_ident.get(top), set()
+        while proc is not None and proc.ident not in seen:
+            if agents.get(proc.ppid) == proc.parent_ident:
+                return True
+            seen.add(proc.ident)
+            parent = by_ident.get(proc.parent_ident)
+            proc = parent if parent is not None and parent.pid == proc.ppid else None
+        return False
 
     def _room(self, config, now):
         """Whether one more unit may run: under the cap, and when any unit runs, nothing
