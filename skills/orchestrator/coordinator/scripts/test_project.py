@@ -529,6 +529,15 @@ class Status(unittest.TestCase):
         self.assertEqual(units["build"]["prs"], [{"ref": "?#12", "name": "#12", "url": None}])
         self.assertEqual({call["key"] for call in self.calls("gh")}, {"acme/other#5"})
 
+    def test_a_checkout_path_with_parentheses_keeps_them_and_a_note_after_it_is_dropped(self):
+        demo = self.root / "app (demo)"
+        subprocess.run(["git", "init", "-q", str(demo)], check=True)
+        subprocess.run(["git", "-C", str(demo), "remote", "add", "origin", "git@github.com:other/real.git"], check=True)
+        self.write(**{f"Checkout: {self.checkout} (on `main`)": f"Checkout: {demo}"})
+        self.assertEqual(self.units(self.status("--no-live"))["build"]["prs"][0]["ref"], "other/real#12")
+        self.write()  # the fixture's `<checkout> (on `main`)`: the note goes, the sibling app's origin stays
+        self.assertEqual(self.units(self.status("--no-live"))["build"]["prs"][0]["ref"], "acme/app#12")
+
     def test_a_markdown_link_to_a_pr_names_only_its_urls_pr(self):
         self.write(**{"| other#5 |": "| [#5, Their change](https://github.com/acme/other/pull/5) |"})
         self.status()

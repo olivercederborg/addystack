@@ -510,6 +510,16 @@ def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
         refs.add(f"{repo}#{url_n or n or local}")
 
 
+def _checkout(lines: list[str]) -> Path | None:
+    """The Checkout field's directory: the path as written, or, when that isn't a
+    directory, without a trailing note such as ` (on `main`)`. None when it's empty."""
+    value = _header(lines, "Checkout")
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.is_dir() else Path(re.sub(r" \([^()]*\)$", "", value)).expanduser()
+
+
 def _origin(checkout: Path | None) -> str:
     """`owner/repo` of the checkout's GitHub origin, or ""."""
     code, out = _run(["git", "-C", str(checkout), "remote", "get-url", "origin"]) if checkout else (1, "")
@@ -546,9 +556,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         _warn(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}")
         return None
     busy = hold and lead.get("status") in ACTIVE
-    place = _header(lines, "Checkout").split(" (")[0].strip()
-    checkout = Path(place).expanduser() if place else None
-    origin = _origin(checkout)
+    origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
     watched: set[str] = set()
     _pr_refs(_listened(lines, "Watches"), origin, watched)
@@ -639,8 +647,7 @@ def status_data(lines: list[str], *, live: bool = True) -> dict:
     except project_queue.QueueError as error:
         data["queue_unread"] = str(error)
     if "## Workers" in lines:
-        place = _header(lines, "Checkout").split(" (")[0].strip()
-        origin = _origin(Path(place).expanduser() if place else None)
+        origin = _origin(_checkout(lines))
         rows, odd = _workers(lines)
         groups: dict[str, list[dict]] = {}
         for row in rows:
