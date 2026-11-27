@@ -521,10 +521,15 @@ class CommandLine(unittest.TestCase):
         return len(argv).to_bytes(4, "little") + body
 
     def test_empty_argument_does_not_shift_the_environment(self):
-        args, marked = guard.parse_procargs(
+        args, marked, tool_call = guard.parse_procargs(
             self.procargs(b"python3", b"worker.py", b"", env=[b"CLAUDECODE=1", b"HOME=/x"]))
         self.assertEqual(args, ["python3", "worker.py", ""])
         self.assertTrue(marked)
+        self.assertIsNone(tool_call)
+
+    def test_codex_tool_call_id_is_read(self):
+        env = [b"CODEX_THREAD_ID=t1", b"CODEX_TOOL_CALL_ID=call_abc123", b"HOME=/x"]
+        self.assertEqual(guard.parse_procargs(self.procargs(b"node", b"tsc", env=env))[1:], (True, "call_abc123"))
 
     def test_unmarked_environment(self):
         self.assertIs(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1], False)
@@ -752,18 +757,35 @@ class HeavyChecks(unittest.TestCase):
 class AgentCommand(unittest.TestCase):
     """Unwrapping the agent's wrapper shell to the command it ran."""
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_claude_eval_wrapper_unwraps_to_its_command(self):
-        pass
+        args = ["/bin/zsh", "-c", "source /x/snapshot.sh && eval 'bun run typecheck' < /dev/null && pwd -P >| /tmp/cwd"]
+        self.assertEqual(guard.agent_command(args), "bun run typecheck")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_codex_shell_wrapper_unwraps_to_its_command(self):
-        pass
+        self.assertEqual(guard.agent_command(["/bin/zsh", "-lc", "pnpm typecheck"]), "pnpm typecheck")
+        self.assertEqual(guard.command_text(["/bin/zsh", "-lc", "pnpm typecheck"]), "pnpm typecheck")
 
-    @unittest.skip("check queue: contract only, not built yet")
     def test_any_other_argv_is_none(self):
-        pass
+        for argv in (["node", "tsc"], ["/bin/zsh", "-lc"], ["python3", "-c", "print(1)"], []):
+            with self.subTest(argv=argv):
+                self.assertIsNone(guard.agent_command(argv))
 
+    def test_a_head_keeps_its_first_seen_argv_after_it_execs(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("/bin/zsh", "-lc", "pnpm typecheck"))))
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("node", "tsc"))))
+        self.assertEqual(owners.argv, {200: ["/bin/zsh", "-lc", "pnpm typecheck"]})
+        owners.attribute(snapshot(CODEX))
+        self.assertEqual(owners.argv, {})
+
+    def test_a_kill_entry_names_the_first_seen_command_and_tool_call(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("/bin/zsh", "-lc", "pnpm typecheck"))))
+        execed = guard.Proc(*proc(200, 90, marked=True, argv=("node", "tsc"))[:12], tool_call="call_1")
+        commands = owners.attribute(snapshot(CODEX, execed))
+        line = guard.entry(owners, 200, commands[200], "why", rule="queue")
+        self.assertEqual((line["command"], line["tool_call_id"], line["rule"], line["agent_pid"]),
+                         ("pnpm typecheck", "call_1", "queue", 90))
 
 
 class CheckQueue(unittest.TestCase):

@@ -96,9 +96,9 @@ LOG = os.path.expanduser("~/Library/Logs/agent-memory-guard.log")
 # the parent's ident, so a parent link survives pid reuse.
 # cpu is the process's own user plus system time and reaped its reaped children's, in
 # nanoseconds, or None when the read failed; start is when it started, in seconds since
-# the epoch.
+# the epoch. tool_call is the CODEX_TOOL_CALL_ID Codex gives each command, or None.
 Proc = namedtuple("Proc", "pid ppid pgid ident version parent_ident footprint argv marked "
-                  "cpu start reaped", defaults=(0, 0, 0))
+                  "cpu start reaped tool_call", defaults=(0, 0, 0, None))
 
 
 class BsdInfo(ctypes.Structure):  # struct proc_bsdinfo, <sys/proc_info.h>
@@ -165,13 +165,16 @@ if sys.platform == "darwin":
 # CLAUDECODE, T3 Code starts Codex with CODEX_INTERNAL_ORIGINATOR_OVERRIDE, and Codex
 # gives each shell command CODEX_THREAD_ID, however Codex was started.
 AGENT_ENV = (b"CLAUDECODE=", b"CODEX_INTERNAL_ORIGINATOR_OVERRIDE=", b"CODEX_THREAD_ID=")
+# Codex 0.172 sets it to the exec call's id, which its PostToolUse hook gets as tool_use_id.
+TOOL_CALL_ENV = b"CODEX_TOOL_CALL_ID="
 command_lines = {}
 
 
 def parse_procargs(raw):
     """KERN_PROCARGS2 is argc, the exec path, NUL padding, argv, then the environment.
-    Returns argv and whether the environment marks the process as agent work, or None
-    when the environment is hidden or empty, as macOS hides Apple binaries'."""
+    Returns argv, whether the environment marks the process as agent work, or None when
+    the environment is hidden or empty, as macOS hides Apple binaries', and its
+    CODEX_TOOL_CALL_ID or None."""
     argc = struct.unpack("i", raw[:4])[0]
     body = raw[4:]
     start = body.find(b"\0")
@@ -180,18 +183,20 @@ def parse_procargs(raw):
     fields = body[start:].split(b"\0") if start >= 0 else []
     args = [arg.decode(errors="replace") for arg in fields[:argc]]
     env = [var for var in fields[argc:] if var]
-    return args, any(var.startswith(AGENT_ENV) for var in env) if env else None
+    tool_call = next((var[len(TOOL_CALL_ENV):].decode(errors="replace") for var in env
+                      if var.startswith(TOOL_CALL_ENV)), None)
+    return args, any(var.startswith(AGENT_ENV) for var in env) if env else None, tool_call
 
 
 def command_line(pid, ident, version):
-    """The process's argv and agent mark, read once per exec. The kernel hides argv from
+    """The process's argv, agent mark, and Codex tool call, read once per exec. The kernel hides argv from
     other users and the environment of Apple's own binaries (sleep, zsh), so either can
     come back empty; a failed read is retried next tick."""
     key = (ident, version)
     if key not in command_lines:
         raw = sysctl([CTL_KERN, KERN_PROCARGS2, pid], args_buffer)
         if not raw:
-            return [], False
+            return [], False, None
         command_lines[key] = parse_procargs(raw)
     return command_lines[key]
 
@@ -213,9 +218,10 @@ def processes():
             cpu = int((usage.user_time + usage.system_time) * NS_PER_TICK)
             reaped = int((usage.child_user_time + usage.child_system_time) * NS_PER_TICK)
         ident, version = info.ids.ident, info.ids.version
+        argv, marked, tool_call = command_line(pid, ident, version)
         result[pid] = Proc(pid, info.bsd.ppid, info.bsd.pgid, ident, version,
-                           info.ids.parent_ident, footprint, *command_line(pid, ident, version),
-                           cpu, info.bsd.start_sec + info.bsd.start_usec / 1e6, reaped)
+                           info.ids.parent_ident, footprint, argv, marked, cpu,
+                           info.bsd.start_sec + info.bsd.start_usec / 1e6, reaped, tool_call)
     live = {(p.ident, p.version) for p in result.values()}
     for key in [key for key in command_lines if key not in live]:
         del command_lines[key]
@@ -292,6 +298,9 @@ class Owners:
         self.owner = {}  # process ident -> head: the ident of the command's first process
         self.group = {}  # pgid a command head leads -> head
         self.services = set()  # heads that are an agent's servers, not its commands
+        # head -> its argv when first seen, so a Codex shell that execs into its program
+        # still names the command it ran.
+        self.argv = {}
 
     def resolve(self, procs, agents):
         owner = {}
@@ -355,6 +364,11 @@ class Owners:
                         and parent.ident == proc.parent_ident and is_service(proc, parent)):
                     self.services.add(head)
         self.services &= commands.keys()
+        for head, members in commands.items():
+            first = next((proc for proc in members if proc.ident == head), None)
+            if head not in self.argv and first is not None and first.argv:
+                self.argv[head] = list(first.argv)
+        self.argv = {head: argv for head, argv in self.argv.items() if head in commands}
         return commands
 
 
@@ -432,33 +446,8 @@ class Abandoned:
             if state is None or state[0] != attended:
                 state = (attended, wall, {}, {}, 0, [])
             _, began, last, debt, total, marks = state
-            seen, debt, here = {}, dict(debt), {proc.ident for proc in members}
-            for ident in last.keys() - here:
-                # The nearest ancestor still here reaps it, directly or through parents
-                # that vanished with it, and its reaped CPU then holds this one's again.
-                cpu, reaped, parent = last[ident]
-                owed = cpu + reaped + debt.pop(ident, 0)
-                while parent in last and parent not in here:
-                    parent = last[parent][2]
-                if parent in here:
-                    debt[parent] = debt.get(parent, 0) + owed
-            for proc in members:
-                if proc.cpu is None:  # a failed read keeps the last value
-                    if proc.ident in last:
-                        seen[proc.ident] = last[proc.ident]
-                    continue
-                if proc.ident in last:
-                    cpu, reaped, _ = last[proc.ident]
-                    total += max(0, proc.cpu - cpu)
-                    gained = max(0, proc.reaped - reaped)
-                    owed = debt.pop(proc.ident, 0)
-                    if owed > gained:
-                        debt[proc.ident] = owed - gained
-                    total += max(0, gained - owed)
-                elif proc.start > began:
-                    total += proc.cpu + proc.reaped  # started since: all of it is new
-                # else it existed before tracking began, so it counts from now
-                seen[proc.ident] = (proc.cpu, proc.reaped, proc.parent_ident)
+            gained, seen, debt = cpu_gained(members, last, debt, began)
+            total += gained
             if not marks or now - marks[-1][0] >= CHECKPOINT_SECONDS:
                 marks = marks + [(now, total)]
             while now - marks[0][0] > window:
@@ -482,6 +471,44 @@ class Abandoned:
                 found = head, f"{label}, at {cores:.1f} cores for {window // 60} min"
         self.state = kept
         return found
+
+
+def cpu_gained(members, last, debt, began):
+    """CPU in ns the members used since `last` ({ident: (cpu, reaped, parent ident)}, from
+    the call before), their own and their reaped children's, so a worker that exits between
+    calls, or lives less than one, still counts through the ancestor that reaps it. What a
+    vanished member already counted becomes a debt ({ident: ns}) that only that ancestor's
+    reaped CPU repays, so the total never drops or counts it twice. A member not in `last`
+    counts all its CPU when it started after `began` (epoch seconds), else from now.
+    Returns (ns, the new last, the new debt)."""
+    gained_total, seen, debt, here = 0, {}, dict(debt), {proc.ident for proc in members}
+    for ident in last.keys() - here:
+        # The nearest ancestor still here reaps it, directly or through parents that
+        # vanished with it, and its reaped CPU then holds this one's again.
+        cpu, reaped, parent = last[ident]
+        owed = cpu + reaped + debt.pop(ident, 0)
+        while parent in last and parent not in here:
+            parent = last[parent][2]
+        if parent in here:
+            debt[parent] = debt.get(parent, 0) + owed
+    for proc in members:
+        if proc.cpu is None:  # a failed read keeps the last value
+            if proc.ident in last:
+                seen[proc.ident] = last[proc.ident]
+            continue
+        if proc.ident in last:
+            cpu, reaped, _ = last[proc.ident]
+            gained_total += max(0, proc.cpu - cpu)
+            gained = max(0, proc.reaped - reaped)
+            owed = debt.pop(proc.ident, 0)
+            if owed > gained:
+                debt[proc.ident] = owed - gained
+            gained_total += max(0, gained - owed)
+        elif proc.start > began:
+            gained_total += proc.cpu + proc.reaped  # started since: all of it is new
+        # else it existed before tracking began, so it counts from now
+        seen[proc.ident] = (proc.cpu, proc.reaped, proc.parent_ident)
+    return gained_total, seen, debt
 
 
 def signal_all(members, sig, send=os.kill, current=identity):
@@ -517,16 +544,51 @@ def kill(owners, head, scan=processes, send=os.kill, current=identity):
 
 
 def command_text(args):
-    """What the agent ran. A Claude Bash call wraps it as
-    `<setup> && eval '<cmd>' < /dev/null && pwd -P >| <file>`, without `< /dev/null` when
-    <cmd> has a heredoc, and with each ' in <cmd> written as '"'"'."""
-    text = " ".join(args)
+    """What the agent ran, or the whole argv when no agent's wrapper shell is around it."""
+    return agent_command(args) or " ".join(args)
+
+
+def agent_command(argv):
+    """The command an agent ran, from its wrapper shell's argv; None for any other argv.
+    A Claude Bash call wraps it as `<setup> && eval '<cmd>' < /dev/null && pwd -P >| <file>`,
+    without `< /dev/null` when <cmd> has a heredoc, and with each ' in <cmd> written as
+    '"'"'. Codex runs it as `<shell> -lc <cmd>`."""
+    text = " ".join(argv)
     start = text.find("eval '")
-    if start < 0:
-        return text
-    end = text.rfind(" && pwd -P >| ")
-    quoted = text[start + 6:end if end > start else len(text)]
-    return quoted.removesuffix(" < /dev/null").removesuffix("'").replace("'\"'\"'", "'")
+    if start >= 0:
+        end = text.rfind(" && pwd -P >| ")
+        quoted = text[start + 6:end if end > start else len(text)]
+        return quoted.removesuffix(" < /dev/null").removesuffix("'").replace("'\"'\"'", "'")
+    if (len(argv) == 3 and os.path.basename(argv[0]).lstrip("-") in SHELLS
+            and argv[1] in ("-lc", "-c")):
+        return argv[2]
+    return None
+
+
+def entry(owners, head, members, reason, **more):
+    """The log line for killing members of the command `head`, the fields
+    agent-memory-guard-notice.py matches on: agent_pid and the full command's hash for
+    Claude, tool_call_id (CODEX_TOOL_CALL_ID) for Codex. `more` adds fields, such as
+    rule="queue" and unit=<text>."""
+    first = next((p for p in members if p.ident == head), None)
+    text = command_text(owners.argv.get(head) or (first or members[0]).argv)
+    line = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "at": time.time(), "reason": reason,
+            "processes": len(members), "gb": round(footprint(members) / GB, 1),
+            "agent_pid": first.ppid if first and first.ppid > 1 else None,
+            "command_sha256": hashlib.sha256(text.encode()).hexdigest(), "command": text[:500],
+            "tool_call_id": next((p.tool_call for p in members if p.tool_call), None)}
+    line.update(more)
+    return line
+
+
+def record(line):
+    """Appends one JSON line to LOG; never raises, since a full disk must not stop a kill."""
+    try:
+        with open(LOG, "a") as log:
+            log.write(json.dumps(line, ensure_ascii=False) + "\n")
+    except OSError as error:
+        print(f"{line.get('time', '')} couldn't log a {line.get('event', 'kill')}: {error!r}",
+              file=sys.stderr, flush=True)
 
 
 def notify(title, subtitle, text):
@@ -561,31 +623,6 @@ def is_heavy(argv):
 
 def heavy_units(commands):
     """{top ident: Unit} for every heavy unit in commands ({head: [Proc]})."""
-    raise NotImplementedError(NOT_BUILT)
-
-
-def cpu_gained(members, last, debt, began):
-    """CPU in ns the members used since `last` ({ident: (cpu, reaped, parent ident)}),
-    reaped children included and never counted twice, as Abandoned counts it. Returns
-    (ns, new last, new debt)."""
-    raise NotImplementedError(NOT_BUILT)
-
-
-def agent_command(argv):
-    """The command an agent ran, from its wrapper shell's argv: Claude's
-    `eval '<cmd>'` or Codex's `<shell> -lc <cmd>`; None for any other argv."""
-    raise NotImplementedError(NOT_BUILT)
-
-
-def entry(owners, head, members, reason, **more):
-    """The log line for killing members of the command `head`: the fields
-    agent-memory-guard-notice.py matches on, plus `more`, such as rule="queue",
-    unit=<text>, and tool_call_id=<CODEX_TOOL_CALL_ID>."""
-    raise NotImplementedError(NOT_BUILT)
-
-
-def record(line):
-    """Appends one JSON line to LOG; never raises."""
     raise NotImplementedError(NOT_BUILT)
 
 
@@ -631,29 +668,19 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
     if not found:
         return None
     head, reason = found
-    members = commands[head]
-    first = next((p for p in members if p.ident == head), None)
-    text = command_text((first or members[0]).argv)
     # Logged before the kill, so agent-memory-guard-notice.py finds it once the command
-    # fails; agent_pid and the full command's hash tell it which run was killed.
-    entry = {"time": time.strftime("%Y-%m-%d %H:%M:%S"), "at": time.time(), "reason": reason,
-             "processes": len(members), "gb": round(footprint(members) / GB, 1),
-             "agent_pid": first.ppid if first and first.ppid > 1 else None,
-             "command_sha256": hashlib.sha256(text.encode()).hexdigest(), "command": text[:500]}
-    try:
-        with open(LOG, "a") as log:
-            log.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    except OSError as error:  # a full disk must not stop the kill
-        print(f"{entry['time']} couldn't log a kill: {error!r}", file=sys.stderr, flush=True)
+    # fails; agent_pid, the full command's hash, and tool_call_id tell it which run died.
+    line = entry(owners, head, commands[head], reason)
+    record(line)
     _, refused = kill(owners, head, scan)
     if refused:
-        print(f"{entry['time']} couldn't kill {refused} of {text[:80]!r}",
+        print(f"{line['time']} couldn't kill {refused} of {line['command'][:80]!r}",
               file=sys.stderr, flush=True)
     try:
-        notify("Killed a runaway agent command", reason, text)
+        notify("Killed a runaway agent command", reason, line["command"])
     except OSError:
         pass  # no notification while the process table is full; the log has it
-    return entry
+    return line
 
 
 def main():
