@@ -106,7 +106,7 @@ class Snapshot(Folders, unittest.TestCase):
         self.assertEqual((units["build"]["prs"][0]["state"], units["build"]["prs"][0]["draft"]), ("OPEN", True))
         self.assertNotIn("thread_status", units["probe"])  # a done row's thread is never shown, as live status does
         self.assertEqual((units["probe"]["prs"][0]["state"], units["probe"]["prs"][0]["draft"]), ("MERGED", False))
-        self.assertEqual(card["asOf"]["tick"], (folder / "tick.json").stat().st_mtime)
+        self.assertIsNone(card["asOf"]["tick"])  # TICK's looks hold no read times, so they're undated
 
     def test_a_state_the_tick_kept_from_an_older_look_dates_the_card(self):
         folder = self.write()
