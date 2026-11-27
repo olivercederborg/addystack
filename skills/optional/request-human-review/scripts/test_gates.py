@@ -125,7 +125,7 @@ class OneWayDoors(unittest.TestCase):
         return run('rev-parse', 'HEAD').strip()
 
     def problems(self, gated_verdict, files):
-        return gates.doors(gated_verdict, gates.one_way_doors(self.base(files), str(self.repo)))
+        return gates.doors(gated_verdict, self.base(files), str(self.repo))
 
     def test_a_money_movement_change_that_follows_a_pattern_needs_a_human_where_the_template_lists_it(self):
         paying = verdict(decision(None, code='pay.ts:3'), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'}])

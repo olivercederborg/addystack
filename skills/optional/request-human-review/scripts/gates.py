@@ -98,10 +98,11 @@ def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
     return None
 
 
-def doors(verdict: dict, definition: tuple | None) -> list:
-    """Problems with a verdict against the repository's own one-way doors: a sensitive area they
-    name is a one-way door even when it follows a pattern, so it needs a one-way-door decision at
-    its code."""
+def doors(verdict: dict, base: str, cwd: str = '.') -> list:
+    """Problems with a verdict against the repository's own one-way doors at base, the PR's base
+    now: a sensitive area they name is a one-way door even when it follows a pattern, so it needs
+    a one-way-door decision at its code."""
+    definition = one_way_doors(base, cwd)
     if definition is None:
         return []
     source, listed = definition
@@ -178,7 +179,7 @@ def main(arguments):
         if not problems and not same_diff(verdict['base'], pr['baseRefOid'], pr['headRefOid']):
             problems.append(f"the PR's diff against its base is not the one the verdict judged from {verdict['base']}")
         if not problems:
-            problems = doors(verdict, one_way_doors(verdict['base']))
+            problems = doors(verdict, pr['baseRefOid'])
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':

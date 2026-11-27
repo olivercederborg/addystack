@@ -146,8 +146,8 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     judged = current['baseRefOid']
     if not gates.same_diff(verdict['base'], judged, head):
         raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
-    problems = gates.doors(verdict, gates.one_way_doors(verdict['base']))
-    if problems:
+    # The repository's one-way doors at the base the PR merges into, here and after it moves.
+    if problems := gates.doors(verdict, judged):
         raise ValueError('; '.join(problems))
     findings = review['findings']
     # review-code's rule: a blocking call always holds. A finding that doesn't say true or false
@@ -183,6 +183,8 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             if not gates.same_diff(verdict['base'], base['baseRefOid'], head):
                 raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")
             judged = base['baseRefOid']
+            if problems := gates.doors(verdict, judged):
+                raise ValueError('; '.join(problems))
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
