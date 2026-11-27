@@ -2,19 +2,27 @@
 """Builds one --variant folder per arm: the router and principles index that a live Claude
 Code session loads through ~/.claude/CLAUDE.md, rendered from one addystack revision, with
 that revision's principle files behind the index's pointers. A live session opens a
-principle file only when its index line sends it there, so the arm does the same.
+principle file only when its index line sends it there, so the arm does the same. The
+user's name, CLI path, taste line, and excluded principles come from this machine's
+addystack build, through the kit's own renderer, so the arms match whoever runs them.
 
 Usage: evals/fix-the-cause/arms.py KIT_REPO OUT ARM=REV [ARM=REV...] [--typed ARM]
        evals/fix-the-cause/arms.py KIT_REPO --check   # current main renders as the live files
 --typed ARM adds the fix-kind rule R101 tested to that arm's turn blocks (not shipped).
 """
+import json
 import pathlib
 import subprocess
 import sys
+import tempfile
 
-TASTE = " What good code and UI look like:\n`~/.config/addystack/taste.md`."
-ADDYSTACK = "~/Developer/personal/addystack/skills/primitive/addystack/bin/addystack"
-LIVE_KIT = "~/Developer/personal/addystack/skills/primitive/addystack"
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "maintainer"))
+import kit_path  # noqa: E402
+sys.path[:0] = [str(kit_path.tool() / "lib"), str(kit_path.tool() / "hooks")]
+import hookset  # noqa: E402
+import render as kit_render  # noqa: E402
+import resolved  # noqa: E402
+
 CORE = "skills/primitive/addystack/core/"
 TYPED = """
 
@@ -31,26 +39,35 @@ def show(repo, rev, path):
     return subprocess.check_output(["git", "-C", repo, "show", f"{rev}:{path}"], text=True)
 
 
-def render(repo, rev, kit):
-    fill = lambda t: (t.replace("{{user}}", "Oliver").replace("{{kit}}", kit)
-                       .replace("{{taste}}", TASTE).replace("{{addystack}}", ADDYSTACK))
-    return fill(show(repo, rev, CORE + "router.md")), fill(show(repo, rev, CORE + "principles.md"))
+def live():
+    """This machine's built config (resolved.json), which the live router was rendered from."""
+    return json.loads(resolved.STATE.expanduser().read_text())
 
 
-def build(repo, out, arm, rev, typed):
+def render(repo, rev, kit, built):
+    """rev's router and principles index, filled as `addystack build` fills them from
+    `built`, with {{kit}} as `kit`."""
+    values = {"user": built["identity"]["name"], "kit": kit, "addystack": f"{hookset._kit(built)}/bin/addystack"}
+    with tempfile.TemporaryDirectory() as core:
+        pathlib.Path(core, "principles.md").write_text(show(repo, rev, CORE + "principles.md"))
+        principles = kit_render._principles(built, pathlib.Path(core), values)
+    return kit_render._fill(show(repo, rev, CORE + "router.md"), values), principles
+
+
+def build(repo, out, arm, rev, typed, built):
     kit = out / "kits" / arm
     (kit / "principles").mkdir(parents=True, exist_ok=True)
     names = subprocess.check_output(["git", "-C", repo, "ls-tree", "--name-only", rev,
                                      "skills/primitive/addystack/principles/"], text=True).split()
     for name in names:
         (kit / "principles" / pathlib.Path(name).name).write_text(show(repo, rev, name))
-    router, principles = render(repo, rev, str(kit))
+    router, principles = render(repo, rev, str(kit), built)
     router = router.replace("@principles.md", principles.strip())
     variant = out / "variants" / arm
     variant.mkdir(parents=True, exist_ok=True)
     (variant / "SKILL.md").write_text(f"""---
 name: addystack-router
-description: Oliver's always-loaded router and principles index for this run.
+description: {built["identity"]["name"]}'s always-loaded router and principles index for this run.
 ---
 
 This run replaces the router and principles index that ~/.claude/CLAUDE.md imports from
@@ -62,19 +79,19 @@ principle file only as its index line says, from {kit}/principles/.
 
 
 def main(argv):
-    repo = argv[0]
+    repo, built = argv[0], live()
     if argv[1:] == ["--check"]:
-        router, principles = render(repo, "origin/main", LIVE_KIT)
-        live = pathlib.Path("~/.local/state/addystack").expanduser()
-        router = router.replace("@principles.md", "@~/.local/state/addystack/principles.md")
-        same = router == (live / "router.md").read_text() and principles == (live / "principles.md").read_text()
+        state = resolved.STATE.expanduser().parent
+        router, principles = render(repo, "origin/main", kit_render._home(pathlib.Path(built["kit"])), built)
+        router = router.replace("@principles.md", f"@{kit_render._home(state / 'principles.md')}")
+        same = router == (state / "router.md").read_text() and principles == (state / "principles.md").read_text()
         print("matches the live router and principles" if same else "differs from the live files")
         return 0 if same else 1
     out, rest = pathlib.Path(argv[1]).resolve(), argv[2:]
     typed = rest[rest.index("--typed") + 1] if "--typed" in rest else None
     for pair in (a for a in rest if "=" in a):
         arm, rev = pair.split("=", 1)
-        build(repo, out, arm, rev, arm == typed)
+        build(repo, out, arm, rev, arm == typed, built)
         print(arm, rev)
     return 0
 
