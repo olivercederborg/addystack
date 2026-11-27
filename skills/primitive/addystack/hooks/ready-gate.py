@@ -26,7 +26,7 @@ through `workdir`, and a hook timeout, which Codex lets through. `gh stack submi
 without a terminal, which opens drafts."""
 import json, os, re, signal, subprocess, sys
 
-from shell_dirs import ASSIGNMENT, BRANCH_MOVES, LEADS, Walk, unreadable
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, HEREDOC, LEADS, QUOTED, Walk, unreadable
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 RECORD = os.path.join(HERE, "verdicts.py").replace(os.path.expanduser("~"), "~", 1)
@@ -39,10 +39,10 @@ command = (payload.get("tool_input") or {}).get("command", "")
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
 # quoted single word ("12", 'feat/x') is an argument, so it keeps its value, unless it starts
 # with #, which would then read as a comment.
-code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S)
+code = HEREDOC.sub("", command)
 code = re.sub(r"'((?!#)[^'\s;&|<>$]*)'|\"((?!#)[^\"\s;&|<>\\$`]*|\$\{?[A-Za-z_]\w*\}?)\"",
               lambda m: m.group(1) or m.group(2) or "''", code)  # a quoted "$n" stays a variable
-code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
+code = QUOTED.sub("''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 # Nor are comments: a # that starts a word, so not after an escaped space.
 code = re.sub(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", "", code, flags=re.M)
@@ -118,7 +118,7 @@ repo, exported = os.environ.get("GH_REPO") or None, "GH_REPO" in os.environ  # t
 allexport = False
 moved, readies = False, []
 loops = []  # (name, its words or None when the shell makes them, depth) for each `for` the command is in
-QUOTED = re.findall(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", command)
+quoted_strings = QUOTED.findall(command)
 OPAQUE = {"eval", "source", ".", "let", "read", "printf", "declare", "typeset", "local", "readarray", "mapfile", "getopts"}
 # A function, trap, or alias the command defines runs code the gate doesn't follow to its
 # call, so no loop name in such a command is one the gate can read.
@@ -143,7 +143,7 @@ for at, words, lead in walk:
     for loop in loops:
         n = re.escape(loop[0])
         if DEFINES or words[lead:lead + 1] and words[lead] in OPAQUE or any(re.search(rf"(?<![\w$.{{/-]){n}(?!\w)", re.sub(rf"\$\{{?{n}\}}?", "", quoted))
-                         for quoted in QUOTED):
+                         for quoted in quoted_strings):
             loop[1] = None
         if any((re.fullmatch(rf"(?:\+\+|--)?{n}(?:\[.*|\+?=.*|\+\+|--)?", word) or re.search(rf"\$\{{{n}:?[=?+-]", word))
                and not (at == loop[3] and word == loop[0] and words.index(word) == lead) for word in words):

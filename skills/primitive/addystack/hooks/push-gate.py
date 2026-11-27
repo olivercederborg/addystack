@@ -83,12 +83,14 @@ PUSHY = re.compile(r"\bpush\b|\bsubmit\b|\bsync\b")
 if not PUSHY.search(command):  # most commands: no parse, no gh
     passes(NO_PUSH)
 
+from shell_dirs import ASSIGNMENT, BRANCH_MOVES, HEREDOC, QUOTED, Walk
+
 # Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands; a
 # quoted single word ('feat/x') is an argument, so it keeps its value, unless it starts with
 # #, which would then read as a comment.
-code = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", "", command, flags=re.S)
+code = HEREDOC.sub("", command)
 code = re.sub(r"'((?!#)[^'\s;&|<>]*)'|\"((?!#)[^\"\s;&|<>\\$`]*)\"", lambda m: m.group(1) or m.group(2) or "''", code)
-code = re.sub(r"'[^']*'|\"(?:\\.|[^\"\\])*\"", "''", code)
+code = QUOTED.sub("''", code)
 code = re.sub(r"\d*(?:>>?|<)(?:&\d+-?|\s*[^\s;&|]+)", " ", code)  # redirections aren't arguments
 code = re.sub(r"(?:(?<=[;&|(`])|(?<=(?<!\\)\s)|^)#[^\n]*", "", code, flags=re.M)  # nor are comments
 
@@ -104,7 +106,6 @@ RUNS = {"env", "nohup", "exec"}
 # cd that may not run before the push, or whose directory the gate can't read, leaves its
 # checkout unknown. A command substitution with no push in it, as in `d=$(cd x && pwd)`, runs
 # in its own shell and moves nothing.
-from shell_dirs import ASSIGNMENT, BRANCH_MOVES, Walk
 walk = Walk(re.sub(r"\$\([^()`]*\)", lambda m: m.group(0) if PUSHY.search(m.group(0)) else "''", code), cwd)
 # A commit, rebase, or other branch move earlier in the command runs after the gate reads the
 # tips, so each push after one counts every PR it reaches as moved. A switch of branch or
@@ -419,11 +420,14 @@ def offered(reply):
     """The reply's stop:push options that are a go for every live approval and that the
     user saw: the text before the turn block shows the option's text, or ()."""
     import turn_block  # here, as user_turn: a broken module then gives no go, not a crash
-    turn = turn_block.certain(reply) if isinstance(reply, str) else None
-    if turn is None or turn != turn_block.certain(reply.strip(turn_block.JS_SPACE)):
+    found = turn_block.certain(reply) if isinstance(reply, str) else None
+    if found is None or found != turn_block.certain(reply.strip(turn_block.JS_SPACE)):
         return ()
-    shown = reply[:reply.rfind(turn_block.MARK)].replace("’", "'")
-    return tuple(option for option in turn.options if option.cls == "stop:push" and option.text.replace("’", "'") in shown
+    # Both as the renderer reads lines (before_block's text is lines_ended), and above any
+    # spelling of the block's opener parse takes, such as `<!--turn`.
+    seen = lambda text: turn_block.lines_ended(text).replace("’", "'")
+    shown = seen(turn_block.before_block(reply))
+    return tuple(option for option in found if option.cls == "stop:push" and seen(option.text) in shown
                  and (go := literal_go(option.text)) and not unmet(go))
 
 

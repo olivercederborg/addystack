@@ -1,6 +1,7 @@
 """Where a shell command's working directory stands as bash runs it, piece by piece, for the
 gates that check what a command reaches from where it runs (ready-gate.py, merge-gate.py,
-push-gate.py).
+push-gate.py), and the parts of a command that are data, which those gates and
+watch-reminder.py take out the same way.
 `Walk` follows cd, pushd, and popd, and records in `unknown` why it can't tell once a change
 it can't read may have run: inside a subshell, pipeline, or block, after `||`, in an `&&`
 chain past its end, to where only the shell knows (a variable, ~+, a dir-stack entry, CDPATH,
@@ -18,6 +19,14 @@ LEADS = OPENS | {"then", "else", "elif", "do", "!", "time", "builtin", "command"
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 MOVES = ("cd", "pushd", "popd")
 OPAQUE = ("eval", "source", ".")  # run code in this shell that the gate doesn't read, which may cd
+# Heredoc bodies and quoted strings are data (PR bodies, grep patterns), not commands: a hook
+# drops HEREDOC and puts '' for QUOTED, which reads as unreadable().
+HEREDOC = re.compile(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", re.S)
+QUOTED = re.compile(r"'[^']*'|\"(?:\\.|[^\"\\])*\"")
+# Each merge a command runs, its arguments in group 2, except with NOT_A_MERGE's flags: --help
+# only prints, and --disable-auto only turns auto-merge off.
+MERGE = re.compile(r"\bgh\s+(pr|stack)\s+merge\b([^;&|\n]*)")
+NOT_A_MERGE = {"-h", "--help", "--disable-auto"}
 # A piece that may move a branch or a PR's head, so a gate that read the heads before the
 # command ran can't trust them past it (ready-gate.py, push-gate.py).
 BRANCH_MOVES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:commit|push|pull|rebase|reset|merge|cherry-pick|am|revert|checkout|switch)\b"

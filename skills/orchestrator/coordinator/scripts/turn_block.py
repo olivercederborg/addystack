@@ -52,7 +52,7 @@ Known limit: an unsafe tag in a code span that does hold it, such as `<table>`, 
 too, since a line reader can't prove the span; 0 of 308 merge picks since Nov 1, 2026 had one.
 T3's session importer
 shows the reply after JS `trim()`, so a pick needs the block certain both as written and
-trimmed, with the same Turn. Known limits: code spans are read line by line, so one that
+trimmed, with the same options. Known limits: code spans are read line by line, so one that
 wraps onto the next line doesn't hide a mention there, and a record with more than one
 text part is joined untrimmed here but trimmed part by part by the importer, which 0 of
 26,386 assistant records did in 14 days. `in_fence` is the fence reader check_examples.py
@@ -328,6 +328,18 @@ def lines_ended(text):
 
 def block_body(reply):
     """The JSON text of the reply's one turn block; raises Malformed."""
+    return located(reply)[1].group(1)
+
+
+def before_block(reply):
+    """The reply's text before its turn block, line endings as lines_ended writes them: what
+    the user sees above it. Raises Malformed."""
+    text, block = located(reply)
+    return text[:block.start()]
+
+
+def located(reply):
+    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
     if not isinstance(reply, str):
         raise Malformed("no turn block at the end of the reply")
     reply = lines_ended(reply)
@@ -351,7 +363,7 @@ def block_body(reply):
                         else "the turn block is not closed with -->")
     if "-->" in block.group(1) or "--!>" in block.group(1):
         raise Malformed("the turn block holds --> or --!>, which ends the comment early")
-    return block.group(1)
+    return reply, block
 
 
 def read_fields(value, where, required, optional=()):
@@ -412,15 +424,41 @@ def read_option(value, at):
                   read_text(value["text"], f"{where}.text", 400))
 
 
-def parse(reply: str) -> Turn:
-    """The reply's turn block as a Turn; raises Malformed with the reason."""
+def load(reply):
+    """The reply's turn block's JSON value; raises Malformed with the reason."""
     body = block_body(reply)
     try:
-        value = json.loads(body, object_pairs_hook=unique, parse_constant=constant)
+        return json.loads(body, object_pairs_hook=unique, parse_constant=constant)
     except Malformed:
         raise
     except (ValueError, RecursionError) as error:  # Python 3.9 recurses on deep nesting
         raise Malformed(f"not JSON: {' '.join(str(error).split())}") from None
+
+
+def read_options(value):
+    """value's options list, checked as parse checks it; a missing one is ()."""
+    listed = read_list(value.get("options", []), "options")
+    if len(listed) > 3:
+        raise Malformed(f"options has {len(listed)} items, at most 3")
+    return tuple(read_option(item, at) for at, item in enumerate(listed))
+
+
+def options(reply: str) -> tuple[Option, ...]:
+    """The reply's turn block's options, for a reader that needs only them, as the gates
+    that take a pick as a go do: the block's place, its JSON, and its options list are
+    checked as parse checks them, and no other field is read. In the two weeks to Nov 26,
+    2026, 432 of 9,094 blocks failed parse, 418 of them only on a field no gate reads,
+    mostly a standing name over 80 characters or a missing needs, and a pick of one read
+    as no pick. Raises Malformed with the reason."""
+    value = load(reply)
+    if not isinstance(value, dict):
+        raise Malformed("the turn block is not a JSON object")
+    return read_options(value)
+
+
+def parse(reply: str) -> Turn:
+    """The reply's turn block as a Turn; raises Malformed with the reason."""
+    value = load(reply)
     # A missing list reads as [] on running and done, where [] is the only valid options and
     # done's only valid needs. A stop still names both, since merge-gate reads its picks from
     # them and a forgotten list there goes back. An explicit null is still not a list.
@@ -431,10 +469,7 @@ def parse(reply: str) -> Turn:
     needs = tuple(read_need(item, at, ids) for at, item in enumerate(read_list(value.get("needs", []), "needs")))
     standing = tuple(read_need(item, at, ids, "standing")
                      for at, item in enumerate(read_list(value.get("standing", []), "standing")))
-    listed = read_list(value.get("options", []), "options")
-    if len(listed) > 3:
-        raise Malformed(f"options has {len(listed)} items, at most 3")
-    options = tuple(read_option(item, at) for at, item in enumerate(listed))
+    options = read_options(value)
     # eta stays optional, as in prefrontal-turns, since only a measured one helps the user.
     if state == "running" and "elapsed" not in value:
         raise Malformed("state running needs elapsed")
@@ -456,22 +491,23 @@ def parse(reply: str) -> Turn:
 
 
 def certain(view):
-    """view's Turn when scan is certain of its lines and its block parses, else None."""
+    """view's turn block options, read by options(), when scan is certain of its lines and
+    they read, else None; () is a block with no options."""
     if not scan(lines_ended(view).split("\n"))[1]:
         return None
     try:
-        return parse(view)
+        return options(view)
     except Malformed:
         return None
 
 
 def picked(reply: str | None, prompt: str) -> Option | None:
     """The option the prompt picks from the reply's block: None when the reply is None, its
-    block isn't certain, with the same Turn, both as written and after JS trim(), the prompt
-    isn't exactly one key ("a", " A. "; not "a, skip 3" or "a?"), or the block has no option
-    with that key."""
+    block isn't certain, with the same options, both as written and after JS trim(), the
+    prompt isn't exactly one key ("a", " A. "; not "a, skip 3" or "a?"), or the block has no
+    option with that key."""
     match = PICK.fullmatch(prompt) if isinstance(prompt, str) and isinstance(reply, str) else None
-    turn = certain(reply) if match else None
-    if turn is None or turn != certain(reply.strip(JS_SPACE)):
+    found = certain(reply) if match else None
+    if found is None or found != certain(reply.strip(JS_SPACE)):
         return None
-    return next((option for option in turn.options if option.key == match.group(1).lower()), None)
+    return next((option for option in found if option.key == match.group(1).lower()), None)
