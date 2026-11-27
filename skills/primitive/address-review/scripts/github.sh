@@ -13,8 +13,14 @@
 #   github.sh comment N FILE              a PR comment
 #   github.sh resolve THREAD_ID           resolve a review thread
 #   github.sh anchors N DRAFTS.json       label each draft's lines changed, context only, or outside the diff
-#   github.sh review N SHA DRAFTS.json    post inline comments as one review
-#   github.sh approve N SHA [DRAFTS.json] approve the head, with any inline comments, as one review
+#   github.sh review N SHA DRAFTS.json [EVENT BODY]  post inline comments as one review; EVENT is
+#                                         COMMENT or REQUEST_CHANGES, with BODY as the review's body
+#   github.sh approve N SHA [DRAFTS.json [BODY]]  approve the head, with any inline comments and a body
+#   github.sh dismiss N REVIEW_ID FILE    dismiss a review, with FILE as the message
+#   github.sh viewer                      the login gh posts as, such as an App's <slug>[bot]
+#   github.sh reviewed N                  the viewer's latest submitted review: {id, state, commit_id,
+#                                         active}, active being the approval or request for changes
+#                                         of theirs that still counts, or null
 #   github.sh landed N REVIEW_ID          read back the comments a review posted
 #
 # DRAFTS.json: [{"path": "src/a.ts", "line": 42, "side": "RIGHT", "body_file": "d1.md"}],
@@ -22,25 +28,26 @@
 # instead of sending it.
 set -euo pipefail
 
-usage() { grep -v '^# Copy of ' "$0" | sed -n '2,21p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
+usage() { grep -v '^# Copy of ' "$0" | sed -n '2,27p' | sed 's/^# \{0,1\}//' >&2; exit 2; }
 repo() { gh repo view --json owner,name --jq '.owner.login + "/" + .name'; }
 send() {
   if [ "${DRY_RUN:-}" = 1 ]; then printf 'DRY_RUN:'; printf ' %q' "$@"; echo; else "$@"; fi
 }
 
-# The review body: the draft comments (none without DRAFTS.json), and `event` when given;
-# without one, GitHub creates a pending review.
+# The review body: the draft comments (none without DRAFTS.json), `event` when given, and
+# the review's own body when BODY is; without an event, GitHub creates a pending review.
 review_payload() {
   python3 - "$@" <<'PY'
 import json, os, sys
-sha, drafts_path, event = (sys.argv[1:] + ["", ""])[:3]
+sha, drafts_path, event, body_path = (sys.argv[1:] + ["", "", ""])[:4]
 comments = []
 for draft in json.load(open(drafts_path)) if drafts_path else []:
     comment = {key: draft[key] for key in ("path", "line", "side", "start_line", "start_side") if key in draft}
     comment.setdefault("side", "RIGHT")
     comment["body"] = open(os.path.join(os.path.dirname(os.path.abspath(drafts_path)), draft["body_file"])).read()
     comments.append(comment)
-json.dump({"commit_id": sha, "comments": comments, **({"event": event} if event else {})}, sys.stdout)
+json.dump({"commit_id": sha, "comments": comments, **({"event": event} if event else {}),
+           **({"body": open(body_path).read()} if body_path else {})}, sys.stdout)
 PY
 }
 
@@ -90,11 +97,26 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       rules=""
     fi
     rm -f "$err"
-    # An unprotected branch answers 404, with the error body on stdout.
-    classic=$(gh api "repos/$slug/branches/$base/protection/required_status_checks" \
-      --jq '.contexts[]' 2>/dev/null) || classic=""
+    # Classic protection's required contexts, from the branch itself: its protection
+    # endpoint needs administration read, which an App reviewer lacks, so a 403 there would
+    # read as no required checks. An unprotected branch's enforcement level is off.
+    classic=$(gh api "repos/$slug/branches/$base" --jq '.protection.required_status_checks // empty
+      | select(.enforcement_level != "off") | (.contexts // [])[]') || exit 1
     contexts=$(printf '%s\n%s\n' "$rules" "$classic" | sed '/^$/d' | sort -u)
-    checks=$(gh pr checks "$1" --json name,bucket --jq '.[] | "\(.name)\t\(.bucket)"' || true)
+    # The head's checks and statuses, bucketed as gh pr checks does (its aggregate.go). Read
+    # here rather than through gh pr checks, which also asks for each check's workflow run,
+    # which a token without the actions permission, such as an App's, may not read. Checks it
+    # can't read are an error, never none.
+    checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
+query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
+  commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
+    nodes{__typename ... on CheckRun{name status conclusion} ... on StatusContext{context state}}}}}}}}}}' \
+      --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
+        elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
+        elif . == "CANCELLED" then "cancel" else "pending" end;
+        .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
+        | if .__typename == "CheckRun" then "\(.name)\t\((if .status == "COMPLETED" then .conclusion else .status end) | bucket)"
+          else "\(.context)\t\(.state | bucket)" end') || exit 1
     # A check can run more than once (a cancelled duplicate); its best state counts. The
     # required contexts count, or every reported check when the base requires none; one
     # that failed, was cancelled, or is running shows CI ran.
@@ -263,12 +285,13 @@ sys.exit(1 if outside else 0)
 PY
     ;;
   review)
-    [ $# = 3 ] || usage
+    [ $# = 3 ] || { [ $# = 5 ] && { [ "$4" = COMMENT ] || [ "$4" = REQUEST_CHANGES ]; }; } || usage
+    event=${4:-COMMENT}
     "$0" anchors "$1" "$3"
     slug=$(repo); payload=$(mktemp)
     review_payload "$2" "$3" > "$payload"
     if [ "${DRY_RUN:-}" = 1 ]; then
-      echo "DRY_RUN: create a pending review on $slug#$1, then submit it with event=COMMENT:"
+      echo "DRY_RUN: create a pending review on $slug#$1, then submit it with event=$event${5:+ and the body in $5}:"
       cat "$payload"; echo; exit 0
     fi
     # Leaving out `event` creates a pending review; submitting it with COMMENT and no
@@ -279,22 +302,50 @@ PY
       echo "show it to the user, who decides what happens to it" >&2
       exit 1
     fi
-    gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event=COMMENT --jq .html_url
+    # Submitting with COMMENT and no body posts only the inline comments.
+    if [ $# = 5 ]; then
+      gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event="$event" -F body=@"$5" --jq .html_url
+    else
+      gh api --method POST "repos/$slug/pulls/$1/reviews/$id/events" -f event=COMMENT --jq .html_url
+    fi
     ;;
   approve)
-    [ $# = 2 ] || [ $# = 3 ] || usage
+    [ $# -ge 2 ] && [ $# -le 4 ] || usage
     head=$("$0" head "$1")
     if [ "$head" != "$2" ]; then
       echo "the head moved from $2 to $head; re-check the review against it before approving" >&2
       exit 1
     fi
-    [ $# = 2 ] || "$0" anchors "$1" "$3"
+    [ -z "${3:-}" ] || "$0" anchors "$1" "$3"
     slug=$(repo); payload=$(mktemp)
-    review_payload "$2" "${3:-}" APPROVE > "$payload"
+    review_payload "$2" "${3:-}" APPROVE "${4:-}" > "$payload"
     if [ "${DRY_RUN:-}" = 1 ]; then
       echo "DRY_RUN: approve $slug#$1 at $2:"; cat "$payload"; echo; exit 0
     fi
     gh api --method POST "repos/$slug/pulls/$1/reviews" --input "$payload" --jq .html_url
+    ;;
+  dismiss)
+    [ $# = 3 ] || usage
+    send gh api --method PUT "repos/$(repo)/pulls/$1/reviews/$2/dismissals" -f event=DISMISS -F message=@"$3" --jq .state
+    ;;
+  viewer)
+    [ $# = 0 ] || usage
+    gh api graphql -f query='{viewer{login}}' --jq .data.viewer.login
+    ;;
+  reviewed)
+    [ $# = 1 ] || usage
+    # A pending review isn't submitted, so it isn't the last word on any head. A reviewer's
+    # latest approval, request for changes or dismissal is what counts; a comment changes nothing.
+    login=$("$0" viewer)
+    gh api --paginate "repos/$(repo)/pulls/$1/reviews" \
+      --jq ".[] | select(.user.login == \"$login\" and .state != \"PENDING\") | {id, state, commit_id} | tojson" \
+      | python3 -c '
+import json, sys
+reviews = [json.loads(line) for line in sys.stdin if line.strip()]
+decisive = [review for review in reviews if review["state"] in ("APPROVED", "CHANGES_REQUESTED", "DISMISSED")]
+active = decisive[-1] if decisive and decisive[-1]["state"] != "DISMISSED" else None
+if reviews:
+    print(json.dumps({**reviews[-1], "active": active}))' 
     ;;
   landed)
     [ $# = 2 ] || usage

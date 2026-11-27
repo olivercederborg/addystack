@@ -16,10 +16,11 @@ elif a.startswith("pr view"):
     print(f"main {str(s['draft']).lower()}")
 elif a.startswith("api repos/o/r/rules/branches/main"):
     print("\n".join(s["required"]))
-elif a.startswith("api repos/o/r/branches/main/protection"):
-    print('{"message":"Branch not protected"}')
-    sys.exit(1)
-elif a.startswith("pr checks"):
+elif a.startswith("api repos/o/r/branches/main --jq"):
+    print("\n".join(s.get("classic", [])))
+elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a and "workflowRun" not in a:
+    if s["checks"] == "unreadable":
+        sys.exit("GraphQL: Resource not accessible by integration (repository.pullRequest.commits)")
     print("\n".join(f"{name}\t{bucket}" for name, bucket in s["checks"]))
 elif a.startswith("api graphql") and "expression=main:.github/workflows" in a:
     print("\n".join(s["workflows"]))
@@ -39,15 +40,23 @@ class Required(unittest.TestCase):
         stub.write_text(GH)
         stub.chmod(0o755)
 
-    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",)):
+    def required(self, draft=True, required=(), checks=SKIPPED, workflows=("ci.yml",), classic=(), code=0):
         scenario = self.tmp / "scenario.json"
         scenario.write_text(json.dumps({"draft": draft, "required": list(required), "checks": checks,
-                                        "workflows": list(workflows)}))
+                                        "workflows": list(workflows), "classic": list(classic)}))
         result = subprocess.run([str(SCRIPT), "required", "7"], capture_output=True, text=True, cwd=self.tmp,
                                 env={**os.environ, "PATH": f"{self.tmp / 'bin'}:{os.environ['PATH']}",
                                      "SCENARIO": str(scenario)})
-        self.assertEqual(result.returncode, 0, result.stderr)
-        return result.stdout
+        self.assertEqual(result.returncode, code, result.stderr)
+        return result.stdout if code == 0 else result.stderr
+
+    def test_classic_protection_contexts_count(self):
+        self.assertEqual(self.required(draft=False, classic=["ci"], checks=[["ci", "pending"]]),
+                         "ci\tpending\nrequired: not all passed\n")
+
+    def test_checks_it_cannot_read_are_an_error_not_none(self):
+        self.assertIn("Resource not accessible by integration", self.required(draft=False, checks="unreadable", code=1))
+        self.assertEqual(self.required(draft=False, checks=[]), "no required checks on main\nrequired: all passed\n")
 
     def test_a_draft_whose_ci_skipped_did_not_run(self):
         self.assertEqual(self.required(required=["ci"]), "ci\tpass\nworkflows that skip drafts: ci.yml\n"
@@ -99,7 +108,7 @@ class Anchors(unittest.TestCase):
         (tmp / "files.jsonl").write_text(json.dumps({"filename": "a.ts", "patch": getattr(self, "patch", PATCH)}) + "\n")
         (tmp / "drafts.json").write_text(json.dumps(list(drafts)))
         (tmp / "body.md").write_text("Why?")
-        args = [str(tmp / "drafts.json") if arg == "DRAFTS" else arg for arg in args]
+        args = [{"DRAFTS": str(tmp / "drafts.json"), "BODY": str(tmp / "body.md")}.get(arg, arg) for arg in args]
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True,
                               env={**os.environ, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}",
                                    "FILES": str(tmp / "files.jsonl"), "HEAD_SHA": head, "DRY_RUN": "1"})
@@ -147,6 +156,64 @@ class Anchors(unittest.TestCase):
         result = self.run_script("approve", "7", "abc", "DRAFTS",
                                  drafts=[{"path": "a.ts", "line": 9, "body_file": "body.md"}])
         self.assertEqual((result.returncode, result.stdout), (1, "a.ts:9-9 RIGHT\toutside the diff at line 9\n"))
+
+    def test_approve_carries_a_body_without_inline_comments(self):
+        result = self.run_script("approve", "7", "abc", "", "BODY")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1]),
+                         {"commit_id": "abc", "event": "APPROVE", "comments": [], "body": "Why?"})
+
+    def test_a_review_requests_changes_with_its_comments_and_a_body(self):
+        result = self.run_script("review", "7", "abc", "DRAFTS", "REQUEST_CHANGES", "BODY",
+                                 drafts=[{"path": "a.ts", "line": 3, "body_file": "body.md"}])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("submit it with event=REQUEST_CHANGES and the body in ", result.stdout)
+        self.assertEqual(json.loads(result.stdout.splitlines()[-1])["comments"],
+                         [{"path": "a.ts", "line": 3, "side": "RIGHT", "body": "Why?"}])
+
+    def test_a_review_never_approves_and_needs_a_body_with_its_event(self):
+        for args in (("APPROVE", "BODY"), ("REQUEST_CHANGES",)):
+            with self.subTest(args):
+                result = self.run_script("review", "7", "abc", "DRAFTS", *args)
+                self.assertEqual(result.returncode, 2)
+
+    def test_dismiss_sends_the_message_file(self):
+        result = self.run_script("dismiss", "7", "42", "BODY")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("api --method PUT repos/o/r/pulls/7/reviews/42/dismissals -f event=DISMISS -F message=@", result.stdout)
+
+
+REVIEWED_GH = r"""#!/usr/bin/env python3
+import sys
+a = " ".join(sys.argv[1:])
+if a.startswith("repo view"):
+    print("o/r")
+elif a.startswith("api graphql") and "viewer" in a:
+    print("reviewer-app[bot]")
+elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"reviewer-app[bot]"' in a and '"PENDING"' in a:
+    print('{"id":1,"state":"APPROVED","commit_id":"abc"}')
+    print('{"id":2,"state":"CHANGES_REQUESTED","commit_id":"def"}')
+    print('{"id":3,"state":"COMMENTED","commit_id":"fed"}')
+else:
+    sys.exit(f"unexpected: gh {a}")
+"""
+
+
+class Reviewed(unittest.TestCase):
+    def test_the_viewers_latest_submitted_review(self):
+        tmp = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ["rm", "-rf", str(tmp)])
+        (tmp / "bin").mkdir()
+        (tmp / "bin" / "gh").write_text(REVIEWED_GH)
+        (tmp / "bin" / "gh").chmod(0o755)
+        env = {**os.environ, "PATH": f"{tmp / 'bin'}:{os.environ['PATH']}"}
+        viewer = subprocess.run([str(SCRIPT), "viewer"], capture_output=True, text=True, env=env)
+        self.assertEqual((viewer.returncode, viewer.stdout), (0, "reviewer-app[bot]\n"), viewer.stderr)
+        reviewed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env=env)
+        # The latest review is a comment; the request for changes before it still counts.
+        self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
+                         (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
+                              "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"}}), reviewed.stderr)
 
 
 BRANCH_GH = r"""#!/usr/bin/env python3
