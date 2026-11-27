@@ -759,6 +759,8 @@ class HeavyChecks(unittest.TestCase):
         self.assertTrue(guard.is_heavy(["node", "/x/node_modules/jest/bin/jest.js", "-w", "2"]))  # --maxWorkers
         self.assertTrue(guard.is_heavy(["/x/.bin/eslint", "-w", "."]))
         self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "-w"]))
+        self.assertFalse(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll=true"]))
+        self.assertTrue(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll=false"]))
         self.assertFalse(guard.is_heavy(["/x/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo", "--watch"]))
 
     def test_vitest_run_is_heavy(self):

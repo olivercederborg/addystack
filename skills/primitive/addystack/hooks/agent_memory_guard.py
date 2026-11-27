@@ -660,10 +660,15 @@ def is_heavy(argv):
         tool, rest = rest[index], rest[index + 1:]
     name = HEAVY.search(tool).group(2) or "tsgo"  # native-preview's binary is tsgo
     flags = WATCH_FLAGS.get(name, set())
-    watching = any(arg in flags or ("--watch" in flags and arg.startswith("--watch=") and arg != "--watch=false")
-                   for arg in rest)
+    watching = any(_switched_on(arg, flags) for arg in rest)
     vitest_server = name == "vitest" and rest[:1] in (["watch"], ["dev"])
     return not (watching or vitest_server)
+
+
+def _switched_on(arg, flags):
+    """Whether arg turns one of flags on: `--watch`, or `--watchAll=true` but not `=false`."""
+    name, assigned, value = arg.partition("=")
+    return name in flags and not (assigned and value.lower() in ("false", "0"))
 
 
 def heavy_units(commands):
