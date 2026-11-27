@@ -507,7 +507,7 @@ class AbandonedCommands(unittest.TestCase):
         killed, owners, abandoned = [], Owners(), guard.Abandoned()
         owners.attribute(snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)))
         with mock.patch.multiple(guard, LOG=os.devnull, notify=lambda *args: None,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])):
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])):
             for minute in range(31):
                 t = minute * 60
                 guard.tick(owners, lambda: snapshot(AGENT, *self.spinning_orphan(t)),
@@ -673,12 +673,33 @@ class Tick(unittest.TestCase):
     def test_a_failed_log_write_still_kills(self):
         killed = []
         with mock.patch.multiple(guard, LOG="/nonexistent/agent-memory-guard.log", MAX_PROCESSES=1,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], []),
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], []),
                                  notify=lambda *args: None), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             guard.tick(Owners(), lambda: snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)))
         self.assertEqual(killed, [200])
         self.assertIn("couldn't log a kill", stderr.getvalue())
+
+
+class KillLog(unittest.TestCase):
+    def test_a_call_that_joins_during_the_kill_is_logged(self):
+        host = proc(200, 90, argv=("code-mode-host",))
+        a = guard.Proc(*proc(201, 200, argv=("node", "work.js"))[:12], tool_call="call_a")
+        b = guard.Proc(*proc(202, 200, argv=("node", "work.js"))[:12], tool_call="call_b")
+        scans = iter([snapshot(CODEX, host, a), snapshot(CODEX, host, a, b)])
+        sent, lines = [], []
+        real_kill = guard.kill
+
+        def kill(owners, head, scan, log):
+            return real_kill(owners, head, scan, send=lambda pid, sig: sent.append((pid, sig)),
+                             current=lambda pid: pid, log=log)
+
+        with mock.patch.multiple(guard, MAX_PROCESSES=1, record=lines.append, kill=kill,
+                                 notify=lambda *args: None):
+            guard.tick(Owners(), scan=lambda: next(scans, snapshot(CODEX, host, a, b)))
+        self.assertEqual(lines[0]["tool_call_ids"], ["call_a", "call_b"])
+        self.assertEqual(sorted(pid for pid, sig in sent if sig == signal.SIGKILL), [200, 201, 202])
+        self.assertLess(sent.index((200, signal.SIGSTOP)), sent.index((200, signal.SIGKILL)))
 
 
 class CommandText(unittest.TestCase):
@@ -1061,7 +1082,7 @@ class CheckQueue(unittest.TestCase):
         governor = guard.Governor(settings=lambda: 1 / 0, state=os.devnull + "/x", send=lambda *a: None,
                                   record=lambda line: None, notify=lambda *a: None)
         with mock.patch.multiple(guard, MAX_PROCESSES=1, notify=lambda *args: None, record=lambda line: None,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])), \
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])), \
                 contextlib.redirect_stderr(io.StringIO()):
             guard.tick(Owners(), lambda: snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)),
                        governor=governor)
@@ -1175,7 +1196,7 @@ class CheckQueue(unittest.TestCase):
                proc(221, 220, argv=TSC, start=1000.0, footprint=30 * GB)]
         scan = lambda: snapshot(AGENT, *q.check(1), *big)
         with mock.patch.multiple(guard, notify=lambda *args: None, record=lambda line: None,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])):
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])):
             guard.tick(q.owners, scan, governor=q.governor, now=lambda: 0.0, wall=lambda: 1000.0)
         self.assertEqual(q.stopped(), {221})
         self.assertEqual(killed, [220])

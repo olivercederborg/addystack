@@ -541,9 +541,10 @@ def signal_all(members, sig, send=os.kill, current=identity):
     return refused
 
 
-def kill(owners, head, scan=processes, send=os.kill, current=identity):
-    """Stop the command until no new process joins it, then kill it all. Returns the
-    members killed and the pids that refused."""
+def kill(owners, head, scan=processes, send=os.kill, current=identity, log=None):
+    """Stop the command until no new process joins it, then kill it all. `log`, when
+    given, gets the members about to die, before the kill, so a log line names every call
+    it ends. Returns the members killed and the pids that refused."""
     stopped = {}
     try:
         for _ in range(20):
@@ -553,6 +554,8 @@ def kill(owners, head, scan=processes, send=os.kill, current=identity):
                 break
             signal_all(new, signal.SIGSTOP, send, current)
             stopped.update((proc.ident, proc) for proc in new)
+        if log is not None:
+            log(list(stopped.values()))
     finally:  # never leave a command stopped
         refused = signal_all(stopped.values(), signal.SIGKILL, send, current)
     return list(stopped.values()), refused
@@ -1014,9 +1017,16 @@ def tick(owners, scan=processes, abandoned=None, now=time.monotonic, wall=time.t
     head, reason = found
     # Logged before the kill, so agent-memory-guard-notice.py finds it once the command
     # fails; agent_pid, the full command's hash, and tool_call_ids tell it which run died.
-    line = entry(owners, head, commands[head], reason)
-    record(line)
-    _, refused = kill(owners, head, scan)
+    # kill() calls it once its last scan stopped every member, so a call that joined
+    # since this tick's scan is named too.
+    logged = []
+
+    def log(members):
+        logged.append(entry(owners, head, members or commands[head], reason))
+        record(logged[-1])
+
+    _, refused = kill(owners, head, scan, log=log)
+    line = logged[-1] if logged else entry(owners, head, commands[head], reason)
     if refused:
         print(f"{line['time']} couldn't kill {refused} of {line['command'][:80]!r}",
               file=sys.stderr, flush=True)
