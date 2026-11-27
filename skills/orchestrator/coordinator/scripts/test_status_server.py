@@ -219,6 +219,20 @@ class Page(Folders, unittest.TestCase):
                 seen = status_server.signature(self.orchestrate)
         self.assertEqual(status_server.tag(seen), status_server.tag(status_server.signature(self.orchestrate)))
 
+    def test_a_folder_it_cant_look_into_shows_as_unknown_and_an_unlisted_root_says_so(self):
+        self.write("readable")
+        hidden = self.write("hidden")
+        hidden.chmod(0)
+        self.addCleanup(hidden.chmod, 0o755)
+        cards = {card["folder"]: card for card in status_server.collect(self.orchestrate)["projects"]}
+        self.assertEqual((cards["readable"]["state"], cards["hidden"]["state"]), ("ok", "unknown"))
+        self.orchestrate.chmod(0)
+        self.addCleanup(self.orchestrate.chmod, 0o755)
+        [card] = status_server.collect(self.orchestrate)["projects"]
+        self.assertEqual((card["folder"], card["state"]), ("orchestrate", "unknown"))
+        self.assertIn("can't list", card["error"])
+        self.assertEqual(status_server.signature(self.orchestrate)[0][:2], ("", "unlisted"))
+
     def test_a_file_turning_readable_changes_the_signature(self):
         folder = self.write()
         path = folder / "project.md"

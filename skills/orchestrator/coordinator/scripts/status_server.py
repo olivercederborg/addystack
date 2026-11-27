@@ -48,22 +48,32 @@ Signature = tuple
 def signature(root: Path) -> Signature:
     """Every project folder's file change times, by stat calls alone."""
     try:
-        names = sorted(entry.name for entry in os.scandir(root) if entry.is_dir())
-    except OSError:
-        names = []
-    found = []
-    for name in names:
-        changed = _stamp(root / name / "project.md")
-        if changed is not None:
-            found.append((name, changed, _stamp(root / name / "tick.json") or 0))
+        names = _folders(root)
+    except OSError as error:
+        return (("", "unlisted", error.errno), _stamp(root / project.TIMER_STAMP) or 0)
+    found = [(name, _stamp(root / name / "project.md"), _stamp(root / name / "tick.json") or 0) for name in names]
     return (*found, _stamp(root / project.TIMER_STAMP) or 0)
 
 
-def _stamp(path: Path) -> tuple[int, int] | None:
+def _folders(root: Path) -> list[str]:
+    """Each folder in root holding a project.md, or one whose project.md can't be looked
+    at, so it shows as unknown rather than not at all; none without root. Raises OSError
+    when root is there but can't be listed."""
+    try:
+        names = sorted(entry.name for entry in os.scandir(root) if entry.is_dir())
+    except FileNotFoundError:
+        return []
+    return [name for name in names if _stamp(root / name / "project.md") is not None]
+
+
+def _stamp(path: Path) -> tuple | None:
+    """(mtime_ns, ctime_ns), None when path isn't there, or ("unreadable", errno)."""
     try:
         stat = path.stat()
-    except OSError:
+    except FileNotFoundError:
         return None
+    except OSError as error:
+        return "unreadable", error.errno
     return stat.st_mtime_ns, stat.st_ctime_ns
 
 
@@ -74,7 +84,11 @@ def tag(seen: Signature) -> str:
 
 def collect(root: Path) -> dict:
     """The Page: project.snapshot for each folder holding a project.md, in page order."""
-    cards = [project.snapshot(root / name) for name, *_ in signature(root)[:-1]]
+    try:
+        cards = [project.snapshot(root / name) for name in _folders(root)]
+    except OSError as error:  # the page says so, rather than that there are no projects
+        cards = [{"folder": root.name, "state": "unknown", "error": f"can't list {root}: {error}",
+                  "asOf": {"project": None, "tick": None}}]
     return {"machine": socket.gethostname(), "staleAfter": project.STALE,
             "timer": project._mtime(root / project.TIMER_STAMP), "projects": sorted(cards, key=_rank)}
 
