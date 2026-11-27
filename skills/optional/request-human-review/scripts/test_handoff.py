@@ -146,12 +146,18 @@ class Send(unittest.TestCase):
 
 class Facts(unittest.TestCase):
     def test_only_its_own_handoffs_count_and_people_already_asked_exclude_the_author(self):
+        # An App's review that carries a person's go counts as that person's; a person's can't speak for another.
         unreadable = 'A comment without a handoff block.'
         block = '<!-- addystack-handoff:v1\n' + json.dumps({'decisions': [], 'reviewers': []}) + '\n-->'
         answers = {
             'contents': None,
             'requested_reviewers': 'alice\n',
-            'reviews': 'carol\nbob\n',
+            'reviews': '\n'.join(json.dumps(review) for review in (
+                {'type': 'User', 'login': 'carol', 'body': ''}, {'type': 'User', 'login': 'bob', 'body': ''},
+                {'type': 'Bot', 'login': 'reviewer-app[bot]',
+                 'body': 'Approved on their go.\n<!-- review-decisions:go v1 {"reviewer":"dave","head":"x"} -->'},
+                {'type': 'Bot', 'login': 'reviewer-app[bot]', 'body': 'No go here.'},
+                {'type': 'User', 'login': 'erin', 'body': '<!-- review-decisions:go v1 {"reviewer":"frank"} -->'})),
             'pulls?state=open': 'alice\nalice\nbob\n',
             'comments': '\n'.join(json.dumps({'login': login, 'body': body}) for login, body in
                                   (('carol', block), ('reviewer-app[bot]', block), ('reviewer-app[bot]', unreadable))),
@@ -164,7 +170,7 @@ class Facts(unittest.TestCase):
         with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'):
             facts = handoff._facts(7)
         self.assertEqual((facts['author'], facts['rules'], facts['engaged'], facts['load']),
-                         ('carol', None, ['alice', 'bob'], {'alice': 2, 'bob': 1}))
+                         ('carol', None, ['alice', 'bob', 'dave', 'erin'], {'alice': 2, 'bob': 1}))
         self.assertEqual(len(facts['handoffs']), 1, "the author's handoff doesn't stand in for the App's own")
 
 
