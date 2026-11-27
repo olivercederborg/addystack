@@ -13,7 +13,11 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 def reason(flagged: List[Tuple["posted_text.Post", List["named_links.Cited"]]]) -> str:
     """The denial: each target's unnamed ids, asking for `[ID, title](url)`, and to keep
     GitHub's `Closes #12` as written and name the id once elsewhere."""
-    raise NotImplementedError
+    lines = [f"- {post.target}: {', '.join(cited.id for cited in found)}" for post, found in flagged]
+    return ("This post cites issue or PR ids without a link whose text names them:\n" + "\n".join(lines) + "\n"
+            "Cite each id the first time as `[ID, title](url)`, looking the title up, then post again. Keep "
+            "GitHub's closing keywords such as `Closes #12` as written, and name that id once elsewhere in the "
+            "text. An identical retry goes through, so post it unchanged if an id can't be named.")
 
 
 def main() -> None:

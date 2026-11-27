@@ -1,10 +1,10 @@
 """Tests for named_links.unnamed, which scripts/check_examples.py runs on the kit's
 example replies and named-links-check.py on posts, and for the modules only the
 check uses."""
-import json, os, pathlib, re, shutil, tempfile, unittest, unittest.mock
+import json, os, pathlib, re, shutil, subprocess, tempfile, unittest, unittest.mock
 
 import denied_posts, merge_go, named_links, posted_text, turn_block
-from test_hooks import block
+from test_hooks import HOOKS, block
 
 NAMED = "[DEV-4024, Close split exports](https://linear.app/acme/issue/DEV-4024)"
 
@@ -241,6 +241,74 @@ class DeniedPosts(unittest.TestCase):
         self.assertFalse(denied_posts.first("s", "t", "x"))
         os.environ["ADDYSTACK_STATE"] = os.path.join(self.folder, "named-links-denied.json", "under-a-file")
         self.assertFalse(denied_posts.first("s", "t", "y"))
+
+
+class NamedLinksCheck(unittest.TestCase):
+    """Plan checks 1-6, through the hook's stdin."""
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.folder)
+
+    def check(self, tool, tool_input, session_id="s", state=None):
+        out = subprocess.run([str(HOOKS / "named-links-check.py")], capture_output=True, text=True, check=True,
+                             input=json.dumps({"hook_event_name": "PreToolUse", "session_id": session_id,
+                                               "cwd": self.folder, "tool_name": tool, "tool_input": tool_input}),
+                             env={**os.environ, "ADDYSTACK_STATE": state or os.path.join(self.folder, "state")})
+        if not out.stdout:
+            return None
+        output = json.loads(out.stdout)["hookSpecificOutput"]
+        self.assertEqual((output["hookEventName"], output["permissionDecision"]), ("PreToolUse", "deny"))
+        return output["permissionDecisionReason"]
+
+    def test_an_unnamed_id_is_denied_and_a_named_one_passes(self):
+        denied = self.check("Bash", bash('gh pr create --title "Fix #9" --body "see #12"'))
+        self.assertIn("gh pr create: #12", denied)
+        self.assertNotIn("#9", denied)
+        self.assertIn("Closes #12", denied)
+        self.assertIsNone(self.check("Bash", bash(
+            "gh pr create --body '[#12, Fix exports](https://github.com/a/b/pull/12)'")))
+
+    def test_the_heredoc_written_body_file_is_read_not_the_stale_file(self):
+        pathlib.Path(self.folder, "b.md").write_text(f"{NAMED}")
+        denied = self.check("Bash", bash("cat > b.md <<'EOF'\nFixes DEV-4.\nEOF\ngh pr create --body-file b.md"))
+        self.assertIn("DEV-4", denied)
+
+    def test_an_identical_retry_passes_and_another_session_is_denied(self):
+        command = bash("gh pr comment 3 --body 'see #12'")
+        self.assertIsNotNone(self.check("Bash", command))
+        self.assertIsNone(self.check("Bash", command))
+        self.assertIsNotNone(self.check("Bash", command, session_id="other"))
+        self.assertIsNotNone(self.check("Bash", bash("gh pr comment 4 --body 'see #12'")))
+
+    def test_linear_through_direct_mcp_and_executor(self):
+        self.assertIn("save_issue new Core: DEV-4", self.check(
+            "mcp__claude_ai_Linear__save_issue", {"team": "Core", "title": "t", "description": "After DEV-4."}))
+        call = {"path": 'tools["linear-mcp"].save_issue',
+                "input": {"accountId": "acc_1", "input": {"id": "DEV-9", "description": "After DEV-4."}}}
+        self.assertIn("save_issue DEV-9: DEV-4", self.check("mcp__executor-work__call", {"calls": [call]}))
+        patch = {"id": "DEV-9", "patch": [{"op": "insert_after", "anchor": "x", "text": "See DEV-5."}]}
+        self.assertIn("DEV-5", self.check("mcp__linear__save_issue", patch))
+        self.assertIsNone(self.check("mcp__claude_ai_Linear__save_issue", {"id": "DEV-9", "relatedTo": ["DEV-4"]}))
+
+    def test_a_t3_pull_request_body(self):
+        self.assertIn("#12", self.check("mcp__t3-code__pull_request_create", {"title": "t", "body": "see #12"}))
+
+    def test_a_fifo_or_missing_body_file_and_bad_input_pass(self):
+        fifo = os.path.join(self.folder, "fifo")
+        os.mkfifo(fifo)
+        self.assertIsNone(self.check("Bash", bash(f"gh pr create --body-file {fifo}")))
+        self.assertIsNone(self.check("Bash", bash("gh pr create --body-file missing.md")))
+        for payload in ("", "null", "{}", '{"tool_name": "Bash", "tool_input": {"command": 3}}'):
+            with self.subTest(payload=payload):
+                out = subprocess.run([str(HOOKS / "named-links-check.py")], input=payload, capture_output=True,
+                                     text=True)
+                self.assertEqual((out.returncode, out.stdout), (0, ""))
+
+    def test_an_unwritable_record_lets_the_post_through(self):
+        blocker = pathlib.Path(self.folder, "file")
+        blocker.write_text("")
+        self.assertIsNone(self.check("Bash", bash("gh pr create -b 'see #12'"), state=str(blocker / "state")))
 
 
 if __name__ == "__main__":
