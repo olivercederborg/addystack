@@ -27,7 +27,8 @@ def run(skill=100, replies=100, state=None, installed=None, deep=False):
     reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default, or "own"
     for the checkout's own copy; deep puts the copy in a folder whose path passes 200
     characters."""
-    temp = pathlib.Path(tempfile.mkdtemp())
+    # Resolved, as the check resolves its ROOT: macOS's /var is a link to /private/var.
+    temp = pathlib.Path(tempfile.mkdtemp()).resolve()
     root = temp / ("checkout-" + "x" * 200) if deep else temp
     try:
         for folder, names in (("scripts", [SCRIPTS / "check-reply-budget.py"]),
