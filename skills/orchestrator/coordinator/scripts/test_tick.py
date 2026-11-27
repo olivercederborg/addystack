@@ -226,6 +226,20 @@ class Tick(unittest.TestCase):
         self.assertIn("- acme/app#12: open, and T3 isn't watching it", message)
         self.assertNotIn("acme/app#7", message)
 
+    def test_a_failed_read_judges_no_watch_and_keeps_the_repeat_clock(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        saved = self.prs.pop("acme/app#12")
+        self.age(3600)
+        self.tick("--send")
+        self.assertNotIn("acme/app#12: open", "".join(m["message"] for m in self.sent()),
+                         "an unread PR's saved state isn't news")
+        self.prs["acme/app#12"] = saved
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"],
+                      "read again, still unwatched past the hour, so it repeats")
+
     def test_a_finished_pr_needs_no_watch_and_isnt_read_again(self):
         self.prs["acme/app#7"] = {"state": "MERGED", "isDraft": False}
         self.watch(12)
@@ -234,7 +248,7 @@ class Tick(unittest.TestCase):
         (self.fake / "gh-calls.jsonl").unlink()
         self.tick("--send")
         calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
-        self.assertEqual(calls, ["acme/app#12"], "a merged or closed PR isn't viewed again")
+        self.assertEqual(calls, ["acme/app#12"], "a merged PR isn't viewed again")
 
     def test_an_unreadable_t3_database_skips_the_watch_check(self):
         self.watch()

@@ -510,8 +510,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     it merges, closes, or turns ready or draft against what the tick last saw: T3's
     watch sends checks, comments, reviews, and conflicts, not those. An open one T3 doesn't
     wake the coordinator's thread on repeats like a row, since T3 ends a thread's watches
-    unannounced when the user stops or rolls back a turn. A PR the tick saw merged or closed
-    isn't read again."""
+    unannounced when the user stops or rolls back a turn, judged only on a PR it could read.
+    A PR the tick saw merged isn't read again; a closed one can reopen."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
@@ -570,8 +570,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     if busy:
         return [], {**state, "threads": threads}
     events = []
-    saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
-    wakes = watching(coordinator.group(2))
+    wakes, unread = watching(coordinator.group(2)), set()
     if wakes is None:
         _warn("tick: can't tell which PRs T3 watches for the coordinator, so the tick skips its unwatched-PR check")
     for ref in sorted(refs):
@@ -579,17 +578,19 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if known and known[0] == "MERGED":  # a merged PR can't reopen; a closed one can
             prs[ref] = known
             continue
-        prs[ref] = view(ref) or known
-        if prs[ref] is known:
+        fresh = view(ref)
+        prs[ref] = fresh or known
+        if not fresh:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
-        if wakes is not None and prs[ref] and prs[ref][0] == "OPEN" and ref.lower() not in wakes:
+            unread.add(f"unwatched:{ref}")
+        if wakes is not None and fresh and fresh[0] == "OPEN" and ref.lower() not in wakes:
             found.append((f"unwatched:{ref}", f"{ref}: open, and T3 isn't watching it for this thread, so call "
                                               "`watch_pull_request` on it"))
         if known and prs[ref] != known:
             change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
                       else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
-    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
+    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found} | unread}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**saved, **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
