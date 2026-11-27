@@ -226,6 +226,20 @@ class Tick(unittest.TestCase):
         self.assertIn("- acme/app#12: open, and T3 isn't watching it", message)
         self.assertNotIn("acme/app#7", message)
 
+    def test_a_pr_seen_closed_while_t3_is_unreadable_is_judged_anew_on_reopening(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        (self.fake / "userdata" / "statev2.sqlite").unlink()
+        self.prs["acme/app#12"]["state"] = "CLOSED"
+        self.age(600)
+        self.tick("--send")
+        self.watch(7)
+        self.prs["acme/app#12"]["state"] = "OPEN"
+        self.age(600)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", "".join(m["message"] for m in self.sent()))
+
     def test_a_failed_read_judges_no_watch_and_keeps_the_repeat_clock(self):
         self.watch(7)
         self.tick("--send")

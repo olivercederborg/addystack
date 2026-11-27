@@ -593,6 +593,8 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         if not fresh:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
             unread.add(f"unwatched:{ref}")
+        if fresh and fresh[0] != "OPEN":  # seen closed, so a reopening is judged anew
+            unread.discard(f"unwatched:{ref}")
         if wakes is not None and fresh and fresh[0] == "OPEN" and ref.lower() not in wakes:
             found.append((f"unwatched:{ref}", f"{ref}: open, and T3 isn't watching it for this thread, so call "
                                               "`watch_pull_request` on it"))
