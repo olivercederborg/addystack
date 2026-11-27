@@ -632,7 +632,9 @@ QUEUE = os.path.join(os.path.expanduser(os.environ.get("ADDYSTACK_STATE", "~/.lo
 HEAVY = re.compile(r"(^|/)(tsc|tsgo|tsgolint|oxlint|eslint|vitest|jest)(\.c?m?js)?$"
                    r"|@typescript/native-preview")
 INTERPRETERS = {"node", "bun", "bunx", "deno", "npx"}
-WATCH_FLAGS = {"--watch", "-w", "--watchAll"}
+# Each checker's own watch flags: Jest's `-w` is --maxWorkers, a one-off run.
+WATCH_FLAGS = {"tsc": {"--watch", "-w"}, "tsgo": {"--watch", "-w"}, "vitest": {"--watch", "-w"},
+               "jest": {"--watch", "--watchAll"}}
 UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finished
 
 # top: the topmost heavy process's ident, the unit's id; head: its command's head;
@@ -656,9 +658,11 @@ def is_heavy(argv):
         if index is None or not HEAVY.search(rest[index]):
             return False
         tool, rest = rest[index], rest[index + 1:]
-    watching = any(arg in WATCH_FLAGS or (arg.startswith("--watch=") and arg != "--watch=false")
+    name = HEAVY.search(tool).group(2) or "tsgo"  # native-preview's binary is tsgo
+    flags = WATCH_FLAGS.get(name, set())
+    watching = any(arg in flags or ("--watch" in flags and arg.startswith("--watch=") and arg != "--watch=false")
                    for arg in rest)
-    vitest_server = "vitest" in os.path.basename(tool) and rest[:1] in (["watch"], ["dev"])
+    vitest_server = name == "vitest" and rest[:1] in (["watch"], ["dev"])
     return not (watching or vitest_server)
 
 

@@ -755,6 +755,12 @@ class HeavyChecks(unittest.TestCase):
         self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "--watch"]))
         self.assertFalse(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll"]))
 
+    def test_a_watch_flag_counts_only_for_the_checker_that_has_it(self):
+        self.assertTrue(guard.is_heavy(["node", "/x/node_modules/jest/bin/jest.js", "-w", "2"]))  # --maxWorkers
+        self.assertTrue(guard.is_heavy(["/x/.bin/eslint", "-w", "."]))
+        self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "-w"]))
+        self.assertFalse(guard.is_heavy(["/x/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo", "--watch"]))
+
     def test_vitest_run_is_heavy(self):
         vitest = ["node", "/x/node_modules/vitest/vitest.mjs"]
         for rest in (["run"], [], ["--watch=false"], ["run", "src/a.test.ts"]):
