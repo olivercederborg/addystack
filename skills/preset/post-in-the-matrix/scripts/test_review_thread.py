@@ -121,6 +121,7 @@ class HolderTest(unittest.TestCase):
         older = thread("older", "◎ #1 · b", [pr(1)], open_count=6, updated="2026-11-01T00:00:00Z")
         settled = thread("settled", "◎ #2 · c", [pr(2)], open_count=6, settled=True, updated="2026-11-20T00:00:00Z")
         self.assertEqual(found([own, older, settled], 9)["threadId"], "own")
+        self.assertEqual(found([{**own, "openPullRequestCount": 6}], 9)["threadId"], "own")
         newer = thread("newer", "◎ #3 · d", [pr(3)], open_count=6, updated="2026-11-20T00:00:00Z")
         code, out, _ = run([own, older, newer], REPO, "9")
         self.assertEqual((code, out["needLinks"]), (3, ["newer"]))
