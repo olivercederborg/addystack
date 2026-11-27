@@ -114,15 +114,39 @@ class Post(unittest.TestCase):
                 self.post(fake, finding)
             self.assertEqual(fake.writes, [])
 
-    def test_a_retry_keeps_the_approval_this_head_already_has(self):
-        fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
-        outcome = self.post(fake)
-        self.assertEqual((outcome['outcome'], outcome['review']), ('approved', f'review 61, already approving {HEAD[:7]}'))
-        self.assertEqual(fake.writes, [])
+    def test_a_new_review_of_an_approved_head_says_the_approval_stands_without_approving_again(self):
+        # The author asked for a review again, or the PR moved to another base branch: the
+        # review still approves, and the author sees that in a comment, not a second approval.
+        for event, bases in (('the author asked again', None), ('the PR moved to release', [('release', BASE)])):
+            with self.subTest(event):
+                fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
+                outcome = self.post(fake, bases=bases)
+                self.assertEqual((outcome['outcome'], outcome['review']), ('approved', 'https://github.com/o/r/pull/7#review'))
+                (command, arguments, files), = fake.writes
+                self.assertEqual((command, arguments[1], arguments[3]), ('review', HEAD, 'COMMENT'))
+                self.assertIn('Adds a totals column.', files['body.md'])
+                self.assertIn(f"this App's approval of `{HEAD[:7]}` stands", files['body.md'])
         # An approval of an older head doesn't approve this one.
         older = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': BASE})
         self.assertEqual(self.post(older)['review'], 'https://github.com/o/r/pull/7#approve')
         self.assertEqual([command for command, _, _ in older.writes], ['approve'])
+
+    def test_a_retry_of_a_run_that_approved_or_said_so_posts_nothing(self):
+        for active in (None, {'id': 61, 'state': 'APPROVED', 'commit_id': HEAD}):
+            with self.subTest(active=active):
+                fake = Fake(active=active)
+                first = self.post(fake)
+                # The first run's approval now stands, and the run stopped before it printed its outcome.
+                fake.active = active or {'id': 62, 'state': 'APPROVED', 'commit_id': HEAD}
+                self.assertEqual(self.post(fake, retry=True), first)
+                self.assertEqual(len(fake.writes), 1)
+        # A retry that would post another body is a new answer, and says the approval stands.
+        fake = Fake()
+        self.post(fake)
+        fake.active = {'id': 62, 'state': 'APPROVED', 'commit_id': HEAD}
+        (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column; re-read after the rebase.\n')
+        self.post(fake, retry=True)
+        self.assertEqual([command for command, _, _ in fake.writes], ['approve', 'review'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':

@@ -104,7 +104,7 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 |---|---|---|
 | `changes-requested` | a finding holds the approval | a request for changes with the inline comments |
 | `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run |
-| `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body |
+| `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body. When this App's approval of the head already stands, the same body as a comment saying so |
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
 | `superseded` | the head moved, or the PR moved to another base branch | nothing: the push or retarget starts its own review |
 
