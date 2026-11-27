@@ -7,11 +7,15 @@ loads only a 2,000-character preview, so 8,000 keeps a margin. Each payload is c
 its own, built by the hook's own `context()`:
 
 - reply-shape: this checkout's skills/optional/reply-shape/SKILL.md, and the one the hook loads
-  (REPLY_SHAPE_SKILL, or the installed skill) when that's another file.
+  (REPLY_SHAPE_SKILL, or the installed skill).
 - rules: the checkout's replies.md when it has one (the workshop's maintainer does), so a
   commit that grows it fails here, and the file
-  `replies.rules` names in the built resolved.json (ADDYSTACK_STATE overrides its folder)
-  when that's another file.
+  `replies.rules` names in the built resolved.json (ADDYSTACK_STATE overrides its folder).
+
+The hook's header names the file's path, so a checkout's own copy counts its path as
+PATH_ALLOWANCE characters wherever the checkout sits: a long worktree folder doesn't fail
+a commit, and every checkout and CI measure the same. A file the hook loads counts the
+path it's loaded by, in full, even when that's the checkout's own copy.
 
 A payload that couldn't load fails too.
 
@@ -23,6 +27,8 @@ import pathlib
 import sys
 
 LIMIT = 8_000
+# A path as long as /Users/<30-character name>/.claude/skills/reply-shape/SKILL.md fits.
+PATH_ALLOWANCE = 80
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 HOOKS = ROOT / "skills" / "primitive" / "addystack" / "hooks"
 
@@ -45,34 +51,35 @@ def configured_rules():
 
 
 def payloads(module):
-    """Each (name, path) to check: this checkout's copies, which must load, then each
-    other file the hook would load instead, once per real file. One of those that's
-    missing is skipped: the hook warns about it, and doctor reports a missing rules file."""
-    own = [("reply-shape", ROOT / "skills" / "optional" / "reply-shape" / "SKILL.md")]
-    own += [("rules", ROOT / "replies.md")] if (ROOT / "replies.md").is_file() else []
+    """Each (name, path, own) to check, own true for this checkout's copies, which must
+    load, then each path the hook would load: the header names the path, so a file loaded
+    through two paths, or a checkout copy the hook loads, is checked at each. One of those
+    that's missing is skipped: the hook warns about it, and doctor reports a missing rules
+    file."""
+    own = [("reply-shape", ROOT / "skills" / "optional" / "reply-shape" / "SKILL.md", True)]
+    own += [("rules", ROOT / "replies.md", True)] if (ROOT / "replies.md").is_file() else []
     others = [("reply-shape", module.skill_path()), ("rules", configured_rules())]
-    candidates = own + [(name, path) for name, path in others if path is not None and pathlib.Path(path).exists()]
-    seen, out = set(), []
-    for name, path in candidates:
-        key = str(pathlib.Path(path).resolve()) if pathlib.Path(path).exists() else str(path)
-        if key not in seen:
-            seen.add(key)
-            out.append((name, pathlib.Path(path)))
-    return out
+    return own + [(name, pathlib.Path(path), False) for name, path in others
+                  if path is not None and pathlib.Path(path).exists()]
 
 
 def main():
     module = hook()
     context = module.context
     status = 0
-    for name, path in payloads(module):
+    for name, path, own in payloads(module):
         try:
             size = len(context(path))
         except OSError as error:
             print(f"{name}: couldn't load {path} ({error.strerror})", file=sys.stderr)
             status = 1
             continue
-        print(f"{name}: {size:,} of {LIMIT:,} characters ({path})")
+        counted = ""
+        if own:
+            # context() names the path once, in its header.
+            size += PATH_ALLOWANCE - len(str(path))
+            counted = f", its path counted as {PATH_ALLOWANCE}"
+        print(f"{name}: {size:,} of {LIMIT:,} characters{counted} ({path})")
         if size > LIMIT:
             print(f"{name}: over the budget; cut or disclose rules to get under {LIMIT:,}", file=sys.stderr)
             status = 1

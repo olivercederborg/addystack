@@ -1,7 +1,7 @@
 """Tests for check-reply-budget.py: each payload is checked on its own against 8,000
 characters, a reply-shape or rules payload over it fails, a rules file that can't load
-fails, and the rules file is the one the built config names, or the kit's replies.md
-without a build."""
+fails, the rules file is the one the built config names, or the kit's replies.md
+without a build, and the checkout's own copies count their path as 80 characters."""
 import json, os, pathlib, shutil, subprocess, sys, tempfile, unittest
 
 SCRIPTS = pathlib.Path(__file__).resolve().parent
@@ -21,11 +21,15 @@ def built(folder, rules):
     return folder
 
 
-def run(skill=100, replies=100, state=None, installed=None):
+def run(skill=100, replies=100, state=None, installed=None, deep=False):
     """Runs a copy of the check against rules files of these sizes; None leaves one out.
     state is the ADDYSTACK_STATE folder, a missing one by default; installed is the
-    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default."""
-    root = pathlib.Path(tempfile.mkdtemp())
+    reply-shape the hook loads (REPLY_SHAPE_SKILL), a missing one by default, or "own"
+    for the checkout's own copy; deep puts the copy in a folder whose path passes 200
+    characters."""
+    # Resolved, as the check resolves its ROOT: macOS's /var is a link to /private/var.
+    temp = pathlib.Path(tempfile.mkdtemp()).resolve()
+    root = temp / ("checkout-" + "x" * 200) if deep else temp
     try:
         for folder, names in (("scripts", [SCRIPTS / "check-reply-budget.py"]),
                               ("skills/primitive/addystack/hooks",
@@ -40,11 +44,12 @@ def run(skill=100, replies=100, state=None, installed=None):
         if replies is not None:
             (root / "replies.md").write_text("x" * replies)
         env = {**os.environ, "ADDYSTACK_STATE": state or str(root / "no-state"),
-               "REPLY_SHAPE_SKILL": installed or str(root / "no-installed-skill")}
+               "REPLY_SHAPE_SKILL": str(reply_shape / "SKILL.md") if installed == "own"
+               else installed or str(root / "no-installed-skill")}
         return subprocess.run([str(root / "scripts" / "check-reply-budget.py")],
                               capture_output=True, text=True, env=env)
     finally:
-        shutil.rmtree(root)
+        shutil.rmtree(temp)
 
 
 class CheckReplyBudget(unittest.TestCase):
@@ -110,6 +115,37 @@ class CheckReplyBudget(unittest.TestCase):
             rules = pathlib.Path(folder, "mine.md")
             rules.write_text("y" * 100)
             result = run(replies=9_000, state=built(folder, rules))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("rules: over the budget", result.stderr)
+
+    # The hook's header is 70 characters plus the path, counted as 80 for the checkout's
+    # copies, so 7,850 characters of text come to exactly 8,000 wherever the checkout sits.
+    def test_a_long_checkout_path_counts_as_80(self):
+        result = run(skill=7_850, replies=7_850, deep=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("reply-shape: 8,000 of 8,000", result.stdout)
+        self.assertIn("rules: 8,000 of 8,000", result.stdout)
+
+    def test_a_short_checkout_path_counts_as_80(self):
+        result = run(skill=7_851, replies=7_851)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("reply-shape: 8,001 of 8,000", result.stdout)
+        self.assertIn("rules: 8,001 of 8,000", result.stdout)
+
+    def test_a_checkout_copy_the_hook_loads_counts_its_real_path(self):
+        result = run(skill=7_850, replies=None, installed="own", deep=True)
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("reply-shape: 8,000 of 8,000", result.stdout)
+        self.assertIn("reply-shape: over the budget", result.stderr)
+
+    def test_a_file_the_hook_loads_through_two_paths_counts_each(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rules = pathlib.Path(folder, "r" * 200, "mine.md")
+            rules.parent.mkdir()
+            rules.write_text("y" * 7_850)
+            alias = pathlib.Path(folder, "a.md")
+            alias.symlink_to(rules)
+            result = run(replies=None, state=built(folder, rules), installed=str(alias))
         self.assertEqual(result.returncode, 1)
         self.assertIn("rules: over the budget", result.stderr)
 
