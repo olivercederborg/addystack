@@ -895,6 +895,8 @@ class Governor:
         """Adds each running unit's CPU since the last tick to its marks."""
         for top in self.running:
             if top not in units:
+                if top in self.cpu:  # unseen this scan: no reading, so it can't pass for idle
+                    self.cpu[top] = self.cpu[top][:4] + (now,)
                 continue
             last, debt, began, marks, unread = self.cpu.get(top) or ({}, {}, wall, [], None)
             gained, last, debt = cpu_gained(units[top].members, last, debt, began)
@@ -941,10 +943,12 @@ class Governor:
 
     def _run(self, top, members, now, wall):
         """Counts the unit as running, and takes its first CPU sample now, so the gate
-        counts its first tick."""
+        counts its first tick. A member unread now leaves CPU uncounted, so the unit can't
+        read as idle until a whole window after."""
         self.running[top] = 0
         _, last, debt = cpu_gained(members, {}, {}, wall)
-        self.cpu[top] = (last, debt, wall, [(now, 0)], None)
+        unread = now if any(proc.cpu is None for proc in members) else None
+        self.cpu[top] = (last, debt, wall, [(now, 0)], unread)
 
     def _hold(self, owners, unit, command, now, wall):
         members = {proc.ident: proc for proc in unit.members}
@@ -975,7 +979,8 @@ class Governor:
             members += [proc for proc in units[top].members if proc.ident not in unit["members"]]
         signal_all(members, signal.SIGCONT, self.send, self.current)
         self._forget(top)  # only once it runs, so a failed write can't strand it
-        self._run(top, members, now, wall)
+        # This scan's readings, not the ones saved when it was held.
+        self._run(top, units[top].members if top in units else members, now, wall)
         self.last_admit = now
         self._log("cont", unit, why=why, waited=round(now - unit["since"], 1))
 

@@ -1228,6 +1228,33 @@ class CheckQueue(unittest.TestCase):
         self.idle_for(q, 31, q.check(2, 1000), cpu=lambda tick: None if tick == 50 else 0)
         self.assertEqual(q.stopped(), {221})
 
+    def test_a_unit_unread_at_its_start_keeps_its_slot_a_whole_window(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, cpu=None), q.check(2))
+        self.idle_for(q, 30, q.check(2, 1000), cpu=lambda tick: int(4e9))
+        self.assertFalse(q.governor._idle(211, 30))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_missing_from_a_scan_keeps_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 29.5, q.check(2, 1000))
+        shell, top = q.check(1, 1000)
+        q.tick([shell, top._replace(argv=[])], q.check(2, 1000))
+        self.assertFalse(q.governor._idle(211, 30))
+        q.tick(q.check(1, 1000, cpu=int(4e9)), q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_resumed_unit_starts_from_this_scans_readings(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2, cpu=None))
+        q.tick(q.check(2, 1000, cpu=0))
+        q.tick(q.check(2, 1000, cpu=0))  # check 1 gone two scans: check 2 resumes
+        for _ in range(60):
+            q.tick(q.check(2, 1000, cpu=int(4e9)), q.check(3, 1000))
+        self.assertFalse(q.governor._idle(221, 31))
+        self.assertEqual(q.stopped(), {231})
+
     def test_a_late_scan_divides_by_the_idle_window(self):
         # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
         # it may be 0.117: read it as busy.
