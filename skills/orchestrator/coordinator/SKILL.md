@@ -139,12 +139,13 @@ inputs or one of Parallel by default's three reasons.
   (`list`, then `read`) on the worker's thread, set its State to `waiting`, so the stuck
   rule passes it over, and queue it (step 5). A worker on another machine
   wakes no one ([across machines](references/across-machines.md)).
-- **A PR watch**: once a worker opens a PR, `watch_pull_request` it and list it under
-  Listening. On a wake, send the event to the PR's owner once step 3 lets its task
-  start, telling it to run babysit's pass and that you keep the watch. When the owner
-  reports maintenance done, `unwatch_pull_request` that PR unless it's open, ready, and the user's.
-- **The tick**: while any worker is running, waiting, `overdue`, or `unknown`, or a PR
-  is under Watches, Listening's Heartbeat is `tick` (`scripts/project.py <folder> listen
+- **A PR watch**: once a worker opens a PR, draft or not, `watch_pull_request` it and
+  keep the watch until it merges or closes. T3 holds it, so it has no Listening line, and
+  the tick flags an open Worker PR T3 isn't watching. On a wake, send the event to the
+  PR's owner once step 3 lets its task start, telling it to run babysit's pass and that
+  you keep the watch.
+- **The tick**: while any worker is running, waiting, `overdue`, or `unknown`, or any
+  Worker PR is open, Listening's Heartbeat is `tick` (`scripts/project.py <folder> listen
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
   scheduled task's id: `delete_scheduled_task` it first. This machine's
   [tick](references/tick.md) timer then checks the project every 10 minutes, and

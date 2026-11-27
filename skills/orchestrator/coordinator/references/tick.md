@@ -21,11 +21,13 @@ the rest:
 - **Stuck**: a running thread with no new item for an hour.
 - **Elsewhere**: a live row whose link names another machine's environment, which
   `t3 thread show` can't read: an hourly reminder to read it.
-- **PR**: a PR on an open row (`running`, `waiting`, `overdue`, `unknown`, or `stuck`) or
-  under Watches merged, closed, reopened, or turned ready or draft since the tick last
-  saw it. The first look at a PR only records it.
-- **Watch left on**: a PR under Watches that's merged or closed, even at the first look,
-  since its watch should go.
+- **PR**: a PR any Workers row names, whatever its State, merged, closed, or turned
+  ready or draft since the tick last saw it. The first look at a PR only records it, and
+  one it saw merged or closed isn't read again.
+- **Unwatched**: an open Worker PR, draft or not, that T3 won't wake this thread on: no
+  watch, or a stack-dismissed one. T3 ends a thread's watches unannounced when the user
+  stops or rolls back a turn. Call `watch_pull_request` on it. When T3's state database
+  can't be read, the tick skips this check and logs why.
 - **Owner**: a ref the tick can't resolve to one repo: a word then `#N` (`web #20`),
   `repo#N` for a repo other than the checkout's, a `#N` an arrow joins to such a ref, or a
   `#N` once the checkout is gone or has no GitHub origin. `#N`, the checkout's own `repo#N`, and a range `#20–#22` resolve
@@ -34,7 +36,7 @@ the rest:
   match the Workers header, or a live row with no thread link.
 
 Each finding except a PR change repeats hourly while it holds, so fixing the row or
-Watches stops it.
+the watch stops it.
 While the coordinator's own thread runs, the tick still times its workers but sends
 nothing and leaves PRs for later, so its turn settles first. `tick.json` beside
 `project.md` holds what it last saw; a failed send leaves it unchanged, so the next tick
