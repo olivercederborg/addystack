@@ -4578,6 +4578,20 @@ class PushGate(unittest.TestCase):
         self.assertIn('ask the user first with a `stop:push` option that names #6119 and the dismissal, such as '
                       '"push #6119 (dismisses teammate\'s approval)"', reason)
 
+    def test_a_typed_go_needs_the_next_line_as_its_option_reads(self):
+        # named-links-notice asks for the id named once elsewhere and the Next line kept as the
+        # option reads: a key pick never reads the shown text, but a typed go does.
+        option = {"class": "stop:push", "text": "push #6119 (dismisses teammate's approval)"}
+        table = ("Push the fix?\n\n| [#6119, Allow client allowlists](https://github.com/acme/app/pull/6119) | ready |\n"
+                 "|---|---|\n\n**Next**\n\n- `a` → ")
+        bare = self.offer(option, text=table + "push #6119 (dismisses teammate's approval)\n\n")
+        named = self.offer(option, text=table + "push [#6119, Allow client allowlists](https://github.com/acme/app/pull/6119) "
+                                             "(dismisses teammate's approval)\n\n")
+        for card, go in [(bare, "a"), (named, "a"), (bare, "push #6119")]:
+            with self.subTest(go=go, named=card is named):
+                self.assertIsNone(self.reason("gh stack push", said=("fix it", card, go)))
+        self.assertIn("shows no stop:push option", self.reason("gh stack push", said=("fix it", named, "push #6119")))
+
     def test_replays_the_workers_push_from_a_delegated_child(self):
         # 11:54:06: the brief said "no approvals"; the push dismissed the teammate's 11:25 approval.
         brief = ("Mode: planning autonomous, trust merge-on-go\nWorker of: effect-native (coordinator ◆ effect-native).\n\n"

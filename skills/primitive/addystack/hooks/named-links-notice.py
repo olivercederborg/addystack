@@ -26,9 +26,10 @@ def notice(ids: List[str]) -> str:
             "looking the title up rather than guessing it. Don't repost or rewrite the earlier "
             "reply, and don't bring these ids into an answer they're unrelated to. Keep a turn "
             "block's option text, such as `merge #124` or `push #N (dismisses X's approval)`, "
-            "and each Next line that shows it, exactly as written, since the merge and push "
-            "gates match it word for word: name the id once elsewhere in the reply, such as "
-            "its headline or table, which covers the bare id in that line.")
+            "as written, since the merge and push gates read it, and each Next line that shows "
+            "a push option word for word, since push-gate matches a typed go against it: name "
+            "the id once elsewhere in the reply, such as its headline or table, which covers "
+            "the bare id in that line.")
 
 
 def main() -> None:

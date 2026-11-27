@@ -6,7 +6,7 @@ next prompt only as a queue-operation before the hook runs; Codex 0.169 writes i
 answer, then token counts and task_complete."""
 import json, os, pathlib, subprocess, tempfile, unittest
 
-import merge_go, named_links, push_go, transcripts, turn_block
+import merge_go, named_links, transcripts, turn_block
 from test_hooks import HOOKS, block, claude_said, codex_said, codex_wrote, state_db
 
 HOOK = "named-links-notice.py"
@@ -237,9 +237,9 @@ class MergeGoStillReadsTheOption(unittest.TestCase):
         self.assertTrue(merge_go.names(option.text, 124, "acme", "app", [124]))
 
 
-class PushGoStillMatchesTheNextLine(unittest.TestCase):
-    """push-gate takes a picked push option only when the reply shows its text word for word,
-    so the Next line repeats `push #105` bare; naming #105 once in the table covers it."""
+class TheTableNamesTheNextLinesId(unittest.TestCase):
+    """The Next line repeats `push #105` as its option reads, for push-gate's typed go
+    (test_hooks.PushGate); naming #105 once in the table covers it."""
 
     REPLY = ("🟡 **Push the rebased PR?**\n\n"
              "| [#105, Tell agents which ids their last reply left unnamed](https://github.com/acme/app/pull/105) "
@@ -247,11 +247,8 @@ class PushGoStillMatchesTheNextLine(unittest.TestCase):
              + block({"state": "stop", "needs": [], "options": [
                  {"key": "a", "class": "stop:push", "text": "push #105 (dismisses the reviewer's approval)"}]}))
 
-    def test_the_reply_is_clean_and_shows_the_option_word_for_word(self):
+    def test_the_reply_is_clean(self):
         self.assertEqual(named_links.unnamed(self.REPLY), [])
-        option = turn_block.picked(self.REPLY, "a")
-        self.assertIn(turn_block.lines_ended(option.text), turn_block.lines_ended(turn_block.before_block(self.REPLY)))
-        self.assertTrue(push_go.literal_go(option.text))
 
 
 class NoticeInstall(unittest.TestCase):
