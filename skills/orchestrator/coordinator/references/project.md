@@ -44,7 +44,11 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   `replaced by <worker>`, `absorbed into <worker>`, or `dropped` (after two retries,
   with the replan in Decisions). Add `retry <n>` while a unit is on a retry.
 - **Waits on**: the call, credential, slot, shared resource, or worker it waits for,
-  with the time it started waiting. The queue of cards reads this column.
+  with the time it started waiting. The queue of cards reads this column. Name the PR a
+  wait blocks as `<PR> ← <blocker>`, such as `#21 ← acme/tools#138` or
+  `#20 ← sandbox tests`, with `;` between entries; any other entry stays free text. The
+  tick flags an open draft no entry names once it sits at one head for 30 minutes, and
+  an entry whose blocker is a PR that merged or closed.
 - **Last side effect**: the newest commit, push, or PR event seen, with its time, or for
   a report-only worker its thread's `itemCount`.
 
