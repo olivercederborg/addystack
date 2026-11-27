@@ -757,6 +757,13 @@ class Guard(Home):
             guard.stop(custom)
         self.assertEqual((custom.exists(), self.plist.exists()), (False, True))
 
+    def test_doctor_names_a_missing_plist_even_when_the_guard_script_is_missing_too(self):
+        import guard
+        with unittest.mock.patch.dict(os.environ, self.env), \
+                unittest.mock.patch.object(guard.hookset, "guard_wanted", return_value=True):
+            lines = guard.problems({"kit": str(self.home / "no-kit")}, 3000)
+        self.assertEqual(lines, [f"{self.plist} is missing"])
+
     def test_a_changed_guard_script_restarts_it_and_doctor_flags_the_old_one(self):
         # The guard reads its script once and loops, so an update that changes the script has
         # to change the plist, or the old code keeps running while doctor says ok.

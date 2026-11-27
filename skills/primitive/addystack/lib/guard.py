@@ -165,7 +165,9 @@ def problems(resolved: Resolved, limit: Optional[int]) -> List[str]:
     ineffective piece; none when it's not wanted."""
     if not hookset.guard_wanted(resolved):
         return []
-    lines = launchd.problems(AGENT, plist_text(resolved))
+    # A missing plist is reported before plist_text hashes the guard's script, which may be
+    # missing too.
+    lines = [f"{plist()} is missing"] if _read(plist()) is None else launchd.problems(AGENT, plist_text(resolved))
     if limit is None or limit > LIMIT:
         got = "none" if limit is None else f"{limit:,}"
         lines.append(f"a new agent shell gets no process limit of {LIMIT:,} or less (it gets {got}); "
