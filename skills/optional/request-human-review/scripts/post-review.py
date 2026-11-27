@@ -125,7 +125,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     if not viewer.endswith('[bot]'):
         raise ValueError(f'gh posts as {viewer}, a person: post-review.py posts only as an App')
     verdict = gates.load(folder / review['gates'])
-    current = pr(number, 'body,headRefOid,baseRefOid')
+    current = pr(number, 'body,headRefOid,baseRefName,baseRefOid')
     head = review['head']
     if current['headRefOid'] != head:
         return {'outcome': 'superseded', 'head': current['headRefOid']}
@@ -157,14 +157,18 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                    if not thread['isResolved'] and _user(thread['comments'][0]['author'] or '') == _user(viewer)] \
             if may_approve else []
         state, checks = required(number) if may_approve else ('passed', [])
+        # The base after the checks: a PR moved to another branch, even one at the same commit,
+        # has other required checks and a diff the gates may not have judged.
+        base = pr(number, 'baseRefName,baseRefOid')
+        if base['baseRefName'] != current['baseRefName']:
+            raise ValueError(f"the PR moved to {base['baseRefName']} while the checks were waited on; review it again")
+        if base['baseRefOid'] != judged:
+            if not gates.same_diff(verdict['base'], base['baseRefOid'], head):
+                raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")
+            judged = base['baseRefOid']
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
-        base = pr(number, 'baseRefOid')['baseRefOid']
-        if base != judged:
-            if not gates.same_diff(verdict['base'], base, head):
-                raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")
-            judged = base
         action = gates.decide(verdict, holds, state, second['status'])
         if action != 'wait':
             break

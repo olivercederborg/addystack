@@ -76,9 +76,10 @@ class Post(unittest.TestCase):
         if not retry:
             # Each review writes its files in a folder of its own; only a retry of the same one keeps its record.
             (self.folder / 'POSTED.json').unlink(missing_ok=True)
-        bases = list(bases or [base])
+        bases = [entry if isinstance(entry, tuple) else ('main', entry) for entry in (bases or [base])]
         def pr(number, fields=''):
-            return {'body': BODY, 'headRefOid': head, 'baseRefOid': bases.pop(0) if len(bases) > 1 else bases[0]}
+            name, oid = bases.pop(0) if len(bases) > 1 else bases[0]
+            return {'body': BODY, 'headRefOid': head, 'baseRefName': name, 'baseRefOid': oid}
         with patch.object(post_review, 'github', fake.github), \
                 patch.object(post_review.gates, 'same_diff',
                              lambda judged, against, commit: diffs.get(against, 'same') == diffs.get(judged, 'same')), \
@@ -156,8 +157,11 @@ class Post(unittest.TestCase):
             self.post(fake, base=NEWER, diffs={NEWER: 'more'})
         with self.assertRaisesRegex(ValueError, 'changed while the checks were waited on'):
             self.post(fake, bases=[BASE, NEWER], diffs={NEWER: 'more'})
-        # A base that only moved on leaves the diff, and the run goes on.
+        # A base that only moved on leaves the diff, and the run goes on; another branch, even at
+        # the same commit, has other required checks.
         self.assertEqual(self.post(Fake(), bases=[BASE, NEWER])['outcome'], 'approved')
+        with self.assertRaisesRegex(ValueError, 'moved to release while the checks were waited on'):
+            self.post(fake, bases=[('main', BASE), ('release', BASE)])
         self.assertEqual(fake.writes, [])
 
     def test_a_retry_after_a_failed_withdrawal_posts_the_review_once(self):
