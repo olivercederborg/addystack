@@ -52,21 +52,15 @@ def configured_rules():
 
 def payloads(module):
     """Each (name, path, own) to check, own true for this checkout's copies, which must
-    load, then each path the hook would load, once each: the header names the path, so a
-    file loaded through two paths, or a checkout copy the hook loads, is checked at each.
-    One of those that's missing is skipped: the hook warns about it, and doctor reports a
-    missing rules file."""
+    load, then each path the hook would load: the header names the path, so a file loaded
+    through two paths, or a checkout copy the hook loads, is checked at each. One of those
+    that's missing is skipped: the hook warns about it, and doctor reports a missing rules
+    file."""
     own = [("reply-shape", ROOT / "skills" / "optional" / "reply-shape" / "SKILL.md", True)]
     own += [("rules", ROOT / "replies.md", True)] if (ROOT / "replies.md").is_file() else []
     others = [("reply-shape", module.skill_path()), ("rules", configured_rules())]
-    candidates = own + [(name, path, False) for name, path in others if path is not None and pathlib.Path(path).exists()]
-    seen, out = set(), []
-    for name, path, is_own in candidates:
-        key = (str(path), is_own)
-        if key not in seen:
-            seen.add(key)
-            out.append((name, pathlib.Path(path), is_own))
-    return out
+    return own + [(name, pathlib.Path(path), False) for name, path in others
+                  if path is not None and pathlib.Path(path).exists()]
 
 
 def main():
