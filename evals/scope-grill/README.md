@@ -23,56 +23,61 @@ Start a fresh session in `/tmp/grill-eval` and send these turns in order:
 Grade all arms on this same rubric. Grade each assertion PASS or FAIL with a quote;
 mark an unexercised condition NOT RUN rather than passing it:
 
+- **Every round** is plain text, in the order of `skills/primitive/scope-grill/SKILL.md`
+  step 3. A Proposed or Changed `diff` block, a who-agreed tag, or a Pick list fails it.
+  - A `🟡 **Round N: <what this round decides>?**` headline, then question 1.
+  - One to three `❓ **N · <question>?**` questions, each worded so "yes" takes the
+    recommendation, with one sentence naming the other option and its cost, and a `➡️`
+    line holding the recommendation, its reason, and its size in files.
+  - The plan once, under `**Plan** · <PRs> · ~<files> · <migrations>`: plain bullets of
+    what gets built, *My suggestion:* before each item the user hasn't agreed to,
+    `Not building:`, and `Assuming (say if wrong):`.
+  - About 150 words above the one fold; going over is no fail by itself. The fold holds
+    the goal in the user's words, each option's change and cost line, the sources, and
+    For architect.
+  - Its Next's `a` takes every ➡️ answer, and the user can override one by number.
 - **Turn 1**
-  - Proposed additions appear above **The plan so far**, in a `diff` block labeled
-    "my suggestion, not agreed". Round 1's **Changed this round** is all green,
-    including the agent's baseline reading. The plan has Building, Not building,
-    Assuming (say if wrong), and Size, in that order; Building names who agreed each
-    clause and preserves the request's boundaries. Work-adding assumptions are proposed,
-    not hidden. Size names PRs, files, migrations and whether lines were estimated.
-  - Under 60 words of prose appear above the one fold, counting plan items and the
-    fold's summary, but not code and diff blocks or the format's fixed labels. Only
-    Proposed this round and Changed this round are `diff` blocks; the plan is plain
-    lists. `a` takes the picks and `b` changes them. The fold holds costs, sources and For
-    architect.
+  - Work-adding defaults and additions are *My suggestion:* bullets, not built items,
+    and not hidden. The built bullets keep the request's boundaries. The Plan line
+    names PRs, files and migrations.
   - The Bar is taken from the request or asked first. It is not assumed to be an MVP.
   - It flags that EX-9 depends on the unmerged EX-7 branch and that branch's bugs.
   - In T3 Code, round 1 gets one page. Its job questions get no crops, and the defaults
     that shape the email and its CSV, such as an empty month still sending, get crops
-    as pending assumptions, or as proposed additions when they add work.
+    under `Assuming (say if wrong)`, or as *My suggestion:* items when they add work.
 - **Turn 2**
   - One to three grounded frontier questions, all about what gets built. Check the
     issue, code and earlier answers: no open decision essential to the next step is
     omitted, and no question is added solely to fill the round.
   - A question about how the job is wired into `src/jobs/registry.ts` is not asked: it
-    is parked on a For architect list.
-  - Under 60 words appear above the one fold, counted as in Turn 1.
-  - The same plan headings remain visible, with pending assumptions, at most about
-    five Building clauses, a Pick and one fold. Proposed additions are not in Building
-    until accepted. Changed this round appears only for a change, as a red/green diff.
-    A page appears only if questions or defaults change what an admin sees.
-  - Every option names what it touches (files, or a small diff of behavior) and has a
-    cost line: `No extra scope`, `Drops …`, or `Adds …`, a file count, and `easy to
-    undo` or `hard to undo: <why>`, minus any cost the options share.
+    is parked on the fold's For architect list.
+  - The plan keeps at most about five built bullets, folding older ones by name. A
+    *My suggestion:* item stays marked until the user accepts it. A bullet this round
+    changed leads with `New:`, and a dropped item shows once as `Dropped: …`. A page
+    appears only if questions or defaults change what an admin sees.
+  - Every option's fold entry names what it touches (files, or a small diff of
+    behavior) and has a cost line: `No extra scope`, `Drops …`, or `Adds …`, a file
+    count, and `easy to undo` or `hard to undo: <why>`.
   - Each losing wider option says when it would become worth it, and each losing
     narrower one says what widening later would cost.
-  - The turn ends with a `Next` list whose `a` option takes every recommendation.
 - **Turn 3**
-  - Under 60 words appear above the one fold, counted as in Turn 1.
-  - The Size trail records the change from the prior round on the plan's Size line,
-    and names the pick that caused it. No line count is invented.
+  - The Plan line shows the size change as a trail from the size the user last saw,
+    such as `1 → 2 PRs`, and the round names the pick that caused it. No line count is
+    invented.
   - Questions that only exist because of the wider pick are flagged as question creep.
   - A changed earlier recommendation names its reason.
 - **Summary** (optional 4th turn, "a"):
-  - The same plan headings remain visible. **My additions** lists defaults the user
-    did not pick, and `b` drops them before saving.
+  - Plan-ready keeps the round's shape with one question, `❓ **1 · Approve this
+    plan?**`, and every addition the user didn't pick, docs, tests and migrations
+    included, still a *My suggestion:* bullet. Its decisions the user didn't pick end
+    `[assumed]`.
   - It has a check per must-have, a For architect list, and a `## Not in scope` list
     whose items give a reason and a revisit signal.
-  - It shows where it would save the plan, with the exact text, and writes nothing
+  - The fold holds the exact text to save and its target, and nothing is written
     before approval.
-  - Its `Next` offers to save and continue to `architect` when the save target is
-    authorized; otherwise it offers to continue without saving and asks separately
-    before creating issues.
+  - Approval continues to `architect` when For architect isn't empty or an interface
+    changes. When saving issues wasn't requested, it continues without saving and asks
+    separately before creating issues.
 
 ## Internal-only variant (T3 Code only)
 
@@ -115,8 +120,8 @@ panel:
   difference. The options sit side by side, labeled like the options, and stack at
   phone width.
 - Each screen change the round assumes instead of asking, such as the preview's
-  buttons or its empty state, gets a crop under an `Assuming (say if wrong) · pending`
-  section, unless an option's crop already shows it.
+  buttons or its empty state, gets a crop under an `Assuming (say if wrong)` section,
+  unless an option's crop already shows it.
 - The crops use the repo's UI: the `Ledger` heading, the `Filter by month` pill, and the
   `#0f766e` accent, and a line on the page names `src/ui/tokens.css` and
   `src/ui/TransactionsPage.tsx`. New elements, such as the Export button, are outlined.
