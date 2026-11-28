@@ -12,7 +12,7 @@ The lines above the first domain hold the pick's settings, one `name: value` eac
 
     priority: 3 2 1          points for a domain's P1, P2 and P3; nobody else gets any
     open ask: 1              minus this for each review request they haven't started
-    share: 10                minus this times how far their review share is above the lowest
+    share: 10                minus this times their share of recent reviews
     share since: 2026-12-01  review shares count from this date, at most 14 days back
 
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
@@ -155,8 +155,9 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     adds nobody when an engaged or already picked login is its P1 or P2, or when `held`, from
     earlier handoffs, names an engaged login for it. Otherwise the highest score among everyone
     the file names, but the author and anyone engaged, takes it: `weights` points for the
-    domain's P1, P2 or P3, less `open ask` per open ask and `share` times how far their share is
-    above the lowest in standing; ties go to fewer open asks, then by name. A domain that is None
+    domain's P1, P2 or P3, less `open ask` per open ask and `share` times their share in standing
+    (measuring it from the lowest share would move everyone alike and change no pick); ties go
+    to fewer open asks, then by name. A domain that is None
     or lists nobody but the author gives nobody points, and anyone engaged or picked covers it."""
     counts = {}
     for decision in placed:
@@ -167,7 +168,6 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     order = sorted(counts, key=lambda name: (not listed(name), -counts[name], name or ''))
     everyone = [login for login in unique(n for rule in rules for n in rule['names'])
                 if login.lower() != author.lower() and not has(engaged, login)]
-    lowest = min((standing[login.lower()]['share'] for login in everyone), default=0)
     picked = []
     for name in order:
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
@@ -186,7 +186,7 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
         def score(login):
             known = standing[login.lower()]
             return (weights.get(rank(login), 0) - weights['open ask'] * known['asks']
-                    - weights['share'] * (known['share'] - lowest))
+                    - weights['share'] * known['share'])
         login = min(everyone, key=lambda login: (-score(login), standing[login.lower()]['asks'], login.lower()))
         if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
             earlier['domains'] += [name] if name else []
