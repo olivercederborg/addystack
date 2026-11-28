@@ -121,8 +121,8 @@ class Render(unittest.TestCase):
                  for event, groups in hooks.items()}
         # A new hook goes after the trusted ones, so their positions hold.
         self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py", "push-gate.py",
-                                               "agent-memory-guard-notice.py"])
-        self.assertEqual([len(groups) for groups in hooks.values()], [1, 1, 1])
+                                               "agent-memory-guard-notice.py", "named-links-check.py"])
+        self.assertEqual([len(groups) for groups in hooks.values()], [1, 2, 1])
 
     def cli(self, *args):
         return subprocess.run([sys.executable, str(HOOKS / "render_hooks.py"), *args],

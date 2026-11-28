@@ -3,8 +3,9 @@ them, as reply-shape's "Links that name" asks: `[DEV-3127, Allow failure-only ex
 emails](https://linear.app/…)`, once a text. Owns every rule about it: what text is
 visible (not code, not HTML comments, which hide the turn block), what counts as an id
 (a Linear-style `ABC-123` that isn't a standard such as UTF-8, `#N`, `repo#N`), and what
-counts as named (a link whose text holds the id and words). scripts/check_examples.py
-reads the kit's example replies with it.
+counts as named (a link whose text holds the id and words). named-links-check.py reads
+the text a tool call posts with it, and scripts/check_examples.py the kit's example
+replies.
 
 It reads Markdown with regexes, not a CommonMark parser, since hooks use the standard
 library only. Known limits, none of which any of 6,241 final replies in the 14 days to
