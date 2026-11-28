@@ -160,7 +160,8 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     its P1 or P2, or when `held`, from earlier handoffs, names an engaged login for it. Otherwise
     the highest score takes it: `weights` points for the area's P1, P2 or P3, less `open ask` per
     open ask and `share` times their share in standing (measuring it from the lowest share would
-    move everyone alike and change no pick); ties go to fewer open asks, then by name. For the
+    move everyone alike and change no pick); ties go to fewer open asks, then by name, except
+    that in a secondary area one of its owners wins a tie first. For the
     main area that's among everyone the file names but the author and anyone engaged. For a
     secondary area someone engaged may win too, without a new request, and anyone engaged or
     picked gets `reuse` on top, so one person reviewing several areas is slightly preferred to
@@ -198,7 +199,9 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
             # Rounded, so two equal scores tie and the tie rule decides, not float noise in the shares.
             return round(weights.get(rank(login), 0) - weights['open ask'] * known['asks']
                          - weights['share'] * known['share'] + reused, 9)
-        login = min(candidates, key=lambda login: (-score(login), standing[login.lower()]['asks'], login.lower()))
+        # In a secondary area an owner wins a tie against someone reused, before open asks and name.
+        login = min(candidates, key=lambda login: (-score(login), not main and rank(login) is None,
+                                                   standing[login.lower()]['asks'], login.lower()))
         if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
             earlier['domains'] += [name] if name else []
         elif not has(engaged, login):

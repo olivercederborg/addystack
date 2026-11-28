@@ -133,7 +133,8 @@ asks and their share of recent reviews, as `scripts/standing.py` counts them
 (`scripts/reviewers.py` names the settings). Each other domain the people picked so far
 aren't P1 or P2 of is scored the same way, except that someone already asked may take it
 without a new request, and anyone already asked or picked gets the `reuse` points: one
-person reviewing several areas is slightly preferred to asking another. A domain with nobody
+person reviewing several areas is slightly preferred to asking another, though an owner of
+the area wins a tie. A domain with nobody
 listed gives nobody points, and someone already requested, who has reviewed this head, or who is
 picked for another domain covers it. Someone already requested, or whose review of this head stands,
 covers the domains they're P1 or P2 of, and whomever its own earlier handoff picked for a

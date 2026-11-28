@@ -229,6 +229,17 @@ class Score(unittest.TestCase):
         picked = reviewers.pick(rules, [{'domain': 'bookkeeping'}], 'someone', ['lee'], standing(asks, rules=rules), WEIGHTS, {})
         self.assertEqual([(r['login'], r['role'], r['domains']) for r in picked], [('Cass', 'fallback', ['bookkeeping'])])
 
+    def test_in_a_secondary_area_a_free_owner_wins_a_tie_against_someone_reused(self):
+        # pay's P1 pia has 2 open asks, so its free P2 scores 2, as does amy, picked for ops,
+        # with 0 + 2 reuse. The owner wins the tie, whatever the names.
+        for second in ('zoe', 'bea'):
+            rules = reviewers.parse(f'## ops\n/ops/ @amy\n## pay\n/pay/ @pia @{second}\n')
+            known = standing({'pia': 2}, rules=rules)
+            picked = reviewers.pick(rules, [{'domain': 'ops'}, {'domain': 'ops'}, {'domain': 'pay'}], 'someone', [],
+                                    known, WEIGHTS, {})
+            self.assertEqual([(r['login'], r['role'], r['domains']) for r in picked],
+                             [('amy', 'P1', ['ops']), (second, 'P2', ['pay'])], second)
+
     def test_a_free_p1_still_beats_someone_reused(self):
         rules = reviewers.parse(self.FILE)
         both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'transactions'}]
