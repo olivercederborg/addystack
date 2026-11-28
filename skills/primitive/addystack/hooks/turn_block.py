@@ -343,10 +343,14 @@ def before_block(reply):
     return text[:block.start()]
 
 
-# What renders nothing above a block: an HTML comment, a link reference definition, and
-# space, a byte-order mark or a zero-width character.
-UNSEEN = re.compile(r"<!--.*?-->|^ {0,3}\[[^\]\n]+\]:[ \t]*\S[^\n]*$|[\u200b-\u200d\u2060" + JS_SPACE + "]",
-                    re.S | re.M)
+# What surely renders nothing above a block, under CommonMark's rules, and nothing else: a
+# comment alone on its lines (`<!-->` and `<!--->` are text-ending forms, so not those), a
+# link reference definition whose destination and title are well formed, and space, a
+# byte-order mark or a zero-width character. Anything in doubt counts as text.
+UNSEEN = re.compile(r"^ {0,3}<!--(?!-?>)(?:(?!-->).)*-->[ \t]*$"
+                    r"|^ {0,3}\[[^\]\n]+\]:[ \t]*(?:<[^<>\n]*>|[^\s<]\S*)"
+                    r"(?:[ \t]+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*$"
+                    r"|[\u200b-\u200d\u2060" + JS_SPACE + "]", re.S | re.M)
 
 
 def quiet(reply):

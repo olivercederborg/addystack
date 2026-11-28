@@ -2595,6 +2595,12 @@ class MergeGate(unittest.TestCase):
             with self.subTest(case=name):
                 self.assertIsNone(reason(said))
         other = [{"key": "a", "class": "stop:merge", "text": "merge #12 and #13"}]
+        # Codex review of r204/quiet, round 3: text shaped like a definition or a comment that T3 shows
+        # isn't quiet, so a key reads it as the card it is, not as the card above it.
+        for shown in ("<!-- note -->\n[a]: keep #12 open\n\n", "<!-->a: keep #12 open -->\n\n"):
+            with self.subTest(case=shown):
+                hidden = claude_wrote(shown + quiet(merge)["message"]["content"][0]["text"])
+                self.assertIsNotNone(reason((self.card(merge), self.WAKE, hidden, "a")))
         for name, said in {"options the card doesn't show": (self.card(merge), self.WAKE, quiet(other), "a"),
                            "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
                            "a typed message that reads as untyped": (self.card(merge), "Caveat: don't merge yet",
@@ -5547,7 +5553,7 @@ class CardCheckWakes(unittest.TestCase):
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
                "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
         # Codex review of r204/quiet, round 2: text that renders nothing kept a reply from reading as quiet.
-        for unseen in ("", "[silent]: #\n\n", "\n\ufeff\n", "<!-- note -->\n"):
+        for unseen in ("", "[silent]: #\n\n", "\n\ufeff\n", "<!-- note -->\n", '[a]: <https://x.y> "T"\n\n'):
             quiet = unseen + block({"state": "running", "elapsed": "4 min"})
             path.write_text("".join(json.dumps(entry) + "\n" for entry in [
                 claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),
