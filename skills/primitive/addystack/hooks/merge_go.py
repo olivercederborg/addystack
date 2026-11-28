@@ -4,7 +4,8 @@ only action is the merge, matched whole. merge-gate.py takes a PR with no checks
 A go names what to merge or nothing: "merge it", "merge both stacks please", "merge #92
 through #112 into main", "merge dotfiles#1", "merge #55 and dotfiles #36", "lets get the
 final PRs merged", "merge whats ready now and merge the rest when they come back done".
-It may open on a pick of the reply's option ("a, and merge them"), on marking the PRs
+It may squash ("squash-merge #139 now") and open on a pick of the reply's option ("a, and
+merge them", "A merge #139", "Option A, merge it"), on marking the PRs
 ready, or on a polite opener, end on "please", a following pick, "and start next", or "we
 can always change it back", and ask as "can you" or "let's" ("lets merge it?"). A
 question about whether to merge, "can we merge …?" included, a refusal, an if-clause
@@ -23,7 +24,7 @@ import re
 NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
             r"|no|never|dont|skip|drop|ignore|hold|without|with|on|onto|into|in|from|for|of|by|to"
             r"|through|and|or|only|just|also|both|all|the|it|them|this|that|these|those|prs?|pull"
-            r"|issues?|stacks?|branch|merge|fix|push|force-push|restack|sync|submit|rebase|revert|verify|deploy|release|review|close)")
+            r"|issues?|stacks?|branch|merge|squash-merge|fix|push|force-push|restack|sync|submit|rebase|revert|verify|deploy|release|review|close)")
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[\w.-]*[a-z][\w.-]*)"  # owner/12306 or 1password, not 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
 # Whether a text names a PR with its repo: "dotfiles #36", dotfiles#36, sam/12306#36, or
@@ -42,10 +43,11 @@ WHEN = (r"(?:\s+for me)?(?:\s+(?:now|right now|instantly|in that order|(?:with|u
         r"(?:\s+into `?main`?)?"
         rf"(?:\s+(?:when|once|if)\s+(?:(?:it'?s|it is|they'?re|they are|they)\s+)?(?:{STATE}|pass|come back {STATE})(?: ci)?"
         r"(?: and ci passes)?)?")
-CORE = rf"(?:merge{TARGET}|get{TARGET} merged){WHEN}"
+MERGE = r"(?:squash(?:-| and | ))?merge"  # "squash-merge #139 now", the card a key picked on Nov 27, 2026
+CORE = rf"(?:{MERGE}{TARGET}|get{TARGET} merged){WHEN}"
 CORES = rf"{CORE}(?:,?\s+and\s+(?:then\s+)?{CORE})*"
-PICK = r"`?[abc]`?"
-LEAD = rf"(?:{PICK}\s*(?:,\s*and|,|\+|and)\s+|mark (?:it|them|the prs?) ready(?: for review)? and\s+)"
+PICK = r"(?:option\s+)?`?[abc]`?"
+LEAD = rf"(?:{PICK}\s*(?:,\s*and|,|\+|and)?\s+|mark (?:it|them|the prs?) ready(?: for review)? and\s+)"
 OPENER = r"(?:(?:please|just|ok(?:ay)?|yes|sure|great|sounds good|looks good|lgtm|so|go ahead and|let'?s)[,\s]+)*"
 ASK = r"(?:(?:can|could) you|let'?s)\s+(?:please\s+)?(?:just\s+)?"
 TAIL = (rf"\s*(?:,\s*then|,|->|and(?: then)?(?: proceed with)?)\s+{PICK}|\s+and start (?:the )?next"

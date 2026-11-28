@@ -109,7 +109,8 @@ def run(*cmd):
 
 def user_go(numbers, owner, repo):
     """(go, note): whether the user's latest prompt in this session asks to merge the last
-    of numbers, pr, and, for a key that doesn't, what it picked and why that isn't a go. A
+    of numbers, pr, and, for a prompt that doesn't, why: what a key picked, or that a typed
+    prompt is neither a key nor a go. A
     go is a literal go (merge_go.py), held to the PRs it names when it names one with its
     repo, as "dotfiles #36" or dotfiles#36, or a key that picks an option of the reply it answered (user_turn.answered,
     turn_block.picked) that is a stop:merge, is itself a literal go, and names pr or no PR,
@@ -126,7 +127,7 @@ def user_go(numbers, owner, repo):
             return False, None
         # The latest prompt itself: when the user didn't type it, an earlier go doesn't count.
         prompt = found[-1].prompt if found else ""
-        said = f'the user\'s "{prompt.strip()}"'
+        said = user_turn.said(prompt)
         if literal_go(prompt):
             # A typed go that names a PR with its repo is held to its PRs, as a pick is:
             # "merge dotfiles#12" is no go for #12 here, and a word before " #N" may be a
@@ -136,7 +137,10 @@ def user_go(numbers, owner, repo):
             return False, f"{said} isn't a merge of #{pr}"
         key = turn_block.PICK.fullmatch(prompt)
         if not key:
-            return False, None
+            # Say why, so the agent doesn't guess: on Nov 27, 2026 one blamed a missing turn
+            # block for "A merge #139", which the gate then read as neither a pick nor a go.
+            return False, (f"{said} is neither a key nor a plain request to merge, so it gives no go"
+                           if prompt.strip() else None)
         reply = user_turn.answered(found)
         option = turn_block.picked(reply, prompt)
         if option is None:
