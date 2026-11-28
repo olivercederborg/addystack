@@ -3,7 +3,8 @@
 gated decisions to whoever reviews them, then a review request to the people REVIEWERS
 names. The comment is written for the agent that runs the human's review: a one-line header
 for people glancing at the PR, every decision in full, and a versioned block that `read`
-parses. It names whom it requested without an @mention, since the request notifies them.
+parses. It names whom it asks without an @mention, since the request notifies them, and says
+asking, not requested, since it posts before the request, which GitHub may refuse.
 
 An unattended review hands off through post-review.py once its needs-human review posted. A
 PR's author runs it with their go, and may name the reviewer:
@@ -166,7 +167,7 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
         ('nobody new' if block['engaged'] else 'nobody')
     count = len(block['decisions'])
     lines = [disclosure,
-             f'**Needs a human** · {count} decision{"s" * (count != 1)} at `{block["head"][:7]}` · requested: {asked}'
+             f'**Needs a human** · {count} decision{"s" * (count != 1)} at `{block["head"][:7]}` · asking: {asked}'
              + (' · reviewer chosen by the author' if block['chosen_by'] == 'author' else ''), '',
              '<details><summary>Handoff for the reviewing agent</summary>', '',
              f'This hands PR #{block["pr"]} to a human at head `{block["head"]}` (base `{block["base"]}`). '

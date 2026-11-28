@@ -41,7 +41,7 @@ class Plan(unittest.TestCase):
         self.assertEqual((drafted['post'], drafted['why']), (True, 'first handoff'))
         self.assertEqual(drafted['request'], [{'login': 'alice', 'role': 'P1', 'domains': ['billing']}])
         comment = drafted['comment']
-        self.assertTrue(comment.startswith(DISCLOSURE + '\n**Needs a human** · 2 decisions at `aaaaaaa` · requested: `alice`\n'))
+        self.assertTrue(comment.startswith(DISCLOSURE + '\n**Needs a human** · 2 decisions at `aaaaaaa` · asking: `alice`\n'))
         self.assertNotIn('@alice', comment)
         for line in ('### D1 · architectural or interface decision', '- **Decide:** Should totals be a public RPC?',
                      '- **Why a human:** a new public RPC shape', '- **Code:** `packages/billing/rpc.ts:12`',
@@ -112,7 +112,7 @@ class Plan(unittest.TestCase):
             '## auth\n/packages/auth/ @dave\n')))
         self.assertEqual((lonely['post'], lonely['why'], lonely['request']), (True, 'nobody to ask', []))
         self.assertIn("- Nobody to ask: REVIEWERS names no one here but the PR's author", lonely['comment'])
-        self.assertIn('· requested: nobody\n', lonely['comment'])
+        self.assertIn('· asking: nobody\n', lonely['comment'])
 
     def test_a_base_without_reviewers_or_a_moved_head_or_base_hands_off_nothing(self):
         judged = verdict(decision('D1', 'packages/billing/rpc.ts:12'))
