@@ -269,7 +269,10 @@ class RepoFile(Fixture):
 
     def test_a_malformed_review_gives_unresolved(self):
         for text in ['{ "review": "acme-reviewer" }', '{ "review": {} }', '{ "review": { "app": 1 } }',
-                     '{ "review": { "app": "x", "required": true } }']:
+                     '{ "review": { "app": "x", "required": true } }',
+                     # Agents paste the slug into shell commands, so only a slug is accepted.
+                     '{ "review": { "app": "x\'; touch pwned; echo \'" } }', '{ "review": { "app": "My Reviewer" } }',
+                     '{ "review": { "app": "my-reviewer[bot]" } }']:
             with self.subTest(text=text):
                 path = self.with_file(text, origin="git@github.com:sam/skills.git")
                 self.assertEqual(self.fields(path, "review", "trust"),

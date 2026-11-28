@@ -289,6 +289,9 @@ class Reviewed(unittest.TestCase):
         app = subprocess.run([str(SCRIPT), "reviewed", "7", "reviewer-app[bot]"], capture_output=True, text=True,
                              env={**env, "VIEWER_FAILS": "1"})
         self.assertEqual((app.returncode, app.stdout), (0, reviewed.stdout), app.stderr)
+        # A login that isn't one, such as one that would change the jq filter, is refused.
+        bad = subprocess.run([str(SCRIPT), "reviewed", "7", 'x" or true or "'], capture_output=True, text=True, env=env)
+        self.assertEqual((bad.returncode, bad.stdout), (2, ""), bad.stderr)
         # A viewer it can't read fails the command, rather than reading as no reviews at all.
         failed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env={**env, "VIEWER_FAILS": "1"})
         self.assertNotEqual(failed.returncode, 0)

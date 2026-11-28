@@ -234,8 +234,9 @@
       "properties": {
         "app": {
           "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
           "default": "",
-          "markdownDescription": "The App's slug, such as `my-reviewer`; its reviews come from `my-reviewer[bot]`."
+          "markdownDescription": "The App's slug, such as `my-reviewer`: lowercase letters, digits, and hyphens. Its reviews come from `my-reviewer[bot]`."
         }
       }
     },

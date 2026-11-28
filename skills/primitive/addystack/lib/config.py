@@ -162,7 +162,7 @@ _RANK = {
 }
 # The schema keywords validate() evaluates, and the ones it reads as annotations only.
 _ASSERTIONS = frozenset({"type", "enum", "const", "properties", "additionalProperties", "items", "$ref",
-                         "required", "minProperties"})
+                         "required", "minProperties", "pattern"})
 _ANNOTATIONS = frozenset({"$schema", "$id", "title", "default", "markdownDescription", "definitions"})
 _TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
 
@@ -260,6 +260,10 @@ def _check(value: Any, node: Dict[str, Any], path: List[Any], root: Dict[str, An
                    for kind in allowed):
             yield Issue(_dotted(path), f"expected {' or '.join(allowed)}, got {_kind(value)}")
             return
+    # A repo file's free text reaches agents' shell commands, so a pattern keeps it to safe names.
+    if "pattern" in node and isinstance(value, str) and not re.search(node["pattern"], value):
+        yield Issue(_dotted(path), f"{json.dumps(value)} doesn't match {node['pattern']}")
+        return
     if isinstance(value, dict):
         properties = node.get("properties", {})
         for key in node.get("required", []):

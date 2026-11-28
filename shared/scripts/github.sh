@@ -371,6 +371,8 @@ PY
     # thread is stored as a comment review with no body, so it isn't the latest review either.
     # One assignment per line: in a combined one, set -e sees only the last substitution's status.
     if [ $# = 2 ]; then login=$2; else login=$("$0" viewer); fi
+    # The login goes into a jq filter, so only a plain login or an App's <slug>[bot] passes.
+    [[ $login =~ ^[A-Za-z0-9][A-Za-z0-9-]*(\[bot\])?$ ]] || { echo "not a GitHub login: $login" >&2; exit 2; }
     slug=$(repo)
     dismissed=$(mktemp)
     gh api --paginate "repos/$slug/issues/$1/timeline" \

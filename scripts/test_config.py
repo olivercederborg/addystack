@@ -198,7 +198,12 @@ class Validate(unittest.TestCase):
 
     def test_an_unknown_keyword_stops_validation(self):
         with self.assertRaises(ValueError):
-            list(config._check("x", {"pattern": "y"}, [], {}))
+            list(config._check("x", {"format": "y"}, [], {}))
+
+    def test_a_string_must_match_its_pattern(self):
+        self.assertEqual(list(config._check("my-app", {"pattern": "^[a-z-]+$"}, [], {})), [])
+        [issue] = config._check("My App", {"pattern": "^[a-z-]+$"}, ["app"], {})
+        self.assertEqual((issue.path, issue.message), ("app", '"My App" doesn\'t match ^[a-z-]+$'))
 
 
 class ClaudeHome(Workspace):
