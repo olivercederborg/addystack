@@ -96,8 +96,11 @@ def _item(row: str, width: int = len(HEADER)) -> Item:
 def _columns(lines: list[str], start: int, end: int) -> None:
     """Writes the Batch column into a table from before it, each old row's cell empty.
     Raises QueueError on a table it can't read, which it leaves as it is."""
-    _table(lines, start, end)
-    if _width(lines, start, end) == len(HEADER):
+    rows = _table(lines, start, end)
+    width = _width(lines, start, end)
+    for i in rows:
+        _item(lines[i], width)
+    if width == len(HEADER):
         table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
         lines[table[0]], lines[table[1]] = _row(BATCHED), "|" + "---|" * len(BATCHED)
         for i in table[2:]:

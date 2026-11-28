@@ -182,6 +182,15 @@ class Batch(unittest.TestCase):
             with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
                 q.batch(lines, "post", [1])
             self.assertEqual(lines, before)
+        # Codex review of r204/batch, round 3: a bad row raised after the header was rewritten.
+        bad_row = ["## Queue", "", "Next id: 2", "", "| # | Kind | Name | From | Since |", "|---|---|---|---|---|",
+                   "| 1 | blocked | post Ana | rv | 2026-11-18 14:05 |", ""]
+        for change in (lambda lines: q.batch(lines, "post", [1]),
+                       lambda lines: q.add(lines, "review", "post Bo", "rv", NOW, batch="post")):
+            lines = list(bad_row)
+            with self.assertRaisesRegex(q.QueueError, "a Queue row it can't read"):
+                change(lines)
+            self.assertEqual(lines, bad_row)
 
     def test_a_batch_is_one_word(self):
         lines = project()
