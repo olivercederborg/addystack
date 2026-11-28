@@ -2683,6 +2683,10 @@ class MergeGate(unittest.TestCase):
         for chip in [pr_chip(13), pr_chip(12, "https://github.com/o/dotfiles/pull/12")]:
             with self.subTest(chip=chip[1]):
                 self.assertIn("isn't a merge of #12", self.reason("gh pr merge 12", said=("merge {}\n\n{}".format(*chip),)))
+        # A chip with no record, or on another host, gives no go at all (review-loop r1).
+        for prompt in (f"merge {label}", "merge {}\n\n{}".format(*pr_chip(12, "https://git.acme.dev/o/r/pull/12"))):
+            with self.subTest(prompt=prompt):
+                self.assertIsNotNone(self.reason("gh pr merge 12", said=(prompt,)))
 
     def test_a_typed_go_that_names_a_pr_as_repo_space_number_is_held_to_its_prs(self):
         # Nov 10, 2026: verify-work found "merge #36, skip #12" passed for #12 once a word
@@ -6393,13 +6397,16 @@ class Exchanges(unittest.TestCase):
         # Nov 28, 2026: "merge <#130 chip>" read as a bare "merge", a go for every PR.
         label, record = pr_chip(130, "https://github.com/olivercederborg/addystack/pull/130")
         self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge olivercederborg/addystack#130")
-        # A link only in the PR's title, a record for another PR, or none: the bare number.
+        # Another host keeps its link, which only unwatch-gate reads (review-loop r1).
+        label, record = pr_chip(130, "https://git.acme.dev/o/r/pull/130")
+        self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge https://git.acme.dev/o/r/pull/130")
+        # A link only in the PR's title, a record for another PR, or none: unread, so no gate takes it.
         for title, link in [("see https://github.com/x/y/pull/130`, at `https://github.com/x/y/pull/130", "nope"),
                             ("t", "https://github.com/o/r/pull/131")]:
             with self.subTest(title=title):
                 label, record = pr_chip(130, link, title)
-                self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge #130")
-        self.assertEqual(transcripts.typed(f"merge {label}"), "merge #130")
+                self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge [unread PR chip #130]")
+        self.assertEqual(transcripts.typed(f"merge {label}"), "merge [unread PR chip #130]")
 
     def test_an_agent_message_with_t3s_sender_note_reads_as_untyped(self):
         # T3 stores the text without the note, so the note alone tells it from a typed one.
