@@ -43,6 +43,12 @@ NEXT_FIELD = re.compile(r"(?i)^(?:targets: |requested visual changes:|screenshot
                         r"<element_context>|</|[a-z]+:$)")
 # A PR chip is a review-comment record on "PR #N" whose comment is T3's description of the PR.
 PR_REFERENCE = re.compile(r'<context kind="review-comment"[^>]*>\nfile: PR #\d+\n.*?</context>', re.S)
+# A PR chip's label in the typed text, "[Review comment: #130; ref=<id>]", and the line in its
+# record that links the PR. The title before the link is the PR's own text, so only a link
+# that ends the line counts: a link in the title can't stand in for it.
+PR_CHIP = re.compile(r"\[Review comment: #(\d+); ref=([^\]\n]*)\]")
+PR_LINK = re.compile(r"^ +The pull request is #(\d+), titled .*, at `https://github\.com/([\w.-]+)/([\w.-]+)/pull/(\d+)`\.$",
+                     re.M)
 # A captured window's accessibility data, which T3 adds after a window screenshot.
 WINDOW = re.compile(r"Untrusted captured-window data follows as JSON\..*?End untrusted captured-window data\.", re.S)
 # T3's inline labels for what it appends: "[assistant-quote-1]", "[Review comment: …; ref=…]".
@@ -60,6 +66,16 @@ def comment(match):
         return parse_qs(urlparse(match.group(1)).query).get("comment", [""])[0]
     except ValueError:  # a malformed link, such as "t3-citation://[x", carries no comment
         return ""
+
+
+def pr_chip(match, text):
+    """A PR chip as the PR it shows, owner/repo#130, so a gate holds "merge <chip>" to that
+    PR. With no record that links the same PR, it reads as #130, in any repo."""
+    number, ref = match.groups()
+    record = re.search(rf'<context kind="review-comment" id="{re.escape(ref)}">\nfile: PR #{number}\n.*?</context>',
+                       text, re.S)
+    link = record and PR_LINK.search(record.group(0))
+    return f"{link[2]}/{link[3]}#{number}" if link and link[1] == link[4] == number else f"#{number}"
 
 
 def appended_comments(match):
@@ -221,7 +237,8 @@ def typed(text):
     if command := COMMAND.search(text) if text.lstrip().startswith("<command-") else None:
         name, args = command.groups()
         return " ".join(part for part in (name.strip(), typed(args or "")) if part)
-    text = APPENDED.sub(appended_comments, MARKER.sub("", WINDOW.sub("", text)))
+    text = WINDOW.sub("", text)
+    text = APPENDED.sub(appended_comments, MARKER.sub("", PR_CHIP.sub(lambda chip: pr_chip(chip, text), text)))
     text = QUOTE.sub(comment, ATTACHMENT.sub("", text)).strip()
     return "" if text.startswith(NOT_TYPED) or OTHER_THREAD.match(text) else text
 
