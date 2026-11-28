@@ -31,7 +31,7 @@ build had to differ from the plan).
   the chat format.
 - **Branch**: confirm the current branch owns the change. In a stack, use the lowest
   branch that owns each change. A fix for something already broken on trunk or in
-  production, found while building other work, belongs to no layer: start it on a new branch from trunk, or, as
+  production, found while building other work, belongs to no layer: start it on a new branch from trunk, named with its issue key when it has one, or, as
   a writer child, return it as a Deviation card. Keep any
   uncommitted work out of the build.
 - **Checks**: find the repo's focused typecheck, lint, and test commands.
