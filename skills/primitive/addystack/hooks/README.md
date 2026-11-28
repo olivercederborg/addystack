@@ -136,7 +136,8 @@ less, appends the kernel backstop for fork storms to the `.zshenv` zsh reads
 ```
 
 Once the hook is deselected, install stops a guard its ledger records, and removes the
-plist; one you set up by hand stays, and so does the `.zshenv` line. A stop `launchctl`
+plist; one you set up by hand stays. It also removes the limit it appended from that
+`.zshenv`, when its lines are unchanged; a limit you wrote or edited stays. A stop `launchctl`
 refuses fails the install, which retries it next time. `addystack doctor` fails while the
 plist is missing, differs from the kit's, or isn't loaded, or an agent shell still gets no
 limit, such as after an early `return` in `.zshenv`. An older install may run the guard

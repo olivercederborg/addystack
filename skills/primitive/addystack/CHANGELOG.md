@@ -17,6 +17,9 @@ you had.
   `"checkQueue": { "enabled": false }` turns it off. The note and Codex's notice are new
   hook entries: in a git checkout you pull yourself, run `addystack install` to add them;
   `addystack update` does it for you.
+- **Memory guard off removes its shell limit** (macOS): once the
+  `agent-memory-guard-notice` hook is deselected, `addystack install` also removes the
+  `ulimit -Su 3000` block it appended to `.zshenv`. A limit you wrote or edited stays.
 
 ## v0.1.0
 
