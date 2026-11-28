@@ -498,6 +498,18 @@ class UnwatchGate(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.reason(said=(prompt,)))
 
+    def test_a_pr_chip_names_its_pr_by_repo(self):
+        # verify-work, Nov 28, 2026: a chip reads as owner/repo#N, which this gate took as no PR.
+        for link, passes in [(self.URL, True), ("https://github.com/Acme/App/pull/6226", True),
+                             ("https://github.com/acme/web/pull/6226", False),
+                             ("https://github.com/acme/app/pull/6215", False)]:
+            number = int(link.rsplit("/", 1)[1])
+            for prompt in ("unwatch {}\n\n{}", "stop watching {}\n\n{}"):
+                with self.subTest(link=link, prompt=prompt):
+                    reason = self.reason(said=(prompt.format(*pr_chip(number, link)),))
+                    self.assertIsNone(reason) if passes else self.assertIsNotNone(reason)
+        self.assertIsNotNone(self.reason(said=("unwatch acme/web#6226",)))
+
     def test_a_refusal_or_another_request_is_denied(self):
         for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
                        # A question or complaint about the hand-back unwatch, which the go once read as a request.
