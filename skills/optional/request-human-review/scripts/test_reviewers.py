@@ -217,9 +217,10 @@ class Score(unittest.TestCase):
         asks = {**dict.fromkeys(self.ASKS, 0), 'owen': 2, 'ann': 1}
         both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'rpc'}]
         # lee was asked by the author: left out of the main area, which goes to ann; for rpc lee
-        # scores 0 + 2 reuse, above owen (1) and ann (0 - 1 + 2), so lee keeps it, unrequested.
+        # scores 0 + 2 reuse, above owen (1) and ann (0 - 1 + 2), so lee wins it; the caller
+        # requests only ann, since lee is already asked.
         picked = reviewers.pick(rules, both, 'someone', ['lee'], standing(asks, rules=rules), WEIGHTS, {})
-        self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping'])])
+        self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping']), ('lee', ['rpc'])])
 
     def test_the_main_area_never_goes_to_someone_already_asked(self):
         rules = reviewers.parse(self.FILE)

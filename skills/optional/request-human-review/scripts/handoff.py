@@ -49,6 +49,7 @@ MARK, VERSION = 'addystack-handoff', 1
 SECOND_OPINION = 'second-opinion'
 BLOCK = re.compile(rf'<!-- {MARK}:v(\d+)\n(.*?)\n-->', re.S)
 ROLES = {'P1': 'P1', 'P2': 'P2', 'P3': 'P3', 'fallback': 'no priority here, least loaded',
+         'kept': 'already asked, keeps these areas',
          'chosen': 'chosen by the author'}
 
 
@@ -103,7 +104,10 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     placed = reviewers.place(facts['rules'], decisions, facts['changed'])
     author, engaged = facts['author'], facts['engaged']
     weights, held = facts['settings']['weights'], _held(facts['handoffs'], engaged)
-    suggested = reviewers.pick(facts['rules'], placed, author, engaged, facts['standing'], weights, held)
+    # A winner already asked isn't requested again, but the block keeps their areas for `_held`.
+    winners = reviewers.pick(facts['rules'], placed, author, engaged, facts['standing'], weights, held)
+    kept = [{**reviewer, 'role': 'kept'} for reviewer in winners if reviewers.has(engaged, reviewer['login'])]
+    suggested = [reviewer for reviewer in winners if not reviewers.has(engaged, reviewer['login'])]
     uncovered = []
     if chosen:
         # The pick's own coverage: the listed domains where it is a P1 or P2.
@@ -116,8 +120,11 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         request = [{'login': login, 'role': 'chosen', 'domains': covers(login)} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
         if with_suggested:
-            request += reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['standing'], weights,
-                                      held)
+            extra = reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['standing'], weights, held)
+            request += [reviewer for reviewer in extra if not reviewers.has([*engaged, *chosen], reviewer['login'])]
+            kept = [{**reviewer, 'role': 'kept'} for reviewer in extra if reviewers.has(engaged, reviewer['login'])]
+        else:
+            kept = []
     else:
         request = list(suggested)
     last = facts['handoffs'][-1] if facts['handoffs'] else None
@@ -137,7 +144,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,
              'decisions': [{field: decision.get(field) for field in
                             ('key', 'id', 'gate', 'decision', 'ask', 'why', 'code', 'domain')} for decision in placed],
-             'reviewers': request, 'engaged': engaged}
+             'reviewers': request + kept, 'engaged': engaged}
     return {**result, 'comment': _render(disclosure, block, facts['rules'])}
 
 
@@ -180,7 +187,8 @@ def read(body: str) -> dict | None:
 
 def _render(disclosure: str, block: dict, rules: list) -> str:
     """The comment: a header line for people, each decision in full for the reviewing agent, the block."""
-    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in block['reviewers']) or \
+    requested = [reviewer for reviewer in block['reviewers'] if reviewer['role'] != 'kept']
+    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in requested) or \
         ('nobody new' if block['engaged'] else 'nobody')
     count = len(block['decisions'])
     lines = [disclosure,
@@ -207,7 +215,7 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
               + (f' · {", ".join(name for name in reviewer["domains"] if name)}' if any(reviewer['domains']) else '')
               for reviewer in block['reviewers']]
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
-    if not block['reviewers']:
+    if not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
                      "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.

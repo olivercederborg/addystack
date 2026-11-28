@@ -85,6 +85,22 @@ class Plan(unittest.TestCase):
                          self.facts(standing=busy, handoffs=[handoff.read(first['comment']), later], engaged=['dave']))
         self.assertEqual(kept['request'], [])
 
+    def test_someone_already_asked_who_wins_an_area_keeps_it_on_a_re_review(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
+        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
+        first = self.plan(judged, facts)
+        # amy, already asked, takes pay (0 + 2 reuse beats zoe's 3 - 2): only bob is requested.
+        self.assertEqual(first['request'], [{'login': 'bob', 'role': 'P1', 'domains': ['ops']}])
+        self.assertIn('- `amy` · already asked, keeps these areas · pay', first['comment'])
+        self.assertIn('asking: `bob`', first['comment'])
+        # zoe is free now, but amy, still asked, keeps pay: nobody new is requested.
+        again = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [handoff.read(first['comment'])],
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+        self.assertEqual((again['post'], again['request']), (False, []))
+
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
         changed = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),

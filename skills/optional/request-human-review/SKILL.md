@@ -126,10 +126,12 @@ The **handoff** follows a needs-human review, through `scripts/handoff.py`: a PR
 that gives the agent running the human's review every gated decision in full, then a
 review request. It reads `.github/REVIEWERS` at the PR's base: each decision's domain is
 the one its code is in, or the PR's main change's when its file is in no domain, such as an
-ADR. For the PR's main area, the domain with the most decisions, it asks whoever scores
-highest among everyone the file names but the author and anyone already asked: the domain's
-P1, P2 or P3 points from the settings above REVIEWERS' first domain, less their open review
-asks and their share of recent reviews, as `scripts/standing.py` counts them
+ADR. For the PR's main area (the domain with the most decisions among those listing a P1 or
+P2 other than the author, else the one with the most decisions, ties going by name), it asks
+whoever scores highest among everyone the file names but the author and anyone already
+asked: the domain's P1, P2 or P3 points from the settings above REVIEWERS' first domain,
+less their open review asks and their share of recent reviews, as `scripts/standing.py`
+counts them
 (`scripts/reviewers.py` names the settings). Each other domain the people picked so far
 aren't P1 or P2 of is scored the same way, except that someone already asked may take it
 without a new request, and anyone already asked or picked gets the `reuse` points: one

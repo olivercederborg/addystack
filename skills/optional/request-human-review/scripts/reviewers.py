@@ -154,7 +154,8 @@ def has(logins, login: str) -> bool:
 
 def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, weights: dict,
          held: dict) -> list:
-    """The reviewers to request. The PR's main area comes first: the one with the most decisions
+    """Each area's winner, as reviewer records; one already engaged needs no new request, which
+    the caller leaves out. The PR's main area comes first: the one with the most decisions
     among those listing a P1 or P2 (or with the most decisions when none does); then the rest,
     from most decisions to fewest. An area adds nobody when an engaged or already picked login is
     its P1 or P2, or when `held`, from earlier handoffs, names an engaged login for it. Otherwise
@@ -204,6 +205,6 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
                                                    standing[login.lower()]['asks'], login.lower()))
         if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
             earlier['domains'] += [name] if name else []
-        elif not has(engaged, login):
+        else:
             picked.append({'login': login, 'role': rank(login) or 'fallback', 'domains': [name] if name else []})
     return picked
