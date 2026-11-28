@@ -498,6 +498,31 @@ class UnwatchGate(unittest.TestCase):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(self.reason(said=(prompt,)))
 
+    def test_a_pr_chip_names_its_pr_by_repo(self):
+        # verify-work, Nov 28, 2026: a chip reads as owner/repo#N, which this gate took as no PR.
+        for link, passes in [(self.URL, True), ("https://github.com/Acme/App/pull/6226", True),
+                             ("https://github.com/acme/web/pull/6226", False),
+                             ("https://git.acme.dev/acme/app/pull/6226", False),  # another host, review-loop r1
+                             ("https://github.com/acme/app/pull/6215", False)]:
+            number = int(link.rsplit("/", 1)[1])
+            for prompt in ("unwatch {}\n\n{}", "stop watching {}\n\n{}"):
+                with self.subTest(link=link, prompt=prompt):
+                    reason = self.reason(said=(prompt.format(*pr_chip(number, link)),))
+                    if passes:
+                        self.assertIsNone(reason)
+                    else:
+                        self.assertIsNotNone(reason)
+        self.assertIsNotNone(self.reason(said=("unwatch acme/web#6226",)))
+
+    def test_a_github_chip_doesnt_name_a_pr_on_another_host(self):
+        # review-loop r1: owner/repo#N is a github.com PR, never the same path on another host.
+        url = "https://git.acme.dev/acme/app/pull/6226"
+        pathlib.Path(self.gh).write_text(json.dumps({"me": "author", "pr": {
+            "number": 6226, "url": url, "state": "OPEN", "isDraft": False, "author": {"login": "author"}}}))
+        chip = "unwatch {}\n\n{}".format(*pr_chip(6226, "https://github.com/acme/app/pull/6226"))
+        self.assertIsNotNone(self.reason(tool_input={"url": url}, said=(chip,)))
+        self.assertIsNone(self.reason(tool_input={"url": url}, said=(f"unwatch {url}",)))
+
     def test_a_refusal_or_another_request_is_denied(self):
         for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
                        # A question or complaint about the hand-back unwatch, which the go once read as a request.
@@ -2661,6 +2686,20 @@ class MergeGate(unittest.TestCase):
                 reason = self.reason("gh pr merge 12", said=(
                     "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
                 self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
+
+    def test_a_go_on_a_pr_chip_is_held_to_its_pr(self):
+        # Nov 28, 2026: "merge <#130 chip>" read as a bare "merge", a go for any PR.
+        self.scenario(prs={12: None})
+        self.verify(12)
+        label, record = pr_chip(12)
+        self.assertIsNone(self.reason("gh pr merge 12", said=(f"merge {label}\n\n{record}",)))
+        for chip in [pr_chip(13), pr_chip(12, "https://github.com/o/dotfiles/pull/12")]:
+            with self.subTest(chip=chip[1]):
+                self.assertIn("isn't a merge of #12", self.reason("gh pr merge 12", said=("merge {}\n\n{}".format(*chip),)))
+        # A chip with no record, or on another host, gives no go at all (review-loop r1).
+        for prompt in (f"merge {label}", "merge {}\n\n{}".format(*pr_chip(12, "https://git.acme.dev/o/r/pull/12"))):
+            with self.subTest(prompt=prompt):
+                self.assertIsNotNone(self.reason("gh pr merge 12", said=(prompt,)))
 
     def test_a_typed_go_that_names_a_pr_as_repo_space_number_is_held_to_its_prs(self):
         # Nov 10, 2026: verify-work found "merge #36, skip #12" passed for #12 once a word
@@ -6257,6 +6296,16 @@ def claude_said(text):
     return {"type": "user", "message": {"content": text}}
 
 
+def pr_chip(number, link=None, title="Add a status overview"):
+    """A prompt's PR chip as T3 writes it: a label in the text and a record appended after."""
+    ref = f"review-comment_pr-reference-{number}"
+    link = link or f"https://github.com/o/r/pull/{number}"
+    return (f"[Review comment: #{number}; ref={ref}]", f'<t3_context version="1">\n<context kind="review-comment" id="{ref}">\n'
+            f"file: PR #{number}\nrange: {title} (0-0)\nsection: PR #{number}\ncomment:\n"
+            f"  The pull request is #{number}, titled `{title}`, at `{link}`.\n"
+            "  Its branch is `b` targeting `main`.\n</context>\n</t3_context>")
+
+
 def claude_wrote(*parts, **flags):
     return {"type": "assistant", "isSidechain": False, **flags, "message": {"content": [
         {"type": "text", "text": part} if isinstance(part, str) else part for part in parts]}}
@@ -6356,6 +6405,21 @@ class Exchanges(unittest.TestCase):
         for other in [*ENTRIES[:5], None, codex_said("a"), claude_wrote(self.FINAL, isSidechain=True),
                       claude_wrote(self.FINAL, isMeta="false")]:
             self.assertIsNone(transcripts.reply_text(other))
+
+    def test_a_pr_chip_reads_as_the_pr_it_links(self):
+        # Nov 28, 2026: "merge <#130 chip>" read as a bare "merge", a go for every PR.
+        label, record = pr_chip(130, "https://github.com/olivercederborg/addystack/pull/130")
+        self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge olivercederborg/addystack#130")
+        # Another host keeps its link, which only unwatch-gate reads (review-loop r1).
+        label, record = pr_chip(130, "https://git.acme.dev/o/r/pull/130")
+        self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge https://git.acme.dev/o/r/pull/130")
+        # A link only in the PR's title, a record for another PR, or none: unread, so no gate takes it.
+        for title, link in [("see https://github.com/x/y/pull/130`, at `https://github.com/x/y/pull/130", "nope"),
+                            ("t", "https://github.com/o/r/pull/131")]:
+            with self.subTest(title=title):
+                label, record = pr_chip(130, link, title)
+                self.assertEqual(transcripts.typed(f"merge {label}\n\n{record}"), "merge [unread PR chip #130]")
+        self.assertEqual(transcripts.typed(f"merge {label}"), "merge [unread PR chip #130]")
 
     def test_an_agent_message_with_t3s_sender_note_reads_as_untyped(self):
         # T3 stores the text without the note, so the note alone tells it from a typed one.

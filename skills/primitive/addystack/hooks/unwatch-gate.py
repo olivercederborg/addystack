@@ -19,7 +19,8 @@ own: the thread it reports to keeps the user's. A go is the user's own latest pr
 (user_turn.py) that asks to stop watching or unwatch, typed or as the text of the option
 its key picks: at most 200 characters, and the whole text a request to stop watching
 (unwatch, stop watching, don't watch) with its PRs, naming this one or none, as
-push-gate.py reads a push go; a URL names it on its host, owner, repo, and number.
+push-gate.py reads a push go; a URL names it on its host, owner, repo, and number, and a
+PR chip, read as owner/repo#N, on its owner, repo, and number.
 "stop watching #6226", "can you unwatch PR #6226?", or "don't watch it" is one, and
 "why did you unwatch it?", "don’t unwatch it", or "the unwatch was a bug" isn't, nor is
 a URL past its number, such as `/files`, `/`, or a query. Fails closed: when a check
@@ -45,7 +46,8 @@ tool_input = payload.get("tool_input") if isinstance(payload.get("tool_input"), 
 # push-gate.py's literal_go reads a push go, so a question, refusal, condition, or remark
 # that mentions unwatching ("why did you unwatch #6226?", "the unwatch was a bug") isn't one.
 import merge_go  # noqa: E402
-PR = r"(?:#\d+|https?://\S+/pull/\d+)"
+# A PR as #N, owner/repo#N (how transcripts.py reads a PR chip), or its URL.
+PR = r"(?:#\d+|[\w.-]+/[\w.-]+#\d+|https?://\S+/pull/\d+)"
 STOP = (r"(?:un-?watch|stop (?:watching|babysitting)|(?:no need to|don't|do not) (?:keep )?(?:watch|babysit)(?:ing)?)"
         rf"(?:\s+(?:it|them|both|this(?: pr)?|the prs?|(?:prs?\s+)?{PR}(?:(?:\s*,\s*|,?\s+(?:and|&)\s+){PR})*))?"
         r"(?:\s+(?:any ?more|now|for now))?(?:,?\s+please)?")
@@ -97,6 +99,7 @@ def target():
 
 
 LINK = re.compile(r"https?://\S+?/pull/\d+", re.I)
+REPO_PR = re.compile(r"(?<![\w./])([\w.-]+)/([\w.-]+)#(\d+)")
 
 
 def url_key(url):
@@ -107,13 +110,17 @@ def url_key(url):
 
 def asks_to_stop(text, pr):
     """Whether text is a plain request to stop watching that names pr or no PR: a URL names
-    it on its host, owner, repo, and number, and a #N on its number."""
+    it on its host, owner, repo, and number, an owner/repo#N on github.com, its owner, repo, and number,
+    and a #N on its number."""
     if not isinstance(text, str):
         return False
     text = text.strip().replace("\u2019", "'")
     key = url_key(pr.get("url"))
     named = [key is not None and url_key(found) == key for found in LINK.findall(text)]
-    named += [int(n) == pr.get("number") for n in re.findall(r"#(\d+)", LINK.sub("", text))]
+    unlinked = LINK.sub("", text)
+    named += [key is not None and ("github.com", owner.lower(), repo.lower(), int(n)) == key
+              for owner, repo, n in REPO_PR.findall(unlinked)]
+    named += [int(n) == pr.get("number") for n in re.findall(r"#(\d+)", REPO_PR.sub("", unlinked))]
     return len(text) <= 200 and bool(GO.fullmatch(text)) and (not named or any(named))
 
 
