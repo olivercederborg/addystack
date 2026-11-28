@@ -236,12 +236,13 @@ for line in sys.stdin:
         # so removing the entries above merge-gate and ready-gate passes both theirs.
         self.cli("install")
         source = str(self.codex_hooks.resolve())
-        [(merge, ready, push)] = [[hook["command"] for group in groups for hook in group["hooks"]]
+        [(merge, ready, push, stack)] = [[hook["command"] for group in groups for hook in group["hooks"]]
                             for event, groups in self.json(self.codex_hooks)["hooks"].items()]
         kit = {"eventName": "preToolUse", "sourcePath": source}
         self.codex_lists([{**kit, "key": "0", "command": merge, "trustStatus": "modified", "enabled": True},
                           {**kit, "key": "1", "command": ready, "trustStatus": "trusted", "enabled": False},
                           {**kit, "key": "2", "command": push, "trustStatus": "trusted", "enabled": True},
+                          {**kit, "key": "3", "command": stack, "trustStatus": "trusted", "enabled": True},
                           # The user's own hook on a kit script, disabled, and an admin's: not the kit's entries.
                           {**kit, "key": "u", "command": merge, "trustStatus": "trusted", "enabled": False,
                            "sourcePath": str(self.home / ".codex/config.toml")},
@@ -259,7 +260,8 @@ for line in sys.stdin:
         self.codex_lists([])
         line, fix = self.check("hooks")
         self.assertEqual([part.rsplit("/", 1)[-1] for part in line.removeprefix("FAIL  hooks: ").split("; ")],
-                         ["merge-gate.py isn't loaded", "ready-gate.py isn't loaded", "push-gate.py isn't loaded"])
+                         ["merge-gate.py isn't loaded", "ready-gate.py isn't loaded", "push-gate.py isn't loaded",
+                          "stack-gate.py isn't loaded"])
         self.assertEqual(fix, self.CODEX_FIX)
 
     CODEX_FIX = ("fix: trust and enable each in codex's /hooks; for one that isn't loaded, check "
