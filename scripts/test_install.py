@@ -838,6 +838,19 @@ class Guard(Home):
         self.assertTrue(self.plist.exists())
         self.assertTrue(self.loaded.exists())
 
+    def test_removing_the_limit_keeps_the_rest_of_the_bytes(self):
+        import guard
+        self.zshenv.write_bytes(b"echo hi\r\nexport A=1\r" + guard.LIMIT_LINES.encode())
+        self.select(False)
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_bytes(), b"echo hi\r\nexport A=1\r")
+
+    def test_a_zshenv_that_isnt_utf8_doesnt_stop_an_install_without_the_guard(self):
+        self.zshenv.write_bytes(b"# caf\xe9\nexport A=1\n")
+        self.select(False)
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_bytes(), b"# caf\xe9\nexport A=1\n")
+
     def test_another_host_profile_leaves_the_limit(self):
         # The block is only ever written on the darwin profile; a .zshenv synced to another
         # host keeps it, and that host never reads the file.

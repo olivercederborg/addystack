@@ -94,6 +94,16 @@ def _read(path: Path) -> Optional[str]:
         raise ValueError(f"can't read {path}: {error}") from error
 
 
+def _read_bytes(path: Path) -> Optional[bytes]:
+    """_read's bytes, undecoded and with their line endings, raising as _read does."""
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise ValueError(f"can't read {path}: {error}") from error
+
+
 # launchctl print's exit status for a service launchd doesn't have.
 _NO_SERVICE = 113
 
@@ -164,9 +174,14 @@ def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List
             changes.append(("guard", path, "stops the agent memory guard and removes its plist: its hook isn't selected",
                             False))
         # Only the darwin profile ever gets the block; another host may share a synced .zshenv.
-        env = _read(zshenv()) if hookset.host_profile() == "darwin" else None
-        if env is not None and LIMIT_LINES in env:
-            writes[zshenv()] = env.replace(LIMIT_LINES, "")
+        # Bytes, so a file that isn't UTF-8 only matters once it holds the block, and the rest
+        # keeps its line endings.
+        raw = _read_bytes(zshenv()) if hookset.host_profile() == "darwin" else None
+        if raw is not None and LIMIT_LINES.encode() in raw:
+            try:
+                writes[zshenv()] = raw.replace(LIMIT_LINES.encode(), b"").decode()
+            except UnicodeDecodeError as error:
+                raise ValueError(f"can't read {zshenv()}: {error}") from error
             changes.append(("shell-limit", zshenv(), "removes the agent-shell process limit: its hook isn't selected",
                             False))
         return changes, False
