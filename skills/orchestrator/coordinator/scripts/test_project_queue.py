@@ -116,5 +116,47 @@ class Queue(unittest.TestCase):
                 self.assertEqual(turn_block.parse(block).needs[0].name, name)
 
 
+class Batch(unittest.TestCase):
+    """Calls of one batch waiting at the same moment go on one card, so one go answers them."""
+
+    def test_the_first_batched_add_writes_the_column_and_keeps_every_row(self):
+        lines = project(("decide", "keep the v1 export"))
+        q.add(lines, "review", "post the reply to Ana on #41", "rv41", NOW, batch="post")
+        at = lines.index("| # | Kind | Name | From | Since | Batch |")
+        self.assertEqual(lines[at:at + 4], [
+            "| # | Kind | Name | From | Since | Batch |", "|---|---|---|---|---|---|",
+            "| 1 | decide | keep the v1 export | coordinator | 2026-11-18 14:05 |  |",
+            "| 2 | review | post the reply to Ana on #41 | rv41 | 2026-11-18 14:05 | post |"])
+        self.assertEqual([(item.id, item.batch) for item in q.read(lines)], [(1, ""), (2, "post")])
+        self.assertEqual(q.done(lines, 1).name, "keep the v1 export")
+
+    def test_the_top_item_shares_its_card_with_its_batch_alone(self):
+        lines = project(("decide", "keep the v1 export"))
+        for name, batch in [("post the reply to Ana on #41", "post"), ("merge #12 and #13", "merge:receipts"),
+                            ("re-request Ana on #42", "post"), ("approve #43 with two comments", "post")]:
+            q.add(lines, "review", name, "rv", NOW, batch=batch)
+        self.assertTrue(q.show(q.read(lines)).startswith("1 of 5 need you · keep the v1 export · coordinator\n"),
+                        "an unbatched top item shows alone")
+        q.done(lines, 1)
+        shown = q.show(q.read(lines)).splitlines()
+        self.assertEqual(shown[0], "3 of 4 need you, on one card · post · 1 post the reply to Ana on #41; "
+                                   "2 re-request Ana on #42; 3 approve #43 with two comments")
+        self.assertEqual(turn_block.parse('<!-- turn {"state":"stop","' + shown[1].replace(": ", '":', 1) + ',"options":[]} -->')
+                         .needs, (turn_block.Need(2, "review", "post the reply to Ana on #41"),
+                                  turn_block.Need(4, "review", "re-request Ana on #42"),
+                                  turn_block.Need(5, "review", "approve #43 with two comments")))
+        for ident in (2, 4, 5):
+            q.done(lines, ident)
+        self.assertTrue(q.show(q.read(lines)).startswith("1 of 1 needs you · merge #12 and #13 · rv\n"),
+                        "a batch of one is a card of one")
+
+    def test_a_batch_is_one_word(self):
+        lines = project()
+        for batch in ["post replies", "x" * 41, "post|merge"]:
+            with self.assertRaisesRegex(q.QueueError, "--batch takes one word"):
+                q.add(lines, "review", "post the reply", "rv", NOW, batch=batch)
+        self.assertNotIn("Batch", " ".join(lines))
+
+
 if __name__ == "__main__":
     unittest.main()

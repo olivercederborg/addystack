@@ -8,13 +8,17 @@ to Nov 18, 2026, 10 of the 16 times the user typed "anything else waiting for me
 9 of them with `needs` empty; one call, "merge #39", sat there 8 days after #39 merged. A table that each
 answer resolves gives the queue an owner, so a wake or a compaction finds it.
 
-  | # | Kind | Name | From | Since |
+  | # | Kind | Name | From | Since | Batch |
 
 `#` is the item's id, the one its turn-block need carries, never reused: the `Next id:`
 line above the table holds the next one. Kind is `stuck`, a run the coordinator found
 stuck, or a turn-block kind, `decide`, `review`, or `do`. Name is the turn block's need
 name: 1-80 characters with a word of 3+ letters. From is the worker, with its thread
-link, or `coordinator`. The user gets stuck runs first, then calls (decide and review),
+link, or `coordinator`. Batch, a column `add --batch` writes the first time one is given, is
+the kind of call a card can share with others of its kind waiting at the same moment, such as
+`post` or `merge:<stack>`: `show` puts the top item and each other item of its batch on one
+card. On Nov 27, 2026 five review posts for one teammate took six separate goes over 95
+minutes, and one coordinator showed 40 post cards in a day. The user gets stuck runs first, then calls (decide and review),
 then Do items, oldest first within each, as the coordinator skill's step 5 orders them,
 behind what waited a day under the user's priority line (project.py's `priority`) and
 then the items it names."""
@@ -31,6 +35,8 @@ import turn_block
 HEADING = "## Queue"
 COUNTER = "Next id: "
 HEADER = ["#", "Kind", "Name", "From", "Since"]
+BATCHED = [*HEADER, "Batch"]
+BATCH = re.compile(r"[\w:.#-]{1,40}\Z")
 KINDS = ("stuck", "decide", "review", "do")
 RANK = {"stuck": 0, "decide": 1, "review": 1, "do": 2}
 AGED = timedelta(days=1)  # an item waiting this long under a priority line goes first, so none starves
@@ -49,6 +55,7 @@ class Item:
     name: str
     source: str
     since: str
+    batch: str = ""
 
     def need(self) -> dict:
         """The item as a turn-block need: a stuck run is the user's call on it."""
@@ -73,16 +80,20 @@ def _bounds(lines: list[str]) -> tuple[int, int] | None:
 
 def _table(lines: list[str], start: int, end: int) -> list[int]:
     rows = [i for i in range(start + 1, end) if lines[i].startswith("|")]
-    if len(rows) < 2 or _cells(lines[rows[0]]) != HEADER:
-        raise QueueError(f"the Queue table's header isn't {_row(HEADER)}: fix it by hand")
+    if len(rows) < 2 or _cells(lines[rows[0]]) not in (HEADER, BATCHED):
+        raise QueueError(f"the Queue table's header isn't {_row(HEADER)} or {_row(BATCHED)}: fix it by hand")
     return rows[2:]
 
 
-def _item(row: str) -> Item:
+def _item(row: str, width: int = len(HEADER)) -> Item:
     cells = _cells(row)
-    if len(cells) != len(HEADER) or not cells[0].isdigit() or cells[1] not in KINDS:
+    if len(cells) != width or not cells[0].isdigit() or cells[1] not in KINDS:
         raise QueueError(f"a Queue row it can't read: {row.strip()!r}: fix it by hand")
-    return Item(int(cells[0]), cells[1], cells[2], cells[3], cells[4])
+    return Item(int(cells[0]), *cells[1:5], cells[5] if width > len(HEADER) else "")
+
+
+def _width(lines: list[str], start: int, end: int) -> int:
+    return len(_cells(next(lines[i] for i in range(start + 1, end) if lines[i].startswith("|"))))
 
 
 def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
@@ -95,7 +106,8 @@ def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
     bounds = _bounds(lines)
     if bounds is None:
         return None
-    items = sorted((_item(lines[i]) for i in _table(lines, *bounds)), key=lambda item: (RANK[item.kind], item.id))
+    width = _width(lines, *bounds)
+    items = sorted((_item(lines[i], width) for i in _table(lines, *bounds)), key=lambda item: (RANK[item.kind], item.id))
     if ahead is None:
         return items
     old = (now or datetime.now()) - AGED
@@ -126,29 +138,39 @@ def create(lines: list[str]) -> None:
         lines[at:at] = [HEADING, "", f"{COUNTER}1", "", _row(HEADER), "|" + "---|" * len(HEADER), ""]
 
 
-def add(lines: list[str], kind: str, name: str, source: str, now: datetime | None = None) -> Item:
-    """Adds an item under the table and returns it. A project from before the queue has no
-    section: `create` writes it, and only `project.py queue import` calls that, so the calls
-    its last reply named arrive with the queue."""
+def add(lines: list[str], kind: str, name: str, source: str, now: datetime | None = None, batch: str = "") -> Item:
+    """Adds an item under the table and returns it, writing the Batch column the first time a
+    batch is given. A project from before the queue has no section: `create` writes it, and
+    only `project.py queue import` calls that, so the calls its last reply named arrive with
+    the queue."""
     if kind not in KINDS:
         raise QueueError(f"kind {kind!r} isn't one of: {', '.join(KINDS)}")
     name, source = _one_line("the name", name), _one_line("--from", source)
     if len(name) > 80 or not WORD.search(name):
         raise QueueError("the name is 1-80 characters with a word of 3+ letters, as a turn-block need's is")
+    if batch and not BATCH.match(batch):
+        raise QueueError("--batch takes one word of up to 40 characters, such as post or merge:receipts")
     if _bounds(lines) is None:
         raise QueueError("this project has no Queue yet: start it with `queue import`, which queues every item your "
                          "last reply named")
     start, end = _bounds(lines)
     rows = _table(lines, start, end)
+    if batch and _width(lines, start, end) == len(HEADER):
+        table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
+        lines[table[0]], lines[table[1]] = _row(BATCHED), "|" + "---|" * len(BATCHED)
+        for i in rows:
+            lines[i] = lines[i].rstrip() + "  |"
+    width = _width(lines, start, end)
     counter = next((i for i in range(start + 1, end) if lines[i].startswith(COUNTER)), None)
     if counter is None:
         raise QueueError(f"the Queue section has no `{COUNTER}<n>` line: fix it by hand")
     stored = lines[counter][len(COUNTER):].strip()
     # The counter, unless a hand edit left a row at or past it.
-    ident = max([int(stored) if stored.isdigit() else 1, *(_item(lines[i]).id + 1 for i in rows)])
-    item = Item(ident, kind, name, source, (now or datetime.now()).strftime("%Y-%m-%d %H:%M"))
+    ident = max([int(stored) if stored.isdigit() else 1, *(_item(lines[i], width).id + 1 for i in rows)])
+    item = Item(ident, kind, name, source, (now or datetime.now()).strftime("%Y-%m-%d %H:%M"), batch)
     last = rows[-1] if rows else [i for i in range(start + 1, end) if lines[i].startswith("|")][1]
-    lines.insert(last + 1, _row([str(item.id), item.kind, item.name, item.source, item.since]))
+    cells = [str(item.id), item.kind, item.name, item.source, item.since, *([batch] if width > len(HEADER) else [])]
+    lines.insert(last + 1, _row(cells))
     lines[counter] = f"{COUNTER}{ident + 1}"
     return item
 
@@ -159,7 +181,7 @@ def done(lines: list[str], ident: int) -> Item:
     if bounds is None:
         raise QueueError("project.md has no Queue section")
     for i in _table(lines, *bounds):
-        item = _item(lines[i])
+        item = _item(lines[i], _width(lines, *bounds))
         if item.id == ident:
             del lines[i]
             return item
@@ -177,9 +199,20 @@ def shown(text: str) -> str:
     return text
 
 
+def card(items: list[Item]) -> list[Item]:
+    """The items the next card shows: the top one, and each other of its batch."""
+    top = items[0]
+    return [top, *(item for item in items[1:] if top.batch and item.batch == top.batch)]
+
+
 def strip(items: list[Item]) -> str:
-    """The line a reply carries while the queue holds items: which one it shows of how many,
-    that one's name, and where it came from."""
+    """The line a reply carries while the queue holds items: which it shows of how many,
+    and the name and asker of the one, or the batch and each name of a card that shows
+    several, numbered as the card numbers them."""
+    shows = card(items)
+    if len(shows) > 1:
+        names = "; ".join(f"{at} {shown(item.name)}" for at, item in enumerate(shows, 1))
+        return f"{len(shows)} of {len(items)} need you, on one card · {shown(shows[0].batch)} · {names}"
     return f"1 of {len(items)} need{'s' if len(items) == 1 else ''} you · {shown(items[0].name)} · {shown(items[0].source)}"
 
 
@@ -196,5 +229,7 @@ def show(items: list[Item] | None) -> str:
                 "with a turn block naming every call still open on standard input.")
     if not items:
         return "Nothing waits on the user."
-    listed = [f"  {item.id} {item.kind} · {item.name} · {item.source} · since {item.since}" for item in items]
-    return "\n".join([strip(items), f"needs: [{as_json(items[0].need())}]", "queue:", *listed])
+    shows = card(items)
+    listed = [f"  {item.id} {item.kind} · {item.name} · {item.source} · since {item.since}"
+              + (f" · {item.batch}" if item.batch else "") for item in items]
+    return "\n".join([strip(items), f"needs: [{','.join(as_json(item.need()) for item in shows)}]", "queue:", *listed])

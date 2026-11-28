@@ -62,3 +62,9 @@ At the close, add `## Result` under Goal: the integrated check's result (the hea
 it merged, the checks it ran, and a pass, or the limitation the user accepted), what
 shipped, with each PR and its merge state, each worker's final state, and the follow-ups
 left open.
+
+## Credits
+
+The coordinator is inspired by Cursor Projects and Claude Code Projects, with rules from
+Lauren Tan's pstack Orchestrate playbook, agentbox's hyperfocus inbox, and Johan's
+orchestrate-project (jokklan/skills#29).

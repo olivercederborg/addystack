@@ -2618,6 +2618,18 @@ class MergeGate(unittest.TestCase):
                 self.assertIsNone(reason) if go else self.assertIn("not a merge of #12", reason)
         self.assertIsNone(self.reason("gh pr merge 12", said=("merge #13",)))  # a typed go isn't held to its PRs
 
+    def test_a_pick_of_a_batch_cards_merge_is_the_go_for_each_pr_it_names(self):
+        # R204: a coordinator's batch card offers one plain request for every merge of a
+        # verified stack, so the one key the user types is each PR's go, and no other's.
+        for text in ["merge #12, #13 and #14", "merge #12, #13, and #14"]:
+            for n, go in [(12, True), (13, True), (14, True), (15, False)]:
+                with self.subTest(text=text, pr=n):
+                    self.scenario(prs={n: None})
+                    self.verify(n)
+                    reason = self.reason(f"gh pr merge {n}", said=(
+                        "fix it", self.card([{"key": "a", "class": "stop:merge", "text": text}]), "a"))
+                    self.assertIsNone(reason) if go else self.assertIn(f"not a merge of #{n}", reason)
+
     def test_a_pick_reads_a_bare_pr_beside_one_that_names_this_repo_as_another_repos(self):
         # Nov 10, 2026: a coordinator's card offered "merge #55 and dotfiles #36" for addystack
         # #55 and dotfiles #36. Read in dotfiles, its bare #55 is addystack's, so this repo, r,
@@ -3163,6 +3175,9 @@ class MergeGo(unittest.TestCase):
         # coordinator thread 3cce05fc: the gate read neither as a go until "dotfiles #36" did.
         "merge #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
         "merge addystack #55 and dotfiles #36": "2026-11-10 T3 3cce05fc",
+        # A batch card's merge of a verified stack, with and without the serial comma (R204).
+        "merge #12, #13 and #14": "2026-11-28 R204 batch card",
+        "merge #12, #13, and #14": "2026-11-28 R204 batch card",
         # Merge requests the gate never judged, in repos with CI.
         "lets get all the current PRs for the redesign merged": "2026-10-03 a1cb0fac",
         "a + merge when ready": "2026-10-05 linux 43e516e7",
