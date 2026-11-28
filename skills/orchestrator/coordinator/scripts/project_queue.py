@@ -18,8 +18,8 @@ link, or `coordinator`. Batch, a column `add --batch` writes the first time one 
 the kind of call a card can share with others of its kind waiting at the same moment, such as
 `post` or `merge:<stack>`: `show` puts the top item and each other item of its batch on one
 card. On Nov 27, 2026 five review posts for one teammate took six separate goes over 95
-minutes, and one coordinator showed 40 post cards in a day. The user gets stuck runs first, then calls (decide and review),
-then Do items, oldest first within each, as the coordinator skill's step 5 orders them,
+minutes, and one coordinator showed 40 post cards in a day. The user gets stuck runs first,
+then calls (decide and review), then Do items, oldest first within each, as the coordinator skill's step 5 orders them,
 behind what waited a day under the user's priority line (project.py's `priority`) and
 then the items it names."""
 from __future__ import annotations

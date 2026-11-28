@@ -128,7 +128,8 @@ def imported(lines: list[str], text: str, sources: dict[int, str] | None = None,
             for need in items]
 
 
-def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None, batch: str = "",
+def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
+          batch: str | None = None,
           source: str | None = None, ident: int | None = None, answer: str | None = None,
           block: str | None = None, sources: list[str] | None = None, stuck: list[int] | None = None,
           line: "Priority | None" = None) -> str:
