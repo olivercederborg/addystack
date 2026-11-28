@@ -142,8 +142,8 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     # can't settle. Runs of one check share a type, a name, an app, and a workflow and event, as
     # gh pr checks groups them (aggregate.go's eliminateDuplicates), so an older pass never hides
     # a re-run that is pending or failed. Workflows count by id: two workflows may share a name.
-    # Rows are type, name, app id (a status's creator login), workflow and event, creation order
-    # and bucket; checks keep name, app id or creator, and bucket.
+    # Rows are type, name, app id (for a status, "bot:" and its Bot creator's login, else empty),
+    # workflow and event, creation order and bucket; checks keep name, app id or bot, and bucket.
     checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4
       if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $3 FS $6 } }
       END { for (key in row) print row[key] }')
