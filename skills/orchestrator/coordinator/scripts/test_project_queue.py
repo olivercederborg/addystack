@@ -192,6 +192,20 @@ class Batch(unittest.TestCase):
                 change(lines)
             self.assertEqual(lines, bad_row)
 
+    def test_a_merge_card_takes_its_whole_stack_past_the_priority(self):
+        # Codex review of r204/batch, round 3: a priority on #14 alone put "merge #14" on a card
+        # by itself, and `gh stack merge 14` merges #12 and #13 under it too.
+        lines = project()
+        for n in (12, 13, 14):
+            q.add(lines, "review", f"merge #{n}", "w", NOW, batch="merge:receipts")
+        q.add(lines, "review", "post to Bo on #42", "rv42", NOW, batch="post")
+        q.add(lines, "review", "post to Ana on #43", "rv43", NOW, batch="post")
+        ranked = q.read(lines, lambda item: item.name in ("merge #14", "post to Ana on #43"), NOW)
+        self.assertEqual([item.id for item in q.card(ranked)], [3, 1, 2])
+        q.done(lines, 1), q.done(lines, 2), q.done(lines, 3)
+        self.assertEqual([item.id for item in q.card(q.read(lines, lambda item: "#43" in item.name, NOW))], [5],
+                         "any other batch keeps to its band")
+
     def test_a_batch_is_one_word(self):
         lines = project()
         for batch in ["post replies", "x" * 41, "post|merge"]:

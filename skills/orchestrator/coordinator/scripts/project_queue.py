@@ -234,9 +234,12 @@ def shown(text: str) -> str:
 
 def card(items: list[Item]) -> list[Item]:
     """The items the next card shows: the top one, and each other of its batch in its
-    priority band, so a card never carries an item past one the priority puts first."""
+    priority band, so a card never carries an item past one the priority puts first. A
+    `merge:` batch goes whole, since merging a stack's layer merges each one under it."""
     top = items[0]
-    return [top, *(item for item in items[1:] if top.batch and item.batch == top.batch and item.band == top.band)]
+    whole = top.batch.startswith("merge:")
+    return [top, *(item for item in items[1:]
+                   if top.batch and item.batch == top.batch and (whole or item.band == top.band))]
 
 
 def strip(items: list[Item]) -> str:
