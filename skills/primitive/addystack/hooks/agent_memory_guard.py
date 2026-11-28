@@ -525,10 +525,16 @@ def cpu_gained(members, last, debt, began):
     gained_total = 0
     for ident in [ident for ident in debt if ident in here and ident not in last]:
         # Missed for a scan: its old reading still holds, and what its debt absorbed from
-        # its parent's reaps was other workers' CPU, which counts now.
-        _, owed, reading, _ = debt.pop(ident)
+        # its parent's reaps was other workers' CPU. It repays that parent's other debts
+        # first, since a sibling that exited meanwhile was counted already; the rest counts.
+        creditor, owed, reading, _ = debt.pop(ident)
         last[ident] = reading
-        gained_total += reading[0] + reading[1] - owed
+        freed = reading[0] + reading[1] - owed
+        for entry in (entry for entry in debt.values() if entry[0] == creditor):
+            repaid = min(freed, entry[1])
+            entry[1] -= repaid
+            freed -= repaid
+        gained_total += freed
     for ident in last.keys() - here:
         cpu, reaped, parent = last[ident]
         debt[ident] = [parent, cpu + reaped, last[ident], 0]

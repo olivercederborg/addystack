@@ -709,6 +709,16 @@ class CpuGained(unittest.TestCase):
             [parent(0), worker(0)], [parent(0), worker(10)], [parent(3)], [parent(3), worker(11)],
             [parent(14)]), int(14e9))
 
+    def test_a_sibling_reaped_while_a_worker_is_missed_counts_once(self):
+        # A (10 s) is missed; sibling B (5 s, already counted) exits and its reap pays A's
+        # older debt first. When A comes back, those 5 s repay B's debt, not count again.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        a = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        b = lambda cpu: proc(213, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), a(0), b(0)], [parent(0), a(10), b(5)], [parent(0), b(5)], [parent(5)],
+            [parent(5), a(10)], [parent(17)], [parent(17)]), int(17e9))
+
     def test_a_worker_whose_debt_was_repaid_while_missed_goes_on_from_its_reading(self):
         # The parent reaps 10 s of others while the pre-tracking worker is missed, which
         # repays its whole debt; it comes back at 20 s and must not count from now.
