@@ -931,6 +931,12 @@ class Queue:
                                cpu=cpu, reaped=reaped)[:12], tool_call=tool_call)
         return ([proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", f"check {n}"))] if shell else []) + [top]
 
+    def vitest(self, n, born=1000.0, cpu=0):
+        """Test run n: shell 200+10n with a vitest run 201+10n under it."""
+        return [proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", "vitest")),
+                proc(201 + 10 * n, 200 + 10 * n, argv=("node", "/x/node_modules/vitest/vitest.mjs", "run"),
+                     start=born, cpu=cpu)]
+
     def tick(self, *checks, seconds=0.5):
         procs = snapshot(AGENT, *[p for check in checks for p in check])
         commands = self.owners.attribute(procs)
@@ -976,20 +982,11 @@ class CheckQueue(unittest.TestCase):
         self.assertEqual(q.stopped(), {231})  # a type check waits behind the test runs
 
     def test_a_check_arriving_with_a_test_run_waits_for_the_cpu_gate(self):
-        vitest = ("node", "/x/node_modules/vitest/vitest.mjs", "run")
         q = Queue(self, cap=4, cores=1)
-
-        def runner(cpu=0):
-            return [proc(210, 100, argv=("/bin/zsh", "-lc", "vitest")), proc(211, 210, argv=vitest, start=1000.0, cpu=cpu)]
-
-        q.tick(runner(), q.check(2))
+        q.tick(q.vitest(1), q.check(2))
         for i in range(1, 6):  # the run at 2 cores from here on
-            q.tick(runner(cpu=int(i * 1e9)), q.check(2, 1000))
+            q.tick(q.vitest(1, cpu=int(i * 1e9)), q.check(2, 1000))
         self.assertEqual(q.stopped(), {221})
-
-    def vitest(self, q, n, born):
-        return [proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", "vitest")),
-                proc(201 + 10 * n, 200 + 10 * n, argv=("node", "/x/node_modules/vitest/vitest.mjs", "run"), start=born)]
 
     def test_a_held_check_stays_held_when_a_test_run_starts_as_a_slot_frees(self):
         # Cap 1: check 1 runs, check 2 waits. Check 1 exits in the scan a vitest run starts:
@@ -997,7 +994,7 @@ class CheckQueue(unittest.TestCase):
         q = Queue(self, cap=1)
         q.tick(q.check(1), q.check(2))
         q.tick(q.check(2, 1000))
-        q.tick(q.check(2, 1000), self.vitest(q, 5, q.wall))
+        q.tick(q.check(2, 1000), q.vitest(5, q.wall))
         self.assertEqual(q.stopped(), {221})
         self.assertEqual(q.governor._busy(q.now - .5), 1)
 
@@ -1007,7 +1004,7 @@ class CheckQueue(unittest.TestCase):
         q = Queue(self, cap=4, cores=1)
         q.tick()
         born = q.wall
-        q.tick(self.vitest(q, 5, born - .1), q.check(2, born - .2))
+        q.tick(q.vitest(5, born - .1), q.check(2, born - .2))
         self.assertEqual(q.stopped(), {221})
 
     def test_checker_names_the_check(self):
