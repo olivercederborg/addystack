@@ -26,8 +26,8 @@ this run.
 
 **Fewer reviewers when one would repeat work:**
 
-- **When verify-work reviews the same diff**, before or after the loop, round 1 runs
-  only the other provider's reviewer (Codex from Claude, Claude from Codex), since
+- **When verify-work reviews the same diff**, before, beside, or after the loop, round 1
+  runs only the other provider's reviewer (Codex from Claude, Claude from Codex), since
   verify-work is this provider's review. When verify-work runs in the author's own
   context, as in Codex, run both.
 - **Round 2 and later** run only the other provider's reviewer, on the fix commits and
