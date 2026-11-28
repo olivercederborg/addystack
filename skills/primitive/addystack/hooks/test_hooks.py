@@ -502,12 +502,16 @@ class UnwatchGate(unittest.TestCase):
         # verify-work, Nov 28, 2026: a chip reads as owner/repo#N, which this gate took as no PR.
         for link, passes in [(self.URL, True), ("https://github.com/Acme/App/pull/6226", True),
                              ("https://github.com/acme/web/pull/6226", False),
+                             ("https://git.acme.dev/acme/app/pull/6226", False),  # another host, review-loop r1
                              ("https://github.com/acme/app/pull/6215", False)]:
             number = int(link.rsplit("/", 1)[1])
             for prompt in ("unwatch {}\n\n{}", "stop watching {}\n\n{}"):
                 with self.subTest(link=link, prompt=prompt):
                     reason = self.reason(said=(prompt.format(*pr_chip(number, link)),))
-                    self.assertIsNone(reason) if passes else self.assertIsNotNone(reason)
+                    if passes:
+                        self.assertIsNone(reason)
+                    else:
+                        self.assertIsNotNone(reason)
         self.assertIsNotNone(self.reason(said=("unwatch acme/web#6226",)))
 
     def test_a_refusal_or_another_request_is_denied(self):

@@ -110,7 +110,7 @@ def url_key(url):
 
 def asks_to_stop(text, pr):
     """Whether text is a plain request to stop watching that names pr or no PR: a URL names
-    it on its host, owner, repo, and number, an owner/repo#N on its owner, repo, and number,
+    it on its host, owner, repo, and number, an owner/repo#N on github.com, its owner, repo, and number,
     and a #N on its number."""
     if not isinstance(text, str):
         return False
@@ -118,7 +118,7 @@ def asks_to_stop(text, pr):
     key = url_key(pr.get("url"))
     named = [key is not None and url_key(found) == key for found in LINK.findall(text)]
     unlinked = LINK.sub("", text)
-    named += [key is not None and (owner.lower(), repo.lower(), int(n)) == key[1:]
+    named += [key is not None and ("github.com", owner.lower(), repo.lower(), int(n)) == key
               for owner, repo, n in REPO_PR.findall(unlinked)]
     named += [int(n) == pr.get("number") for n in re.findall(r"#(\d+)", REPO_PR.sub("", unlinked))]
     return len(text) <= 200 and bool(GO.fullmatch(text)) and (not named or any(named))
