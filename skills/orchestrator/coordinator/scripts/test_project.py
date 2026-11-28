@@ -3,7 +3,7 @@ decisions, a Result section, notes under the Workers table, and a learning that 
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
 import pathlib, re, subprocess, sys, tempfile, unittest
-from datetime import date
+from datetime import date, datetime, timedelta
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
 TODAY = date.today().isoformat()
@@ -306,9 +306,35 @@ class PriorityLine(unittest.TestCase):
         self.assertIn('"only the "urgent" PRs"', self.run_in(self.other, "priority", "show").stdout)
         first = said.split(" · ")[0][2:]
         self.run_in(self.other, "listen", "Priority", first)
-        (self.root / "priority.md").write_text((self.root / "priority.md").read_text().replace(first, first[:-2] + "59"))
+        (self.root / "priority.md").write_text((self.root / "priority.md").read_text().replace(first, "2026-01-01 09:00:00"))
         self.assertIn("New here", self.run_in(self.other, "queue", "show").stdout,
                       "a second line set in the same minute is echoed too")
+
+    def test_round_two_edges_of_matching_echo_and_aging(self):
+        # Codex review of r204/priority, round 2, read in-process.
+        sys.path.insert(0, str(SCRIPT.parent))
+        import project as p, project_queue as q
+        line = lambda term, said="2026-01-01 09:00:00": p.Priority(said, "audit", "2999-01-01 00:00", (term,), "w")
+        for term, text in [("#6242–#6244", "Review #6242–#6244"), ("#6242–#6244", "Review #6243"),
+                           ("https://github.com/o/r/pull/7001", "Review o/r#7001"), ("#7001", "post on o/r#7001")]:
+            self.assertTrue(line(term).matches(text), (term, text))
+        self.assertFalse(line("#62").matches("Review #6243"))
+        root = self.root / "same-second"
+        root.mkdir()
+        now = datetime(2026, 11, 28, 12, 0, 59)
+        first = p.set_priority(root, "Ana first", ["Ana"], "audit", "2999-01-01", now)
+        second = p.set_priority(root, "Ana now", ["Ana"], "audit", "2999-01-01", now.replace(microsecond=5))
+        self.assertNotEqual(first.said, second.said)
+        lines = p.SKELETON.format(project="p", coordinator="c", checkout="x", mode="m", goal="g", proof="p").split("\n")
+        q.add(lines, "review", "Review old release", "w", now - timedelta(days=3))
+        q.add(lines, "do", "Old task", "w", now - timedelta(days=7))
+        q.add(lines, "review", "Review Ana PR", "w", now)
+        p.worker(lines, "ana-docs", state="queued", waits="pilot proof")
+        held = line("Ana", (now - timedelta(days=2)).strftime(p.SAID))
+        ranked = q.read(lines, p._ahead(held, lines), now, held_since=p._said(held))
+        self.assertEqual([item.name for item in ranked], ["Old task", "Review old release", "Review Ana PR"])
+        self.assertIn("first here: waited a day under it: 2 Old task, 1 Review old release; 3 Review Ana PR; "
+                      "units ana-docs (waits on pilot proof)", p.priority_note(lines, held))
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):
         self.run_in(self.heard, "priority", "set", "Ana first", "--match", "Ana", "--until", "2999-01-01")

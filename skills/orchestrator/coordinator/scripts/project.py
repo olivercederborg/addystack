@@ -191,15 +191,20 @@ class Priority:
     words: str
 
     def matches(self, text: str) -> bool:
-        """Whether a term is in text, read with each PR range written out and each PR URL
-        as its #N too, as project_md reads them."""
-        text = project_md.ranges(text) + "".join(f" #{found[2]}" for found in project_md.PR_REF.finditer(text)
-                                                 if found[2])
+        """Whether a term is in text. A term or text that names PRs, as a range `#20–#22`,
+        a URL, `repo#N`, or `#N`, names each PR as `#N`, as project_md reads them."""
+        text = f"{text} {' '.join(_prs(text))}"
+        terms = [found for term in self.terms for found in (_prs(term) or [term])]
         return any(re.search(("(?<!\\w)" if term[0].isalnum() else "") + re.escape(term)
-                             + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I) for term in self.terms)
+                             + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I) for term in terms)
 
     def line(self) -> str:
         return f"- {self.said} · {self.heard_in} · until {self.until} · match: {', '.join(self.terms)} · \"{self.words}\""
+
+
+def _prs(text: str) -> list[str]:
+    """Each PR text names, as `#N`, with ranges written out."""
+    return [f"#{url_n or n or local}" for _, url_n, _, n, local in project_md.PR_REF.findall(project_md.ranges(text))]
 
 
 def priority(root: Path, now: datetime | None = None) -> Priority | None:
@@ -229,16 +234,24 @@ def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until:
         raise ProjectError(f"--until takes YYYY-MM-DD or YYYY-MM-DD HH:MM, not {until!r}")
     if end <= now:
         raise ProjectError("--until is already past")
-    line = Priority(now.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
+    said = now.replace(microsecond=0)
+    try:
+        before = priority(root, now)
+    except ProjectError:  # a line it can't read is replaced
+        before = None
+    if before and _said(before) >= said:  # a second line within a second
+        said = _said(before) + timedelta(seconds=1)
+    line = Priority(said.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
     _write(root / PRIORITY_FILE, f"{PRIORITY_HEAD}\n{line.line()}\n")
     return line
 
 
-def _queued(lines: list[str]) -> list[tuple[str, str]]:
-    """Each queued Workers row as (slug, the cells that say what it is), in table order,
-    oldest first: Waits on stays out, so a unit waiting on the priority's work isn't it."""
+def _queued(lines: list[str]) -> list[tuple[str, str, str]]:
+    """Each queued Workers row as (slug, the cells that say what it is, what it waits on),
+    in table order, oldest first: Waits on stays out of the second, so a unit waiting on the
+    priority's work isn't it."""
     return [(row.get("Worker", "?").split(" (")[0],
-             " ".join(value for key, value in row.items() if key != COLUMNS["waits"]))
+             " ".join(value for key, value in row.items() if key != COLUMNS["waits"]), row.get(COLUMNS["waits"], ""))
             for row in _workers(lines)[0] if row.get(COLUMNS["state"], "").startswith("queued")]
 
 
@@ -259,12 +272,17 @@ def priority_note(lines: list[str], line: Priority | None) -> str | None:
     if line is None:
         return None
     items = project_queue.read(lines, _ahead(line, lines), held_since=_said(line)) or []
-    first = [f"{item.id} {item.name}" for item in items if line.matches(f"{item.name} {item.source}")]
-    moved = [slug for slug, text in _queued(lines) if line.matches(text)]
+    hit = lambda item: line.matches(f"{item.name} {item.source}")
+    first = [f"{item.id} {item.name}" for item in items if hit(item)]
+    # Items ahead of the priority's own have waited a day under it.
+    aged = [f"{item.id} {item.name}" for item in items[:next((at for at, item in enumerate(items) if hit(item)), 0)]]
+    moved = [slug + (f" (waits on {waits})" if waits not in ("", "—", "slot") else "")
+             for slug, text, waits in _queued(lines) if line.matches(text)]
     head = f'priority ({line.said[5:]} in {line.heard_in}, until {line.until[5:]}): "{line.words}"'
     if not first and not moved:
         return f"{head} · names nothing here"
-    head += " · first here: " + "; ".join([*([", ".join(first)] if first else []),
+    head += " · first here: " + "; ".join([*([f"waited a day under it: {', '.join(aged)}"] if aged else []),
+                                           *([", ".join(first)] if first else []),
                                            *([f"units {' ▸ '.join(moved)}"] if moved else [])])
     if _listened(lines, "Priority") == line.said:
         return head

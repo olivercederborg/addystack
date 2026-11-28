@@ -98,7 +98,10 @@ def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
         return items
     old = (now or datetime.now()) - AGED
     aged = lambda item: max(_since(item), held_since or datetime.min) <= old
-    return sorted(items, key=lambda item: 0 if aged(item) else 1 if ahead(item) else 2)
+    # The aged go longest-waiting first, past kind, so a run of reviews can't hold a Do back.
+    return sorted(items, key=lambda item: (0, max(_since(item), held_since or datetime.min), _since(item), item.id)
+                  if aged(item)
+                  else (1 if ahead(item) else 2,))
 
 
 def _since(item: Item) -> datetime:
