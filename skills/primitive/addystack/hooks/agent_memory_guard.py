@@ -504,23 +504,31 @@ class Abandoned:
 
 
 def cpu_gained(members, last, debt, began):
-    """CPU in ns the members used since `last` ({ident: (cpu, reaped, parent ident)}, from
-    the call before), their own and their reaped children's, so a worker that exits between
-    calls, or lives less than one, still counts through the ancestor that reaps it. What a
-    vanished member already counted becomes a debt ({ident: ns}) that only that ancestor's
-    reaped CPU repays, so the total never drops or counts it twice. A member not in `last`
-    counts all its CPU when it started after `began` (epoch seconds), else from now.
-    Returns (ns, the new last, the new debt)."""
-    gained_total, seen, debt, here = 0, {}, dict(debt), {proc.ident for proc in members}
+    """CPU in ns the members used since `last` (from the call before), their own and their
+    reaped children's, so a worker that exits between calls, or lives less than one, still
+    counts through the ancestor that reaps it. What a vanished member already counted
+    becomes a debt against its nearest ancestor still here, which that ancestor's reaped
+    CPU repays, however late, so the total never counts it twice. A member a scan missed
+    that comes back cancels its debt and goes on from its old reading. A member not in
+    `last` counts all its CPU when it started after `began` (epoch seconds), else from now.
+    `last` and `debt` are this function's own state: pass back what it returned. Returns
+    (ns, the new last, the new debt)."""
+    here = {proc.ident for proc in members}
+    last = dict(last)
+    # vanished ident -> (creditor ident, ns owed, its last reading)
+    debt = {ident: list(entry) for ident, entry in debt.items()}
+    for ident in [ident for ident in debt if ident in here and ident not in last]:
+        last[ident] = debt.pop(ident)[2]  # missed for a scan: its old reading still holds
     for ident in last.keys() - here:
-        # The nearest ancestor still here reaps it, directly or through parents that
-        # vanished with it, and its reaped CPU then holds this one's again.
         cpu, reaped, parent = last[ident]
-        owed = cpu + reaped + debt.pop(ident, 0)
-        while parent in last and parent not in here:
-            parent = last[parent][2]
-        if parent in here:
-            debt[parent] = debt.get(parent, 0) + owed
+        debt[ident] = [parent, cpu + reaped, last[ident]]
+    for entry in debt.values():
+        # The nearest ancestor still here reaps it, directly or through parents that
+        # vanished with it.
+        while entry[0] in last and entry[0] not in here:
+            entry[0] = last[entry[0]][2]
+    debt = {ident: entry for ident, entry in debt.items() if entry[0] in here and entry[1] > 0}
+    gained_total, seen = 0, {}
     for proc in members:
         if proc.cpu is None:  # a failed read keeps the last value
             if proc.ident in last:
@@ -530,15 +538,16 @@ def cpu_gained(members, last, debt, began):
             cpu, reaped, _ = last[proc.ident]
             gained_total += max(0, proc.cpu - cpu)
             gained = max(0, proc.reaped - reaped)
-            owed = debt.pop(proc.ident, 0)
-            if owed > gained:
-                debt[proc.ident] = owed - gained
-            gained_total += max(0, gained - owed)
+            for entry in (entry for entry in debt.values() if entry[0] == proc.ident):
+                repaid = min(gained, entry[1])  # oldest first
+                entry[1] -= repaid
+                gained -= repaid
+            gained_total += gained
         elif proc.start > began:
             gained_total += proc.cpu + proc.reaped  # started since: all of it is new
         # else it existed before tracking began, so it counts from now
         seen[proc.ident] = (proc.cpu, proc.reaped, proc.parent_ident)
-    return gained_total, seen, debt
+    return gained_total, seen, {ident: tuple(entry) for ident, entry in debt.items() if entry[1] > 0}
 
 
 def signal_all(members, sig, send=os.kill, current=identity):

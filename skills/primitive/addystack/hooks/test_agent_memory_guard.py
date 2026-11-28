@@ -681,6 +681,26 @@ class Tick(unittest.TestCase):
         self.assertIn("couldn't log a kill", stderr.getvalue())
 
 
+class CpuGained(unittest.TestCase):
+    """cpu_gained's accounting when members come and go between calls."""
+
+    def run_calls(self, *snapshots, began=0.0):
+        last, debt, total = {}, {}, 0
+        for members in snapshots:
+            gained, last, debt = guard.cpu_gained(members, last, debt, began)
+            total += gained
+        return total
+
+    def test_a_worker_missed_for_a_scan_leaves_no_debt(self):
+        # The worker uses 10 s, one scan misses it, it uses 1 s more and exits; its parent
+        # reaps all 11 s. Then the parent reaps a second worker's 4 s. All 15 s count.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(0)], [parent(0), worker(11)],
+            [parent(11)], [parent(15)]), int(15e9))
+
+
 class KillLog(unittest.TestCase):
     def test_a_call_that_joins_during_the_kill_is_logged(self):
         host = proc(200, 90, argv=("code-mode-host",))
@@ -1288,6 +1308,20 @@ class CheckQueue(unittest.TestCase):
                     q.tick(q.check(1, 1000) + ([worker] if appear(tick) else []), q.check(2, 1000))
                 self.assertFalse(q.governor._idle(211, q.now - .5))
                 self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_whose_missed_worker_returns_is_measured_whole(self):
+        # A worker one scan misses, found again, then reaped: no debt may hide the 4.2 CPU s
+        # the unit uses in its last 30 s.
+        q = Queue(self, cap=1)
+        w = proc(212, 211, argv=("node", "worker.js"), start=901, cpu=int(10e9))
+        q.tick(q.check(1, 900) + [w], q.check(2))
+        q.tick(q.check(1, 900), q.check(2, 1000))
+        q.tick(q.check(1, 900) + [w], q.check(2, 1000))
+        q.tick(q.check(1, 900, reaped=int(10e9)), q.check(2, 1000))
+        for n in range(1, 64):
+            q.tick(q.check(1, 900, reaped=int(10e9) + n * int(70e6)), q.check(2, 1000))
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+        self.assertEqual(q.stopped(), {221})
 
     def test_a_late_scan_divides_by_the_idle_window(self):
         # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
