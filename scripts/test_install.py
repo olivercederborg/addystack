@@ -800,17 +800,74 @@ class Guard(Home):
         self.assertEqual(result.returncode, 1)
         self.assertIn("is missing", self.doctor_line(result.stdout))
 
-    def test_stops_and_removes_it_once_deselected_and_keeps_the_limit(self):
+    def test_stops_and_removes_it_once_deselected_with_the_limit(self):
         self.select()
+        self.write(self.zshenv, "export EDITOR=vim")
         self.ok("install")
         self.select(False)
         out = self.ok("install").stdout
         self.assertIn("stops the agent memory guard and removes its plist", out)
+        self.assertIn("(shell-limit)\n  removes the agent-shell process limit", out)
         self.assertFalse(self.plist.exists())
         self.assertFalse(self.loaded.exists())
-        self.assertIn("ulimit -Su 3000", self.zshenv.read_text())
+        self.assertEqual(self.zshenv.read_text(), "export EDITOR=vim\n")
         self.assertIn("ok    memory guard: not needed", out)
         self.assertNotIn('"guard"', (self.state / "installed.json").read_text())
+
+    def test_deselecting_keeps_a_users_own_limit_and_an_emptied_zshenv(self):
+        import guard
+        self.select()
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), guard.LIMIT_LINES)
+        self.select(False)
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), "")
+        edited = guard.LIMIT_LINES.replace("3000", "2000")
+        self.write(self.zshenv, f"ulimit -Su 2500\n{edited}")
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), f"ulimit -Su 2500\n{edited}")
+
+    def test_deselected_removes_the_limit_beside_a_guard_set_up_by_hand(self):
+        import guard
+        self.write(self.plist, "<plist/>")
+        self.loaded.touch()
+        self.write(self.zshenv, "echo hi\n" + guard.LIMIT_LINES)
+        self.select(False)
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), "echo hi\n")
+        self.assertTrue(self.plist.exists())
+        self.assertTrue(self.loaded.exists())
+
+    def test_another_host_profile_leaves_the_limit(self):
+        # The block is only ever written on the darwin profile; a .zshenv synced to another
+        # host keeps it, and that host never reads the file.
+        import guard
+        self.env["SBX_SANDBOX"] = "1"
+        self.write(self.zshenv, guard.LIMIT_LINES)
+        self.select(False)
+        self.ok("install")
+        self.assertEqual(self.zshenv.read_text(), guard.LIMIT_LINES)
+
+    def test_an_unreadable_zshenv_stops_a_deselect_before_the_guard_stops(self):
+        self.select()
+        self.ok("install")
+        self.select(False)
+        self.zshenv.chmod(0)
+        self.addCleanup(self.zshenv.chmod, 0o644)
+        result = self.cli("install")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("can't read", result.stderr)
+        self.assertTrue(self.plist.exists())
+        self.assertTrue(self.loaded.exists())
+
+    def test_dry_run_of_a_deselect_names_the_limit_and_writes_nothing(self):
+        self.select()
+        self.ok("install")
+        self.select(False)
+        before = self.snapshot()
+        self.assertIn("removes the agent-shell process limit", self.ok("install", "--dry-run").stdout)
+        self.assertEqual({k: v for k, v in self.snapshot().items() if k != self.launchctl_log},
+                         {k: v for k, v in before.items() if k != self.launchctl_log})
 
     def test_deselected_stops_its_guard_even_when_the_plist_is_gone(self):
         self.select()

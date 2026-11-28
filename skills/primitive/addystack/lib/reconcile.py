@@ -48,7 +48,8 @@ entry: a link is always install's to replace and anything else never is.
 Guard: on macOS, while the agent-memory-guard-notice hook is selected, install writes the
 agent memory guard's launchd plist and starts it, appends the agent-shell process limit to
 .zshenv when a new agent shell has none, and records the guard in the ledger as
-`"guard": true`; once deselected, it stops only a guard the ledger records (guard.py).
+`"guard": true`; once deselected, it stops only a guard the ledger records, and removes
+its unchanged process limit from .zshenv (guard.py).
 
 Commands: the hooks in COMMANDS send a Claude Code command, so while hookset selects any of
 them for Claude Code, install links that command in Claude's commands/ folder to the kit's

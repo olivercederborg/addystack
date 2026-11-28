@@ -19,8 +19,11 @@ Both follow the `agent-memory-guard-notice` hook's selection (hookset.guard_want
   each agent variable alone set and the soft limit raised to the hard one, so an early `return`, an
   `alias`, `nounset`, or a `ZDOTDIR` elsewhere all count as they would in a real shell.
   Without a limit of LIMIT or less, install appends LIMIT_LINES to the .zshenv zsh reads
-  (`$ZDOTDIR`, else home), once, and doctor reports a limit that still doesn't apply. A
-  .zshenv that exists but can't be read stops the install before anything is written.
+  (`$ZDOTDIR`, else home), once, and doctor reports a limit that still doesn't apply. Once
+  it's deselected on the darwin profile, install removes LIMIT_LINES from that .zshenv
+  wherever they appear unchanged, whoever set up the guard, and leaves the rest of the
+  file, emptied or not; a limit the user wrote or edited stays. A .zshenv that exists but
+  can't be read stops the install before anything is written.
 
 `ADDYSTACK_LAUNCHCTL` overrides the launchctl it runs, so tests use a stub by absolute
 path and a broken stub can never fall through to the real one on PATH.
@@ -149,17 +152,24 @@ def shell_limit() -> Optional[int]:
 def plan(resolved: Resolved, writes: Dict[Path, str], owned: bool) -> Tuple[List[Tuple[str, Path, str, bool]], bool]:
     """Each change as (kind, target, detail, start), and whether the ledger records the
     guard as install's once they're made; reconcile runs a stop before writing the ledger. Kind `guard` starts the agent from its plist when start
-    is True, and stops it and removes the plist when False; `shell-limit` is a write only.
+    is True, and stops it and removes the plist when False; `shell-limit` is a write only,
+    adding LIMIT_LINES or, once deselected, removing them.
     Adds each file to write to writes. Raises ValueError as _read does, and when launchctl
     can't say whether the guard is loaded, so a failed start never removes the plist of a
     guard that's still running."""
     path = plist()
+    changes: List[Tuple[str, Path, str, bool]] = []
     if not hookset.guard_wanted(resolved):
         if owned:
-            return [("guard", path, "stops the agent memory guard and removes its plist: its hook isn't selected",
-                     False)], False
-        return [], False
-    changes: List[Tuple[str, Path, str, bool]] = []
+            changes.append(("guard", path, "stops the agent memory guard and removes its plist: its hook isn't selected",
+                            False))
+        # Only the darwin profile ever gets the block; another host may share a synced .zshenv.
+        env = _read(zshenv()) if hookset.host_profile() == "darwin" else None
+        if env is not None and LIMIT_LINES in env:
+            writes[zshenv()] = env.replace(LIMIT_LINES, "")
+            changes.append(("shell-limit", zshenv(), "removes the agent-shell process limit: its hook isn't selected",
+                            False))
+        return changes, False
     text = plist_text(resolved)
     current = _read(path)
     if current != text:
