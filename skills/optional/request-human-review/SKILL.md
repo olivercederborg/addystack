@@ -128,9 +128,9 @@ review request. It reads `.github/REVIEWERS` at the PR's base: each decision's d
 the one its code is in, or the PR's main change's when its file is in no domain, such as an
 ADR. For the domain with the most decisions, then each domain the people picked so far
 aren't P1 or P2 of, it asks whoever scores highest among everyone the file names but the
-author and anyone already asked: the domain's P1, P2 or P3 points from the settings above REVIEWERS' first domain,
-less their open review asks and their share of recent reviews, as `scripts/standing.py`
-counts them (`scripts/reviewers.py` names the settings). A domain with nobody listed gives
+author and anyone already asked: the domain's P1, P2 or P3 points from the settings above
+REVIEWERS' first domain, less their open review asks and their share of recent reviews, as
+`scripts/standing.py` counts them (`scripts/reviewers.py` names the settings). A domain with nobody listed gives
 nobody points, and someone already requested, who has reviewed this head, or who is picked for another
 domain covers it. Someone already requested, or whose review of this head stands, covers the domains
 they're P1 or P2 of, and whomever its own earlier handoff picked for a domain keeps it while
