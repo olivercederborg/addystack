@@ -160,8 +160,12 @@ for sess in sorted(files):
                   "|---|---|---|---|---|---|", *rows,
                   # tracked PRs on an open row: the coordinator unwatches a finished PR on its first wake
                   f"| prs | — | {' · '.join(refs) or '—'} | waiting | — | — |", "",
-                  "## Listening", "", "- Heartbeat: tick", "- Watches: none", ""]
-            result = project.tick(md, state, g, show=lambda i: show.get(i), view=lambda ref: view(ref, g))
+                  "## Listening", "", "- Heartbeat: tick", ""]
+            # The recordings hold no T3 watch state, so every tracked PR counts as watched: the
+            # replay measures the tick's other wakes, and never reads this machine's T3 database.
+            watched = {ref.split(" ")[0].lower() for ref in refs}
+            result = project.tick(md, state, g, show=lambda i: show.get(i), view=lambda ref: view(ref, g),
+                                  watching=lambda _: watched)
             if result is None:
                 continue
             due, state = result
