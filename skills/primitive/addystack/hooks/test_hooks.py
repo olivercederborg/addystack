@@ -2608,20 +2608,26 @@ class MergeGate(unittest.TestCase):
                                                       "toolUseID": "c1"}}
         self.assertIsNone(reason((self.card(merge), self.WAKE, claude_wrote("Reading the result."), stop, go_on,
                                   notice, quiet(merge), "a")), "a continued Stop")
-        # Blast radius of #156 (R206, risk 1): a Codex rollout has no Stop record, but a final_answer
-        # ends its turn, so a visible blockless one ends the walk; commentary is mid-turn.
+        # Blast radius of #156 (R206, risk 1): a Codex rollout has no Stop record, but its task_complete and
+        # turn_aborted end a turn, so a visible blockless reply before one ends the walk; commentary a prompt
+        # lands after is mid-turn.
         cx = lambda entry: codex_wrote(entry["message"]["content"][0]["text"])
         card_cx, quiet_cx = cx(self.card(merge)), cx(quiet(merge))
         noted = codex_wrote("<!-- note -->\n" + quiet_cx["payload"]["content"][0]["text"])
         decision = "Updated decision:\n\n- a -> keep #12 open"
         for name, said, go in [
-                ("a wake, then quiet", (card_cx, codex_said(self.WAKE), quiet_cx, codex_said("a")), True),
-                ("commentary mid-turn", (card_cx, codex_said(self.WAKE), codex_wrote("Reading it.", phase="commentary"),
-                                         codex_said(notice), quiet_cx, codex_said("a")), True),
-                ("a blockless final answer", (card_cx, codex_said(self.WAKE), codex_wrote(decision),
-                                              codex_said(notice), quiet_cx, codex_said("a")), False),
-                ("a blockless final answer, then a noted quiet", (card_cx, codex_said(self.WAKE), codex_wrote(decision),
-                                                                  codex_said(notice), noted, codex_said("a")), False)]:
+                ("a wake, then quiet", (card_cx, CODEX_DONE, codex_said(self.WAKE), quiet_cx, codex_said("a")), True),
+                ("commentary mid-turn", (card_cx, CODEX_DONE, codex_said(self.WAKE),
+                                         codex_wrote("Reading it.", phase="commentary"), codex_said(notice), quiet_cx,
+                                         codex_said("a")), True),
+                ("a blockless final answer", (card_cx, CODEX_DONE, codex_said(self.WAKE), codex_wrote(decision),
+                                              CODEX_DONE, codex_said(notice), quiet_cx, codex_said("a")), False),
+                ("a blockless final answer, then a noted quiet", (
+                    card_cx, CODEX_DONE, codex_said(self.WAKE), codex_wrote(decision), CODEX_DONE, codex_said(notice),
+                    noted, codex_said("a")), False),
+                ("an interrupted turn", (card_cx, CODEX_DONE, codex_said(self.WAKE),
+                                         codex_wrote(decision, phase="commentary"), CODEX_ABORTED, codex_said(notice),
+                                         quiet_cx, codex_said("a")), False)]:
             with self.subTest(codex=name):
                 self.assertEqual(reason(said) is None, go, reason(said))
         interrupt = {"type": "user", "message": {"role": "user", "content": [
@@ -6418,6 +6424,8 @@ def t3_state(folder, sent, native_id):
 
 
 ENDED = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "ended"}  # a Stop that ended a turn
+CODEX_DONE = {"type": "event_msg", "payload": {"type": "task_complete"}}  # how Codex ends a turn
+CODEX_ABORTED = {"type": "event_msg", "payload": {"type": "turn_aborted"}}  # and how it records an interrupt
 
 
 def claude_said(text):
@@ -6451,9 +6459,10 @@ class Exchanges(unittest.TestCase):
                  claude_wrote("again"), {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s2"},
                  {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop",
                                                        "toolUseID": "s2"}},
-                 claude_said("[Request interrupted by user]"), codex_wrote("Done."), codex_wrote("so", phase="commentary")]
+                 claude_said("[Request interrupted by user]"), codex_wrote("Done."), CODEX_DONE, CODEX_ABORTED]
         self.assertEqual(transcripts.stops(iter(found)), transcripts.stops(found))
-        self.assertEqual(transcripts.stops(found), {1: "ended", 3: "continued", 5: "interrupted", 6: "ended"})
+        self.assertEqual(transcripts.stops(found), {1: "ended", 3: "continued", 5: "interrupted", 7: "ended",
+                                                    8: "interrupted"})
     RESULT = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
 
     def read(self, *lines, strict=False, name="transcript"):
@@ -6481,9 +6490,13 @@ class Exchanges(unittest.TestCase):
                           {"type": "response_item", "payload": {"type": "function_call_output", "output": "ok"}},
                           codex_wrote(self.FINAL),
                           {"type": "event_msg", "payload": {"type": "agent_message", "message": "ignored"}},
-                          codex_said("a"))
+                          CODEX_DONE, codex_said("a"))
         self.assertEqual(found, [transcripts.Exchange(None, "fix the header"),
-                                 transcripts.Exchange(self.FINAL, "a", ended=True)], "a final_answer ends its turn")
+                                 transcripts.Exchange(self.FINAL, "a", ended=True)], "task_complete ends its turn")
+        # Verify-work of #156 after R206: a Codex Stop hook can continue a turn past its final_answer.
+        continued = self.read(codex_said("fix the header"), codex_wrote(self.FINAL),
+                              codex_said('<hook_prompt hook_run_id="stop:1">check the card</hook_prompt>'))
+        self.assertFalse(continued[-1].ended)
 
     def test_a_turn_without_text_gives_no_reply(self):
         # Interrupted before any text, and its interrupt marker is a prompt the user didn't type.

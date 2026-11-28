@@ -162,6 +162,8 @@ def reply_text(entry):
     return text if text.strip() else None
 
 
+# How a Codex rollout records a turn's end.
+CODEX_ENDS = {"task_complete": "ended", "turn_aborted": "interrupted"}
 # What Claude Code records for a Stop a hook continued: a `decision: block` and additionalContext.
 # A hook's non-blocking error (hook_non_blocking_error) lands in the same summary's hookErrors
 # but ends the turn as any Stop does.
@@ -198,9 +200,10 @@ def said(parts):
 def stops(found):
     """Each turn boundary in found, a transcript's entries, by position: "continued" at a
     Stop's stop_hook_summary record when a hook continued the turn there (a CONTINUED record
-    for that Stop's toolUseID), "ended" at one that ended the turn and at a Codex reply whose
-    phase is final_answer, which Codex writes only to end a turn, and "interrupted" at the
-    record of a turn the user interrupted, which ends it without a Stop. found may be any
+    for that Stop's toolUseID), "ended" at one that ended the turn and at Codex's
+    `task_complete` event, and "interrupted" at the record of a turn the user interrupted,
+    which ends it without a Stop, and at Codex's `turn_aborted`. A Codex `final_answer` isn't
+    one: a Stop hook can continue the turn past it. found may be any
     iterable, read once, so a caller can stream a long transcript through it."""
     continued, summaries, out = set(), {}, {}
     for at, entry in enumerate(found):
@@ -208,9 +211,9 @@ def stops(found):
             continued.add(part.get("toolUseID"))
         if isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "stop_hook_summary":
             summaries[at] = entry.get("toolUseID")
-        elif isinstance(entry, dict) and entry.get("type") == "response_item" and isinstance(
-                payload := entry.get("payload"), dict) and payload.get("phase") == "final_answer" and reply_text(entry):
-            out[at] = "ended"
+        elif isinstance(entry, dict) and entry.get("type") == "event_msg" and isinstance(
+                payload := entry.get("payload"), dict) and payload.get("type") in CODEX_ENDS:
+            out[at] = CODEX_ENDS[payload["type"]]
         elif any(text.startswith(INTERRUPTED) for text in said(text_parts(entry) or [])):
             out[at] = "interrupted"
     return {**out, **{at: "continued" if tool in continued else "ended" for at, tool in summaries.items()}}
@@ -259,7 +262,7 @@ class Exchange(NamedTuple):
     reply: Optional[str]  # the last assistant text since the prompt before; None if there's none
     prompt: str  # as prompts() gives it
     agent: bool = False  # T3's state database says only other agents ever sent its text
-    ended: bool = False  # a Stop record follows the reply, so the user saw it as its turn's last
+    ended: bool = False  # a turn's end (stops) follows the reply, so the user saw it as its turn's last
 
 
 def exchanges(path, strict=False):
@@ -293,7 +296,7 @@ def exchanges(path, strict=False):
                 text = prompt_text(entry)
                 if text is None:
                     said = reply_text(entry)
-                    reply, command, ended = (said, False, ends.get(at) == "ended") if said else (
+                    reply, command, ended = (said, False, False) if said else (
                         reply, command, ended or ends.get(at) in ("ended", "interrupted"))
                     continue
                 ended = ended or ends.get(at) in ("ended", "interrupted")
