@@ -2724,9 +2724,10 @@ class MergeGate(unittest.TestCase):
         resolved_state(self.env["ADDYSTACK_STATE"], '{"policy": {"defaults": {"review": {"app": "acme-reviewer"}}}}')
         self.verify(12)
 
-        def reviews(*nodes):
+        def reviews(*nodes, pending=0):
             self.scenario()
             data = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+            data["repository"]["p12"]["reviewRequests"] = {"totalCount": pending}
             data["repository"]["p12"]["latestOpinionatedReviews"] = {"nodes": [
                 {"state": state, "author": {"__typename": kind, "login": login}, "commit": {"oid": oid or self.pr(12)}}
                 for state, kind, login, oid in nodes]}
@@ -2743,6 +2744,9 @@ class MergeGate(unittest.TestCase):
                 self.assertIn(stale, self.reason("gh pr merge 12"))
         reviews(("APPROVED", "User", "sam", None), ("CHANGES_REQUESTED", "Bot", "acme-reviewer", self.main))
         self.assertIn("#12 has a request for changes", self.reason("gh pr merge 12"))
+        # A handoff that requested two people: one approval leaves the other's request pending.
+        reviews(("APPROVED", "User", "sam", None), pending=1)
+        self.assertIn("#12 waits on 1 requested review: wait for each", self.reason("gh pr merge 12"))
         # Without a review App the gate reads no reviews, as before.
         resolved_state(self.env["ADDYSTACK_STATE"], "{}")
         reviews()

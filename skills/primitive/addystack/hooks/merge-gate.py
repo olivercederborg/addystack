@@ -13,8 +13,9 @@ command would merge, and deny it unless
   changes: its checks and verdict ran against the older base, GitHub can't require
   up-to-date branches here, and owner threads build and merge PRs in parallel,
 - in a checkout whose policy names a review App (resolved.py), the PR's head is approved
-  by that App or by a person, and neither has an active request for changes: a base that
-  keeps stale approvals would otherwise merge a head the App hasn't reviewed.
+  by that App or by a person, neither has an active request for changes, and no requested
+  review is pending: a base that keeps stale approvals would otherwise merge a head the App
+  hasn't reviewed, or one whose handoff named several people before each reviewed.
 GitHub can't require checks on these private repos on a free plan (branch protection and
 rulesets return HTTP 403), so nothing on GitHub's side stops a red merge. On Oct 11, 2026
 a Strict stack merged 11 minutes after main went red, and a noyer PR merged with no CI,
@@ -161,6 +162,9 @@ def review_reasons(n, pull, app):
     counted = [review for review in pull["latestOpinionatedReviews"]["nodes"] if review["author"]
                and (review["author"]["__typename"] == "User" or review["author"]["login"] == app)]
     reasons = []
+    pending = pull["reviewRequests"]["totalCount"]
+    if pending:
+        reasons.append(f"#{n} waits on {pending} requested review{'s' if pending > 1 else ''}: wait for each")
     if any(review["state"] == "CHANGES_REQUESTED" for review in counted):
         reasons.append(f"#{n} has a request for changes from {app}[bot] or a person: address it and wait for "
                        "their review of the new head")
@@ -287,7 +291,7 @@ try:
                  f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
                    "potentialMergeCommit { oid } stack { number } "
-                   "latestOpinionatedReviews(first: 100) { nodes { state author { __typename login } commit { oid } } } "
+                   "reviewRequests { totalCount } latestOpinionatedReviews(first: 100) { nodes { state author { __typename login } commit { oid } } } "
                    "commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } }"
                    for n in numbers)
     query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
