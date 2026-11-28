@@ -243,7 +243,7 @@ class Plan(unittest.TestCase):
         lonely = self.plan(verdict(decision('D1', 'packages/auth/a.ts:1')), self.facts(author='dave', rules=reviewers.parse(
             '## auth\n/packages/auth/ @dave\n')))
         self.assertEqual((lonely['post'], lonely['why'], lonely['request']), (True, 'nobody to ask', []))
-        self.assertIn("- Nobody to ask: REVIEWERS names no one here but the PR's author", lonely['comment'])
+        self.assertIn("- Nobody to ask for `auth`: REVIEWERS names no one but the PR's author", lonely['comment'])
         self.assertIn('· asking: nobody\n', lonely['comment'])
 
     def test_a_base_without_reviewers_or_a_moved_head_or_base_hands_off_nothing(self):

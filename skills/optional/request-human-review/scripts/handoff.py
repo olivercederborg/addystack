@@ -243,10 +243,11 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
     lines += ['- Away, so not asked: ' + ', '.join(f'`{person["login"]}` ({person["reason"]})'
                                                   for person in block['away'])] if block.get('away') else []
-    if block.get('unfilled') and (block.get('away') or block['engaged'] or block['reviewers']):
+    if block.get('unfilled'):
         names = ', '.join(f'`{name}`' if name else 'no domain' for name in block['unfilled'])
-        lines.append(f'- Nobody to ask for {names}: everyone else REVIEWERS names is away or already asked. '
-                     'Ask someone by hand.')
+        why = 'everyone else REVIEWERS names is away or already asked' if (
+            block.get('away') or block['engaged'] or block['reviewers']) else "REVIEWERS names no one but the PR's author"
+        lines.append(f'- Nobody to ask for {names}: {why}. Ask someone by hand.')
     elif not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
                      "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
