@@ -66,8 +66,8 @@ Listening holds its `Duty <name>` line with a `last` time.
 4. **Check the end**: when this successful probe's window reached the end date, or the
    condition holds, end the duty (below).
 
-A tick with nothing new posts nothing, and its reply is quiet: no headline or status,
-only the queue's top item while it holds one (step 5).
+A tick with nothing new posts nothing, and its reply is quiet: the turn block alone
+(step 5).
 
 **Done when:** the line's `last` time is the successful probe's window end, and every
 new finding is in `duties/<name>.md` and is a Workers row, a Follow-up, or a queued card.

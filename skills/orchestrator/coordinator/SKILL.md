@@ -90,8 +90,8 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
 - **Slots**: at most two workers or subthreads on this machine (one on a smaller one) build
   or run heavy checks at once, whatever their unit. A worker holds a slot while its task
   runs, including while it waits on a pending question; one whose task ended holds none,
-  though it waits on a review, CI, or a call. Every later task you send a worker (an
-  answer, a babysit pass, a retry, more work) goes into a free slot ahead of queued
+  though it waits on a review, CI, or a call. Every later task you send a worker goes
+  into a free slot ahead of queued
   units, since it finishes an open PR. A task that only reads, reviews code, or drives
   an app without building takes none, and starts once Parallel by default lets it.
   Queue the rest; a freed slot starts `queue show`'s units, then the oldest.
@@ -105,8 +105,8 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
 - **Startup**: within about two minutes of each `delegate_task`, confirm the worker
   started with a status read of its thread (`t3_thread_read`, with its `environmentId`
   on another machine): `running`, `waiting`, or `completed` is started; `failed`,
-  `cancelled`, `interrupted`, or `rolled_back` a startup error; any other, such as
-  `queued` or `starting`, not yet. Nothing wakes you for a start, so
+  `cancelled`, `interrupted`, or `rolled_back` a startup error; any other is
+  not yet. Nothing wakes you for a start, so
   after a launch keep a bound `schedule_task` with `{type: "interval", everyMs:
   120000}`, its id under Listening as `Startup`, until every new launch has a startup
   state; then delete it and set that line to none. Record its status or startup error in
@@ -176,20 +176,21 @@ the standing rules, or running something settles it: a probe subthread runs it, 
 answer from its report. Record it under Decisions and **send the answer**: a pending
 question gets `t3_pending_request` `respond`; a card gets `t3_thread_send` once step
 3 lets its task start, and until then the worker stays `waiting`, with Waits on naming
-the slot or resource. Once it's sent, set the worker back to `running` with Waits on
-cleared. A real call is one of the stops in the user's instructions, or a product call
-no probe settles; only those reach the user.
+the slot or resource. Once sent, set the worker `running`, Waits on cleared. A real
+call is one of the stops in the user's instructions, or a product call no probe
+settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>" --from
 "<worker> <thread link>"`, and `--batch <kind>` (`post`, `merge:<stack>`, `follow-ups`)
-for a call with no ⚠️ row that a [batch card](references/views.md#batch-card) can share.
-It orders what waited a day under the priority, its items, then stuck runs, calls, and
-Do items, oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
-included, ends on the top item and its batch: the
+for a call with no ⚠️ row a [batch card](references/views.md#batch-card) can share. It
+orders what waited a day under the priority, its items, then stuck runs, calls, and Do
+items, oldest first. While it holds one, a reply with text ends on the top item and its batch: the
 [decision card](references/views.md#decision-card-example) the first time, then its
-question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-keep the v1 export · export-v2`, and the needs that lead the turn block's.
+question, strip, and Next. `queue show` prints the strip and the needs that lead the
+turn block's. A wake that changes nothing the user must do or know is quiet, its turn
+block alone: the card on screen's, or `running` on an empty queue. A ⏳ line is for a
+finish, a failure, or an eta off by half.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"` per

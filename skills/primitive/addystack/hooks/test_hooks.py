@@ -2518,21 +2518,8 @@ class MergeGate(unittest.TestCase):
         self.assertIn("can't be sure your reply's turn block was hidden", self.reason("gh pr merge 12", said=(hidden, "a")))
 
     def t3_sent(self, folder, sent, native_id=ReplyShapeContext.SESSION):
-        """A T3 state database whose one thread owns native_id and holds sent, (text, creator)
-        pairs oldest first, as its user-role messages."""
-        path = self.env["T3_STATE_DB"] = os.path.join(folder, "statev2.sqlite")
-        with contextlib.closing(sqlite3.connect(path)) as db:
-            db.execute("create table orchestration_v2_projection_provider_threads "
-                       "(thread_id text, provider_thread_id text, payload_json text)")
-            db.execute("create table orchestration_v2_projection_messages "
-                       "(thread_id text, role text, created_at text, payload_json text, run_id text)")
-            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
-            db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
-                       ("thread:main", "p1", json.dumps({"nativeThreadRef": {"nativeId": native_id}})))
-            db.executemany("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)", [
-                ("thread:main", "user", str(at), json.dumps({"text": text.strip(), "createdBy": creator}), None)
-                for at, (text, creator) in enumerate(sent)])
-            db.commit()
+        """T3's state database for sent, as t3_state writes it, set as this test's."""
+        self.env["T3_STATE_DB"] = t3_state(folder, sent, native_id)
 
     def test_a_pick_answers_the_card_before_a_wake_in_the_same_turn(self):
         # skills#269: a worker's result, offering its own "a" = "merge #13", landed 2 s before
@@ -2582,6 +2569,89 @@ class MergeGate(unittest.TestCase):
                       reason("gh pr merge 12", (self.card(merge), "c")))
         self.assertIn("picks nothing: the gate can't be sure your reply's turn block was hidden",
                       reason("gh pr merge 12", (self.card(merge, "<title>\n\n"), "a")))
+
+    def test_a_pick_after_quiet_wakes_answers_the_card_on_screen(self):
+        # R204: a wake that changes nothing for the user is its turn block alone, so their key
+        # answers the card above it, back past messages T3 says an agent sent, and only while
+        # each quiet block offers that card's options (Codex review of r204/quiet, round 1).
+        merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]
+        quiet = lambda options: claude_wrote(block({"state": "stop", "needs": [{"id": 1, "kind": "review",
+                                                                               "name": "merge #12"}],
+                                                     "options": options, "project": "suite-audit"}))
+        notice = self.WAKE.replace("r39", "r40")
+        folder = tempfile.mkdtemp(dir=self.dir)
+        self.t3_sent(folder, [(self.WAKE, "agent"), (notice, "agent"), ("hold on", "user"),
+                              ("Caveat: don't merge yet", "user"), ("fix it", "user"), ("a", "user"), ("Option A", "user")])
+        reason = lambda said: self.reason("gh pr merge 12", said=said, session_id=ReplyShapeContext.SESSION)
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for name, said in {"one wake": (self.card(merge), self.WAKE, quiet(merge), "a"),
+                           "two wakes": (self.card(merge), self.WAKE, quiet(merge), notice, quiet(merge), "a"),
+                           # #144's "Option A" is a key, so it answers the card on screen past a quiet wake too.
+                           "Option A after a wake": (self.card(merge), self.WAKE, quiet(merge), "Option A"),
+                           "a notice mid-wake": (self.card(merge), self.WAKE, claude_wrote("Reading the result."),
+                                                 notice, quiet(merge), "a"),
+                           "a mid-wake line naming the marker": (self.card(merge), self.WAKE,
+                                                                 claude_wrote("Checking the `<!-- turn` marker."),
+                                                                 notice, quiet(merge), "a")}.items():
+            with self.subTest(case=name):
+                self.assertIsNone(reason(said))
+        other = [{"key": "a", "class": "stop:merge", "text": "merge #12 and #13"}]
+        # Codex review of r204/quiet, round 3: text shaped like a definition or a comment that T3 shows
+        # isn't quiet, so a key reads it as the card it is, not as the card above it.
+        for shown in ("<!-- note -->\n[a]: keep #12 open\n\n", "<!-->a: keep #12 open -->\n\n"):
+            with self.subTest(case=shown):
+                hidden = claude_wrote(shown + quiet(merge)["message"]["content"][0]["text"])
+                self.assertIsNotNone(reason((self.card(merge), self.WAKE, hidden, "a")))
+        # Codex review of r204/quiet, round 3: a Stop a hook continued ends no turn, and an interrupted
+        # turn's last line is one the user read.
+        stop = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "c1"}
+        go_on = {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop",
+                                                      "toolUseID": "c1"}}
+        self.assertIsNone(reason((self.card(merge), self.WAKE, claude_wrote("Reading the result."), stop, go_on,
+                                  notice, quiet(merge), "a")), "a continued Stop")
+        # Blast radius of #156 (R206, risk 1): a Codex rollout has no Stop record, but its task_complete and
+        # turn_aborted end a turn, so a visible blockless reply before one ends the walk; commentary a prompt
+        # lands after is mid-turn.
+        cx = lambda entry: codex_wrote(entry["message"]["content"][0]["text"])
+        card_cx, quiet_cx = cx(self.card(merge)), cx(quiet(merge))
+        noted = codex_wrote("<!-- note -->\n" + quiet_cx["payload"]["content"][0]["text"])
+        decision = "Updated decision:\n\n- a -> keep #12 open"
+        for name, said, go in [
+                ("a wake, then quiet", (card_cx, CODEX_DONE, codex_said(self.WAKE), quiet_cx, codex_said("a")), True),
+                ("commentary mid-turn", (card_cx, CODEX_DONE, codex_said(self.WAKE),
+                                         codex_wrote("Reading it.", phase="commentary"), codex_said(notice), quiet_cx,
+                                         codex_said("a")), True),
+                ("a blockless final answer", (card_cx, CODEX_DONE, codex_said(self.WAKE), codex_wrote(decision),
+                                              CODEX_DONE, codex_said(notice), quiet_cx, codex_said("a")), False),
+                ("a blockless final answer, then a noted quiet", (
+                    card_cx, CODEX_DONE, codex_said(self.WAKE), codex_wrote(decision), CODEX_DONE, codex_said(notice),
+                    noted, codex_said("a")), False),
+                ("an interrupted turn", (card_cx, CODEX_DONE, codex_said(self.WAKE),
+                                         codex_wrote(decision, phase="commentary"), CODEX_ABORTED, codex_said(notice),
+                                         quiet_cx, codex_said("a")), False)]:
+            with self.subTest(codex=name):
+                self.assertEqual(reason(said) is None, go, reason(said))
+        interrupt = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "[Request interrupted by user for tool use]"}]}}
+        self.assertIsNotNone(reason((self.card(merge), self.WAKE, claude_wrote("Updated decision:\n\n- a → keep #12 open"),
+                                     interrupt, notice, quiet(merge), "a")), "an interrupted turn")
+        for name, said in {"options the card doesn't show": (self.card(merge), self.WAKE, quiet(other), "a"),
+                           "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
+                           "a typed message that reads as untyped": (self.card(merge), "Caveat: don't merge yet",
+                                                                     quiet(merge), "a"),
+                           "no card above it": ("fix it", quiet(merge), "a"),
+                           # Codex review of r204/quiet, round 2: the user read the turn that ended on it.
+                           "a turn that ended on a reply with no block": (
+                               self.card(merge), self.WAKE, claude_wrote("Updated decision:\n\n- a → keep #12 open"),
+                               ENDED, notice, quiet(merge), "a"),
+                           "unseen text before a block": (self.card(merge), self.WAKE, claude_wrote(
+                               "[silent]: #\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "review",
+                                                                                     "name": "merge #12"}],
+                                                          "options": other})), "a")}.items():
+            with self.subTest(case=name):
+                self.assertIn("picks nothing: no reply of yours came before it, or one with only its turn block "
+                              "offered options the card above it doesn't", reason(said))
 
     def test_an_agents_pick_after_a_wake_never_counts(self):
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]
@@ -5346,6 +5416,53 @@ class CardCheck(unittest.TestCase):
         self.assertIn(f'option a, "{text}", is stop:push', json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
 
+class CardCheckQuiet(unittest.TestCase):
+    """card-check.py on a quiet wake's reply, its turn block alone, against the card on screen."""
+    CARD = {"state": "stop", "needs": [{"id": 4, "kind": "review", "name": "post the reply to Ana on #41"}],
+            "options": [{"key": "a", "class": "stop:post", "text": "post the reply"},
+                        {"key": "b", "class": "decision", "text": "no: hold it"}]}
+    WAKE = "Update on pull request #41: checks passed"
+    SESSION = "6b1d2f40-8e3a-4c5b-9d7e-1f2a3b4c5d6e"
+
+    def run_hook(self, reply, *earlier):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / f"{self.SESSION}.jsonl"
+        path.write_text("".join(json.dumps(entry) + "\n" for entry in [*earlier, claude_wrote(reply)]))
+        db = t3_state(folder.name, [(self.WAKE, "agent")] * 2 + [("status?", "user")], self.SESSION)
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "transcript_path": str(path)}),
+            env={**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db}).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    def test_a_quiet_card_must_be_the_card_on_screen(self):
+        card = claude_wrote("🟡 **Post the reply to Ana on #41?**\n\n" + block(self.CARD))
+        progress = claude_wrote("Reading the worker's result.")  # a mid-turn line has no block
+        wake = claude_said(self.WAKE)
+        self.assertIsNone(self.run_hook(block(self.CARD), card, wake, progress))
+        self.assertIsNone(self.run_hook(block(self.CARD), card, wake, claude_wrote(block(self.CARD)), wake))
+        other = {**self.CARD, "options": [{"key": "a", "class": "stop:post", "text": "post the reply and approve #41"}]}
+        moved = {**self.CARD, "needs": [{"id": 5, "kind": "review", "name": "approve #41"}]}
+        typed = claude_said("status?")
+        # Verify-work of r204/quiet: card-check passed these two while the gates read a key on them as picking
+        # nothing, so both now read the card through user_turn.answered.
+        for name, reply, earlier in [("other options", block(other), (card, wake)),
+                                     ("another need", block(moved), (card, wake)),
+                                     ("no card above it", block(self.CARD), (wake,)),
+                                     ("a reply to a typed message", block(self.CARD), (card, typed)),
+                                     ("a reply with no block after a typed message", block(self.CARD),
+                                      (card, typed, claude_wrote("Working on it."), wake)),
+                                     # Codex review of r204/quiet, round 2: a turn that ended on a line with
+                                     # no block showed the user other options, and unseen text hid a block.
+                                     ("a turn that ended on a reply with no block", block(self.CARD),
+                                      (card, wake, claude_wrote("Updated decision:\n\n- a → keep #41 open"), ENDED,
+                                       wake)),
+                                     ("unseen text before the block", "[silent]: #\n\n" + block(other), (card, wake))]:
+            with self.subTest(name):
+                self.assertIn("this reply is its turn block alone", self.run_hook(reply, *earlier).lower())
+        self.assertIsNone(self.run_hook("🟡 **Post it?**\n\n" + block(other), card, wake), "a card with text is new")
+
+
 class CardCheckWakes(unittest.TestCase):
     """card-check.py on a `running` reply, against T3's record of what will wake its thread."""
     THREAD = "thread-coordinator"
@@ -5461,6 +5578,27 @@ class CardCheckWakes(unittest.TestCase):
 
     WATCHED = ("dynamic_tool", "completed", "completed", {"repository": "o/r", "number": 6153},
                "mcp__t3-code__watch_pull_request", {"content": "{\"wasWatching\": false}"})
+
+    def test_a_quiet_running_reply_counts_every_watch_t3_ended(self):
+        # R204: a quiet reply names no PR, so every open PR whose watch T3 ended counts.
+        db = self.db(links=[{**self.WATCH, "watch": None, "snapshot": {"state": "open"}}], items=[self.WATCHED],
+                     tasks=[{"taskId": "b1", "kind": "command"}])
+        folder = pathlib.Path(tempfile.mkdtemp(dir=self.dir))
+        path = folder / "s.jsonl"
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
+               "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
+        # Codex review of r204/quiet, round 2: text that renders nothing kept a reply from reading as quiet.
+        for unseen in ("", "[silent]: #\n\n", "\n\ufeff\n", "<!-- note -->\n", '[a]: <https://x.y> "T"\n\n'):
+            quiet = unseen + block({"state": "running", "elapsed": "4 min"})
+            path.write_text("".join(json.dumps(entry) + "\n" for entry in [
+                claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),
+                claude_said("Update on pull request #6153: a check passed"), claude_wrote(quiet)]))
+            out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
+                                 input=json.dumps({"hook_event_name": "Stop", "last_assistant_message": quiet,
+                                                   "transcript_path": str(path)})).stdout
+            with self.subTest(unseen=unseen):
+                self.assertIn("names #6153, which this thread watched and never unwatched",
+                              json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_sends_back_a_named_pr_whose_watch_t3_ended(self):
         # Nov 26, 2026, 12:27: "#6153's browser tests are re-running", while #6253's later watch still ran.
@@ -6268,6 +6406,30 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
         self.assertIsNone(turn_block.HTML_START.match("> <sub>`AGENT` Claude · on behalf of **the user**</sub><br>"))
 
 
+def t3_state(folder, sent, native_id):
+    """A T3 state database in folder whose one thread owns native_id and holds sent, (text,
+    creator) pairs oldest first, as its user-role messages; its path."""
+    path = os.path.join(folder, "statev2.sqlite")
+    with contextlib.closing(sqlite3.connect(path)) as db:
+        db.execute("create table orchestration_v2_projection_provider_threads "
+                   "(thread_id text, provider_thread_id text, payload_json text)")
+        db.execute("create table orchestration_v2_projection_messages "
+                   "(thread_id text, role text, created_at text, payload_json text, run_id text)")
+        db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+        db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
+                   ("thread:main", "p1", json.dumps({"nativeThreadRef": {"nativeId": native_id}})))
+        db.executemany("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)", [
+            ("thread:main", "user", str(at), json.dumps({"text": text.strip(), "createdBy": creator}), None)
+            for at, (text, creator) in enumerate(sent)])
+        db.commit()
+    return path
+
+
+ENDED = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "ended"}  # a Stop that ended a turn
+CODEX_DONE = {"type": "event_msg", "payload": {"type": "task_complete"}}  # how Codex ends a turn
+CODEX_ABORTED = {"type": "event_msg", "payload": {"type": "turn_aborted"}}  # and how it records an interrupt
+
+
 def claude_said(text):
     return {"type": "user", "message": {"content": text}}
 
@@ -6291,6 +6453,18 @@ class Exchanges(unittest.TestCase):
     FINAL = "Fixed.\n\n" + block({"state": "stop", "needs": [], "options": [
         {"key": "a", "class": "routine", "text": "run verify-work on #87"}]})
     TOOL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]}}
+
+    def test_stops_reads_a_stream_once_as_it_reads_a_list(self):
+        # Blast radius of #156 (R206, risk 3): exchanges held a 471 MB transcript's entries to find its
+        # turn ends (709 MB peak), so it streams the transcript through stops instead.
+        found = [claude_wrote(self.FINAL), {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s1"},
+                 claude_wrote("again"), {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s2"},
+                 {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop",
+                                                       "toolUseID": "s2"}},
+                 claude_said("[Request interrupted by user]"), codex_wrote("Done."), CODEX_DONE, CODEX_ABORTED]
+        self.assertEqual(transcripts.stops(iter(found)), transcripts.stops(found))
+        self.assertEqual(transcripts.stops(found), {1: "ended", 3: "continued", 5: "interrupted", 7: "ended",
+                                                    8: "interrupted"})
     RESULT = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
 
     def read(self, *lines, strict=False, name="transcript"):
@@ -6318,14 +6492,19 @@ class Exchanges(unittest.TestCase):
                           {"type": "response_item", "payload": {"type": "function_call_output", "output": "ok"}},
                           codex_wrote(self.FINAL),
                           {"type": "event_msg", "payload": {"type": "agent_message", "message": "ignored"}},
-                          codex_said("a"))
-        self.assertEqual(found, [transcripts.Exchange(None, "fix the header"), transcripts.Exchange(self.FINAL, "a")])
+                          CODEX_DONE, codex_said("a"))
+        self.assertEqual(found, [transcripts.Exchange(None, "fix the header"),
+                                 transcripts.Exchange(self.FINAL, "a", ended=True)], "task_complete ends its turn")
+        # Verify-work of #156 after R206: a Codex Stop hook can continue a turn past its final_answer.
+        continued = self.read(codex_said("fix the header"), codex_wrote(self.FINAL),
+                              codex_said('<hook_prompt hook_run_id="stop:1">check the card</hook_prompt>'))
+        self.assertFalse(continued[-1].ended)
 
     def test_a_turn_without_text_gives_no_reply(self):
         # Interrupted before any text, and its interrupt marker is a prompt the user didn't type.
         self.assertEqual(self.read(claude_wrote(self.FINAL), claude_said("fix the header"), self.TOOL,
                                    claude_said("[Request interrupted by user]"), claude_said("a")),
-                         [transcripts.Exchange(self.FINAL, "fix the header"), transcripts.Exchange(None, ""),
+                         [transcripts.Exchange(self.FINAL, "fix the header"), transcripts.Exchange(None, "", ended=True),
                           transcripts.Exchange(None, "a")])
         self.assertEqual(self.read(claude_wrote("  \n"), claude_wrote({"type": "text", "text": 1}), claude_said("a")),
                          [transcripts.Exchange(None, "a")])

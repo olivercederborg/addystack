@@ -53,11 +53,29 @@ def answered(found):
     """The reply the latest prompt answers: the last one before it, past messages T3 says
     another agent sent (Exchange.agent) that landed in the same turn, such as a worker's
     result that arrived as the user typed. Those messages' own turn blocks never count. Any
-    other message in between that got no reply, typed or not, gives None."""
+    other message in between that got no reply, typed or not, gives None. A quiet wake's
+    reply, its turn block alone (turn_block.quiet), shows the user nothing, so the reply is
+    the card on screen above it: back past messages T3 says another agent sent, and the
+    replies to them that show no card (shows_none), and only while each quiet block offers
+    that card's options, so a key never picks an option they didn't see. A message the user
+    typed, even one that reads as untyped, ends the walk."""
     at = len(found) - 1
     while found[at].reply is None and at and found[at - 1].agent:
         at -= 1
-    return found[at].reply
+    reply, quiet = found[at].reply, []
+    while turn_block.quiet(reply) or quiet and shows_none(found[at]):
+        if not (at and found[at - 1].agent):
+            return None  # the user typed what this reply answers, or nothing is above it
+        quiet += [reply] if turn_block.quiet(reply) else []
+        at -= 1
+        reply = found[at].reply
+    if not quiet:
+        return reply
+    try:
+        card = turn_block.options(reply)
+        return reply if all(turn_block.options(q) == card for q in quiet) else None
+    except turn_block.Malformed:
+        return None
 
 
 def said(prompt):
@@ -67,10 +85,21 @@ def said(prompt):
     return f'the user\'s "{shown if len(shown) <= 80 else shown[:79] + "…"}"'
 
 
+def shows_none(exchange):
+    """Whether an exchange's reply shows no card: none, a quiet one, or a line with no turn
+    block that a prompt landed after mid-turn. A reply with no block that ended its turn is
+    one the user read, which may offer its own options, so it shows one."""
+    reply = exchange.reply
+    if reply is None or turn_block.quiet(reply):
+        return True
+    return not exchange.ended and not turn_block.block_starts(turn_block.lines_ended(reply))
+
+
 def letter_miss(reply, key):
     """Why the key picks no option of the reply."""
     if reply is None:
-        return "no reply of yours came before it"
+        return ("no reply of yours came before it, or one with only its turn block offered options the card "
+                "above it doesn't")
     try:
         offered = turn_block.options(reply)
     except turn_block.Malformed as error:

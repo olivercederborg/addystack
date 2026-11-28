@@ -161,6 +161,8 @@ def reply_text(entry):
     return text if text.strip() else None
 
 
+# How a Codex rollout records a turn's end.
+CODEX_ENDS = {"task_complete": "ended", "turn_aborted": "interrupted"}
 # What Claude Code records for a Stop a hook continued: a `decision: block` and additionalContext.
 # A hook's non-blocking error (hook_non_blocking_error) lands in the same summary's hookErrors
 # but ends the turn as any Stop does.
@@ -197,17 +199,23 @@ def said(parts):
 def stops(found):
     """Each turn boundary in found, a transcript's entries, by position: "continued" at a
     Stop's stop_hook_summary record when a hook continued the turn there (a CONTINUED record
-    for that Stop's toolUseID), "ended" at one that ended the turn, and "interrupted" at the
-    record of a turn the user interrupted, which ends it without a Stop."""
-    continued = {part.get("toolUseID") for entry in found if isinstance(entry, dict)
-                 and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED}
-    out = {}
+    for that Stop's toolUseID), "ended" at one that ended the turn and at Codex's
+    `task_complete` event, and "interrupted" at the record of a turn the user interrupted,
+    which ends it without a Stop, and at Codex's `turn_aborted`. A Codex `final_answer` isn't
+    one: a Stop hook can continue the turn past it. found may be any
+    iterable, read once, so a caller can stream a long transcript through it."""
+    continued, summaries, out = set(), {}, {}
     for at, entry in enumerate(found):
+        if isinstance(entry, dict) and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED:
+            continued.add(part.get("toolUseID"))
         if isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "stop_hook_summary":
-            out[at] = "continued" if entry.get("toolUseID") in continued else "ended"
+            summaries[at] = entry.get("toolUseID")
+        elif isinstance(entry, dict) and entry.get("type") == "event_msg" and isinstance(
+                payload := entry.get("payload"), dict) and payload.get("type") in CODEX_ENDS:
+            out[at] = CODEX_ENDS[payload["type"]]
         elif any(text.startswith(INTERRUPTED) for text in said(text_parts(entry) or [])):
             out[at] = "interrupted"
-    return out
+    return {**out, **{at: "continued" if tool in continued else "ended" for at, tool in summaries.items()}}
 
 
 def entry_text(entry):
@@ -240,10 +248,20 @@ def agent_sent(senders, seen, text):
     return creators[min(seen[text], len(creators) - 1)] == "agent"
 
 
+def parsed(line):
+    """A transcript line's entry, or None for one it can't parse, which counts as a prompt
+    the user didn't type."""
+    try:
+        return json.loads(line)
+    except (ValueError, RecursionError):  # Python 3.9 recurses on deep nesting
+        return None
+
+
 class Exchange(NamedTuple):
     reply: Optional[str]  # the last assistant text since the prompt before; None if there's none
     prompt: str  # as prompts() gives it
     agent: bool = False  # T3's state database says only other agents ever sent its text
+    ended: bool = False  # a turn's end (stops) follows the reply, so the user saw it as its turn's last
 
 
 def exchanges(path, strict=False):
@@ -261,37 +279,39 @@ def exchanges(path, strict=False):
     are no prompt, so the prompt after them answers the reply before them. An exchange's agent is True only for a prompt whose text T3 says
     only other agents sent, so neither a copy whose sender pairing is in doubt, a typed
     message whose text reads as "", such as one starting "Caveat:", nor one that only
-    looks like a wake is one."""
-    out, seen, reply, command = [], {}, None, False
+    looks like a wake is one. Its ended is True when a turn ended or was interrupted after
+    its reply (stops), so the user read that reply as the turn's, rather than a prompt
+    landing mid-turn; a Stop a hook continued doesn't end one."""
+    out, seen, reply, command, ended = [], {}, None, False, False
     try:
         found = SESSION_ID.search(pathlib.Path(path).stem)
         if strict and not found:
             raise ValueError(f"no session id in {path}")
         senders = t3_child.senders(found.group(0), strict) if found else {}
+        with open(path) as transcript:  # two streamed passes: where turns end, then the exchanges
+            ends = stops(parsed(line) for line in transcript)
         with open(path) as transcript:
-            for line in transcript:
-                try:
-                    entry = json.loads(line)
-                except (ValueError, RecursionError):  # Python 3.9 recurses on deep nesting
-                    entry = None  # a line it can't parse counts as a prompt the user didn't type
+            for at, entry in enumerate(parsed(line) for line in transcript):
                 text = prompt_text(entry)
                 if text is None:
                     said = reply_text(entry)
-                    reply, command = (said, False) if said else (reply, command)
+                    reply, command, ended = (said, False, False) if said else (
+                        reply, command, ended or ends.get(at) in ("ended", "interrupted"))
                     continue
+                ended = ended or ends.get(at) in ("ended", "interrupted")
                 sent = "\n".join(texts(text_parts(entry))).strip()
                 if note := SENDER_NOTE.match(sent):
                     sent = sent[note.end():]
                 # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
                 if command and sent.startswith("<local-command-stdout>"):
-                    reply, command = out.pop().reply, False
+                    (reply, *_, ended), command = out.pop(), False
                     continue
                 command = sent.startswith("<command-name>")
                 sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
                 # Only a text the user never sent is surely another agent's, however T3's copies pair.
                 out.append(Exchange(reply, "" if sent_by_agent else text,
-                                    sent_by_agent and "user" not in senders[sent]))
-                reply = None
+                                    sent_by_agent and "user" not in senders[sent], ended))
+                reply, ended = None, False
     except (OSError, TypeError, UnicodeDecodeError, RecursionError):  # partway too, so an earlier go doesn't stand
         return []
     return out

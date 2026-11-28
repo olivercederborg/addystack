@@ -343,17 +343,43 @@ def before_block(reply):
     return text[:block.start()]
 
 
-def located(reply):
-    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
-    if not isinstance(reply, str):
-        raise Malformed("no turn block at the end of the reply")
-    reply = lines_ended(reply)
+# What surely renders nothing above a block, under CommonMark's rules, and nothing else: a
+# comment alone on its lines (`<!-->` and `<!--->` are text-ending forms, so not those), a
+# link reference definition whose destination and title are well formed, and space, a
+# byte-order mark or a zero-width character. Anything in doubt counts as text.
+UNSEEN = re.compile(r"^ {0,3}<!--(?!-?>)(?:(?!-->).)*-->[ \t]*$"
+                    r"|^ {0,3}\[[^\]\n]+\]:[ \t]*(?:<[^<>\n]*>|[^\s<]\S*)"
+                    r"(?:[ \t]+(?:\"[^\"\n]*\"|'[^'\n]*'|\([^()\n]*\)))?[ \t]*$"
+                    r"|[\u200b-\u200d\u2060" + JS_SPACE + "]", re.S | re.M)
+
+
+def quiet(reply):
+    """Whether the reply is its turn block alone, as a quiet wake's is: the user sees none of
+    it, so the card on screen is still the reply above it. Text that renders nothing, as
+    UNSEEN finds it, counts as none."""
+    try:
+        return not UNSEEN.sub("", before_block(reply))
+    except Malformed:
+        return False
+
+
+def block_starts(reply):
+    """Where turn blocks start in reply, as lines_ended writes it, outside code."""
     starts, offset = [], 0
     lines = reply.split("\n")
     for line, fenced in zip(lines, in_fence(lines)):
         if not fenced:
             starts += [offset + at for at in carriers(line)]
         offset += len(line) + 1
+    return starts
+
+
+def located(reply):
+    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
+    if not isinstance(reply, str):
+        raise Malformed("no turn block at the end of the reply")
+    reply = lines_ended(reply)
+    starts = block_starts(reply)
     if not starts:
         raise Malformed("no turn block at the end of the reply")
     if len(starts) > 1:
