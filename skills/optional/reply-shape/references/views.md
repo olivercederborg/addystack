@@ -299,20 +299,21 @@ hook in its own logger was the other option.
 ## Batch card
 
 The calls `queue show` puts on one card: several of one batch, each without a ⚠️ row,
-waiting at once. Its headline asks once, and each item is a bold line numbered by its
-queue id, as its need is, naming its target, then its draft in full, so a yes needs no
-fold. `a` takes all; "a except 8" or an edit by number changes one, and each item leaves
-the queue with that answer. A merge batch is a stack's ship gate, its option the plain
-request. A stack merges bottom up, so its only part is its lower layers, offered as `b`,
-"merge #12".
+waiting at once. Its headline asks once, and each item is a bullet led by its queue id in
+bold, as its need numbers it, naming its target, then its draft in full, so a yes needs
+no fold. A Markdown list number would renumber ids that skip, such as 7, 9. `a` takes
+all; on any card but a merge, "a except 8" or an edit by number changes one, and each
+item leaves the queue with that answer. A merge batch is a stack's ship gate, its option
+the plain request, and holds the whole stack. A stack merges bottom up, so its only part
+is its lower layers, offered as `b`, "merge #12"; the merge gate reads no "except".
 
 ````markdown
 🟡 **Post the three review replies on Ana's PRs?**
 
-7. **[#41, Retries reuse their receipt](https://github.com/acme/app/pull/41)**: answer the question
-   > The retry keeps the first receipt's id, so the client never sees a second one.
-8. **[#42, Receipts return their upload id](https://github.com/acme/app/pull/42)**: re-request the review
-9. **[#43, Exports page their rows](https://github.com/acme/app/pull/43)**: approve it
+- **7** · [#41, Retries reuse their receipt](https://github.com/acme/app/pull/41): answer the question
+  > The retry keeps the first receipt's id, so the client never sees a second one.
+- **8** · [#42, Receipts return their upload id](https://github.com/acme/app/pull/42): re-request the review
+- **9** · [#43, Exports page their rows](https://github.com/acme/app/pull/43): approve it
 
 ---
 
