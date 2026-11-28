@@ -89,8 +89,12 @@ the reviewer.
   With none, offer these before step 2, and go on only on `C`:
   - `A` stop here and run `review-code` on the PR first (recommended).
   - `C` skip it and review the decisions anyway.
-- When the decisions were judged at an older head than the PR's, read the diff from that
-  head, and mark each decision the push touched.
+- **The PR's own diff** is its merge base with the base branch, and its head: `git
+  merge-base <base SHA> <head>`. A retarget, or a base branch that took in part of a stack,
+  moves the merge base with the same head and base name. When the decisions were judged at
+  another own diff (the handoff's `base` and `head`, or the App's review's commit), read the
+  delta between the two, find the decisions in it as in source 3, and mark each decision it
+  touched.
 
 **Done when:** the head, every decision with its `code`, the artifacts, and the code
 review's state are known.
@@ -167,10 +171,9 @@ ends with their block.
 
 By hand only; with `--slack` the run ends at step 4.
 
-- Re-check the head and the base (`gh pr view <PR> --json headRefOid,baseRefName`). A
-  moved head, or a PR moved to another base branch, which can change its diff with the same
-  head, means reading the PR's diff again, redoing the drafts it touches, and showing them
-  again.
+- Re-check the PR's own diff: `gh pr view <PR> --json headRefOid,baseRefOid`, then its
+  merge base as in step 1. When the head or the merge base differs from the one the drafts
+  were shown at, read the delta, redo the drafts it touches, and show them again.
 - After the reviewer's explicit go on the drafts as shown, post its verdict's event only:
   - **comment**: when it has comments or a summary, `scripts/github.sh review <PR> <head>
     drafts.json COMMENT summary.md`, with `drafts.json` holding `[]` for a summary alone;
