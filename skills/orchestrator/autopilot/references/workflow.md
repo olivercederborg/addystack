@@ -133,6 +133,11 @@ review at once, since it may have posted before the watch, and again on each wak
   review, and keep waiting.
 - **Pushed since**: a push can dismiss the App's approval and starts its re-review, so
   wait for its review of the new head.
+- **No review**: `reviewed` prints nothing both before the App posts and when it never
+  will, as with a slug that isn't the App's or an App that's uninstalled or down. A
+  running App posts once the PR's checks finish, so once they pass and it still hasn't
+  reviewed the head, tell the user which login you wait on, `<slug>[bot]`, and keep
+  watching.
 
 Without `review`, a ready PR waits on reviewers as before.
 
