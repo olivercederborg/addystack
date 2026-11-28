@@ -73,14 +73,15 @@ the reviewer.
      no spec settled). Read the Decisions table first, then the diff and the issue.
 - **The PR's artifacts**: the body's **Decisions** table (each row's alternative and
   assumption), and a linked review artifact, whose `/llms.md` you read.
-- **A current code review**: a submitted review at the head, by an App or through
-  `review-code` (its body or comments open with the agent disclosure), the reviewer's own
-  included, and never one this skill posted (its summary ends with `<!-- review-decisions
-  -->`):
+- **A current code review**: a submitted review at the head, never one this skill posted
+  (its summary ends with `<!-- review-decisions -->`), that is an App's, the reviewer's
+  own APPROVED one (a clean `review-code` pass approves with no body), or one whose body or
+  inline comments open with the agent disclosure (`review-code`'s):
 
   ```sh
   gh api "repos/{owner}/{repo}/pulls/<PR>/reviews" --paginate \
     --jq '.[] | select(.commit_id == "<head>") | {id, user: .user.login, app: (.user.type == "Bot"), state, body}'
+  gh api "repos/{owner}/{repo}/pulls/<PR>/reviews/<id>/comments" --jq '.[0].body'   # a review with an empty body
   ```
 
   A review at the head covers the PR's own diff only when it was judged at the same merge
