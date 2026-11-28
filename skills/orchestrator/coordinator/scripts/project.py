@@ -495,7 +495,27 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-PR_LINK = re.compile(r"\[(?:\\.|\[[^\]]*\]|[^\]\\\[])*\]\(<?(https?://github\.com/[\w.-]+/[\w.-]+/pull/\d+)>?[^)]*\)")  # a Markdown link to a PR
+PR_LINK = re.compile(r"\]\(<?(https?://github\.com/[\w.-]+/[\w.-]+/pull/\d+)>?[^)]*\)")  # a Markdown link to a PR, from its `](`
+
+
+def _unlabel(text: str) -> str:
+    """text with each Markdown link to a PR replaced by its URL. The label runs back from
+    the link's `](` to its matching `[`, as CommonMark reads it: brackets nest, and a
+    backslash escapes one."""
+    out, at = [], 0
+    for match in PR_LINK.finditer(text):
+        depth, start = 0, None
+        for i in range(match.start(), at - 1, -1):
+            escaped = (len(text[:i]) - len(text[:i].rstrip("\\"))) % 2
+            if text[i] in "[]" and not escaped:
+                depth += 1 if text[i] == "]" else -1
+                if depth == 0:
+                    start = i
+                    break
+        if start is not None:
+            out += [text[at:start], match.group(1)]
+            at = match.end()
+    return "".join(out) + text[at:]
 
 
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
@@ -504,7 +524,7 @@ def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    text = project_md.ranges(PR_LINK.sub(r"\1", text))  # a link's label `[#7, …]` names its URL's PR, not #7 here
+    text = project_md.ranges(_unlabel(text))  # a link's label `[#7, …]` names its URL's PR, not #7 here
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
         repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
