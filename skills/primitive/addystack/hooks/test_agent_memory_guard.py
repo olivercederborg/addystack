@@ -927,6 +927,18 @@ class CheckQueue(unittest.TestCase):
         q.tick(*runners, q.check(3))
         self.assertEqual(q.stopped(), {231})  # a type check waits behind the test runs
 
+    def test_a_check_arriving_with_a_test_run_waits_for_the_cpu_gate(self):
+        vitest = ("node", "/x/node_modules/vitest/vitest.mjs", "run")
+        q = Queue(self, cap=4, cores=1)
+
+        def runner(cpu=0):
+            return [proc(210, 100, argv=("/bin/zsh", "-lc", "vitest")), proc(211, 210, argv=vitest, start=1000.0, cpu=cpu)]
+
+        q.tick(runner(), q.check(2))
+        for i in range(1, 6):  # the run at 2 cores from here on
+            q.tick(runner(cpu=int(i * 1e9)), q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})
+
     def test_checker_names_the_check(self):
         self.assertEqual(guard.checker(["node", "/x/node_modules/vitest/vitest.mjs", "run"]), "vitest")
         self.assertEqual(guard.checker(["/x/.bin/tsc", "--noEmit"]), "tsc")

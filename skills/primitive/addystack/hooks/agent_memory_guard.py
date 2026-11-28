@@ -868,10 +868,12 @@ class Governor:
             # keeps its start time, so an exec seen since the last tick also makes it new.
             execed = self.versions.get(top.ident, top.version) != top.version
             fresh = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS) or execed
-            holdable = (fresh and checker(top.argv) not in TEST_RUNNERS
-                        and self._attended(unit.top, commands[unit.head], agents))
+            runner = checker(top.argv) in TEST_RUNNERS
+            holdable = fresh and not runner and self._attended(unit.top, commands[unit.head], agents)
             if not holdable:
                 self._run(unit.top, unit.members, now, wall)  # already running: never stopped
+                if fresh and runner:
+                    self.last_admit = now  # a new run: the gate reads it before the next admission
             elif not self.held and self._room(config, now):
                 self._run(unit.top, unit.members, now, wall)
                 self.last_admit = now
