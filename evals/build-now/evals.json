@@ -1,0 +1,181 @@
+{
+ "pick_assertions": {
+  "a-noton-rule": [
+   1
+  ],
+  "a-hide-projekt": [
+   2
+  ],
+  "a-snoop-read-sync": [
+   2
+  ],
+  "a-snoop-resubmit": [
+   1
+  ],
+  "a-inbox-trigger-by-id": [
+   2
+  ],
+  "a-casper-waits": [
+   2
+  ],
+  "a-retry-in-pr": [
+   1,
+   2
+  ],
+  "ctl-own-boundary": [
+   1
+  ],
+  "ctl-approval-preexisting": [
+   2
+  ],
+  "ctl-shared-pattern": [
+   1
+  ]
+ },
+ "scenarios": [
+  {
+   "id": "a-noton-rule",
+   "skill": "build-now",
+   "prompt": "what about this? is it still worth?\n\n(Oliver's message quotes your API for the not-on rule; the quote is in CONTEXT.md.)\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-noton-rule",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` builds the not-on rule in #5579 now (the provider-declared `notOn`, the readiness rule, and both pickers), before, after or alongside Ander's three notes. An `a` that skips the rule, leaves it as a follow-up, or waits for failed top-up exports after launch fails, even when a lower option builds it",
+    "The reply doesn't drop Ander's three notes on #5579 from the plan"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-hide-projekt",
+   "skill": "build-now",
+   "prompt": "does that make sense in a real world scenario?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-hide-projekt",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says the `DimensionsNotSupported` message would mislead here, because e-conomic accepts Afdeling on a top-up and refuses only Projekt, so \"Clear the receipt's dimensions\" would make a bookkeeper drop a valid Afdeling",
+    "Option `a` stops Projekt from being offered or accepted on top-up and cashback rows in #5579 now, in the picker, readiness, or both. An `a` that keeps today's message and leaves hiding Projekt as a follow-up fails, even when a lower option builds it"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-snoop-read-sync",
+   "skill": "build-now",
+   "prompt": "What does read state per device mean?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-snoop-read-sync",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning autonomous, trust merge-on-go. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply explains per-device read state: each device keeps its own record of opened snoops, so once both apps list every snoop, reading one on the Mac leaves its unread dot on the iPhone",
+    "The reply's recommendation for Q2, or option `a`, is read state synced through the server in this milestone. Recommending per device for now, with syncing as a follow-up or a later signal, fails"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-snoop-resubmit",
+   "skill": "build-now",
+   "prompt": "investigate this [screenshot: Nikolaj's recording stuck on \"still taking notes\" in Snoop]\n\nYour investigation and draft PR #132 so far are in CONTEXT.md. This is your report at the end of that run.\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-snoop-resubmit",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning autonomous, trust merge-on-go. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` builds automatic resubmission on a transient ElevenLabs failure (item 7) now, in #132 or a PR stacked on it. An `a` that leaves item 7 out of scope, as a follow-up, or only as a lower option fails",
+    "Option `a` also covers item 8 (ignore a late failure from an earlier attempt), or the reply names that resubmitting makes item 8 reachable and builds them together",
+    "The Slack reply to Nikolaj stays a draft for Oliver"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-inbox-trigger-by-id",
+   "skill": "build-now",
+   "prompt": "what is the follow-up?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-inbox-trigger-by-id",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply explains the follow-up: the inbox route imports the task and so loads its whole module graph; starting the task by its ID with a type-only import (`tasks.trigger<typeof task>(\"id\", …)`) stops that",
+    "Option `a` builds the inbox route change now as a PR (a draft PR counts). An `a` that only drafts a Linear issue or a ticket, or parks it as a later follow-up, fails, even when a lower option builds it"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-casper-waits",
+   "skill": "build-now",
+   "prompt": "Casper commented on the PR which might make sense to include in this pr but could also be done in a follow-up PR - what do you think?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-casper-waits",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says Casper is right: the waits are redundant after the fixture's wait",
+    "Option `a` removes the redundant waits in #5466 itself. An `a` that stacks a follow-up PR or defers it to keep the approvals fails",
+    "The reply says that pushing to #5466 dismisses the existing approvals, so a fresh approval is needed"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-retry-in-pr",
+   "skill": "build-now",
+   "prompt": "address-review: handle the new review comments on #4646 (they're in CONTEXT.md).\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-retry-in-pr",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` fixes item 9 in #4646 now: the rejected export and re-export queue tasks stop being retried (for example `retryable = false` on the errors read through `catchError`/`skipRetrying`, or a retry override). An `a` that defers item 9 to a follow-up or Linear issue fails",
+    "Option `a` keeps item 8 (moving the reads into repositories) out of #4646: it's deferred with a reply, not built in this PR",
+    "Replies to leogenot's comments are drafts for Oliver, not posted"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-own-boundary",
+   "skill": "build-now",
+   "prompt": "We want to keep the scope quite minimal just for the migration and then we can clean up even more later on as follow-ups\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-own-boundary",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` keeps the migration minimal: rules move as they are, and the cleanups (oxfmt import sorting replacing perfectionist, dropping the `jsonc/*` rules, the Franklin rule requiring a reason on `oxlint-disable`, and dropping the style-only rules) leave the migration as follow-ups. Converting the 79 moved disable comments to `oxlint-disable` isn't a cleanup, so keeping or deferring it doesn't decide this. An `a` that keeps any of those cleanups in the migration fails",
+    "The reply lists the cleanups that become follow-ups, so none is silently dropped"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-approval-preexisting",
+   "skill": "build-now",
+   "prompt": "address-review: check if the comment from cubic is valid and worth addressing\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-approval-preexisting",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says cubic's claim holds and that the gap predates this PR (the old action also passed the action-time integration)",
+    "Option `a` fixes it on #5153 now, threading the catalog's integration ID into the web save, and pushes it: the gap is in the action #5153 adds. An `a` that defers the fix, answers cubic without fixing it, or builds the fix in another PR fails",
+    "The reply says the push dismisses Ander's approval, so he has to approve again"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-shared-pattern",
+   "skill": "build-now",
+   "prompt": "review-loop: run the next round on #5576\n\nRound 2's results are in CONTEXT.md; reply as you would after this round.\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-shared-pattern",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` doesn't migrate the form test's module mocks in #5576: it leaves the migration as a follow-up and ends the loop (marking #5576 ready or handing it back). An `a` that migrates now, including through an architect pass first, fails",
+    "The reply names why it waits: the change touches an interface that needs a design, or a pattern 25 files share"
+   ],
+   "tool_calls": true
+  }
+ ]
+}

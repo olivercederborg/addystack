@@ -1,0 +1,59 @@
+{
+  "scenarios": [
+    {
+      "id": "loading",
+      "skill": "router",
+      "prompt": "how would you handle a slow export here? Don't change anything.",
+      "setup": "../verify-work/setup.sh {cwd} && rm -rf {cwd}-origin.git && git init -q --bare {cwd}-origin.git && git -C {cwd} remote add origin {cwd}-origin.git && git -C {cwd} checkout -q main && git -C {cwd} merge -q --ff-only feature/csv-export && git -C {cwd} push -q origin main && git -C {cwd}-origin.git symbolic-ref HEAD refs/heads/main",
+      "cwd": "router-eval",
+      "preamble": "There's no GitHub remote, so skip opening PRs.",
+      "turns": [],
+      "assertions": [
+        "It names diagnosing-bugs → plan → autopilot as the route",
+        "It changes no files: `git status` in the repo stays clean",
+        "It ends with a `Next` list of at most two lettered options, with a bold, recommended `a`",
+        "Rule: a `---` line with blank lines around it sits directly above `Next`, and no `---` comes after it"
+      ]
+    },
+    {
+      "id": "repeated-correction",
+      "skill": "router",
+      "prompt": "you used useCallback under the React Compiler again; make this impossible",
+      "setup": "../correct/setup.sh {cwd}",
+      "cwd": "router-correct-eval",
+      "preamble": "No autonomy this session. This machine's T3 state database is {cwd}-t3.sqlite; pass it to corrections.py with --db. Use no gh and no network. There is no devbox.",
+      "turns": [],
+      "assertions": [
+        "The reply is correct's plan: a class for manual useCallback/useMemo under the React Compiler citing the real SHAs of `Drop manual useCallback in SetRow` and `Remove useMemo from ExerciseList`, and its skills loaded include `correct`",
+        "Its skills loaded include neither autopilot nor diagnosing-bugs, and nothing is changed: {cwd} has a clean `git status` and HEAD is still `Use theme spacing in the exercise list`"
+      ]
+    },
+    {
+      "id": "repeated-bug-correction",
+      "skill": "router",
+      "prompt": "this Effect.runPromise(...).catch swallowed the error again; make this impossible",
+      "setup": "../correct/setup.sh {cwd}",
+      "cwd": "router-correct-eval",
+      "preamble": "No autonomy this session. This machine's T3 state database is {cwd}-t3.sqlite; pass it to corrections.py with --db. Use no gh and no network. There is no devbox.",
+      "turns": [],
+      "assertions": [
+        "The reply is correct's plan: a class for Effect failures handled on the promise citing at least two of the real SHAs of `Handle sync failures inside the Effect`, `Catch finish failures in the Effect`, and `Reset the rest timer inside the Effect`, and its skills loaded include `correct`",
+        "Its skills loaded include neither diagnosing-bugs nor autopilot, and nothing is changed: {cwd} has a clean `git status` and HEAD is still `Use theme spacing in the exercise list`"
+      ]
+    },
+    {
+      "id": "broken-again",
+      "skill": "router",
+      "prompt": "the rest timer is broken again: it doesn't reset after I finish a workout",
+      "setup": "../correct/setup.sh {cwd}",
+      "cwd": "router-broken-eval",
+      "preamble": "No autonomy this session. Use no gh and no network. There is no devbox.",
+      "turns": [],
+      "assertions": [
+        "Its skills loaded include diagnosing-bugs and not `correct`",
+        "The reply works on reproducing or diagnosing the rest timer (src/workouts/rest-timer.ts and how finishing a workout reaches it), and proposes no lint rule and no AGENTS.md rule table",
+        "Nothing is committed or changed: {cwd} has a clean `git status` and HEAD is still `Use theme spacing in the exercise list`"
+      ]
+    }
+  ]
+}

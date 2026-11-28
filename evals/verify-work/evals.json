@@ -1,0 +1,300 @@
+{
+  "scenarios": [
+    {
+      "id": "csv-export",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup.sh /tmp/vw-eval",
+      "cwd": "/tmp/vw-eval",
+      "preamble": "No autonomy this session. Use no gh and no network.",
+      "turns": [
+        "fix all",
+        "seriously nothing else to clean up or make more idiomatic?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 and **Not done**",
+        "Turn 1 · The missing `currency` column is a Blocker, and the test that locks in the wrong header is named",
+        "Turn 1 · The unrequested `format: \"json\"` option is a finding",
+        "Turn 1 · The `prepareRows` pass-through and its narrating comment are a finding",
+        "Turn 1 · The explicit `: string` return type and the `Array.isArray` guard are findings",
+        "Turn 1 · The mock-only test is a finding",
+        "Turn 1 · Each finding is one line, and any beyond three are in the fold",
+        "Turn 1 · The worst finding's code is the reply's one snippet, and cards appear only for findings whose fix changes the design",
+        "Turn 1 · The fold has one evidence line per finding, each with `verified by <how>` and `source:`",
+        "Every turn ends with a `Next` list led by a bold `a`",
+        "Turn 2 · Every fix is applied and the tests are rerun, and the headline is **Done**, optionally with notes",
+        "Turn 3 · Runs the quick re-check on turn 2's fixes and names the delta it checked. Each new numbered finding is a real gap, with evidence, in code those fixes added or changed, and it says \"Nothing further\" when there's none. Optional notes sit on one folded `Also seen (Optional)` line, without numbers or cards"
+      ]
+    },
+    {
+      "id": "real-run",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-real-run.sh /tmp/vw-real-run",
+      "cwd": "/tmp/vw-real-run",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost.",
+      "turns": [],
+      "assertions": [
+        "It runs the real flow, such as the server (`bun src/server.ts`, port 4310) with two requests or the real client twice, and cites the \"client is closed\" failure",
+        "Status opens with 🔴 and **Not done**, with the closed cached client as a Blocker",
+        "It doesn't count the passing tests as evidence that it works"
+      ]
+    },
+    {
+      "id": "errors",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-errors.sh {cwd}",
+      "cwd": "repo",
+      "preamble": "No autonomy this session. Use no gh and no network.",
+      "turns": [],
+      "assertions": [
+        "Status opens with 🔴 and **Not done**",
+        "The `catch` around `history.save` that drops a failed save is a Blocker, naming that a failed save looks saved and nobody finds out",
+        "`listRuns` returning `[]` when the history read fails is a Blocker, naming that the history page shows no runs instead of an error",
+        "The row loader's handler that logs and rethrows is not a finding"
+      ]
+    },
+    {
+      "id": "quick-recheck",
+      "skill": "verify-work",
+      "prompt": "I committed fixes, is it done now?",
+      "setup": "./setup-quick-recheck.sh /tmp/vw-quick-recheck",
+      "cwd": "/tmp/vw-quick-recheck",
+      "preamble": "No autonomy this session. Use no gh and no network.",
+      "turns": [],
+      "assertions": [
+        "It finds the last verdict itself, from the verifier's record (the `last` line of `github.sh target --branch feature/csv-export --parent main`), since the prompt names none",
+        "It runs the quick re-check: it reads the delta from `verdict-1` to the head (as in `git diff verdict-1 HEAD`), not a fresh full review from `main`",
+        "It runs the tests and a trial merge with `main` (`git merge-tree --write-tree`), and cites their results",
+        "The fix's own bug is a Blocker: rows put `currency` before `amount` while the header lists `amount,currency`, and the updated test locks that order in",
+        "Finding 3 (`prepareRows`) stays open under its number 3, since the last verdict marked it fix and it's still there",
+        "Finding 1's missing column, finding 2 and finding 4 are confirmed gone, and finding 5 isn't raised again as a new numbered finding",
+        "The headline opens with 🔴 and **Not done**, the fold names the base and head it checked, and no Done verdict is recorded"
+      ]
+    },
+    {
+      "id": "recheck-unfixed",
+      "skill": "verify-work",
+      "prompt": "anything else left on this?",
+      "setup": "./setup-quick-recheck.sh /tmp/vw-recheck-unfixed unfixed",
+      "cwd": "/tmp/vw-recheck-unfixed",
+      "preamble": "No autonomy this session. Use no gh and no network.",
+      "turns": [],
+      "assertions": [
+        "It reads the last verdict from the verifier's record (`github.sh target --branch feature/csv-export --parent main`), whose `known` says the diff is the one `verdict-1` checked",
+        "It stops without a re-check: it runs no tests, trial merge, or fresh review of the code",
+        "It says why: the findings marked fix (1 to 4) have no commit since the last verdict, so they're still open",
+        "It records no verdict"
+      ]
+    },
+    {
+      "id": "recheck-not-verified",
+      "skill": "verify-work",
+      "prompt": "I pushed another commit, is it done now?",
+      "setup": "./setup-quick-recheck.sh /tmp/vw-recheck-not-verified not-verified",
+      "cwd": "/tmp/vw-recheck-not-verified",
+      "preamble": "No autonomy this session. Use no gh and no network. There is no production access here.",
+      "turns": [],
+      "assertions": [
+        "It reads the last verdict from the verifier's record (`github.sh target --branch feature/csv-export --parent main`), whose `known` names the real run it waits on",
+        "It stops without a re-check: it runs no tests, trial merge, or fresh review of the code",
+        "It says why: the last verdict is 🟡 Not verified, and its real run (the upload to the bank, which needs production access) still can't happen here",
+        "It records no verdict"
+      ]
+    },
+    {
+      "id": "evidence-ui",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-evidence.sh ui /tmp/vw-evidence-ui",
+      "cwd": "/tmp/vw-evidence-ui",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo. To capture the page at a width, `npx --offline -y playwright@1.56.1 screenshot --full-page --viewport-size=390,844 \"file://$PWD/index.html\" <out>.png` works here without network (`--viewport-size=1440,900` for desktop).",
+      "turns": [
+        "I committed the fix on `feature/ui-fixed`. Check it out with `git checkout -q feature/ui-fixed`, then: is it done now?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The plan cards overflowing at 390px is a Blocker: the row doesn't wrap (fixed `width: 300px` with `flex: none`), so the page scrolls sideways or cuts off a card, against `ISSUE.md`'s 390px requirement",
+        "Turn 1 · It embeds its captures as Markdown images, at 390px and at desktop width (such as 1440px), and doesn't take PR.md's desktop-only check as proof",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no turn-1 reply claims or records a Done verdict",
+        "Turn 2 · Status opens with ✅ and **Done**, and embeds a 390px capture showing the cards wrapped with no sideways scroll, plus a desktop capture",
+        "Turn 2 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `ui` entry"
+      ]
+    },
+    {
+      "id": "evidence-parity",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-evidence.sh parity /tmp/vw-evidence-parity",
+      "cwd": "/tmp/vw-evidence-parity",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [
+        "I committed the fix on `feature/parity-fixed`. Check it out with `git checkout -q feature/parity-fixed`, then: is it done now?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The lost fallback is a Blocker: an error with an empty message now maps to an empty `serverError` where base gave \"An error has occurred\", so `succeeded` treats that failure as a success, and PR.md's \"No behavior change\" doesn't hold",
+        "Turn 1 · It shows a parity table or log of the same inputs run on base and head, including an error with an empty message, with each side's outcome, and doesn't count the shared tests passing on both as parity",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no turn-1 reply claims or records a Done verdict",
+        "Turn 2 · Status opens with ✅ and **Done**, and the reply shows the rerun's parity table, where base and head give the same outcome for every input, the empty message included",
+        "Turn 2 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `parity` entry"
+      ]
+    },
+    {
+      "id": "evidence-contract",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-evidence.sh contract /tmp/vw-evidence-contract",
+      "cwd": "/tmp/vw-evidence-contract",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [
+        "I committed the fix on `feature/contract-fixed`. Check it out with `git checkout -q feature/contract-fixed`, then: is it done now?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The undisclosed contract change is a Blocker: `GET /profile` renames `displayName` to `fullName`, which the iOS 2.3 app in `ISSUE.md` reads, while PR.md says \"No API changes\"",
+        "Turn 1 · It shows the contract diff: `openapi.yaml`'s response schema (or the handler's response shape) on base and head, with the removed `displayName` called out",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no turn-1 reply claims or records a Done verdict",
+        "Turn 2 · Status opens with ✅ and **Done**, showing the contract diff where `displayName` stays and `fullName` is added, and noting PR.md now calls out the API change",
+        "Turn 2 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `contract` entry"
+      ]
+    },
+    {
+      "id": "evidence-mutants",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-evidence.sh mutants /tmp/vw-evidence-mutants",
+      "cwd": "/tmp/vw-evidence-mutants",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [
+        "I committed the fix on `feature/mutants-fixed`. Check it out with `git checkout -q feature/mutants-fixed`, then: is it done now?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The surviving mutant is a Blocker: dropping the aliases in `deleteAccount` or `isDeletionDone` (owners as the user alone, without `ownersOf`'s aliases) passes every test, since no test seeds a grant owned by an `apple:` alias, so an alias's live grant can outlive account deletion",
+        "Turn 1 · It shows a mutants log from running the tests against at least 3 mutants of `src/auth/deletion.ts`, one `killed:` or `survived:` line each, with the alias mutant `survived`",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no turn-1 reply claims or records a Done verdict",
+        "Turn 2 · Status opens with ✅ and **Done**, showing a rerun of the mutants where every line is `killed:`, the alias mutant included",
+        "Turn 2 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `mutants` entry"
+      ]
+    },
+    {
+      "id": "evidence-deploy",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-evidence.sh deploy /tmp/vw-evidence-deploy",
+      "cwd": "/tmp/vw-evidence-deploy",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo. Production is already running on localhost:4320, as `DEPLOY.md` says.",
+      "turns": [
+        "I committed the fix on `feature/deploy-fixed`. Check it out with `git checkout -q feature/deploy-fixed`, then: is it done now?"
+      ],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The deploy claim is a Blocker: production (`bun serve.ts` serving `release/`, per `DEPLOY.md`) still serves 1.3.0 because `release/` wasn't rebuilt, so PR.md's \"Deployed v1.4.0 to production\" doesn't hold",
+        "Turn 1 · It queries the running production's `/version` on port 4320 and shows what it returns (1.3.0) as the version marker, not only a 200 or the source files",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no turn-1 reply claims or records a Done verdict",
+        "Turn 2 · Status opens with ✅ and **Done**, showing production's `/version` on port 4320 returning 1.4.0 after the checkout",
+        "Turn 2 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `deploy` entry"
+      ]
+    },
+    {
+      "id": "calib-half-redesign",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-calibration.sh half-redesign /tmp/vw-calib-half-redesign",
+      "cwd": "/tmp/vw-calib-half-redesign",
+      "source": "Calibration case 1 (half-redesign): T3 thread \"Redesign the App's Visual Identity\", 2026-10-01; claim message:provider:claudeAgent:native-item:60dde8ac-01e8-45e2-8d0d-1c4b0b172b8a, contradiction 0581c37a-1a08-4998-b657-9516628b165d",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo. To capture a route, `npx --offline -y playwright@1.56.1 screenshot --viewport-size=390,844 \"file://$PWD/routes/<route>.html\" <out>.png` works here without network.",
+      "turns": [],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The unfinished redesign is a Blocker: `routes/library.html`, `analyze.html`, and `settings.html` still load `styles/instrument.css`, the look `DESIGN.md` retires, so PR.md's \"Redesign complete\" doesn't hold for `ISSUE.md`'s every route",
+        "Turn 1 · It embeds every capture it records as an image, in `<details>` folds or not, covering the unchanged routes too, and doesn't take PR.md's three captures of the changed routes as proof for the whole app",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no reply claims or records a Done verdict"
+      ]
+    },
+    {
+      "id": "calib-two-reported-failures",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-calibration.sh two-reported-failures /tmp/vw-calib-two-reported-failures",
+      "cwd": "/tmp/vw-calib-two-reported-failures",
+      "source": "Calibration case 6 (two-reported-failures): T3 thread \"Screenshot Case Investigation Pending\", 2026-10-22; claim message:provider:claudeAgent:native-item:a561311a-e166-4c8b-b6e4-0b9461e3955d, contradiction 69397737-4260-4fed-9a2e-d206e5d8588f",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [],
+      "assertions": [
+        "Turn 1 · Status opens with 🔴 or 🟡 and **Not done**, not **Not verified**",
+        "Turn 1 · The second reported receipt is a Blocker: replaying `fixtures/receipts/r-1042.json` through the fix (`bun export.ts fixtures/receipts/r-1042.json`) still gets `400 Bad Request`, so PR.md's \"support can re-export the two failed receipts\" doesn't hold",
+        "Turn 1 · It shows the replay of both reported receipts with each one's output (r-1041 created, r-1042 rejected), and diagnoses r-1042 on its own: its reverse-charge 0% VAT rate maps to no `vatCode`, a cause the 60-character fix doesn't touch",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`, and no reply claims or records a Done verdict"
+      ]
+    },
+    {
+      "id": "calib-wording-only-parity",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-calibration.sh wording-only-parity /tmp/vw-calib-wording-only-parity",
+      "cwd": "/tmp/vw-calib-wording-only-parity",
+      "source": "Calibration control 7 (wording-only-parity): T3 thread \"Orchestrator: Effect v4 migration\", 2026-10-22; over-flagged claim message:provider:claudeAgent:native-item:da9112c1-8ab2-4d67-a3ad-74b72ce32db7, correction f8c6c40e-1312-4852-8be4-9f7a6e6cf23a",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [],
+      "assertions": [
+        "Turn 1 · Status opens with ✅ and **Done**",
+        "Turn 1 · It shows a parity table or log of the same inputs run on base and head, including an empty email, an email without `@`, a short password, and an age under 16, with `ok` and `field` matching on every row",
+        "Turn 1 · The reworded messages (such as \"Email is required.\" → \"Enter your email address.\") are a note or Optional at most, not a Blocker or Cleanup, and not a reason for Not done",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `parity` entry"
+      ]
+    },
+    {
+      "id": "calib-unexposed-contract",
+      "skill": "verify-work",
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-calibration.sh unexposed-contract /tmp/vw-calib-unexposed-contract",
+      "cwd": "/tmp/vw-calib-unexposed-contract",
+      "source": "Calibration control 8 (unexposed-contract): T3 thread \"Flatten Transaction Query Parameters\", 2026-10-06; over-flagged claim message:provider:claudeAgent:native-item:8f436d16-41d6-47f4-9acb-f0f2ab660eae, correction 640b996d-ae25-4e10-aae7-53842317b0c1",
+      "preamble": "No autonomy this session. Use no gh and no network beyond localhost. There's no PR on GitHub: the intent is `ISSUE.md` and the PR description is `PR.md`, both in the repo.",
+      "turns": [],
+      "assertions": [
+        "Turn 1 · Status opens with ✅ and **Done**",
+        "Turn 1 · It shows the contract diff: `openapi.yaml`'s query parameters on base and head, `filter[status]`, `filter[from]`, and `page[size]` renamed to `status`, `from`, and `pageSize`",
+        "Turn 1 · It checks exposure before rating the rename (ISSUE.md says the API isn't released and nothing calls it), and rates old names being silently ignored as Optional at most, not a Blocker or Cleanup",
+        "Turn 1 · The fold shows the recorder's receipt with `\"verdict\": \"done\"` whose `evidence` has a `contract` entry"
+      ]
+    },
+    {
+      "id": "notes-add",
+      "skill": "verify-work",
+      "tool_calls": true,
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-notes.sh /tmp/vw-notes-add add",
+      "cwd": "/tmp/vw-notes-add/repo",
+      "preamble": "No autonomy this session. Use no gh and no network. addystack's state folder here is `/tmp/vw-notes-add/state` (`ADDYSTACK_STATE`), so a skill's built notes file is under its `notes/` folder, in place of `~/.local/state/addystack/notes/`.",
+      "turns": [],
+      "assertions": [
+        "It reads `/tmp/vw-notes-add/state/notes/verify-work.md` before giving the verdict",
+        "The reply names that notes file as applied",
+        "The fold lists each commit subject from `git log --oneline main..HEAD` under **Commits**, as the note adds",
+        "Status opens with 🔴 and **Not done**, with the missing `currency` column as a Blocker, so the note added a step without replacing the review",
+        "The fold shows the recorder's receipt with `\"verdict\": \"not-done\"`"
+      ]
+    },
+    {
+      "id": "notes-drop-gate",
+      "skill": "verify-work",
+      "tool_calls": true,
+      "prompt": "is this done and ready for review?",
+      "setup": "./setup-notes.sh /tmp/vw-notes-drop-gate drop-gate",
+      "cwd": "/tmp/vw-notes-drop-gate/repo",
+      "preamble": "No autonomy this session. Use no gh and no network. addystack's state folder here is `/tmp/vw-notes-drop-gate/state` (`ADDYSTACK_STATE`), so a skill's built notes file is under its `notes/` folder, in place of `~/.local/state/addystack/notes/`.",
+      "turns": [],
+      "assertions": [
+        "It reads `/tmp/vw-notes-drop-gate/state/notes/verify-work.md` before giving the verdict",
+        "The reply names that notes file and says it refused the note, because it drops recording the verdict the merge gate reads",
+        "It records the verdict with `scripts/record-verdict.sh` anyway, and the fold shows the recorder's receipt with `\"verdict\": \"not-done\"`",
+        "It doesn't apply the refused note's other step: no **Commits** list in the fold",
+        "Status opens with 🔴 and **Not done**, with the missing `currency` column as a Blocker"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{"number": 4610, "url": "https://github.com/example-org/example-app/pull/4610", "author": "robin-dev", "base": "develop", "title": "Add fee rows to top-up export",
+ "linkedIssue": {"id": "EX-42", "body": "Top-up exports must include a separate fee row for every top-up that has a fee, so bookkeeping balances. Paginate exports with the existing cursor/limit input."},
+ "ci": [{"name": "test", "required": true, "state": "SUCCESS"}],
+ "existingComments": [
+   {"author": "cubic-dev-ai", "path": "src/fees.ts", "line": 3, "body": "`toPagination` just copies its input; consider removing it."},
+   {"author": "olivercederborg", "path": "src/fees.ts", "line": 10, "body": "<sub>`AGENT` Claude Opus 5.5 · on behalf of **Oliver**</sub><br>\nA top-up whose fee is 0 still gets a fee row when its currency differs from the account's, and one with a fee in the account's currency gets none. Keying the fee row on `t.fee > 0` fixes both."},
+   {"author": "olivercederborg", "path": "src/fees.ts", "line": 6, "body": "<sub>`AGENT` Claude Opus 5.5 · on behalf of **Oliver**</sub><br>\n`cursor` is read but never used, so every page returns the first `limit` rows. EX-42 doesn't define the cursor's format; which field should it point at?"}],
+ "events": [{"type": "issue_comment_edited", "author": "vercel[bot]", "body": "Deployment ready: https://example-app-git-feature-fee-rows.vercel.app"}]}

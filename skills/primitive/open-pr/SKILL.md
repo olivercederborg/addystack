@@ -74,7 +74,7 @@ bullets (the **Not in scope** bullet only when it has content), then a `[!WARNIN
 callout only for reviewer warnings, migrations, or anything hard to undo.
 
 ````markdown
-**Every top-up with a fee now gets a fee row, so exports balance.** [EX-12](link) · [plan](link)
+**Every top-up with a fee now gets a fee row, so exports balance.** [EX-12, Fee rows for top-ups](link) · [plan](link)
 
 ```mermaid
 flowchart LR

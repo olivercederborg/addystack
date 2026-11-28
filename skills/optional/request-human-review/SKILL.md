@@ -10,7 +10,7 @@ metadata:
 # Request human review
 
 A human reviews decisions, not code. Code that follows the repo's established patterns
-never needs a person; a decision does. This skill holds that rule once, for both sides of
+needs a person only when it is a one-way door; a decision does. This skill holds that rule once, for both sides of
 a PR: the unattended reviewer that approves what needs no human, and the author who wants
 to know whether a person must look.
 
@@ -45,7 +45,9 @@ A decision needs a human when it is one of these, wherever it was made (the link
 the code, or both):
 
 - **one-way-door**: hard to reverse once shipped, such as deleting data, a published
-  contract, or a migration on shared data.
+  contract, or a migration on shared data. Every kind of change the repo itself calls a
+  one-way door is one too, even when it follows an established pattern: a template that
+  lists money movement gates every money-movement change.
 - **pattern**: a new pattern, or a change to an established one. Following one is not a
   decision.
 - **interface**: an architectural or interface decision: a new module or service, or the
@@ -56,12 +58,16 @@ the code, or both):
 A sensitive area is not a gate. Money movement, authentication or authorization, tenancy,
 concurrency (retries, idempotency, races), and dependencies get a deeper review with
 `blast-radius`, and its verified findings join the review's. They need a human only through
-a decision above.
+a decision above, such as a kind the repo's own one-way doors name. `gates.py check` reads
+the PR template's "One-way doors include …" list at the base and fails on a sensitive area
+that is an item of it with no one-way-door decision at that area's code.
 
 ## 1. Read the decisions
 
 - Fetch the PR's body, base and head SHAs, linked issue, and the whole diff
   (`git diff <base>...<head>`), even on a re-review: a gate judges the PR, not a delta.
+- Read the repo's own list of one-way doors at the base, in its PR template and its docs
+  on PRs or reviews, when it has one: each change of a listed kind gets a one-way-door entry.
 - Read the Review guide's **Decisions** table first, when there is one. Every row gets an
   entry under its `D<n>`.
 - Then read the diff and the issue for decisions the table lacks, and give each an entry
@@ -104,7 +110,7 @@ It is the only step that writes to GitHub, and it applies the rule in `gates.py`
 |---|---|---|
 | `changes-requested` | a finding holds the approval | a request for changes with the inline comments |
 | `needs-human` | a gate fires, or the second opinion is missing | the findings and a **Needs a human** list of the gated decisions and why the second opinion didn't run |
-| `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body |
+| `approved` | neither, and the required checks passed on the head | an approval with no inline comments; notes go in its body. When this App's approval of the head already stands, the same body as a comment saying so |
 | `not-approved` | the required checks failed or didn't finish | the findings and the checks that didn't pass |
 | `superseded` | the head moved, or the PR moved to another base branch | nothing: the push or retarget starts its own review |
 

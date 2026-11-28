@@ -59,6 +59,10 @@ class Post(unittest.TestCase):
         (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column.\n')
         (self.folder / 'note.md').write_text('Nit: name it total_cents.')
         self.gate(None)
+        self.doors = {}
+        doors = patch.object(post_review.gates, 'one_way_doors', lambda base, cwd: self.doors.get(base))
+        doors.start()
+        self.addCleanup(doors.stop)
 
     def gate(self, gate):
         (self.folder / 'GATES.json').write_text(json.dumps({
@@ -114,15 +118,54 @@ class Post(unittest.TestCase):
                 self.post(fake, finding)
             self.assertEqual(fake.writes, [])
 
-    def test_a_retry_keeps_the_approval_this_head_already_has(self):
-        fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
-        outcome = self.post(fake)
-        self.assertEqual((outcome['outcome'], outcome['review']), ('approved', f'review 61, already approving {HEAD[:7]}'))
-        self.assertEqual(fake.writes, [])
+    def test_a_new_review_of_an_approved_head_says_the_approval_stands_without_approving_again(self):
+        # The author asked for a review again, or the PR moved to another base branch: the
+        # review still approves, and the author sees that in a comment, not a second approval.
+        for event, bases in (('the author asked again', None), ('the PR moved to release', [('release', BASE)])):
+            with self.subTest(event):
+                fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
+                outcome = self.post(fake, bases=bases)
+                self.assertEqual((outcome['outcome'], outcome['review']), ('approved', 'https://github.com/o/r/pull/7#comment'))
+                (command, arguments, files), = fake.writes
+                self.assertEqual((command, arguments[0]), ('comment', '7'))
+                self.assertIn('Adds a totals column.', files['body.md'])
+                self.assertIn(f"this App's approval of `{HEAD[:7]}` stands", files['body.md'])
         # An approval of an older head doesn't approve this one.
         older = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': BASE})
         self.assertEqual(self.post(older)['review'], 'https://github.com/o/r/pull/7#approve')
         self.assertEqual([command for command, _, _ in older.writes], ['approve'])
+
+    def test_a_retry_of_a_run_that_approved_or_said_so_posts_nothing(self):
+        for active in (None, {'id': 61, 'state': 'APPROVED', 'commit_id': HEAD}):
+            with self.subTest(active=active):
+                fake = Fake(active=active)
+                first = self.post(fake)
+                # The first run's approval now stands, and the run stopped before it printed its outcome.
+                fake.active = active or {'id': 62, 'state': 'APPROVED', 'commit_id': HEAD}
+                self.assertEqual(self.post(fake, retry=True), first)
+                self.assertEqual(len(fake.writes), 1)
+        # A retry that would post another body is a new answer, and says the approval stands.
+        fake = Fake()
+        self.post(fake)
+        fake.active = {'id': 62, 'state': 'APPROVED', 'commit_id': HEAD}
+        (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column; re-read after the rebase.\n')
+        self.post(fake, retry=True)
+        self.assertEqual([command for command, _, _ in fake.writes], ['approve', 'comment'])
+        # A record alone never claims an approval: once a newer review replaced it, a retry approves again.
+        replaced = Fake()
+        self.post(replaced)
+        replaced.active = {'id': 63, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD}
+        self.assertEqual(self.post(replaced, retry=True)['review'], 'https://github.com/o/r/pull/7#approve')
+        self.assertEqual([command for command, _, _ in replaced.writes], ['approve', 'approve'])
+
+    def test_a_record_of_another_head_or_outcome_is_not_reused(self):
+        sent = post_review.hashlib.sha256((self.folder / 'BODY.md').read_text().encode()).hexdigest()
+        for record in ({'head': BASE, 'outcome': 'approved'}, {'head': HEAD, 'outcome': 'needs-human'}):
+            with self.subTest(record):
+                (self.folder / 'POSTED.json').write_text(json.dumps({**record, 'sent': sent, 'review': 'earlier'}))
+                fake = Fake(active={'id': 61, 'state': 'APPROVED', 'commit_id': HEAD})
+                self.assertEqual(self.post(fake, retry=True)['review'], 'https://github.com/o/r/pull/7#comment')
+                self.assertEqual([command for command, _, _ in fake.writes], ['comment'])
 
     def test_a_held_finding_requests_changes_with_its_inline_comment(self):
         bug = {'call': 'blocking', 'holds': True, 'title': 'totals overflow', 'draft':
@@ -345,6 +388,23 @@ class Post(unittest.TestCase):
         (self.folder / 'GATES.json').write_text(json.dumps({'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [], 'decisions': []}))
         with self.assertRaisesRegex(ValueError, 'D1 from the Decisions table has no entry'):
             self.post(Fake())
+
+    def test_a_sensitive_area_the_repos_one_way_doors_name_is_refused_without_its_gate(self):
+        gates_json = json.loads((self.folder / 'GATES.json').read_text())
+        (self.folder / 'GATES.json').write_text(json.dumps({
+            **gates_json, 'sensitive': [{'area': 'money-movement', 'code': 'db/schema.ts:12'}]}))
+        listed = ('.github/PULL_REQUEST_TEMPLATE.md:36', 'money movement, and writes to providers')
+        fake = Fake()
+        self.doors = {BASE: listed}
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake)
+        # The list is read at the PR's base now, also when the base moves on while checks are waited on.
+        self.doors = {NEWER: listed}
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake, base=NEWER)
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake, bases=[BASE, NEWER])
+        self.assertEqual(fake.writes, [])
 
 
 if __name__ == '__main__':

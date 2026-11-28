@@ -1,0 +1,14 @@
+{
+  "wake": "watch_pull_request: a check failed and cubic-dev-ai commented on #4600",
+  "pr": {"number": 4600, "url": "https://github.com/example-org/example-app/pull/4600", "isDraft": true, "baseRefName": "main", "mergeable": "MERGEABLE", "mergeStateStatus": "CLEAN"},
+  "required": ["test"],
+  "ci": [{"name": "lint", "state": "SUCCESS", "runId": 9100},
+         {"name": "test", "state": "FAILURE", "runId": 9100, "log": "src/export.test.ts:\n✗ publishes on retry after a failed publish\n  expect(received).toEqual(expected)\n  Expected: [\"a1\"]\n  Received: []\n 1 pass, 1 fail"}],
+  "threads": [
+    {"id": "PRRT_1", "isResolved": false, "path": "src/export.ts", "line": 9,
+     "comments": [{"fullDatabaseId": "5000000001", "author": "cubic-dev-ai", "url": "https://github.com/example-org/example-app/pull/4600#discussion_r5000000001",
+       "body": "**P1: Event can be lost on retry.** If `finalize` commits but `publish` throws, the task retries, `find` returns the finalized account, and the function returns early without publishing. The event is never sent.\n\n<!-- cubic:attribution -->"}]}
+  ],
+  "reviews": [],
+  "conversationComments": []
+}

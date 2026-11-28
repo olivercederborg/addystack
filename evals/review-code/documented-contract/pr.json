@@ -1,0 +1,20 @@
+{
+ "number": 4619,
+ "url": "https://github.com/example-org/example-app/pull/4619",
+ "author": "robin-dev",
+ "base": "develop",
+ "title": "Return expiring receipt download URLs through the API",
+ "body": "## Scope\n\nReturn a 15-minute download URL for each receipt document through `GET /v1/transactions/:id/receipts`.\n\n## Motivation\n\nAPI integrations can see a Transaction's receipts but can't fetch the files.\n\n## Risk and rollout\n\n**Door:** one-way, published API contract\n\n- A missing original or a storage failure fails the whole listing with a 500. No partial results or nullable links are returned. The test \"fails the whole listing when a file can't be signed\" covers it.\n- Before release, check that the deployed credentials allow the full 15 minutes.",
+ "linkedIssue": {
+  "id": "EX-60",
+  "body": "API callers get a direct download URL, valid for 15 minutes, for every receipt file on a Transaction they can see. A Transaction with no receipts returns an empty list."
+ },
+ "ci": [
+  {
+   "name": "test",
+   "required": true,
+   "state": "SUCCESS"
+  }
+ ],
+ "existingComments": []
+}

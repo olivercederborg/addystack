@@ -13,9 +13,11 @@ GATES.json, written by the agent from the whole PR (base...head), never a re-rev
 
 Every row of the PR's Decisions table has an entry under its `D<n>` id; a decision found in
 the diff that the table lacks has `"id": null`. A decision whose gate is null follows an
-established pattern, so it needs no human. A sensitive area gets a deeper review, never a gate.
+established pattern, so it needs no human, unless the repository's own one-way doors name its
+kind. A sensitive area gets a deeper review, and a gate only when those one-way doors name it.
 
-    gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head
+    gates.py check N GATES.json   exit 1 naming each problem, read against the PR's body and head,
+                                  and the one-way doors its PR template lists at the base
     gates.py decide GATES.json    what an unattended reviewer would do with no held finding
     gates.py own-diff BASE HEAD   the PR's own-diff fingerprint, run in the repository's checkout
 """
@@ -39,6 +41,14 @@ REQUIRED = ('passed', 'pending', 'failed')
 SECOND_OPINION = ('ran', 'not-needed', 'missing')
 SHA = re.compile(r'[0-9a-f]{40}')
 TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
+# A repository's own list of one-way doors, in a PR template where GitHub looks for one.
+# The list ends with its sentence, a blank line, a heading, or the comment it sits in.
+DOORS = re.compile(r'one-way\s+doors\s+include:?\s+(.+?)(?=\.(?:\s|\Z)|-->|\n\s*\n|\n\s*#|\Z)', re.I | re.S)
+ITEM = re.compile(r'[,;]|\s(?:and|or)\s')
+# Markdown emphasis and code marks, and an aside in parentheses, are not part of an item's name.
+PLAIN = re.compile(r'[*`]|\([^)]*\)')
+TEMPLATE = re.compile(r'(\.github/|docs/)?pull_request_template\.md', re.I)
+TEMPLATE_FOLDERS = ('.github/', '', 'docs/')
 
 
 def load(path) -> dict:
@@ -74,6 +84,42 @@ def check(verdict: dict, pr_body: str, head: str, number: int | None = None) -> 
     problems += [f'{row} from the Decisions table has no entry' for row in dict.fromkeys(TABLE_ROW.findall(pr_body))
                  if row not in covered]
     return problems
+
+
+def one_way_doors(base: str, cwd: str = '.') -> tuple | None:
+    """The repository's own one-way doors at base, as ("path:line", "the list"): the "One-way doors
+    include …" sentence of the PR template GitHub uses, the first in .github/, the root, then
+    docs/. None when that template lists none, or there is none."""
+    def git(*arguments):
+        return subprocess.run(['git', '-C', cwd, *arguments], capture_output=True, text=True, check=True,
+                              timeout=60).stdout
+    # --full-tree: the paths are the repository's, whatever folder the review runs in.
+    templates = [path for path in git('ls-tree', '--full-tree', '--name-only', base, '--', './', '.github/', 'docs/')
+                 .splitlines() if TEMPLATE.fullmatch(path)]
+    if not templates:
+        return None
+    path = min(templates, key=lambda path: TEMPLATE_FOLDERS.index(path[:path.rfind('/') + 1]))
+    # The whole file: a Markdown sentence can wrap across lines.
+    text = git('show', f'{base}:{path}')
+    if not (match := DOORS.search(text)):
+        return None
+    return f'{path}:{text.count(chr(10), 0, match.start()) + 1}', ' '.join(match.group(1).split())
+
+
+def doors(verdict: dict, base: str, cwd: str = '.') -> list:
+    """Problems with a verdict against the repository's own one-way doors at base, the PR's base
+    now: a sensitive area that is an item of their list by its own name is a one-way door even
+    when it follows a pattern, so it needs a one-way-door decision at its code. A narrower item,
+    such as authorization changes, is the agent's to gate."""
+    definition = one_way_doors(base, cwd)
+    if definition is None:
+        return []
+    source, listed = definition
+    items = {item.strip().lower() for item in ITEM.split(PLAIN.sub('', listed))}
+    covered = {decision['code'] for decision in verdict['decisions'] if decision['gate'] == 'one-way-door'}
+    return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
+            'decision at that code' for entry in verdict['sensitive']
+            if items & {entry['area'], entry['area'].replace('-', ' ')} and entry['code'] not in covered]
 
 
 def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
@@ -142,6 +188,8 @@ def main(arguments):
         problems = check(verdict, pr['body'], pr['headRefOid'], int(arguments[1]))
         if not problems and not same_diff(verdict['base'], pr['baseRefOid'], pr['headRefOid']):
             problems.append(f"the PR's diff against its base is not the one the verdict judged from {verdict['base']}")
+        if not problems:
+            problems = doors(verdict, pr['baseRefOid'])
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':

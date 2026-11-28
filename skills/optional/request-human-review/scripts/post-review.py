@@ -26,9 +26,10 @@ or never finished within --wait), or superseded (the head moved, or the PR moved
 base branch while the checks were waited on; nothing posted, since that push or retarget
 starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
 GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
-review is recorded in POSTED.json beside REVIEW.json, so a run retried after a failed
-withdrawal finishes it without posting the review again; a retried approval finds this App's
-approval of the head and keeps it.
+review is recorded in POSTED.json beside REVIEW.json, so a retried run posts nothing it
+already posted, and one retried after a failed withdrawal finishes it. A new review that
+approves a head this App already approves posts its body as a comment saying the approval
+stands, never a second approval.
 """
 from __future__ import annotations
 
@@ -145,6 +146,9 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     judged = current['baseRefOid']
     if not gates.same_diff(verdict['base'], judged, head):
         raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
+    # The repository's one-way doors at the base the PR merges into, here and after it moves.
+    if problems := gates.doors(verdict, judged):
+        raise ValueError('; '.join(problems))
     findings = review['findings']
     # review-code's rule: a blocking call always holds. A finding that doesn't say true or false
     # is refused, never read as not holding.
@@ -179,6 +183,8 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
             if not gates.same_diff(verdict['base'], base['baseRefOid'], head):
                 raise ValueError("the PR's diff against its base changed while the checks were waited on; review it again")
             judged = base['baseRefOid']
+            if problems := gates.doors(verdict, judged):
+                raise ValueError('; '.join(problems))
         moved = github('head', number).strip()
         if moved != head:
             return {'outcome': 'superseded', 'head': moved}
@@ -191,19 +197,30 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
         sleep(POLL_SECONDS)
     body = (folder / review['body']).read_text()
     outcome = {'head': head}
+    # A run that posted and then stopped left a record: a retry that would post the same thing
+    # reuses that post instead of posting it twice.
+    record = folder / 'POSTED.json'
+    posted = json.loads(record.read_text()) if record.exists() else {}
     with tempfile.TemporaryDirectory(dir=folder) as scratch:
         scratch = Path(scratch)
         try:
             if action == 'approve':
                 # No inline comments: an open thread would hold the merge until someone resolves it.
                 body += _notes(findings, 'Notes that don\'t hold the approval', folder)
-                # A retry after a run that approved this head, then stopped, keeps that approval
-                # rather than posting a second one.
-                if active and active['state'] == 'APPROVED' and active['commit_id'] == head:
-                    outcome['review'] = f"review {active['id']}, already approving {head[:7]}"
+                sent = hashlib.sha256(body.encode()).hexdigest()
+                outcome['outcome'] = 'approved'
+                stands = active and active['state'] == 'APPROVED' and active['commit_id'] == head
+                if stands and posted.get('head') == head and posted.get('outcome') == 'approved' and posted.get('sent') == sent:
+                    outcome['review'] = posted['review']
+                elif stands:
+                    # A new review of a head this App already approves, such as one its author
+                    # asked for or one after a retarget: the approval stands, and a comment says so.
+                    body += f"\n**Still approved:** this App's approval of `{head[:7]}` stands, so this review " \
+                            'posts as a comment, not a second approval.\n'
+                    outcome['review'] = _url(github('comment', number, _write(scratch, 'body.md', body)))
                 else:
                     outcome['review'] = _url(github('approve', number, head, '', _write(scratch, 'body.md', body)))
-                outcome['outcome'] = 'approved'
+                record.write_text(json.dumps({'head': head, 'outcome': 'approved', 'sent': sent, 'review': outcome['review']}))
                 # Once approved, a thread it can't resolve is named, never a failure: the
                 # approval already counts.
                 for thread in threads:
@@ -237,12 +254,9 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                 event = 'REQUEST_CHANGES' if action == 'request-changes' else 'COMMENT'
                 outcome['outcome'] = {'request-changes': 'changes-requested', 'needs-human': 'needs-human',
                                       'not-approved': 'not-approved'}[action]
-                # A run that posted this review and then stopped before withdrawing the earlier one
-                # left a record: a retry that would post the same thing finishes that withdrawal
-                # instead of posting it twice, and withdraws only the review it was meant to, while
-                # that one still counts; a newer one stands.
-                record = folder / 'POSTED.json'
-                posted = json.loads(record.read_text()) if record.exists() else {}
+                # A retry of a run that posted this review and then stopped before withdrawing the
+                # earlier one finishes that withdrawal, and withdraws only the review it was meant
+                # to, while that one still counts; a newer one stands.
                 # What it posts, inline comments' text included, which the drafts only name.
                 sent = hashlib.sha256((body + json.dumps(drafts) + ''.join(
                     (folder / draft['body_file']).read_text() for draft in drafts)).encode()).hexdigest()

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs the kit's Dagger suites once per push, on each branch tip the push
 # sends, so a failure is blocked before the branch reaches GitHub; .githooks/pre-commit
-# runs only the lints, the touched skills' suites, and the suites Dagger leaves out
-# (preferences, preset, maintainer/) on this machine. `gh stack push`
+# runs only the lints, the touched suites, and the suites Dagger leaves out (preferences,
+# preset) on this machine. maintainer/'s tests, which Dagger leaves out too, run here after
+# the kit's, since they load the kit's hooks. `gh stack push`
 # and `gh stack submit` run git push, which runs this hook.
 # Enable once per clone (it enables pre-commit too):
 #   git config core.hooksPath .githooks
@@ -34,6 +35,8 @@ while read -r _ local _ remote; do
 done
 [ ${#tips[@]} -gt 0 ] || exit 0
 unset $(git rev-parse --local-env-vars)
+# maintainer/'s tests check the kit in each tip's tree, not one ADDYSTACK_KIT names.
+unset ADDYSTACK_KIT
 
 # The checks for one tree: today's Dagger block, unchanged, from the kit at $root.
 check_tree() {
@@ -160,5 +163,6 @@ for at in "${!tips[@]}"; do
       hooks_staged=true
     fi
     check_tree
+    run_suites "$root/maintainer"
   )
 done

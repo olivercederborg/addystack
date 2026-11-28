@@ -1,0 +1,6 @@
+{"number": 4611, "url": "https://github.com/example-org/example-app/pull/4611", "author": "robin-dev", "base": "develop", "title": "Add fee rows to top-up export",
+ "linkedIssue": {"id": "EX-42", "body": "Top-up exports must include a separate fee row, in the account's currency, for every top-up that has a fee, so bookkeeping balances."},
+ "reviews": [{"author": "olivercederborg", "state": "DISMISSED", "commit": "the commit tagged approved", "body": ""}],
+ "ci": [{"name": "test", "required": true, "state": "SUCCESS"},
+        {"name": "lint", "required": true, "state": "FAILURE", "log": "src/legacy.ts\n  2:1  error  `node:path` import should occur before import of `./fees`  import/order"}],
+ "existingComments": []}

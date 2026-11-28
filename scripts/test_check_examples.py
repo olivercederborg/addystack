@@ -102,6 +102,19 @@ class CheckExamplesTest(unittest.TestCase):
         self.assertEqual(problems(shown), [])
         self.assertEqual(problems(GOOD.replace("the draft below.", "the `<!-- turn ` line.")), [])
 
+    def test_an_id_needs_a_link_that_names_it(self):
+        unnamed = GOOD.replace("the draft below.", "the draft below.\n\nIt closes DEV-12 and #7.")
+        self.assertEqual(problems(unnamed), [
+            "cites DEV-12 without a link that names it, as in `[DEV-12, title](url)`",
+            "cites #7 without a link that names it, as in `[#7, title](url)`"])
+        lines = unnamed.split("\n")  # the example's inside starts on line 4
+        [(number, _), _] = check_examples.check_block(4, lines[3:-2])
+        self.assertIn("DEV-12", lines[number - 1])  # it reports the citing line
+        named = unnamed.replace("DEV-12 and #7", "[DEV-12, Fix exports](https://linear.app/x) and "
+                                                 "[#7, Retry the upload](https://github.com/x/y/pull/7), then #7")
+        self.assertEqual(problems(named), [])
+        self.assertEqual(problems(GOOD.replace("the draft below.", "the `#7` draft below.")), [])
+
     def test_every_ship_gate_example_shows_what_the_reader_accepts(self):
         # Agents copy examples before rules, so each ship gate in views shows the You accept view.
         views = (pathlib.Path(__file__).resolve().parent.parent / "skills/optional/reply-shape/references/views.md").read_text()
