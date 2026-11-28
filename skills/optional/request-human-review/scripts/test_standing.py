@@ -89,8 +89,8 @@ class Busy(unittest.TestCase):
         def gh(*arguments):
             queries.append(arguments[-1])
             return json.dumps({'data': {'u0': {'status': {'indicatesLimitedAvailability': True}},
-                                        'u1': {'status': None}, 'u2': None}})
-        self.assertEqual(standing._busy(gh, ['Alice', 'bob', 'gone']), {'alice'})
+                                        'u1': {'status': None}, 'u2': {'status': {'indicatesLimitedAvailability': False}}}})
+        self.assertEqual(standing._busy(gh, ['Alice', 'bob', 'carol']), {'alice'})
         self.assertEqual(len(queries), 1)
         self.assertIn('u0: user(login: "Alice")', queries[0])
 

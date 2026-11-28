@@ -154,7 +154,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     else:
         why = 'new reviewer' if new else 'areas changed' if moved else 'nothing new'
     result = {'post': not same or bool(new) or bool(moved), 'why': why, 'head': facts['head'], 'decisions': placed,
-              'request': request, 'suggested': suggested, 'uncovered': uncovered, 'away': away}
+              'request': request, 'suggested': suggested, 'uncovered': uncovered}
     block = {'pr': number, 'base': facts['base'], 'head': facts['head'], 'by': facts['viewer'],
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,
              'decisions': [{field: decision.get(field) for field in

@@ -50,14 +50,15 @@ def read(logins: list, share_since: dt.date, now: dt.datetime, gh) -> dict:
 
 
 def _busy(gh, logins: list) -> set:
-    """The logins whose GitHub status says Busy, lower-cased, in one aliased query."""
+    """The logins whose GitHub status says Busy, lower-cased, in one aliased query. A login
+    GitHub can't find (renamed, or a typo in REVIEWERS) fails the read, with the login named."""
     if not logins:
         return set()
     fields = ' '.join(f'u{index}: user(login: {json.dumps(login)}) {{ status {{ indicatesLimitedAvailability }} }}'
                       for index, login in enumerate(logins))
     users = json.loads(gh('api', 'graphql', '-f', f'query={{ {fields} }}'))['data']
     return {login.lower() for index, login in enumerate(logins)
-            if ((users[f'u{index}'] or {}).get('status') or {}).get('indicatesLimitedAvailability')}
+            if (users[f'u{index}']['status'] or {}).get('indicatesLimitedAvailability')}
 
 
 def _pulls(gh, since: dt.datetime) -> list:

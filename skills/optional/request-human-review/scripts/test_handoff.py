@@ -185,6 +185,11 @@ class Plan(unittest.TestCase):
         chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
         self.assertNotIn('Not asked', chosen['comment'])
+        # Someone already asked who is away still covers their area and isn't listed as not asked.
+        asked = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                          self.facts(engaged=['alice'], standing=standing(away={'alice'})))
+        self.assertEqual(asked['request'], [])
+        self.assertNotIn('Not asked', asked['comment'])
         # The PR's author is never listed as away, even when they are.
         own = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                         self.facts(author='dave', standing=standing(away={'dave'})))
@@ -326,6 +331,11 @@ class Facts(unittest.TestCase):
         drafted = Plan().plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), {**facts, 'engaged': []})
         self.assertEqual([reviewer['login'] for reviewer in drafted['request']], ['alice'])
         self.assertIn('- Not asked: `bob` (request removed from this PR)', drafted['comment'])
+        # A removed request for someone REVIEWERS doesn't name changes nothing.
+        answers['timeline'] += '\n' + json.dumps({'event': 'review_request_removed', 'login': 'zed'})
+        with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'), \
+                patch.object(handoff.standing, 'read', fresh):
+            self.assertNotIn('zed', handoff._facts(7)['standing'])
 
 if __name__ == '__main__':
     unittest.main()
