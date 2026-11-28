@@ -221,6 +221,14 @@ class Score(unittest.TestCase):
         picked = reviewers.pick(rules, both, 'someone', ['lee'], standing(asks, rules=rules), WEIGHTS, {})
         self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping'])])
 
+    def test_the_main_area_never_goes_to_someone_already_asked(self):
+        rules = reviewers.parse(self.FILE)
+        asks = {**dict.fromkeys(self.ASKS, 1), 'ann': 4, 'owen': 4, 'lee': 0}
+        # lee, asked by the author and with no open asks, would top bookkeeping at 0; the main
+        # area leaves lee out, so the best free person is requested: Cass, -1, by name.
+        picked = reviewers.pick(rules, [{'domain': 'bookkeeping'}], 'someone', ['lee'], standing(asks, rules=rules), WEIGHTS, {})
+        self.assertEqual([(r['login'], r['role'], r['domains']) for r in picked], [('Cass', 'fallback', ['bookkeeping'])])
+
     def test_a_free_p1_still_beats_someone_reused(self):
         rules = reviewers.parse(self.FILE)
         both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'transactions'}]

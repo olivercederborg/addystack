@@ -161,10 +161,11 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     the highest score takes it: `weights` points for the area's P1, P2 or P3, less `open ask` per
     open ask and `share` times their share in standing (measuring it from the lowest share would
     move everyone alike and change no pick); ties go to fewer open asks, then by name. For the
-    main area that's among everyone the file names but the author and anyone engaged. For a secondary area someone engaged may win too, without a new request, and anyone
-    engaged or picked gets `reuse` on top, so one person reviewing several areas is slightly
-    preferred to asking another. An area that is None or lists nobody but the author gives
-    nobody points, and anyone engaged or picked covers it."""
+    main area that's among everyone the file names but the author and anyone engaged. For a
+    secondary area someone engaged may win too, without a new request, and anyone engaged or
+    picked gets `reuse` on top, so one person reviewing several areas is slightly preferred to
+    asking another. An area that is None or lists nobody but the author gives nobody points,
+    and anyone engaged or picked covers it."""
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
@@ -192,7 +193,8 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
             return next((f'P{index + 1}' for index, other in enumerate(priority) if other.lower() == login.lower()), None)
         def score(login):
             known = standing[login.lower()]
-            reused = 0 if main else weights['reuse'] * has(asked, login)
+            # In the main area nobody asked is a candidate, so only secondary areas see this.
+            reused = weights['reuse'] * has(asked, login)
             # Rounded, so two equal scores tie and the tie rule decides, not float noise in the shares.
             return round(weights.get(rank(login), 0) - weights['open ask'] * known['asks']
                          - weights['share'] * known['share'] + reused, 9)
