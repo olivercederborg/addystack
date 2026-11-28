@@ -83,8 +83,12 @@ def pr_at(events, at):
 
 
 def view(ref, at):
+    """The PR as project.view_pr reads it. The timelines hold no pushes, so its head never moves."""
     repo, n = ref.split("#")[0], int(ref.split("#")[1])
-    return pr_at(timelines[(repo, n)], at) if timelines.get((repo, n)) is not None else None
+    if timelines.get((repo, n)) is None:
+        return None
+    state, draft = pr_at(timelines[(repo, n)], at)
+    return project.Pull(state, bool(draft), ref)
 
 
 rows_out = []
