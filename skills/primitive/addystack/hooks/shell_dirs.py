@@ -33,6 +33,54 @@ BRANCH_MOVES = re.compile(r"\bgit(?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*\s+(?:
                    r"|\bgh\s+stack\s+(?:push|submit|rebase|sync|add|modify|checkout|switch|up|down|top|bottom|merge)\b")
 
 
+# The options that take a value, which is never a flag, in the commands the gates read: gh pr
+# create, ready, and edit, and gh stack submit, from gh 2.103's --help. Their short forms
+# don't clash: each is valued in all four or in none.
+VALUED = {"-R", "--repo", "-t", "--title", "-b", "--body", "-F", "--body-file", "-B", "--base", "-H", "--head",
+          "-a", "--assignee", "-l", "--label", "-m", "--milestone", "-p", "--project", "-r", "--reviewer",
+          "-T", "--template", "--recover", "--remote", "--attach",
+          *(f"--{change}-{what}" for change in ("add", "remove")
+            for what in ("assignee", "label", "project", "reviewer"))}
+
+
+def options(args):
+    """gh's flags in args as (name, value) pairs, value None for a bare switch, and its
+    positional arguments, read as gh's pflag does: `-df` is `-d -f`, `-Bmain` and `-dB main`
+    give -B its value, a valued flag takes the next word even when it starts with -, and `--`
+    ends the flags."""
+    pairs, positional, at = [], [], 0
+    while at < len(args):
+        arg, at = args[at], at + 1
+        if arg == "--":
+            return pairs, positional + args[at:]
+        if arg.startswith("--"):
+            name, equals, value = arg.partition("=")
+            if not equals and name in VALUED and at < len(args):
+                value, at, equals = args[at], at + 1, True
+            pairs.append((name, value if equals else None))
+        elif arg.startswith("-") and len(arg) > 1:
+            letters = arg[1:]
+            while letters:
+                name, letters = "-" + letters[0], letters[1:]
+                if letters.startswith("="):
+                    pairs.append((name, letters[1:]))
+                    break
+                if name in VALUED:
+                    if not letters and at < len(args):
+                        letters, at = args[at], at + 1
+                    pairs.append((name, letters))
+                    break
+                pairs.append((name, None))
+        else:
+            positional.append(arg)
+    return pairs, positional
+
+
+def flag(args, *names):
+    """The value of the last of names in args (`-R x`, `--repo x`, `--repo=x`, `-Rx`), or None."""
+    return next((value for name, value in reversed(options(args)[0]) if name in names), None)
+
+
 def unreadable(word):
     """Whether a path or value holds what only the shell can expand: a variable, a glob, or a
     quoted string with spaces, which reads as ''."""

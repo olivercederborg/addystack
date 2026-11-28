@@ -121,7 +121,7 @@ class Render(unittest.TestCase):
                  for event, groups in hooks.items()}
         # A new hook goes after the trusted ones, so their positions hold.
         self.assertEqual(names["PreToolUse"], ["merge-gate.py", "ready-gate.py", "push-gate.py",
-                                               "agent-memory-guard-notice.py"])
+                                               "agent-memory-guard-notice.py", "stack-gate.py"])
         self.assertEqual([len(groups) for groups in hooks.values()], [1, 1, 1])
 
     def cli(self, *args):

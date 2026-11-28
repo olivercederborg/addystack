@@ -1715,6 +1715,62 @@ for line in sys.stdin:
         self.assertRegex(self.drift()[0], "^claude: can't read ")
 
 
+class StackGate(unittest.TestCase):
+    """stack-gate.py denies `gh pr create --base <branch>` in a gh-stack checkout, replayed on
+    the creates agents ran from Nov 14 to 28, 2026, and passes a create on the default branch."""
+
+    def setUp(self):
+        self.dir = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.dir)
+        self.repo = self.dir / "repo"
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        bin_dir = self.dir / "bin"
+        bin_dir.mkdir()
+        gh = bin_dir / "gh"
+        gh.write_text("#!/bin/sh\n[ \"$1 $2\" = \"repo view\" ] && echo \"$FAKE_TRUNK\"\n")
+        gh.chmod(0o755)
+        (self.dir / "state").mkdir()
+        self.env = {**resolved_state(self.dir / "state", json.dumps({"policy": {"defaults": {"pushVia": "gh-stack"}}})),
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_TRUNK": "main"}
+
+    def denies(self, command, **env):
+        return denies("stack-gate.py", "Bash", {"command": command}, env={**self.env, **env}, cwd=str(self.repo))
+
+    def test_denies_the_creates_that_stacked_with_no_github_stack(self):
+        for command in (
+                # addystack #147's thread, Nov 27, 2026
+                "cd .. && cd repo && gh pr create -R olivercederborg/addystack --draft --base request-human-handoff "
+                "--head app-review-split --title t --body-file b.md",
+                # a work repo's thread, Nov 27, 2026
+                "gh pr create --draft --base dev-4039-review-threads --head dev-4072-post-as-reviewer "
+                "--title \"Post a Slack review\" --body \"Stacked on #42.\"",
+                # addystack, Nov 26, 2026
+                "gh pr create --repo olivercederborg/addystack --draft --base coordinator-status-view "
+                "--head coordinator-status-tab-live --body-file b.md",
+                "gh pr create -dB t3/numbered-project-goals"):
+            with self.subTest(command=command):
+                self.assertTrue(self.denies(command))
+
+    def test_passes_a_create_on_the_default_branch_or_without_a_base(self):
+        for command in ("gh pr create --draft --base main --title t", "gh pr create --draft --fill",
+                        "gh pr create --help --base x", "echo 'gh pr create --base x'",
+                        "cat <<EOF\ngh pr create --base x\nEOF"):
+            with self.subTest(command=command):
+                self.assertFalse(self.denies(command))
+        self.assertFalse(self.denies("gh pr create --base develop", FAKE_TRUNK="develop"))
+
+    def test_passes_when_it_cant_tell(self):
+        for command in ("gh pr create --base \"$BASE\"", "cd $W && gh pr create --base x",
+                        "cd /nonexistent && gh pr create --base x"):
+            with self.subTest(command=command):
+                self.assertFalse(self.denies(command))
+        self.assertFalse(self.denies("gh pr create --base x", FAKE_TRUNK=""))
+
+    def test_passes_a_checkout_that_pushes_with_git(self):
+        env = resolved_state(self.dir / "state", json.dumps({"policy": {"defaults": {"pushVia": "git"}}}))
+        self.assertFalse(self.denies("gh pr create --base feature", ADDYSTACK_STATE=env["ADDYSTACK_STATE"]))
+
+
 class ManifestMatchesReadme(unittest.TestCase):
     """manifest.json and README.md's table describe the same hooks."""
 
