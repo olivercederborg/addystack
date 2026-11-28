@@ -211,7 +211,7 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn("| # | Kind | Name | From | Since | Batch |", self.text())
         self.assertIn("| 1 | decide | keep the v1 export | coordinator |", self.text())
         out = self.project("queue", "done", "1", "--answer", "keep · the user: \"a\"").stdout
-        self.assertIn("2 of 2 need you, on one card · post · 1 post the reply to Ana on #41; 2 re-request Ana on #42\n"
+        self.assertIn("2 of 2 need you, on one card · post · 2 post the reply to Ana on #41; 3 re-request Ana on #42\n"
                       'needs: [{"id":2,"kind":"review","name":"post the reply to Ana on #41"},'
                       '{"id":3,"kind":"review","name":"re-request Ana on #42"}]', out)
         self.assertIn("--batch takes one word", self.project("queue", "add", "review", "post it", "--batch", "post it",

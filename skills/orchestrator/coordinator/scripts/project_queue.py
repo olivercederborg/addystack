@@ -94,7 +94,9 @@ def _item(row: str, width: int = len(HEADER)) -> Item:
 
 
 def _columns(lines: list[str], start: int, end: int) -> None:
-    """Writes the Batch column into a table from before it, each old row's cell empty."""
+    """Writes the Batch column into a table from before it, each old row's cell empty.
+    Raises QueueError on a table it can't read, which it leaves as it is."""
+    _table(lines, start, end)
     if _width(lines, start, end) == len(HEADER):
         table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
         lines[table[0]], lines[table[1]] = _row(BATCHED), "|" + "---|" * len(BATCHED)
@@ -237,10 +239,10 @@ def card(items: list[Item]) -> list[Item]:
 def strip(items: list[Item]) -> str:
     """The line a reply carries while the queue holds items: which it shows of how many,
     and the name and asker of the one, or the batch and each name of a card that shows
-    several, numbered as the card numbers them."""
+    several, each by its id, the number its need and the card give it."""
     shows = card(items)
     if len(shows) > 1:
-        names = "; ".join(f"{at} {shown(item.name)}" for at, item in enumerate(shows, 1))
+        names = "; ".join(f"{item.id} {shown(item.name)}" for item in shows)
         return f"{len(shows)} of {len(items)} need you, on one card · {shown(shows[0].batch)} · {names}"
     return f"1 of {len(items)} need{'s' if len(items) == 1 else ''} you · {shown(items[0].name)} · {shown(items[0].source)}"
 

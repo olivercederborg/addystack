@@ -16,7 +16,8 @@ when). Its sections:
   added by `phase`.
 - **Queue**: what waits on the user, as step 5 orders it: a row per real call, stuck
   run, or Do, with the id its turn-block need carries, never reused, and `Next id:` above
-  the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
+  the table. `queue add`, `queue batch` (a call queued before its batch was known), and `queue
+  done` are its only writers, and `done` adds the item,
   who asked it, and the answer under Decisions. A phase end carries it over. A project
   from before the queue starts it with `queue import`, given a turn block naming every
   item still open, with `--from <id>=<worker>` and `--stuck <id>` for what a block can't

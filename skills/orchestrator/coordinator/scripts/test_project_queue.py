@@ -139,8 +139,8 @@ class Batch(unittest.TestCase):
                         "an unbatched top item shows alone")
         q.done(lines, 1)
         shown = q.show(q.read(lines)).splitlines()
-        self.assertEqual(shown[0], "3 of 4 need you, on one card · post · 1 post the reply to Ana on #41; "
-                                   "2 re-request Ana on #42; 3 approve #43 with two comments")
+        self.assertEqual(shown[0], "3 of 4 need you, on one card · post · 2 post the reply to Ana on #41; "
+                                   "4 re-request Ana on #42; 5 approve #43 with two comments")
         self.assertEqual(turn_block.parse('<!-- turn {"state":"stop","' + shown[1].replace(": ", '":', 1) + ',"options":[]} -->')
                          .needs, (turn_block.Need(2, "review", "post the reply to Ana on #41"),
                                   turn_block.Need(4, "review", "re-request Ana on #42"),
@@ -165,13 +165,23 @@ class Batch(unittest.TestCase):
         lines = project(("review", "post to Ana on #41"), ("decide", "keep the v1 export"), ("review", "post to Ana on #42"))
         self.assertEqual([item.id for item in q.batch(lines, "post", [1, 3])], [1, 3])
         self.assertTrue(q.show(q.read(lines)).startswith("2 of 3 need you, on one card · post · 1 post to Ana on #41; "
-                                                         "2 post to Ana on #42\n"))
+                                                         "3 post to Ana on #42\n"))
         with self.assertRaisesRegex(q.QueueError, "no open Queue item 9"):
             q.batch(lines, "post", [9])
 
     def test_a_queue_section_with_no_table_says_how_to_fix_it(self):
         with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
             q.read(["## Queue", "", "Next id: 1", ""])
+
+    def test_batch_leaves_a_table_it_cant_read_as_it_is(self):
+        # Codex review of r204/batch, round 2: it rewrote a header with From and Since swapped.
+        swapped = ["## Queue", "", "Next id: 2", "", "| # | Kind | Name | Since | From |", "|---|---|---|---|---|",
+                   "| 1 | review | post Ana | 2026-11-18 14:05 | rv41 |", ""]
+        for lines in (list(swapped), ["## Queue", "", "Next id: 1", ""]):
+            before = list(lines)
+            with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
+                q.batch(lines, "post", [1])
+            self.assertEqual(lines, before)
 
     def test_a_batch_is_one_word(self):
         lines = project()
