@@ -129,7 +129,8 @@ inputs or one of Parallel by default's three reasons.
 ## 4. On each wake
 
 - **The user's message**: an answer goes through step 5. A priority, for every
-  project here, goes to `project.py <folder> priority set '<their words>' --match <term>`. Anything else updates the plan.
+  project here, goes to `project.py <folder> priority set '<their words>' --match
+  <term>`. Anything else updates the plan.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
@@ -149,9 +150,10 @@ inputs or one of Parallel by default's three reasons.
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
   scheduled task's id: `delete_scheduled_task` it first. This machine's
   [tick](references/tick.md) timer then checks the project every 10 minutes, and
-  messages this thread only with news T3 doesn't send. Its message opens `<coordinator-tick>`: handle each line as
-  this step says and fix its row, or the line repeats hourly. When you set `tick`, run
-  `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
+  messages this thread only with news T3 doesn't send. Its message opens
+  `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
+  repeats hourly. When you set `tick`, run
+  `project.py <folder> tick` once to see the timer runs. A wait for a time, such as
   a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
@@ -182,8 +184,8 @@ no probe settles; only those reach the user.
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
 --from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
-oldest first, after the priority's. While it holds one, every reply here, ⏳ statuses and quiet wakes
-included, ends on the top item: the
+oldest first, after the priority's. While it holds one, every reply here, ⏳ statuses
+and quiet wakes included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
 keep the v1 export · export-v2`, and the need that leads the turn block's `needs`.
