@@ -18,12 +18,6 @@ def cells(row):
     return [cell.strip() for cell in CELL.split(row.strip())[1:-1]]
 
 
-def ranges(text):
-    """text with each range `#20–#22`, up to 20 apart, written out as `#20 #21 #22`."""
-    return re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
-        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
-
-
 # A word before " #N" that names no repo, as in "merge after #36", "stack #3", or "#20 and #21".
 # merge_go.py reads the same list, so a prompt and a Workers cell agree on what names a repo.
 NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
@@ -45,8 +39,9 @@ class Pulls(NamedTuple):
 
 
 ARROW = re.compile(r"\s*(?:→|->|=>|⟶)\s*")  # what joins a stack's PRs in a cell
-# A range, `#20–#22` or `acme/tools#20–#22`, up to 20 apart: its PRs read as a chain, so all keep one repo
-RANGE = re.compile(r"(?<![\w/#])((?:[\w.-]+/[\w.-]+)?)#(\d+)\s*[–-]\s*#?(\d+)\b")
+# A range, `#20–#22`, `box#20–#22`, or `acme/tools#20–#22`, up to 20 apart: its PRs read as a chain, so all
+# keep one repo
+RANGE = re.compile(r"(?<![\w/.#-])((?:[\w.-]+(?:/[\w.-]+)?)?)#(\d+)\s*[–-]\s*#?(\d+)\b")
 
 
 def chained(text):

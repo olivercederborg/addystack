@@ -163,6 +163,7 @@ class Pulls(unittest.TestCase):
                  ("#20 → #21 onto #19, #22 blocked by #21", ("acme/box#20", "acme/box#21", "acme/box#19", "acme/box#22")),
                  ("acme/tools#7 · #8", ("acme/tools#7", "acme/box#8")),  # only an arrow continues a chain
                  ("acme/tools#20–#22", ("acme/tools#20", "acme/tools#21", "acme/tools#22")),  # a range keeps its repo
+                 ("box#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
                  ("acme/tools#109 → #110–#112", ("acme/tools#109", "acme/tools#110", "acme/tools#111", "acme/tools#112")),
                  ('[#109](https://github.com/acme/tools/pull/109 "tools PR")', ("acme/tools#109",)),  # a titled link
                  ("[#109](https://github.com/acme/tools/pull/109 (tools PR))", ("acme/tools#109",)),
@@ -175,6 +176,7 @@ class Pulls(unittest.TestCase):
     def test_a_ref_with_no_repo_to_resolve_against_is_unread(self):
         cases = [("tools #109 → #110 (#108 merged)", "acme/box", (), ("tools #109", "#110")),  # #110 continues tools
                  ("web #20–#22", "acme/box", (), ("web #20–#22",)),
+                 ("tools#20–#22", "acme/box", (), ("tools#20", "#21", "#22")),
                  ("tools#4", "acme/box", (), ("tools#4",)),  # its owner is a guess
                  ("#7 and box#8", "", (), ("#7", "box#8")),
                  ("acme/box#20;tools #109", "acme/box", ("acme/box#20",), ("tools #109",)),  # no space after ;
