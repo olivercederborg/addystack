@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import standing  # noqa: E402
 
-NOW = dt.datetime(2026, 12, 8, 12, tzinfo=dt.timezone.utc)
+NOW = dt.datetime(2026, 12, 8, 12, tzinfo=dt.timezone.utc)   # a Tuesday
 SINCE = dt.date(2026, 12, 1)
 
 
@@ -17,10 +17,15 @@ def ago(days):
     return (NOW - dt.timedelta(days=days)).isoformat().replace('+00:00', 'Z')
 
 
-def pull(number, author='carol', state='OPEN', updated=0, reviews=(), pending=(), asked=()):
-    """A PR node: reviews are (login, days ago, type), pending the logins still requested, and
-    asked the (login, days ago) review-request events."""
-    return {'number': number, 'state': state, 'updatedAt': ago(updated), 'author': {'login': author},
+def pull(number, author='carol', state='OPEN', updated=0, opened=20, reviews=(), pending=(), asked=(),
+         comments=(), commits=()):
+    """A PR node: reviews are (login, days ago, type), pending the logins still requested, asked
+    the (login, days ago) review-request events, and comments and commits (login, days ago)."""
+    return {'number': number, 'state': state, 'createdAt': ago(opened), 'updatedAt': ago(updated),
+            'author': {'login': author},
+            'comments': {'nodes': [{'createdAt': ago(days), 'author': {'login': login}} for login, days in comments]},
+            'commits': {'nodes': [{'commit': {'authoredDate': ago(days), 'author': {'user': {'login': login}}}}
+                                  for login, days in commits]},
             'reviews': {'nodes': [{'submittedAt': ago(days), 'author': {'__typename': kind, 'login': login}}
                                         for login, days, kind in reviews]},
             'reviewRequests': {'nodes': [{'requestedReviewer': {'login': login}} for login in pending]},
@@ -29,8 +34,8 @@ def pull(number, author='carol', state='OPEN', updated=0, reviews=(), pending=()
 
 
 class Tally(unittest.TestCase):
-    def tally(self, *pulls, share_since=SINCE):
-        return standing.tally(list(pulls), ['Alice', 'bob', 'dave'], share_since, NOW)
+    def tally(self, *pulls, share_since=SINCE, busy=()):
+        return standing.tally(list(pulls), set(busy), ['Alice', 'bob', 'dave'], share_since, NOW)
 
     def test_an_open_ask_is_a_recent_request_to_someone_who_has_not_reviewed_the_pr(self):
         known = self.tally(
@@ -55,7 +60,39 @@ class Tally(unittest.TestCase):
         self.assertEqual((known['dave']['share'], known['bob']['share']), (1.0, 0.0))
 
     def test_before_the_first_review_everyone_has_a_share_of_0(self):
-        self.assertEqual(self.tally(), {login: {'asks': 0, 'share': 0.0} for login in ('alice', 'bob', 'dave')})
+        self.assertEqual({login: entry['share'] for login, entry in self.tally().items()},
+                         {'alice': 0.0, 'bob': 0.0, 'dave': 0.0})
+
+    def test_away_is_busy_or_no_activity_in_the_last_3_working_days(self):
+        # NOW is Tuesday noon, so 3 working days back is Thursday noon: the weekend doesn't count.
+        known = self.tally(
+            pull(1, author='alice', opened=4.9),                                # Thursday, after noon
+            pull(2, comments=[('bob', 5.1)], commits=[('bob', 6)]),             # Thursday morning
+            pull(3, reviews=[('dave', 1, 'User')]), busy={'dave'})
+        self.assertEqual({login: entry['away'] for login, entry in known.items()},
+                         {'alice': None, 'bob': 'no activity since 3 Dec', 'dave': 'Busy'})
+
+    def test_on_a_weekend_the_working_days_count_back_from_saturdays_start(self):
+        saturday_noon = dt.datetime(2026, 12, 12, 12, tzinfo=dt.timezone.utc)
+        self.assertEqual(standing._working_days_before(saturday_noon, 3), dt.datetime(2026, 12, 9, tzinfo=dt.timezone.utc))
+        self.assertEqual(standing._working_days_before(NOW, 3), NOW - dt.timedelta(days=5))
+
+    def test_a_comment_or_an_authored_commit_counts_as_activity_and_none_at_all_is_away(self):
+        known = self.tally(pull(1, comments=[('alice', 1)], commits=[('bob', 2)]))
+        self.assertEqual({login: entry['away'] for login, entry in known.items()},
+                         {'alice': None, 'bob': None, 'dave': 'no activity in 14 days'})
+
+
+class Busy(unittest.TestCase):
+    def test_one_query_names_each_busy_login(self):
+        queries = []
+        def gh(*arguments):
+            queries.append(arguments[-1])
+            return json.dumps({'data': {'u0': {'status': {'indicatesLimitedAvailability': True}},
+                                        'u1': {'status': None}, 'u2': {'status': {'indicatesLimitedAvailability': False}}}})
+        self.assertEqual(standing._busy(gh, ['Alice', 'bob', 'carol']), {'alice'})
+        self.assertEqual(len(queries), 1)
+        self.assertIn('u0: user(login: "Alice")', queries[0])
 
 
 class Pulls(unittest.TestCase):

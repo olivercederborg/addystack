@@ -18,7 +18,7 @@ The lines above the first domain hold the pick's settings, one `name: value` eac
 
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
     placed   = {**decision, 'domain': 'billing' | None}            None: no domain
-    standing = {'asks': 1, 'share': 0.25}                          per login, lower-cased, from standing.py
+    standing = {'asks': 1, 'share': 0.25, 'away': 'Busy' | None}  per login, lower-cased, from standing.py
     reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'P3' | 'fallback', 'domains': ['billing']}
 """
 from __future__ import annotations
@@ -158,16 +158,16 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     the caller leaves out. The PR's main area comes first: the one with the most decisions
     among those listing a P1 or P2 (or with the most decisions when none does); then the rest,
     from most decisions to fewest. An area adds nobody when an engaged or already picked login is
-    its P1 or P2, or when `held`, from earlier handoffs, names an engaged login for it. Otherwise
-    the highest score takes it: `weights` points for the area's P1, P2 or P3, less `open ask` per
-    open ask and `share` times their share in standing (measuring it from the lowest share would
-    move everyone alike and change no pick); ties go to fewer open asks, then by name, except
-    that in a secondary area one of its owners wins a tie first. For the
-    main area that's among everyone the file names but the author and anyone engaged. For a
-    secondary area someone engaged may win too, without a new request, and anyone engaged or
-    picked gets `reuse` on top, so one person reviewing several areas is slightly preferred to
-    asking another. An area that is None or lists nobody but the author gives nobody points,
-    and anyone engaged or picked covers it."""
+    its P1 or P2, or when `held`, from earlier handoffs, names an engaged login for it, even one
+    who is away now. Otherwise the highest score takes it: `weights` points for the area's P1,
+    P2 or P3, less `open ask` per open ask and `share` times their share in standing (measuring
+    it from the lowest share would move everyone alike and change no pick); ties go to fewer
+    open asks, then by name, except that in a secondary area one of its owners wins a tie
+    first. Nobody away is scored. For the main area that's among everyone the file names but
+    the author and anyone engaged. For a secondary area someone engaged may win too, without a
+    new request, and anyone engaged or picked gets `reuse` on top, so one person reviewing
+    several areas is slightly preferred to asking another. An area that is None or lists
+    nobody but the author gives nobody points, and anyone engaged or picked covers it."""
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
@@ -175,7 +175,8 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     def listed(name):
         return bool(name) and any(login.lower() != author.lower() for login in names(rules, name)[:2])
     order = sorted(counts, key=lambda name: (not listed(name), -counts[name], name or ''))
-    free = [login for login in unique(n for rule in rules for n in rule['names']) if login.lower() != author.lower()]
+    free = [login for login in unique(n for rule in rules for n in rule['names'])
+            if login.lower() != author.lower() and not standing[login.lower()]['away']]
     picked = []
     for index, name in enumerate(order):
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]

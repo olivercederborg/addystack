@@ -135,7 +135,11 @@ open review asks and their share of recent reviews, as `scripts/standing.py` cou
 aren't P1 or P2 of is scored the same way, except that someone already asked may take it
 without a new request, and anyone already asked or picked gets the `reuse` points: one
 person reviewing several areas is slightly preferred to asking another, though an owner of
-the area wins a tie. A domain with nobody listed gives nobody points, and someone already
+the area wins a tie. Nobody away is asked: a public Busy status on GitHub (the App can't see
+one shown only to the organization), or no PR, review, comment or authored commit in the
+last 3 working days. Nor is someone whose review request was removed from the PR, until
+anyone requests them again. The comment names each person skipped and why, or says nobody
+could be asked. A domain with nobody listed gives nobody points, and someone already
 requested, who has reviewed this head, or who is picked for another domain covers it.
 Someone already requested, or whose review of this head stands, covers the domains they're
 P1 or P2 of, and whomever its own earlier handoff picked for a domain keeps it while they're

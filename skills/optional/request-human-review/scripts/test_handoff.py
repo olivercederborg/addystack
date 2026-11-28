@@ -16,8 +16,9 @@ DISCLOSURE = '<sub>`AGENT`</sub><br>'
 SETTINGS = {'weights': {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10, 'reuse': 2}, 'share_since': None}
 
 
-def standing(**asks):
-    return {login: {'asks': asks.get(login, 0), 'share': 0.0} for login in ('alice', 'bob', 'dave')}
+def standing(away=(), **asks):
+    return {login: {'asks': asks.get(login, 0), 'share': 0.0, 'away': 'no activity since 17 Nov' if login in away else None}
+            for login in ('alice', 'bob', 'dave')}
 
 
 def decision(id_, code, gate='interface', text='Add a totals RPC'):
@@ -87,7 +88,7 @@ class Plan(unittest.TestCase):
 
     def test_someone_already_asked_who_wins_an_area_keeps_it_on_a_re_review(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
-        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        known = {login: {'asks': asks, 'share': 0.0, 'away': None} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
@@ -98,24 +99,24 @@ class Plan(unittest.TestCase):
         self.assertIn('asking: `bob`\n', first['comment'])
         # zoe is free now, but amy, still asked, keeps pay: nobody new is requested.
         again = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [handoff.read(first['comment'])],
-                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0, 'away': None}}})
         self.assertEqual((again['post'], again['request']), (False, []))
 
     def test_areas_the_authors_pick_wins_too_are_kept_on_their_record(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @amy\n## pay\n/packages/pay/ @zoe\n')
-        known = {'amy': {'asks': 0, 'share': 0.0}, 'zoe': {'asks': 2, 'share': 0.0}}
+        known = {'amy': {'asks': 0, 'share': 0.0, 'away': None}, 'zoe': {'asks': 2, 'share': 0.0, 'away': None}}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, changed=['packages/ops/a.ts', 'packages/pay/c.ts'], viewer='carol')
         first = self.plan(judged, facts, chosen=('amy',), with_suggested=True)
         self.assertEqual(handoff.read(first['comment'])['reviewers'], [{'login': 'amy', 'role': 'chosen', 'domains': ['ops', 'pay']}])
         again = self.plan(judged, {**facts, 'engaged': ['amy'], 'handoffs': [handoff.read(first['comment'])],
-                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0, 'away': None}}})
         self.assertEqual(again['request'], [])
 
     def test_a_re_review_posts_when_someone_already_asked_newly_keeps_an_area(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
-        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        known = {login: {'asks': asks, 'share': 0.0, 'away': None} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, changed=['packages/ops/a.ts', 'packages/pay/c.ts'],
@@ -125,18 +126,18 @@ class Plan(unittest.TestCase):
         second = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial]})
         self.assertEqual((second['post'], second['why'], second['request']), (True, 'areas changed', []))
         third = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial, handoff.read(second['comment'])],
-                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0, 'away': None}}})
         self.assertEqual((third['post'], third['request']), (False, []))
 
     def test_someone_already_named_who_now_holds_more_areas_is_posted(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
-        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        known = {login: {'asks': asks, 'share': 0.0, 'away': None} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
         block = handoff.read(self.plan(judged, facts)['comment'])
         # Both requests ended and bob is busier: amy, named before for pay, now takes ops too.
-        busy = {**known, 'bob': {'asks': 4, 'share': 0.0}}
+        busy = {**known, 'bob': {'asks': 4, 'share': 0.0, 'away': None}}
         second = self.plan(judged, {**facts, 'engaged': [], 'handoffs': [block], 'standing': busy})
         self.assertEqual((second['post'], second['why']), (True, 'new reviewer'))
         third = self.plan(judged, {**facts, 'engaged': ['amy'], 'handoffs': [block, handoff.read(second['comment'])],
@@ -145,20 +146,20 @@ class Plan(unittest.TestCase):
 
     def test_requesting_someone_who_was_only_kept_before_is_posted(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
-        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        known = {login: {'asks': asks, 'share': 0.0, 'away': None} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
         block = handoff.read(self.plan(judged, facts)['comment'])
         # amy's request, made by the author, ended unreviewed; with bob and zoe busy amy now
         # wins pay outright, and is newly requested.
-        busy = {**known, 'bob': {'asks': 4, 'share': 0.0}, 'zoe': {'asks': 4, 'share': 0.0}}
+        busy = {**known, 'bob': {'asks': 4, 'share': 0.0, 'away': None}, 'zoe': {'asks': 4, 'share': 0.0, 'away': None}}
         again = self.plan(judged, {**facts, 'engaged': ['bob'], 'handoffs': [block], 'standing': busy})
         self.assertEqual((again['post'], again['why'], [r['login'] for r in again['request']]), (True, 'new reviewer', ['amy']))
 
     def test_with_suggested_keeps_an_area_someone_already_asked_wins(self):
         rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
-        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        known = {login: {'asks': asks, 'share': 0.0, 'away': None} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
         judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
                          decision('D3', 'packages/pay/c.ts:1'))
         facts = self.facts(rules=rules, standing=known, engaged=['amy'], viewer='carol',
@@ -168,8 +169,31 @@ class Plan(unittest.TestCase):
         self.assertIn({'login': 'amy', 'role': 'kept', 'domains': ['pay']}, handoff.read(first['comment'])['reviewers'])
         # zoe is free later, but amy, still asked, keeps pay.
         later = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [handoff.read(first['comment'])],
-                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}}, chosen=('bob',), with_suggested=True)
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0, 'away': None}}}, chosen=('bob',), with_suggested=True)
         self.assertEqual(later['request'], [])
+
+    def test_people_who_are_away_are_skipped_and_named_with_why(self):
+        drafted = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), self.facts(standing=standing(away={'alice'})))
+        self.assertEqual(drafted['request'], [{'login': 'bob', 'role': 'P2', 'domains': ['billing']}])
+        self.assertIn('- Not asked: `alice` (no activity since 17 Nov)', drafted['comment'])
+        self.assertEqual(handoff.read(drafted['comment'])['away'], [{'login': 'alice', 'reason': 'no activity since 17 Nov'}])
+        nobody = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                           self.facts(standing=standing(away={'alice', 'bob', 'dave'})))
+        self.assertEqual((nobody['why'], nobody['request']), ('nobody to ask', []))
+        self.assertIn("- Nobody available: everyone REVIEWERS names but the PR's author is away or had their request", nobody['comment'])
+        # The author's own pick is requested, so it isn't listed as away and not asked.
+        chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                           self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
+        self.assertNotIn('Not asked', chosen['comment'])
+        # Someone already asked who is away still covers their area and isn't listed as not asked.
+        asked = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                          self.facts(engaged=['alice'], standing=standing(away={'alice'})))
+        self.assertEqual(asked['request'], [])
+        self.assertNotIn('Not asked', asked['comment'])
+        # The PR's author is never listed as away, even when they are.
+        own = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                        self.facts(author='dave', standing=standing(away={'dave'})))
+        self.assertEqual(handoff.read(own['comment'])['away'], [])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
@@ -278,6 +302,40 @@ class Facts(unittest.TestCase):
                          ('carol', None, None, ['alice', 'bob']))
         self.assertEqual(len(facts['handoffs']), 1, "the author's handoff doesn't stand in for the App's own")
 
+
+    def test_someone_whose_request_was_removed_is_left_out_until_requested_again(self):
+        events = [{'event': 'review_requested', 'login': 'alice'}, {'event': 'review_requested', 'login': 'Bob'},
+                  {'event': 'review_request_removed', 'login': 'bob'},
+                  {'event': 'review_request_removed', 'login': 'dave'}, {'event': 'review_requested', 'login': 'dave'}]
+        self.assertEqual(handoff._removed(events), {'bob'})
+        self.assertEqual(handoff._removed([]), set())
+        reviewers_file = 'priority: 3 2 1\nopen ask: 1\nshare: 10\nreuse: 2\nshare since: 2026-12-01\n## billing\n/packages/billing/ @alice @bob\n## auth\n/packages/auth/ @dave\n'
+        answers = {
+            'contents': reviewers_file,
+            'requested_reviewers': 'dave\n',
+            'reviews': '',
+            'timeline': '\n'.join(json.dumps(event) for event in events),
+            'comments': '',
+            'files': 'packages/billing/a.ts\n',
+            'pulls/7': json.dumps({'user': {'login': 'carol'}, 'body': None, 'base': {'sha': BASE}, 'head': {'sha': HEAD}})}
+        def gh(*arguments, missing_ok=False):
+            path = next(argument for argument in arguments if argument.startswith('repos/'))
+            return next(answer for name, answer in answers.items() if name in path.split('/', 3)[-1])
+        fresh = lambda logins, *rest: {login.lower(): {'asks': 0, 'share': 0.0, 'away': None} for login in logins}
+        with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'), \
+                patch.object(handoff.standing, 'read', fresh):
+            facts = handoff._facts(7)
+        # bob's request was removed: left out, with why. dave was removed, then requested again: back in.
+        self.assertEqual({login: entry['away'] for login, entry in facts['standing'].items()},
+                         {'alice': None, 'bob': 'request removed from this PR', 'dave': None})
+        drafted = Plan().plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), {**facts, 'engaged': []})
+        self.assertEqual([reviewer['login'] for reviewer in drafted['request']], ['alice'])
+        self.assertIn('- Not asked: `bob` (request removed from this PR)', drafted['comment'])
+        # A removed request for someone REVIEWERS doesn't name changes nothing.
+        answers['timeline'] += '\n' + json.dumps({'event': 'review_request_removed', 'login': 'zed'})
+        with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'), \
+                patch.object(handoff.standing, 'read', fresh):
+            self.assertNotIn('zed', handoff._facts(7)['standing'])
 
 if __name__ == '__main__':
     unittest.main()
