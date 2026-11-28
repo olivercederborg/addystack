@@ -633,9 +633,9 @@ def notify(title, subtitle, text):
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-# The check queue: at most checkQueue.maxChecks heavy checks run across every agent's
-# commands, and a new one waits, stopped, until a slot frees and running checks use under
-# checkQueue.maxCores. A unit is the topmost heavy process with its descendants, so
+# The check queue: at most checkQueue.maxChecks busy heavy checks run across every agent's
+# commands, and a new one other than a test run waits, stopped, until a slot frees and
+# running checks use under checkQueue.maxCores. A unit is the topmost heavy process with its descendants, so
 # turbo's eight lint tasks are eight units while oxlint's own tsgolint child shares
 # oxlint's slot: a child waiting on a slot its parent holds would deadlock.
 HOLD_SECONDS = 15 * 60  # a unit still held this long, with the queue still full, dies
