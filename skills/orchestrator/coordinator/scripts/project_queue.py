@@ -16,7 +16,8 @@ stuck, or a turn-block kind, `decide`, `review`, or `do`. Name is the turn block
 name: 1-80 characters with a word of 3+ letters. From is the worker, with its thread
 link, or `coordinator`. The user gets stuck runs first, then calls (decide and review),
 then Do items, oldest first within each, as the coordinator skill's step 5 orders them,
-behind the items the user's priority line names (project.py's `priority`)."""
+behind what waited a day under the user's priority line (project.py's `priority`) and
+then the items it names."""
 from __future__ import annotations
 
 import json
@@ -88,7 +89,7 @@ def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
          now: datetime | None = None, held_since: datetime | None = None) -> list[Item] | None:
     """The open items in the order the user gets them, or None when project.md has no
     Queue section yet. ahead, the user's priority line, set at held_since, puts first each
-    item that has waited over AGED under it, longest-waiting first, then the items it
+    item that has waited AGED or more under it, longest-waiting first, then the items it
     matches, then the rest, those two in the usual order. Raises QueueError on a table it
     can't read."""
     bounds = _bounds(lines)
