@@ -94,7 +94,7 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
   answer, a babysit pass, a retry, more work) goes into a free slot ahead of queued
   units, since it finishes an open PR. A task that only reads, reviews code, or drives
   an app without building takes none, and starts once Parallel by default lets it.
-  Queue the rest; a freed slot starts the priority's first, then the oldest.
+  Queue the rest; a freed slot starts `queue show`'s units, then the oldest.
 - **Parallel by default**: start every step whose inputs exist now, so verifies, in-app
   checks, the next PR, and probes overlap; a pilot's siblings need its proven brief
   (step 2). A test-only fix leaves running checks standing: follow it with a delta

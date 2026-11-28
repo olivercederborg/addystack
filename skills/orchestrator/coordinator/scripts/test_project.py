@@ -263,7 +263,7 @@ class PriorityLine(unittest.TestCase):
         self.assertEqual(self.order(), ["1", "2", "3"])
         said = self.run_in(self.heard, "priority", "set", "specifically Ana's PRs are the most important right now",
                            "--match", "Ana", "--match", "#41").stdout
-        self.assertRegex(said, r'^- \d{4}-\d\d-\d\d \d\d:\d\d · audit · until .* · match: Ana, #41 · "specifically')
+        self.assertRegex(said, r'^- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d · audit · until .* · match: Ana, #41 · "specifically')
         out = self.run_in(self.other, "queue", "show").stdout
         self.assertEqual(self.order(), ["2", "1", "3"], "#410 and Ben's name aren't Ana's #41")
         self.assertTrue(out.startswith("1 of 3 need you · post the reply to Ana on #41 · rv41\n"
@@ -279,7 +279,7 @@ class PriorityLine(unittest.TestCase):
         self.assertEqual((self.order(), self.run_in(self.other, "priority", "show").stdout), (["1", "2", "3"],
                                                                                                "no priority holds\n"))
 
-    def test_an_item_waiting_a_day_under_it_goes_next_so_none_starves(self):
+    def test_an_item_waiting_a_day_under_it_goes_first_so_none_starves(self):
         text = (self.other / "project.md").read_text()
         text = re.sub(r"(\| post the reply to Ana on #41 \| \S+ \| )[^|]+", r"\g<1>2020-01-01 09:00 ", text)
         (self.other / "project.md").write_text(text)
@@ -291,10 +291,24 @@ class PriorityLine(unittest.TestCase):
             re.search(r"until (\S+ \S+)", line)[1], "2999-01-01 00:00"))
         text = re.sub(r"(\| keep the v1 export \| \S+ \| )[^|]+", r"\g<1>2999-01-01 09:00 ", text)
         (self.other / "project.md").write_text(text)
-        self.assertEqual(self.order(), ["3", "2", "1"], "the priority's, then what waited a day under it, then the rest")
+        self.assertEqual(self.order(), ["2", "3", "1"], "what waited a day under it, then the priority's, then the rest")
         self.run_in(self.heard, "priority", "set", "nothing here", "--match", "zebra")
         self.assertIn("names nothing here", self.run_in(self.other, "queue", "show").stdout)
         self.assertEqual(self.order(), ["1", "2", "3"], "a priority that names nothing here leaves the order as before")
+
+    def test_it_reads_pr_ranges_and_urls_keeps_the_words_and_echoes_each_line(self):
+        # Codex review of r204/priority, round 1.
+        self.run_in(self.other, "queue", "add", "decide", "mark #6242–#6244 ready", "--from", "w")
+        self.run_in(self.other, "queue", "add", "review", "post on https://github.com/o/r/pull/7001", "--from", "w")
+        said = self.run_in(self.heard, "priority", "set", 'only the "urgent" PRs', "--match", "#6243", "#7001").stdout
+        self.assertIn('match: #6243, #7001 · "only the "urgent" PRs"', said)
+        self.assertEqual(self.order()[:2], ["4", "5"], "a range and a URL name their PRs")
+        self.assertIn('"only the "urgent" PRs"', self.run_in(self.other, "priority", "show").stdout)
+        first = said.split(" · ")[0][2:]
+        self.run_in(self.other, "listen", "Priority", first)
+        (self.root / "priority.md").write_text((self.root / "priority.md").read_text().replace(first, first[:-2] + "59"))
+        self.assertIn("New here", self.run_in(self.other, "queue", "show").stdout,
+                      "a second line set in the same minute is echoed too")
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):
         self.run_in(self.heard, "priority", "set", "Ana first", "--match", "Ana", "--until", "2999-01-01")

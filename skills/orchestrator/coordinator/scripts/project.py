@@ -31,7 +31,7 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
-  project.py DIR priority set WORDS --match TERM... [--until WHEN]
+  project.py DIR priority set WORDS --match TERM [TERM...] [--until WHEN]
                                     write the user's priority, in their words, for every
                                     project on this machine: items and queued units a TERM
                                     names go first, until WHEN (default a day); `priority
@@ -168,27 +168,33 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
 # a teammate's PRs being "the most important right now", one of 31 priority messages in four
 # weeks, and both queues ran oldest first, so it had nothing to bind to.
 PRIORITY_FILE = "priority.md"  # in the orchestrate folder, beside every project folder
-PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
+PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)?) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
                            r"match: (.+?) · \"(.*)\"\Z")
 PRIORITY_HEAD = """# Priority
 
 The user's priority, in their words, which every coordinator on this machine reads: what
-its terms match goes first in each Queue and in each project's start order, ahead of age.
+its terms match goes first in each Queue and in each project's start order, ahead of age,
+behind only what has waited a day under it.
 `project.py <folder> priority set` writes it and `priority clear` removes it.
 """
 STAMP = "%Y-%m-%d %H:%M"
+SAID = f"{STAMP}:%S"  # to the second, since it names the line a coordinator echoed
 LASTS = timedelta(days=1)  # a priority with no `until` holds for a day
 
 
 @dataclass(frozen=True)
 class Priority:
-    said: str  # when, as STAMP
+    said: str  # when, as SAID
     heard_in: str  # the project whose coordinator heard it
     until: str  # STAMP
     terms: tuple[str, ...]
     words: str
 
     def matches(self, text: str) -> bool:
+        """Whether a term is in text, read with each PR range written out and each PR URL
+        as its #N too, as project_md reads them."""
+        text = project_md.ranges(text) + "".join(f" #{found[2]}" for found in project_md.PR_REF.finditer(text)
+                                                 if found[2])
         return any(re.search(("(?<!\\w)" if term[0].isalnum() else "") + re.escape(term)
                              + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I) for term in self.terms)
 
@@ -200,9 +206,11 @@ def priority(root: Path, now: datetime | None = None) -> Priority | None:
     """The priority line in root's PRIORITY_FILE while it holds, else None. Raises
     ProjectError on a file whose line it can't read."""
     path = root / PRIORITY_FILE
-    if not path.exists():
+    try:
+        text = path.read_text()
+    except FileNotFoundError:  # none, or another coordinator's `priority clear` just removed it
         return None
-    found = [PRIORITY_LINE.match(line) for line in path.read_text().splitlines() if line.startswith("- ")]
+    found = [PRIORITY_LINE.match(line) for line in text.splitlines() if line.startswith("- ")]
     if len(found) != 1 or not found[0]:
         raise ProjectError(f"{path} holds no one priority line it can read: run `priority set` or `priority clear`")
     line = Priority(*found[0].groups()[:3], tuple(term.strip() for term in found[0][4].split(",")), found[0][5])
@@ -212,7 +220,7 @@ def priority(root: Path, now: datetime | None = None) -> Priority | None:
 def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until: str | None = None,
                  now: datetime | None = None) -> Priority:
     now = now or datetime.now()
-    words, terms = _line("words", words).replace('"', "'"), [_line("match", term) for term in terms or []]
+    words, terms = _line("words", words), [_line("match", term) for term in terms or []]
     if not terms or any("," in term or "·" in term for term in terms):
         raise ProjectError("priority set takes at least one --match TERM, each without a comma or ·")
     try:
@@ -221,7 +229,7 @@ def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until:
         raise ProjectError(f"--until takes YYYY-MM-DD or YYYY-MM-DD HH:MM, not {until!r}")
     if end <= now:
         raise ProjectError("--until is already past")
-    line = Priority(now.strftime(STAMP), heard_in, end.strftime(STAMP), tuple(terms), words)
+    line = Priority(now.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
     _write(root / PRIORITY_FILE, f"{PRIORITY_HEAD}\n{line.line()}\n")
     return line
 
@@ -235,7 +243,7 @@ def _queued(lines: list[str]) -> list[tuple[str, str]]:
 
 
 def _said(line: Priority | None) -> datetime | None:
-    return datetime.strptime(line.said, STAMP) if line else None
+    return datetime.strptime(line.said, SAID if line.said.count(":") == 2 else STAMP) if line else None
 
 
 def _ahead(line: Priority | None, lines: list[str]):
@@ -704,7 +712,11 @@ def _write(path: Path, text: str) -> None:
     handle, tmp = tempfile.mkstemp(dir=path.parent, prefix=".project.md.")
     with os.fdopen(handle, "w") as f:
         f.write(text)
-    os.chmod(tmp, path.stat().st_mode if path.exists() else 0o644)  # mkstemp makes it 0600
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:  # a new file, or one another process just removed
+        mode = 0o644
+    os.chmod(tmp, mode)  # mkstemp makes it 0600
     os.replace(tmp, path)
 
 
@@ -777,7 +789,7 @@ def main(argv: list[str]) -> int:
     ranking = commands.add_parser("priority", allow_abbrev=False).add_subparsers(dest="action", required=True)
     setting = ranking.add_parser("set", allow_abbrev=False)
     setting.add_argument("words")
-    setting.add_argument("--match", action="append", required=True)
+    setting.add_argument("--match", action="extend", nargs="+", required=True)
     setting.add_argument("--until")
     ranking.add_parser("clear", allow_abbrev=False)
     ranking.add_parser("show", allow_abbrev=False)

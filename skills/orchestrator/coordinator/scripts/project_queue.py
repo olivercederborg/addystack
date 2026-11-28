@@ -32,7 +32,7 @@ COUNTER = "Next id: "
 HEADER = ["#", "Kind", "Name", "From", "Since"]
 KINDS = ("stuck", "decide", "review", "do")
 RANK = {"stuck": 0, "decide": 1, "review": 1, "do": 2}
-AGED = timedelta(days=1)  # an item waiting this long under a priority line goes next, after its items
+AGED = timedelta(days=1)  # an item waiting this long under a priority line goes first, so none starves
 CELL = re.compile(r"(?<!\\)\|")
 WORD = re.compile(r"[^\W\d_]{3}")  # turn_block.py's rule for a need's name
 
@@ -87,8 +87,8 @@ def _item(row: str) -> Item:
 def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
          now: datetime | None = None, held_since: datetime | None = None) -> list[Item] | None:
     """The open items in the order the user gets them, or None when project.md has no
-    Queue section yet. ahead, the user's priority line, set at held_since, puts the items
-    it matches first, then each item that has waited over AGED under it, then the rest,
+    Queue section yet. ahead, the user's priority line, set at held_since, puts each item
+    that has waited over AGED under it first, then the items it matches, then the rest,
     each part in the usual order. Raises QueueError on a table it can't read."""
     bounds = _bounds(lines)
     if bounds is None:
@@ -98,7 +98,7 @@ def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
         return items
     old = (now or datetime.now()) - AGED
     aged = lambda item: max(_since(item), held_since or datetime.min) <= old
-    return sorted(items, key=lambda item: 0 if ahead(item) else 1 if aged(item) else 2)
+    return sorted(items, key=lambda item: 0 if aged(item) else 1 if ahead(item) else 2)
 
 
 def _since(item: Item) -> datetime:
