@@ -124,6 +124,14 @@ class Snapshot(Folders, unittest.TestCase):
                            "sent": {}})
         self.assertIsNone(project.snapshot(folder)["asOf"]["tick"])
 
+    def test_a_read_time_that_isnt_a_number_leaves_the_card_with_no_tick_data(self):
+        folder = self.write()
+        threads = {"w1": {**TICK["threads"]["w1"], "at": "bad"}, "w2": TICK["threads"]["w2"]}
+        self.tick(folder, {**TICK, "threads": threads, "prsAt": {"acme/app#12": 1.0, "acme/app#13": 1.0}})
+        card = project.snapshot(folder)
+        self.assertEqual((card["state"], card["asOf"]["tick"]), ("ok", None))
+        self.assertEqual([item["name"] for item in card["data"]["queue"]], ["pick the export format"])
+
     def test_the_tick_keeps_each_reads_time_and_an_older_one_for_a_pr_it_couldnt_read(self):
         lines = PROJECT.format(checkout=self.checkout).split("\n")
         show = lambda thread: {"status": "running", "runCount": 1, "itemCount": 3, "updatedAt": None}

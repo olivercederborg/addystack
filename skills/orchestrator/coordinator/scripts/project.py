@@ -704,6 +704,8 @@ def snapshot(folder: Path) -> dict:
                     read.append(prs_at.get(pr["ref"]))
                 elif PR_ROW.match(unit["state"]) and pr["url"] is not None:
                     read.append(None)
+        # A read time that isn't a number is undated too, so odd tick data can't hide the card.
+        read = [at if isinstance(at, (int, float)) and not isinstance(at, bool) else None for at in read]
         if read:
             as_of["tick"] = None if None in read else min(read)
         lead = LINK.search(_header(lines, "Coordinator"))
