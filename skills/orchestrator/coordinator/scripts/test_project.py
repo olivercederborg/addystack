@@ -263,7 +263,7 @@ class PriorityLine(unittest.TestCase):
         self.assertEqual(self.order(), ["1", "2", "3"])
         said = self.run_in(self.heard, "priority", "set", "specifically Ana's PRs are the most important right now",
                            "--match", "Ana", "--match", "#41").stdout
-        self.assertRegex(said, r'^- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d · audit · until .* · match: Ana, #41 · "specifically')
+        self.assertRegex(said, r'^- \d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6} · audit · until .* · match: Ana, #41 · "specifically')
         out = self.run_in(self.other, "queue", "show").stdout
         self.assertEqual(self.order(), ["2", "1", "3"], "#410 and Ben's name aren't Ana's #41")
         self.assertTrue(out.startswith("1 of 3 need you · post the reply to Ana on #41 · rv41\n"
@@ -333,8 +333,15 @@ class PriorityLine(unittest.TestCase):
         held = line("Ana", (now - timedelta(days=2)).strftime(p.SAID))
         ranked = q.read(lines, p._ahead(held, lines), now, held_since=p._said(held))
         self.assertEqual([item.name for item in ranked], ["Old task", "Review old release", "Review Ana PR"])
-        self.assertIn("first here: waited a day under it: 2 Old task, 1 Review old release; 3 Review Ana PR; "
-                      "units ana-docs (waits on pilot proof)", p.priority_note(lines, held))
+        self.assertIn("first here: 2 Old task (waited a day under it), 1 Review old release (waited a day under it), "
+                      "3 Review Ana PR; units ana-docs (waits on pilot proof)", p.priority_note(lines, held))
+        # Round 3: a PR term keeps its repo, a phrase stays a phrase, a long range is an interval.
+        for term, text, hit in [("acme/beta#41", "Merge acme/alpha#41", False), ("acme/beta#41", "Merge acme/beta#41", True),
+                                ("beta#41", "https://github.com/acme/beta/pull/41", True),
+                                ("review #41", "merge #41", False), ("review #41", "review #41 now", True),
+                                ("#5602", "Review #5581–#5618 together", True),
+                                ("#5581–#5618", "post on #5602", True), ("#41", "Merge acme/alpha#41", True)]:
+            self.assertEqual(line(term).matches(text), hit, (term, text))
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):
         self.run_in(self.heard, "priority", "set", "Ana first", "--match", "Ana", "--until", "2999-01-01")

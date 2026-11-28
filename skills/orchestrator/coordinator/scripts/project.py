@@ -168,7 +168,7 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
 # a teammate's PRs being "the most important right now", one of 31 priority messages in four
 # weeks, and both queues ran oldest first, so it had nothing to bind to.
 PRIORITY_FILE = "priority.md"  # in the orchestrate folder, beside every project folder
-PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d)?) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
+PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d{6})?)?) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
                            r"match: (.+?) · \"(.*)\"\Z")
 PRIORITY_HEAD = """# Priority
 
@@ -178,7 +178,7 @@ behind only what has waited a day under it.
 `project.py <folder> priority set` writes it and `priority clear` removes it.
 """
 STAMP = "%Y-%m-%d %H:%M"
-SAID = f"{STAMP}:%S"  # to the second, since it names the line a coordinator echoed
+SAID = f"{STAMP}:%S.%f"  # to the microsecond, since it names the line a coordinator echoed
 LASTS = timedelta(days=1)  # a priority with no `until` holds for a day
 
 
@@ -192,19 +192,46 @@ class Priority:
 
     def matches(self, text: str) -> bool:
         """Whether a term is in text. A term or text that names PRs, as a range `#20–#22`,
-        a URL, `repo#N`, or `#N`, names each PR as `#N`, as project_md reads them."""
-        text = f"{text} {' '.join(_prs(text))}"
-        terms = [found for term in self.terms for found in (_prs(term) or [term])]
+        a URL, `repo#N`, or `#N`, names each PR as `#N`, and with its repo as `repo#N`. A
+        term that is only PRs, `#N`, `repo#N`, or a range of any length, matches any of
+        them; any other term matches as written."""
+        named = _prs(text)
+        if any(refs and any(ref in named for ref in refs) for refs in map(_only_prs, self.terms)):
+            return True
+        text = f"{text} {' '.join(named)}"
         return any(re.search(("(?<!\\w)" if term[0].isalnum() else "") + re.escape(term)
-                             + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I) for term in terms)
+                             + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I)
+                   for term in self.terms if not _only_prs(term))
 
     def line(self) -> str:
         return f"- {self.said} · {self.heard_in} · until {self.until} · match: {', '.join(self.terms)} · \"{self.words}\""
 
 
+SPAN = re.compile(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b")  # a range `#20–#22`, of any length
+SPAN_MAX = 1000  # PRs a range may name, so a typo like #1–#99999 stays one range
+
+
+def _spans(text: str) -> str:
+    """text with each range written out, as project_md.ranges does past its 20-PR bound."""
+    return SPAN.sub(lambda m: " ".join(f"#{n}" for n in range(int(m[1]), int(m[2]) + 1))
+                    if 0 < int(m[2]) - int(m[1]) <= SPAN_MAX else m[0], text)
+
+
 def _prs(text: str) -> list[str]:
-    """Each PR text names, as `#N`, with ranges written out."""
-    return [f"#{url_n or n or local}" for _, url_n, _, n, local in project_md.PR_REF.findall(project_md.ranges(text))]
+    """Each PR text names, as `#N` and, when it names its repo, as `repo#N` too, lowercase."""
+    found = []
+    for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(_spans(text)):
+        number, name = url_n or n or local, (url_repo or repo).split("/")[-1].lower()
+        found += [f"#{number}", *([f"{name}#{number}"] if name else [])]
+    return found
+
+
+def _only_prs(term: str) -> list[str]:
+    """The PRs a term names when it's nothing else, a repo's as `repo#N`, else []."""
+    if not re.fullmatch(r"(?:\S+#\d+|#\d+\s*[–-]\s*#?\d+|https?://\S+/pull/\d+)", term.strip()):
+        return []
+    found = _prs(term)
+    return [ref for ref in found if "#" in ref and not ref.startswith("#")] or found
 
 
 def priority(root: Path, now: datetime | None = None) -> Priority | None:
@@ -234,14 +261,7 @@ def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until:
         raise ProjectError(f"--until takes YYYY-MM-DD or YYYY-MM-DD HH:MM, not {until!r}")
     if end <= now:
         raise ProjectError("--until is already past")
-    said = now.replace(microsecond=0)
-    try:
-        before = priority(root, now)
-    except ProjectError:  # a line it can't read is replaced
-        before = None
-    if before and _said(before) >= said:  # a second line within a second
-        said = _said(before) + timedelta(seconds=1)
-    line = Priority(said.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
+    line = Priority(now.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
     _write(root / PRIORITY_FILE, f"{PRIORITY_HEAD}\n{line.line()}\n")
     return line
 
@@ -256,7 +276,7 @@ def _queued(lines: list[str]) -> list[tuple[str, str, str]]:
 
 
 def _said(line: Priority | None) -> datetime | None:
-    return datetime.strptime(line.said, SAID if line.said.count(":") == 2 else STAMP) if line else None
+    return datetime.fromisoformat(line.said) if line else None
 
 
 def _ahead(line: Priority | None, lines: list[str]):
@@ -273,16 +293,15 @@ def priority_note(lines: list[str], line: Priority | None) -> str | None:
         return None
     items = project_queue.read(lines, _ahead(line, lines), held_since=_said(line)) or []
     hit = lambda item: line.matches(f"{item.name} {item.source}")
-    first = [f"{item.id} {item.name}" for item in items if hit(item)]
-    # Items ahead of the priority's own have waited a day under it.
-    aged = [f"{item.id} {item.name}" for item in items[:next((at for at, item in enumerate(items) if hit(item)), 0)]]
+    last = max((at for at, item in enumerate(items) if hit(item)), default=-1)
+    # In ranked order up to its last item: an item it doesn't name there has waited a day under it.
+    first = [f"{item.id} {item.name}" + ("" if hit(item) else " (waited a day under it)") for item in items[:last + 1]]
     moved = [slug + (f" (waits on {waits})" if waits not in ("", "—", "slot") else "")
              for slug, text, waits in _queued(lines) if line.matches(text)]
-    head = f'priority ({line.said[5:]} in {line.heard_in}, until {line.until[5:]}): "{line.words}"'
+    head = f'priority ({line.said[5:16]} in {line.heard_in}, until {line.until[5:]}): "{line.words}"'
     if not first and not moved:
         return f"{head} · names nothing here"
-    head += " · first here: " + "; ".join([*([f"waited a day under it: {', '.join(aged)}"] if aged else []),
-                                           *([", ".join(first)] if first else []),
+    head += " · first here: " + "; ".join([*([", ".join(first)] if first else []),
                                            *([f"units {' ▸ '.join(moved)}"] if moved else [])])
     if _listened(lines, "Priority") == line.said:
         return head
