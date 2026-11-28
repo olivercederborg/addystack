@@ -358,6 +358,22 @@ class PriorityLine(unittest.TestCase):
         shown = self.run_in(self.other, "queue", "show")
         self.assertEqual((self.order(), "no one priority line" in shown.stderr), (["1", "2", "3"], True))
 
+    def test_a_file_it_cant_read_warns_and_the_queue_goes_on(self):
+        # Blast radius of #154 (R206, risk 2): each of these stopped `queue show` for every coordinator.
+        good = '- 2026-11-28 01:00:00.000000 · audit · until {until} · match: Ana · "Ana first"\n'
+        path = self.root / "priority.md"
+        for name, write in [("an impossible until", lambda: path.write_text(good.format(until="2026-13-45 99:99"))),
+                            ("an impossible said", lambda: path.write_text(
+                                good.replace("2026-11-28 01:00", "2026-02-30 01:00").format(until="2999-01-01 00:00"))),
+                            ("invalid UTF-8", lambda: path.write_bytes(b"- \xff\xfe\n")),
+                            ("a directory", path.mkdir)]:
+            with self.subTest(name):
+                write()
+                shown = self.run_in(self.other, "queue", "show")
+                self.assertEqual(self.order(), ["1", "2", "3"])
+                self.assertIn(str(path), shown.stderr)
+                path.rmdir() if path.is_dir() else path.unlink()
+
 
 LISTENING = PROJECT[PROJECT.index("## Listening"):]
 NEXT = ["--goal", "Fix what the audit found.", "--proof", "each finding merged"]

@@ -235,11 +235,18 @@ def priority(root: Path, now: datetime | None = None) -> Priority | None:
         text = path.read_text()
     except FileNotFoundError:  # none, or another coordinator's `priority clear` just removed it
         return None
+    except (OSError, UnicodeDecodeError) as error:  # a directory, a disk fault, a hand edit
+        raise ProjectError(f"{path} can't be read ({error}): fix it or remove it by hand") from error
     found = [PRIORITY_LINE.match(line) for line in text.splitlines() if line.startswith("- ")]
     if len(found) != 1 or not found[0]:
         raise ProjectError(f"{path} holds no one priority line it can read: run `priority set` or `priority clear`")
     line = Priority(*found[0].groups()[:3], tuple(term.strip() for term in found[0][4].split(",")), found[0][5])
-    return line if datetime.strptime(line.until, STAMP) > (now or datetime.now()) else None
+    try:
+        until, _ = datetime.strptime(line.until, STAMP), _said(line)
+    except ValueError as error:
+        raise ProjectError(f"{path} holds a date that isn't one ({error}): run `priority set` or "
+                           "`priority clear`") from error
+    return line if until > (now or datetime.now()) else None
 
 
 def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until: str | None = None,
