@@ -150,6 +150,29 @@ class Batch(unittest.TestCase):
         self.assertTrue(q.show(q.read(lines)).startswith("1 of 1 needs you · merge #12 and #13 · rv\n"),
                         "a batch of one is a card of one")
 
+    def test_a_card_stays_in_its_priority_band(self):
+        # Codex review of r204/batch, round 1: a card took a batch item the priority puts last.
+        lines = project()
+        q.add(lines, "review", "priority: post to Ana on #41", "rv41", NOW, batch="post")
+        q.add(lines, "decide", "priority: settle the export", "w", NOW)
+        q.add(lines, "review", "post to Bo on #42", "rv42", NOW, batch="post")
+        q.add(lines, "review", "priority: post to Ana on #43", "rv43", NOW, batch="post")
+        ranked = q.read(lines, lambda item: item.name.startswith("priority"), NOW)
+        self.assertEqual([item.id for item in q.card(ranked)], [1, 4], "Bo's post waits behind the priority's decide")
+        self.assertEqual([item.id for item in q.card(q.read(lines))], [1, 3, 4], "with no priority, one band")
+
+    def test_open_items_join_a_batch_and_keep_their_ids(self):
+        lines = project(("review", "post to Ana on #41"), ("decide", "keep the v1 export"), ("review", "post to Ana on #42"))
+        self.assertEqual([item.id for item in q.batch(lines, "post", [1, 3])], [1, 3])
+        self.assertTrue(q.show(q.read(lines)).startswith("2 of 3 need you, on one card · post · 1 post to Ana on #41; "
+                                                         "2 post to Ana on #42\n"))
+        with self.assertRaisesRegex(q.QueueError, "no open Queue item 9"):
+            q.batch(lines, "post", [9])
+
+    def test_a_queue_section_with_no_table_says_how_to_fix_it(self):
+        with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
+            q.read(["## Queue", "", "Next id: 1", ""])
+
     def test_a_batch_is_one_word(self):
         lines = project()
         for batch in ["post replies", "x" * 41, "post|merge"]:

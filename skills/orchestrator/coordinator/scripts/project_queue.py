@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from typing import Callable
 
@@ -56,6 +56,7 @@ class Item:
     source: str
     since: str
     batch: str = ""
+    band: int = 0  # read()'s priority band: 0 aged under it, 1 its own, 2 the rest; a card stays in one
 
     def need(self) -> dict:
         """The item as a turn-block need: a stuck run is the user's call on it."""
@@ -92,6 +93,15 @@ def _item(row: str, width: int = len(HEADER)) -> Item:
     return Item(int(cells[0]), *cells[1:5], cells[5] if width > len(HEADER) else "")
 
 
+def _columns(lines: list[str], start: int, end: int) -> None:
+    """Writes the Batch column into a table from before it, each old row's cell empty."""
+    if _width(lines, start, end) == len(HEADER):
+        table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
+        lines[table[0]], lines[table[1]] = _row(BATCHED), "|" + "---|" * len(BATCHED)
+        for i in table[2:]:
+            lines[i] = lines[i].rstrip() + "  |"
+
+
 def _width(lines: list[str], start: int, end: int) -> int:
     return len(_cells(next(lines[i] for i in range(start + 1, end) if lines[i].startswith("|"))))
 
@@ -106,16 +116,17 @@ def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
     bounds = _bounds(lines)
     if bounds is None:
         return None
+    rows = _table(lines, *bounds)
     width = _width(lines, *bounds)
-    items = sorted((_item(lines[i], width) for i in _table(lines, *bounds)), key=lambda item: (RANK[item.kind], item.id))
+    items = sorted((_item(lines[i], width) for i in rows), key=lambda item: (RANK[item.kind], item.id))
     if ahead is None:
         return items
     old = (now or datetime.now()) - AGED
     aged = lambda item: max(_since(item), held_since or datetime.min) <= old
+    banded = [replace(item, band=0 if aged(item) else 1 if ahead(item) else 2) for item in items]
     # The aged go longest-waiting first, past kind, so a run of reviews can't hold a Do back.
-    return sorted(items, key=lambda item: (0, max(_since(item), held_since or datetime.min), _since(item), item.id)
-                  if aged(item)
-                  else (1 if ahead(item) else 2,))
+    return sorted(banded, key=lambda item: (0, max(_since(item), held_since or datetime.min), _since(item), item.id)
+                  if item.band == 0 else (item.band,))
 
 
 def _since(item: Item) -> datetime:
@@ -155,11 +166,8 @@ def add(lines: list[str], kind: str, name: str, source: str, now: datetime | Non
                          "last reply named")
     start, end = _bounds(lines)
     rows = _table(lines, start, end)
-    if batch and _width(lines, start, end) == len(HEADER):
-        table = [i for i in range(start + 1, end) if lines[i].startswith("|")]
-        lines[table[0]], lines[table[1]] = _row(BATCHED), "|" + "---|" * len(BATCHED)
-        for i in rows:
-            lines[i] = lines[i].rstrip() + "  |"
+    if batch:
+        _columns(lines, start, end)
     width = _width(lines, start, end)
     counter = next((i for i in range(start + 1, end) if lines[i].startswith(COUNTER)), None)
     if counter is None:
@@ -173,6 +181,26 @@ def add(lines: list[str], kind: str, name: str, source: str, now: datetime | Non
     lines.insert(last + 1, _row(cells))
     lines[counter] = f"{COUNTER}{ident + 1}"
     return item
+
+
+def batch(lines: list[str], key: str, idents: list[int]) -> list[Item]:
+    """Puts open items in batch key, writing the column if it's new, and returns them: a
+    call queued before its batch was known, such as one from `queue import`, keeps its id."""
+    if not BATCH.match(key):
+        raise QueueError("--batch takes one word of up to 40 characters, such as post or merge:receipts")
+    bounds = _bounds(lines)
+    if bounds is None:
+        raise QueueError("project.md has no Queue section")
+    _columns(lines, *bounds)
+    width, found = len(BATCHED), []
+    for i in _table(lines, *bounds):
+        item = _item(lines[i], width)
+        if item.id in idents:
+            found.append(replace(item, batch=key))
+            lines[i] = _row([str(item.id), item.kind, item.name, item.source, item.since, key])
+    if missing := sorted(set(idents) - {item.id for item in found}):
+        raise QueueError(f"no open Queue item {', '.join(map(str, missing))}")
+    return found
 
 
 def done(lines: list[str], ident: int) -> Item:
@@ -200,9 +228,10 @@ def shown(text: str) -> str:
 
 
 def card(items: list[Item]) -> list[Item]:
-    """The items the next card shows: the top one, and each other of its batch."""
+    """The items the next card shows: the top one, and each other of its batch in its
+    priority band, so a card never carries an item past one the priority puts first."""
     top = items[0]
-    return [top, *(item for item in items[1:] if top.batch and item.batch == top.batch)]
+    return [top, *(item for item in items[1:] if top.batch and item.batch == top.batch and item.band == top.band)]
 
 
 def strip(items: list[Item]) -> str:

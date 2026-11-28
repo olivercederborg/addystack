@@ -301,7 +301,8 @@ The calls `queue show` puts on one card: several of one batch, each without a âš
 waiting at once. Its headline asks once, and each item is a numbered bold line naming
 its target, then its draft in full, so a yes needs no fold. `a` takes all; "a except 2"
 or an edit by number changes one, and each item leaves the queue with that answer. A
-merge batch is a stack's ship gate, its option the plain request.
+merge batch is a stack's ship gate, its option the plain request; the gate takes only a
+plain request as a merge's go, so a part of it is typed as one, "merge #12 and #14".
 
 ````markdown
 ðŸŸ¡ **Post the three review replies on Ana's PRs?**

@@ -216,6 +216,8 @@ class Queue(Fixture, unittest.TestCase):
                       '{"id":3,"kind":"review","name":"re-request Ana on #42"}]', out)
         self.assertIn("--batch takes one word", self.project("queue", "add", "review", "post it", "--batch", "post it",
                                                              code=1).stderr)
+        self.project("queue", "add", "review", "approve #43", "--from", "rv")
+        self.assertIn("batched 4: post · approve #43", self.project("queue", "batch", "post", "4").stdout)
 
     def test_an_answer_with_any_line_ending_stays_inside_its_decision(self):
         self.project("queue", "add", "decide", "keep the v1 export")
