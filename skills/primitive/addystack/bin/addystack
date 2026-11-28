@@ -324,7 +324,8 @@ def _detected_name() -> Optional[str]:
 
 def _starter(folder: Path) -> str:
     """A new config with the detected defaults: the user's name from git, the hosts on
-    PATH, and their global.md when one is there, as install leaves it."""
+    PATH, their global.md when one is there, as install leaves it, and the check queue's
+    cap, so the setup interview asks it."""
     lines = [f'"$schema": {json.dumps(_schema_ref())}', '"version": 1']
     name = _detected_name()
     if name:
@@ -334,6 +335,7 @@ def _starter(folder: Path) -> str:
     lines.append(f'"hosts": {{ {", ".join(f"{json.dumps(k)}: {json.dumps(v)}" for k, v in hosts.items())} }}')
     if (folder / "global.md").is_file():
         lines.append('"instructions": "global.md"')
+    lines.append('"checkQueue": { "maxChecks": 4 }')
     body = ",\n  ".join(lines)
     return ("// Your addystack config, written by addystack init. Every key is optional; one you leave\n"
             "// out falls back to the kit's addystack.defaults.jsonc. $schema describes each key, and\n"

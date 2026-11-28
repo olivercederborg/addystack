@@ -20,11 +20,13 @@ approves: the PR goes to a person.
 
     post-review.py N REVIEW.json [--wait SECONDS]
 
-It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?}, where
+It prints one Outcome line, {"outcome", "head", "review"?, "gated"?, "checks"?, "handoff"?}, where
 outcome is approved, changes-requested, needs-human, not-approved (required checks failed
 or never finished within --wait), or superseded (the head moved, or the PR moved to another
 base branch while the checks were waited on; nothing posted, since that push or retarget
-starts its own review). Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
+starts its own review). A needs-human review then hands off through handoff.py, a comment for
+whoever reviews and a request to the people REVIEWERS names: "handoff" is {"comment",
+"requested", "why"}, or {"failed": why} when it couldn't hand off. Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
 GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
 review is recorded in POSTED.json beside REVIEW.json, so a retried run posts nothing it
 already posted, and one retried after a failed withdrawal finishes it. A new review that
@@ -44,29 +46,12 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates  # noqa: E402
+import handoff  # noqa: E402
+from handoff import _error, github  # noqa: E402
 
-GITHUB = Path(__file__).resolve().parent / 'github.sh'
 POLL_SECONDS = 60
 PASSED = ('pass', 'skipping')
 FAILED = ('fail', 'cancel')
-
-
-def _error(output: str) -> str:
-    """A failed command's error for a review's body: without the hint block gh prints after
-    some commands, such as `gh pr view`'s about `gh event listen`, whose indented lines follow it."""
-    lines, hint = [], False
-    for line in output.splitlines():
-        hint = line.startswith('hint:') or (hint and line.startswith(' '))
-        if not hint and line.strip():
-            lines.append(line)
-    return '\n'.join(lines)[-400:]
-
-
-def github(*arguments) -> str:
-    result = subprocess.run([str(GITHUB), *map(str, arguments)], capture_output=True, text=True, timeout=600)
-    if result.returncode:
-        raise ValueError(f'github.sh {arguments[0]} failed: {_error(result.stderr or result.stdout)}')
-    return result.stdout
 
 
 def pr(number: int, fields: str = 'body,headRefOid') -> dict:
@@ -137,17 +122,13 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     head = review['head']
     if current['headRefOid'] != head:
         return {'outcome': 'superseded', 'head': current['headRefOid']}
-    problems = gates.check(verdict, current['body'], head, number)
-    if problems:
-        raise ValueError('; '.join(problems))
     # A PR moved to another base can change its diff with the same head: the gates judged the
-    # diff from the verdict's base, so that diff must still be the PR's, here and again whenever
-    # the base changes while the checks are waited on.
+    # diff from the verdict's base, so that diff must still be the PR's, and the repository's
+    # one-way doors at the base it merges into apply, here and again whenever the base changes
+    # while the checks are waited on.
     judged = current['baseRefOid']
-    if not gates.same_diff(verdict['base'], judged, head):
-        raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
-    # The repository's one-way doors at the base the PR merges into, here and after it moves.
-    if problems := gates.doors(verdict, judged):
+    problems = gates.current(verdict, current['body'], judged, head, number)
+    if problems:
         raise ValueError('; '.join(problems))
     findings = review['findings']
     # review-code's rule: a blocking call always holds. A finding that doesn't say true or false
@@ -272,6 +253,15 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                                                   'review': outcome['review'], 'withdraw': target}))
                 if target is not None and active and active['id'] == target:
                     github('dismiss', number, target, _write(scratch, 'dismissal.md', notice))
+                if action == 'needs-human':
+                    # The review first, then the handoff to whoever reviews it: its comment, then the request.
+                    # The review stands either way, so a handoff that fails, such as a request GitHub
+                    # refuses, is named in the Outcome, as a thread it couldn't resolve is.
+                    try:
+                        handed = handoff.plan(number, verdict, body.split('\n', 1)[0], no_second_opinion)
+                        outcome['handoff'] = {**handoff.send(number, handed, github), 'why': handed['why']}
+                    except (ValueError, subprocess.SubprocessError) as failed:
+                        outcome['handoff'] = {'failed': str(failed)}
         finally:
             for leftover in folder.glob(f'{scratch.name}-*.json'):
                 leftover.unlink()

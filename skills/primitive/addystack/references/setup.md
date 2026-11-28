@@ -21,6 +21,7 @@ Run each probe and keep its answer as the default:
 | judgment | `judgment.principles.preset` | `addystack` |
 | judgment | `judgment.taste` | `null` |
 | hooks | `hooks.preset` | `recommended` |
+| checkQueue | `checkQueue.maxChecks`, `checkQueue.maxCores` | `4` and `10`; show the core count, `sysctl -n hw.ncpu`, beside them (macOS) |
 
 Also read the current config when there is one; its values replace these defaults.
 

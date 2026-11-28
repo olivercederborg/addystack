@@ -132,6 +132,13 @@ class PolicyTable(TypedDict):
     rules: List[Rule]
 
 
+class CheckQueue(TypedDict):
+    """The `checkQueue` section after merging: the agent memory guard's check queue."""
+    enabled: bool
+    maxChecks: int
+    maxCores: int
+
+
 class Resolved(TypedDict):
     """The merged config that build writes to resolved.json. `kit` is the installed
     checkout's absolute path, `layers` names the layers merged, and `digest` hashes the
@@ -147,6 +154,7 @@ class Resolved(TypedDict):
     judgment: Dict[str, Any]
     instructions: List[str]
     hooks: Dict[str, Any]
+    checkQueue: CheckQueue
 
 
 _KIT = Path(__file__).resolve().parent.parent
@@ -162,9 +170,10 @@ _RANK = {
 }
 # The schema keywords validate() evaluates, and the ones it reads as annotations only.
 _ASSERTIONS = frozenset({"type", "enum", "const", "properties", "additionalProperties", "items", "$ref",
-                         "required", "minProperties", "pattern"})
+                         "required", "minProperties", "minimum", "pattern"})
 _ANNOTATIONS = frozenset({"$schema", "$id", "title", "default", "markdownDescription", "definitions"})
-_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
+# A boolean is never an integer here, though Python's bool is an int.
+_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None), "integer": int}
 
 
 def strip_comments(text: str) -> str:
@@ -260,6 +269,9 @@ def _check(value: Any, node: Dict[str, Any], path: List[Any], root: Dict[str, An
                    for kind in allowed):
             yield Issue(_dotted(path), f"expected {' or '.join(allowed)}, got {_kind(value)}")
             return
+    if "minimum" in node and _kind(value) == "integer" and value < node["minimum"]:
+        yield Issue(_dotted(path), f"{value} is under the minimum {node['minimum']}")
+        return
     # A repo file's free text reaches agents' shell commands, so a pattern keeps it to safe names.
     if "pattern" in node and isinstance(value, str) and not re.search(node["pattern"], value):
         yield Issue(_dotted(path), f"{json.dumps(value)} doesn't match {node['pattern']}")
@@ -470,6 +482,7 @@ def merge(layers: List[Layer], kit: Path) -> Resolved:
             "replies": replies,
             "judgment": judgment,
             "hooks": {key: value for key, value in data.get("hooks", {}).items() if key == "preset"},
+            "checkQueue": data.get("checkQueue", {}),
         })
         policy = data.get("policy", {})
         defaults = _deep_merge(defaults, _fields(policy.get("defaults", {}), layer.dir))
@@ -494,6 +507,7 @@ def merge(layers: List[Layer], kit: Path) -> Resolved:
         "judgment": plain["judgment"],
         "instructions": instructions,
         "hooks": {**plain["hooks"], **hooks},
+        "checkQueue": plain["checkQueue"],
     }
 
 

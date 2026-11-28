@@ -1,6 +1,6 @@
 """Tests for agent_memory_guard.py on synthetic process snapshots and a few real processes.
 Run from hooks/: python3 -m unittest test_agent_memory_guard"""
-import contextlib, io, os, signal, subprocess, sys, time, unittest
+import contextlib, io, json, os, pathlib, shutil, signal, subprocess, sys, tempfile, time, unittest
 from unittest import mock
 
 import agent_memory_guard as guard
@@ -507,7 +507,7 @@ class AbandonedCommands(unittest.TestCase):
         killed, owners, abandoned = [], Owners(), guard.Abandoned()
         owners.attribute(snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)))
         with mock.patch.multiple(guard, LOG=os.devnull, notify=lambda *args: None,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], [])):
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])):
             for minute in range(31):
                 t = minute * 60
                 guard.tick(owners, lambda: snapshot(AGENT, *self.spinning_orphan(t)),
@@ -521,10 +521,15 @@ class CommandLine(unittest.TestCase):
         return len(argv).to_bytes(4, "little") + body
 
     def test_empty_argument_does_not_shift_the_environment(self):
-        args, marked = guard.parse_procargs(
+        args, marked, tool_call = guard.parse_procargs(
             self.procargs(b"python3", b"worker.py", b"", env=[b"CLAUDECODE=1", b"HOME=/x"]))
         self.assertEqual(args, ["python3", "worker.py", ""])
         self.assertTrue(marked)
+        self.assertIsNone(tool_call)
+
+    def test_codex_tool_call_id_is_read(self):
+        env = [b"CODEX_THREAD_ID=t1", b"CODEX_TOOL_CALL_ID=call_abc123", b"HOME=/x"]
+        self.assertEqual(guard.parse_procargs(self.procargs(b"node", b"tsc", env=env))[1:], (True, "call_abc123"))
 
     def test_unmarked_environment(self):
         self.assertIs(guard.parse_procargs(self.procargs(b"node", env=[b"HOME=/x"]))[1], False)
@@ -668,12 +673,81 @@ class Tick(unittest.TestCase):
     def test_a_failed_log_write_still_kills(self):
         killed = []
         with mock.patch.multiple(guard, LOG="/nonexistent/agent-memory-guard.log", MAX_PROCESSES=1,
-                                 kill=lambda owners, head, scan: killed.append(head) or ([], []),
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], []),
                                  notify=lambda *args: None), \
                 contextlib.redirect_stderr(io.StringIO()) as stderr:
             guard.tick(Owners(), lambda: snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)))
         self.assertEqual(killed, [200])
         self.assertIn("couldn't log a kill", stderr.getvalue())
+
+
+class CpuGained(unittest.TestCase):
+    """cpu_gained's accounting when members come and go between calls."""
+
+    def run_calls(self, *snapshots, began=0.0):
+        last, debt, total = {}, {}, 0
+        for members in snapshots:
+            gained, last, debt = guard.cpu_gained(members, last, debt, began)
+            total += gained
+        return total
+
+    def test_a_worker_missed_for_a_scan_leaves_no_debt(self):
+        # The worker uses 10 s, one scan misses it, it uses 1 s more and exits; its parent
+        # reaps all 11 s. Then the parent reaps a second worker's 4 s. All 15 s count.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(0)], [parent(0), worker(11)],
+            [parent(11)], [parent(15)]), int(15e9))
+
+    def test_cpu_reaped_while_a_worker_is_missed_counts(self):
+        # While a scan misses the 10 s worker, its parent reaps another worker's 3 s; the
+        # missed worker's debt must not keep those 3 s when it comes back.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(3)], [parent(3), worker(11)],
+            [parent(14)]), int(14e9))
+
+    def test_a_sibling_reaped_while_a_worker_is_missed_counts_once(self):
+        # A (10 s) is missed; sibling B (5 s, already counted) exits and its reap pays A's
+        # older debt first. When A comes back, those 5 s repay B's debt, not count again.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        a = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        b = lambda cpu: proc(213, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), a(0), b(0)], [parent(0), a(10), b(5)], [parent(0), b(5)], [parent(5)],
+            [parent(5), a(10)], [parent(17)], [parent(17)]), int(17e9))
+
+    def test_a_worker_whose_debt_was_repaid_while_missed_goes_on_from_its_reading(self):
+        # The parent reaps 10 s of others while the pre-tracking worker is missed, which
+        # repays its whole debt; it comes back at 20 s and must not count from now.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(10)], [parent(10), worker(20)],
+            began=5.0), int(30e9))
+
+
+class KillLog(unittest.TestCase):
+    def test_a_call_that_joins_during_the_kill_is_logged(self):
+        host = proc(200, 90, argv=("code-mode-host",))
+        a = guard.Proc(*proc(201, 200, argv=("node", "work.js"))[:12], tool_call="call_a")
+        b = guard.Proc(*proc(202, 200, argv=("node", "work.js"))[:12], tool_call="call_b")
+        scans = iter([snapshot(CODEX, host, a), snapshot(CODEX, host, a, b)])
+        sent, lines = [], []
+        real_kill = guard.kill
+
+        def kill(owners, head, scan, log):
+            return real_kill(owners, head, scan, send=lambda pid, sig: sent.append((pid, sig)),
+                             current=lambda pid: pid, log=log)
+
+        with mock.patch.multiple(guard, MAX_PROCESSES=1, record=lines.append, kill=kill,
+                                 notify=lambda *args: None):
+            guard.tick(Owners(), scan=lambda: next(scans, snapshot(CODEX, host, a, b)))
+        self.assertEqual(lines[0]["tool_call_ids"], ["call_a", "call_b"])
+        self.assertEqual(sorted(pid for pid, sig in sent if sig == signal.SIGKILL), [200, 201, 202])
+        self.assertLess(sent.index((200, signal.SIGSTOP)), sent.index((200, signal.SIGKILL)))
 
 
 class CommandText(unittest.TestCase):
@@ -722,6 +796,655 @@ class Signals(unittest.TestCase):
         stale = self.members[0]._replace(ident=0)
         guard.signal_all([stale], signal.SIGKILL, lambda pid, sig: sent.append(pid))
         self.assertEqual(sent, [])
+
+
+class HeavyChecks(unittest.TestCase):
+    """Which processes the check queue counts as a heavy check."""
+
+    def test_each_checker_binary_is_heavy(self):
+        for argv in (["/x/node_modules/.bin/tsc", "--noEmit"], ["/x/tsgolint"], ["/x/node_modules/.bin/oxlint"],
+                     ["node", "/x/node_modules/eslint/bin/eslint.js", "."],
+                     ["node", "/x/node_modules/vitest/vitest.mjs", "run"], ["node", "/x/jest/bin/jest.js"],
+                     ["bun", "run", "--bun", "/x/node_modules/typescript/bin/tsc"], ["bunx", "tsc"],
+                     ["/x/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo"]):
+            with self.subTest(argv=argv):
+                self.assertTrue(guard.is_heavy(argv))
+
+    def test_an_interpreters_script_is_classified_never_a_later_argument(self):
+        for argv in (["grep", "tsc"], ["node", "server.js", "tsc"], ["node", "/x/typescript/lib/tsserver.js"],
+                     ["bun", "run", "dev"], ["node"], []):
+            with self.subTest(argv=argv):
+                self.assertFalse(guard.is_heavy(argv))
+
+    def test_watch_forms_of_vitest_are_not_heavy(self):
+        vitest = ["node", "/x/node_modules/vitest/vitest.mjs"]
+        for rest in (["--watch"], ["-w"], ["watch"], ["dev"], ["--watch=true"]):
+            with self.subTest(rest=rest):
+                self.assertFalse(guard.is_heavy(vitest + rest))
+        self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "--watch"]))
+        self.assertFalse(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll"]))
+
+    def test_a_watch_flag_counts_only_for_the_checker_that_has_it(self):
+        self.assertTrue(guard.is_heavy(["node", "/x/node_modules/jest/bin/jest.js", "-w", "2"]))  # --maxWorkers
+        self.assertTrue(guard.is_heavy(["/x/.bin/eslint", "-w", "."]))
+        self.assertFalse(guard.is_heavy(["/x/.bin/tsc", "-w"]))
+        self.assertFalse(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll=true"]))
+        self.assertTrue(guard.is_heavy(["node", "/x/jest/bin/jest.js", "--watchAll=false"]))
+        self.assertFalse(guard.is_heavy(["/x/node_modules/@typescript/native-preview-darwin-arm64/lib/tsgo", "--watch"]))
+
+    def test_vitest_run_is_heavy(self):
+        vitest = ["node", "/x/node_modules/vitest/vitest.mjs"]
+        for rest in (["run"], [], ["--watch=false"], ["run", "src/a.test.ts"]):
+            with self.subTest(rest=rest):
+                self.assertTrue(guard.is_heavy(vitest + rest))
+
+    def test_a_units_child_shares_its_parents_slot(self):
+        units = guard.heavy_units(Owners().attribute(snapshot(
+            AGENT, proc(200, 100, argv=("zsh", "-c", "bun run lint")),
+            proc(201, 200, argv=("/x/.bin/oxlint",)), proc(202, 201, argv=("/x/tsgolint",)),
+            proc(300, 100, argv=("/x/.bin/turbo", "run", "typecheck")),
+            proc(301, 300, argv=("/x/.bin/tsc",)), proc(302, 300, argv=("/x/.bin/tsc",)))))
+        self.assertEqual({top: sorted(p.pid for p in unit.members) for top, unit in units.items()},
+                         {201: [201, 202], 301: [301], 302: [302]})
+        self.assertEqual({unit.head for unit in units.values()}, {200, 300})
+
+
+class AgentCommand(unittest.TestCase):
+    """Unwrapping the agent's wrapper shell to the command it ran."""
+
+    def test_claude_eval_wrapper_unwraps_to_its_command(self):
+        args = ["/bin/zsh", "-c", "source /x/snapshot.sh && eval 'bun run typecheck' < /dev/null && pwd -P >| /tmp/cwd"]
+        self.assertEqual(guard.agent_command(args), "bun run typecheck")
+
+    def test_codex_shell_wrapper_unwraps_to_its_command(self):
+        self.assertEqual(guard.agent_command(["/bin/zsh", "-lc", "pnpm typecheck"]), "pnpm typecheck")
+        self.assertEqual(guard.command_text(["/bin/zsh", "-lc", "pnpm typecheck"]), "pnpm typecheck")
+
+    def test_any_other_argv_is_none(self):
+        for argv in (["node", "tsc"], ["/bin/zsh", "-lc"], ["python3", "-c", "print(1)"], []):
+            with self.subTest(argv=argv):
+                self.assertIsNone(guard.agent_command(argv))
+
+    def test_a_head_keeps_its_first_seen_argv_after_it_execs(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("/bin/zsh", "-lc", "pnpm typecheck"))))
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("node", "tsc"))))
+        self.assertEqual(owners.argv, {200: ["/bin/zsh", "-lc", "pnpm typecheck"]})
+        owners.attribute(snapshot(CODEX))
+        self.assertEqual(owners.argv, {})
+
+    def test_a_kill_entry_names_the_first_seen_command_and_tool_call(self):
+        owners = Owners()
+        owners.attribute(snapshot(CODEX, proc(200, 90, marked=True, argv=("/bin/zsh", "-lc", "pnpm typecheck"))))
+        execed = guard.Proc(*proc(200, 90, marked=True, argv=("node", "tsc"))[:12], tool_call="call_1")
+        commands = owners.attribute(snapshot(CODEX, execed))
+        line = guard.entry(owners, 200, commands[200], "why", rule="queue")
+        self.assertEqual((line["command"], line["tool_call_ids"], line["rule"], line["agent_pid"]),
+                         ("pnpm typecheck", ["call_1"], "queue", 90))
+
+    def test_a_kill_of_a_shared_host_names_every_call_it_ends(self):
+        owners = Owners()
+        host = proc(200, 90, argv=("code-mode-host",))
+        calls = [guard.Proc(*proc(pid, 200, argv=("node", "tsc"))[:12], tool_call=call)
+                 for pid, call in ((201, "call_a"), (202, "call_b"))]
+        commands = owners.attribute(snapshot(CODEX, host, *calls))
+        self.assertEqual(guard.entry(owners, 200, commands[200], "over")["tool_call_ids"], ["call_a", "call_b"])
+
+
+TSC = ("node", "/x/node_modules/typescript/bin/tsc", "--noEmit")
+# CPU ns a running unit used across a 15-minute hold: one core throughout, so it's busy.
+BUSY = int(guard.HOLD_SECONDS * 1e9)
+
+
+class Queue:
+    """A Governor on synthetic snapshots: AGENT runs check n as shell 200+10n with tsc
+    201+10n under it. Clocks start at wall 1000, monotonic 0, and move half a second a tick."""
+
+    def __init__(self, test, cap=2, cores=100, state=None, current=None):
+        import resolved
+        folder = tempfile.mkdtemp()
+        test.addCleanup(shutil.rmtree, folder)
+        self.test, self.state = test, state or os.path.join(folder, "check-queue.json")
+        self.config = resolved.CheckQueue(True, cap, cores)
+        self.sent, self.lines, self.notified, self.saved_at_stop = [], [], [], {}
+        self.now, self.wall = 0.0, 1000.0
+        self.governor = guard.Governor(
+            settings=lambda: self.settings(), state=self.state, send=self.send,
+            current=current or (lambda pid: pid), record=self.lines.append,
+            notify=lambda *args: self.notified.append(args), wall=lambda: 1000.0)
+        self.owners = Owners()
+
+    def settings(self):
+        if isinstance(self.config, Exception):
+            raise self.config
+        return self.config
+
+    def send(self, pid, sig):
+        if sig == signal.SIGSTOP:
+            with open(self.state) as file:
+                self.saved_at_stop[pid] = file.read()
+        self.sent.append((pid, sig))
+
+    def check(self, n, born=None, cpu=0, reaped=0, tool_call=None, shell=True):
+        born = self.wall if born is None else born
+        top = guard.Proc(*proc(201 + 10 * n, 200 + 10 * n if shell else 1, argv=TSC, start=born,
+                               cpu=cpu, reaped=reaped)[:12], tool_call=tool_call)
+        return ([proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", f"check {n}"))] if shell else []) + [top]
+
+    def vitest(self, n, born=1000.0, cpu=0):
+        """Test run n: shell 200+10n with a vitest run 201+10n under it."""
+        return [proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", "vitest")),
+                proc(201 + 10 * n, 200 + 10 * n, argv=("node", "/x/node_modules/vitest/vitest.mjs", "run"),
+                     start=born, cpu=cpu)]
+
+    def tick(self, *checks, seconds=0.5):
+        procs = snapshot(AGENT, *[p for check in checks for p in check])
+        commands = self.owners.attribute(procs)
+        agents = {pid: p.ident for pid, p in procs.items() if guard.is_agent(p)}
+        self.governor.tick(self.owners, commands, agents, self.now, self.wall)
+        self.now += seconds
+        self.wall += seconds
+
+    def stopped(self):
+        state = {}
+        for pid, sig in self.sent:
+            state[pid] = sig
+        return {pid for pid, sig in state.items() if sig == signal.SIGSTOP}
+
+    def killed(self):
+        return {pid for pid, sig in self.sent if sig == signal.SIGKILL}
+
+
+class CheckQueue(unittest.TestCase):
+    """The Governor, on synthetic snapshots with fake signals and clocks."""
+
+    def setUp(self):
+        guard._settings[:] = [None, None]
+
+    def test_a_third_unit_over_a_cap_of_two_is_held_within_a_tick(self):
+        q = Queue(self)
+        q.tick(q.check(1), q.check(2), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})  # one starts; the gate spaces the rest
+        for _ in range(4):
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {231})
+
+    def test_a_test_runner_counts_toward_the_cap_but_is_never_stopped(self):
+        vitest = ("node", "/x/node_modules/vitest/vitest.mjs", "run")
+        jest = ("node", "/x/node_modules/jest/bin/jest.js")
+        q = Queue(self, cap=1)
+        runners = [[proc(210, 100, argv=("/bin/zsh", "-lc", "check 1")), proc(211, 210, argv=vitest, start=1000.0)],
+                   [proc(220, 100, argv=("/bin/zsh", "-lc", "check 2")), proc(221, 220, argv=jest, start=1000.0)]]
+        q.tick(*runners)
+        self.assertEqual(q.sent, [])
+        self.assertEqual(sorted(q.governor.running), [211, 221])
+        q.tick(*runners, q.check(3))
+        self.assertEqual(q.stopped(), {231})  # a type check waits behind the test runs
+
+    def test_a_check_arriving_with_a_test_run_waits_for_the_cpu_gate(self):
+        q = Queue(self, cap=4, cores=1)
+        q.tick(q.vitest(1), q.check(2))
+        for i in range(1, 6):  # the run at 2 cores from here on
+            q.tick(q.vitest(1, cpu=int(i * 1e9)), q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_held_check_stays_held_when_a_test_run_starts_as_a_slot_frees(self):
+        # Cap 1: check 1 runs, check 2 waits. Check 1 exits in the scan a vitest run starts:
+        # the run takes the slot, so check 2 keeps waiting.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(2, 1000))
+        q.tick(q.check(2, 1000), q.vitest(5, q.wall))
+        self.assertEqual(q.stopped(), {221})
+        self.assertEqual(q.governor._busy(q.now - .5), 1)
+
+    def test_a_check_that_started_just_before_a_test_run_waits_for_it(self):
+        # A tsc and a vitest run first seen in one scan, the tsc started first: the run is
+        # counted first, so the tsc waits for the CPU gate's spacing.
+        q = Queue(self, cap=4, cores=1)
+        q.tick()
+        born = q.wall
+        q.tick(q.vitest(5, born - .1), q.check(2, born - .2))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_checker_names_the_check(self):
+        self.assertEqual(guard.checker(["node", "/x/node_modules/vitest/vitest.mjs", "run"]), "vitest")
+        self.assertEqual(guard.checker(["/x/.bin/tsc", "--noEmit"]), "tsc")
+        self.assertIsNone(guard.checker(["grep", "tsc"]))
+
+    def test_a_held_unit_resumes_before_a_newer_arrival(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})
+        for _ in range(3):
+            q.tick(q.check(2, 1000), q.check(3, 1000.5))
+        self.assertEqual(q.stopped(), {231})
+
+    def test_a_unit_running_when_the_guard_starts_is_never_stopped(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, 990), q.check(2, 995), q.check(3, 999.9))
+        self.assertEqual(q.sent, [])
+
+    def test_a_unit_running_when_the_queue_is_reenabled_is_never_stopped(self):
+        import resolved
+        q = Queue(self, cap=1)
+        q.config = resolved.CheckQueue(False, 1, 100)
+        q.tick(q.check(1), q.check(2))
+        q.config = resolved.CheckQueue(True, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000.2))
+        self.assertEqual(q.stopped(), set())
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000.2), q.check(4))
+        self.assertEqual(q.stopped(), {241})
+
+    def test_a_shell_that_execs_its_checker_later_is_held(self):
+        q = Queue(self, cap=1)
+        shell = proc(300, 100, argv=("/bin/zsh", "-lc", "bun install && tsc"), start=1000.0)
+        for _ in range(8):
+            q.tick(q.check(1, 1000), [shell])
+        q.tick(q.check(1, 1000), [shell._replace(argv=list(TSC), version=2)])
+        self.assertEqual(q.stopped(), {300})
+
+    def test_a_checker_execed_before_the_guard_started_runs_on(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, 990), [proc(300, 100, argv=TSC, start=990.0)._replace(version=2)])
+        self.assertEqual(q.sent, [])
+
+    def test_members_that_join_a_held_unit_are_stopped(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000) + [proc(222, 221, argv=("node", "worker.js"))])
+        self.assertEqual(q.stopped(), {221, 222})
+        self.assertIn('[222, 222]', q.saved_at_stop[222])
+
+    def test_a_held_units_survivors_resume_when_its_top_is_gone(self):
+        q = Queue(self, cap=1)
+        worker = proc(222, 221, argv=("node", "worker.js"))
+        q.tick(q.check(1), q.check(2) + [worker])
+        q.tick(q.check(1, 1000), [q.check(2, 1000)[0], worker])
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.governor.held, {})
+
+    def test_a_held_top_read_without_its_argv_stays_held(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        shell, top = q.check(2, 1000)
+        q.tick(q.check(1, 1000), [shell, top._replace(argv=[])])
+        self.assertEqual(q.stopped(), {221})
+        self.assertIn(221, q.governor.held)
+
+    def test_a_held_unit_whose_agent_shell_is_gone_is_resumed(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000, shell=False))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.lines[-1]["event"], "cont")
+        self.assertEqual(q.lines[-1]["why"], "its agent's shell is gone")
+
+    def test_a_held_unit_under_a_shared_host_resumes_when_its_shell_is_gone(self):
+        # Codex's code-mode host is one long-lived child of Codex that runs every command.
+        q = Queue(self, cap=1)
+        host = proc(300, 90, argv=("codex-code-mode",), marked=True)
+        shell = proc(301, 300, argv=("/bin/zsh", "-lc", "bun run typecheck"), marked=True)
+        check = proc(302, 301, pgid=301, argv=TSC, marked=True, start=1000)
+        blocker = [proc(200, 90, argv=("/bin/zsh", "-lc", "check 1")), proc(201, 200, argv=TSC, start=1000)]
+
+        def step(procs, now):
+            procs = snapshot(CODEX, *procs)
+            commands = q.owners.attribute(procs)
+            agents = {pid: p.ident for pid, p in procs.items() if guard.is_agent(p)}
+            q.governor.tick(q.owners, commands, agents, now, 1000 + now)
+
+        step([*blocker, host, shell, check], 0)
+        self.assertEqual(sorted(q.governor.held), [302])
+        step([*blocker, host, check._replace(ppid=1, parent_ident=1)], .5)
+        self.assertEqual(q.governor.held, {})
+        self.assertEqual(q.sent[-1], (302, signal.SIGCONT))
+
+    def test_disabling_resumes_held_units_on_the_next_tick(self):
+        import resolved
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = resolved.CheckQueue(False, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.stopped(), set())
+        self.assertNotIn((231, signal.SIGSTOP), q.sent)
+        with open(q.state) as file:
+            self.assertEqual(json.load(file), {"held": []})
+
+    def test_start_resumes_saved_members_whose_ident_matches_and_skips_reused_pids(self):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        state = os.path.join(folder, "check-queue.json")
+        with open(state, "w") as file:
+            json.dump({"held": [{"unit": 401, "members": [[401, 401], [402, 999]]}]}, file)
+        q = Queue(self, state=state)
+        self.assertEqual(q.sent, [(401, signal.SIGCONT)])
+        with open(state) as file:
+            self.assertEqual(json.load(file), {"held": []})
+
+    def test_a_unit_is_saved_before_it_is_stopped(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.assertEqual(json.loads(q.saved_at_stop[221]), {"held": [{"unit": 221, "members": [[221, 221]]}]})
+
+    def test_a_failed_state_write_leaves_the_unit_running(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            q = Queue(self, cap=1, state="/dev/null/nowhere/check-queue.json")
+            q.tick(q.check(1), q.check(2))
+            self.assertEqual(q.sent, [])
+            self.assertIn("couldn't save a held unit", stderr.getvalue())
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3))
+        self.assertEqual(q.sent, [])  # the file still can't be written, so check 3 runs too
+
+    def test_a_failed_write_after_a_resume_never_strands_the_unit(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        save, failures = q.governor._save, [1]
+
+        def flaky():
+            if failures:
+                failures.pop()
+                raise OSError("disk full")
+            save()
+
+        q.governor._save = flaky
+        with contextlib.redirect_stderr(io.StringIO()):
+            q.tick(q.check(2, 1000))
+            q.tick(q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.sent[-1], (221, signal.SIGCONT))
+
+    def test_a_governor_error_resumes_every_held_unit_and_reports_once(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = RuntimeError("boom")
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(stderr.getvalue().count("check queue failed"), 1)
+
+    def test_a_unit_released_after_an_error_is_never_stopped_again(self):
+        import resolved
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.config = RuntimeError("transient")
+        with contextlib.redirect_stderr(io.StringIO()):
+            q.tick(q.check(1, 1000), q.check(2, 1000))
+        q.config = resolved.CheckQueue(True, 1, 100)
+        q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual(q.sent, [(221, signal.SIGSTOP), (221, signal.SIGCONT)])
+
+    def test_a_governor_error_never_skips_the_memory_rules(self):
+        killed = []
+        governor = guard.Governor(settings=lambda: 1 / 0, state=os.devnull + "/x", send=lambda *a: None,
+                                  record=lambda line: None, notify=lambda *a: None)
+        with mock.patch.multiple(guard, MAX_PROCESSES=1, notify=lambda *args: None, record=lambda line: None,
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])), \
+                contextlib.redirect_stderr(io.StringIO()):
+            guard.tick(Owners(), lambda: snapshot(AGENT, proc(200, 100), proc(201, 200, pgid=200)),
+                       governor=governor)
+        self.assertEqual(killed, [200])
+
+    def test_a_unit_held_fifteen_minutes_with_the_queue_full_is_killed_alone(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000, cpu=BUSY), q.check(2, 1000))
+        self.assertEqual(q.killed(), {221})
+        kill = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual(len(kill), 1)
+        self.assertEqual(q.lines.index(kill[0]), len(q.lines) - 1)  # logged, then killed
+        self.assertEqual(kill[0]["command"], "check 2")
+        self.assertEqual(len(q.notified), 1)
+
+    def test_a_unit_whose_turn_comes_at_fifteen_minutes_runs_instead(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(2, 1000))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(2, 1000))
+        self.assertEqual(q.killed(), set())
+        self.assertEqual(q.stopped(), set())
+
+    def test_the_queue_kill_logs_its_rule_unit_and_codex_tool_call_id(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2, tool_call="call_9"))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000, cpu=BUSY), q.check(2, 1000, tool_call="call_9"))
+        [line] = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual((line["tool_call_ids"], line["unit"], line["agent_pid"]), (["call_9"], "node tsc --noEmit", 100))
+        self.assertIn("check queue stayed full", line["reason"])
+        self.assertIn("(1 check running)", line["reason"])
+
+    def test_a_queue_kill_hashes_the_whole_command(self):
+        import hashlib
+        command = "printf " + "x" * 600
+        q = Queue(self, cap=1)
+        long = [proc(220, 100, argv=("/bin/zsh", "-lc", command)), proc(221, 220, argv=TSC, start=1000.0)]
+        q.tick(q.check(1), long)
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000, cpu=BUSY), long)
+        [line] = [line for line in q.lines if line.get("rule") == "queue"]
+        self.assertEqual(line["command_sha256"], hashlib.sha256(command.encode()).hexdigest())
+        self.assertEqual(len(line["command"]), 500)
+        self.assertTrue(all(len(line["command"]) <= 500 for line in q.lines))
+
+    def test_the_gate_holds_a_unit_while_running_units_use_max_cores(self):
+        q = Queue(self, cap=4, cores=2)
+        cpu = 0
+        for _ in range(6):
+            q.tick(q.check(1, 1000, cpu=cpu))
+            cpu += int(1.5e9)  # 3 cores
+        q.tick(q.check(1, 1000, cpu=cpu), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_the_gate_measures_a_whole_window_at_uneven_ticks(self):
+        # Ticks of 0.51 s: a window cut at the last mark inside 2 s read 10.5 cores as 8.
+        q = Queue(self, cap=4, cores=10)
+        for n in range(8):
+            q.tick(q.check(1, 1000, reaped=int(n * .51 * 10.5e9)), seconds=.51)
+        q.tick(q.check(1, 1000, reaped=int(8 * .51 * 10.5e9)), q.check(2), seconds=.51)
+        self.assertAlmostEqual(q.governor._cores(q.now - .51), 10.5, places=1)
+        self.assertEqual(q.stopped(), {221})
+
+    def test_the_gate_counts_a_units_first_tick(self):
+        q = Queue(self, cap=4, cores=10)
+
+        def lint(cpu):
+            shell, top = q.check(1, 1000, cpu=cpu)
+            return [shell, top._replace(argv=["/x/node_modules/.bin/oxlint"])]
+
+        for n in range(4):
+            q.tick(lint(int(n * .5 * 12e9)))
+        q.tick(lint(int(2 * 12e9)), q.check(2))
+        self.assertAlmostEqual(q.governor._cores(2.0), 12.0)
+        self.assertEqual(q.stopped(), {221})
+
+    def test_the_gate_counts_a_worker_that_exited_between_scans(self):
+        q = Queue(self, cap=4, cores=2)
+        reaped = 0
+        for _ in range(6):
+            q.tick(q.check(1, 1000, reaped=reaped))
+            reaped += int(1.5e9)
+        q.tick(q.check(1, 1000, reaped=reaped), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_the_gate_admits_when_no_unit_runs(self):
+        q = Queue(self, cap=4, cores=1)
+        q.tick(q.check(1), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+        q.tick(q.check(2, 1000))
+        q.tick(q.check(2, 1000))  # check 1 is gone two scans in a row; within the spacing
+        self.assertEqual(q.stopped(), set())
+
+    def test_the_gate_admits_at_most_one_unit_per_window(self):
+        q = Queue(self, cap=4)
+        q.tick(q.check(1), q.check(2), q.check(3))
+        self.assertEqual(q.stopped(), {221, 231})
+        for _ in range(3):
+            q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {221, 231})
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000))
+        self.assertEqual(q.stopped(), {231})
+
+    def idle_for(self, q, seconds, *checks, cpu=lambda tick: 0):
+        """Ticks check 1, plus checks, for `seconds`, check 1 at cpu(tick) ns."""
+        for tick in range(int(seconds / .5)):
+            q.tick(q.check(1, 1000, cpu=cpu(tick)), *checks)
+
+    def test_a_unit_idle_for_30_seconds_frees_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 29, q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})  # not yet a whole window
+        self.idle_for(q, 1.5, q.check(2, 1000))
+        self.assertEqual(q.stopped(), set())
+        self.assertEqual(q.lines[-1]["event"], "cont")
+
+    def test_an_idle_unit_that_wakes_counts_again_and_is_never_stopped(self):
+        q = Queue(self, cap=1)
+        self.idle_for(q, 31)
+        self.idle_for(q, 4, cpu=lambda tick: int(tick * .5e9))  # one core again
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+        q.tick(q.check(1, 1000, cpu=int(4e9)), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+        self.assertNotIn(211, [pid for pid, _ in q.sent])
+
+    def test_an_idle_unit_bursting_now_keeps_the_cpu_gate_closed(self):
+        q = Queue(self, cap=4, cores=1)
+        self.idle_for(q, 31)
+        self.idle_for(q, 1, cpu=lambda tick: int(tick * 1e9))  # 2 cores for the last second
+        self.assertTrue(q.governor._idle(211, q.now - .5))  # 1 CPU s over 30 s
+        q.tick(q.check(1, 1000, cpu=int(2e9)), q.check(2))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_with_a_failed_cpu_read_keeps_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 31, q.check(2, 1000), cpu=lambda tick: None if tick == 50 else 0)
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_unread_at_its_start_keeps_its_slot_a_whole_window(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1, cpu=None), q.check(2))
+        self.idle_for(q, 30, q.check(2, 1000), cpu=lambda tick: int(4e9))
+        self.assertFalse(q.governor._idle(211, 30))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_missing_from_a_scan_keeps_its_slot(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        self.idle_for(q, 29.5, q.check(2, 1000))
+        shell, top = q.check(1, 1000)
+        q.tick([shell, top._replace(argv=[])], q.check(2, 1000))
+        self.assertFalse(q.governor._idle(211, 30))
+        q.tick(q.check(1, 1000, cpu=int(4e9)), q.check(2, 1000))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_whose_processes_change_keeps_its_slot_a_whole_window(self):
+        # A worker found late, or missed for a scan and found again, has CPU no delta
+        # counts; an idle watcher's processes stay the same.
+        for name, appear in (("found late", lambda tick: tick >= 1),
+                             ("missed for a scan", lambda tick: tick != 30)):
+            with self.subTest(name):
+                q = Queue(self, cap=1)
+                worker = proc(212, 211, argv=("node", "worker.js"), start=1000.0, cpu=int(4e9))
+                q.tick(q.check(1) + ([worker] if appear(0) else []), q.check(2))
+                for tick in range(1, 61):
+                    q.tick(q.check(1, 1000) + ([worker] if appear(tick) else []), q.check(2, 1000))
+                self.assertFalse(q.governor._idle(211, q.now - .5))
+                self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_whose_missed_worker_returns_is_measured_whole(self):
+        # A worker one scan misses, found again, then reaped: no debt may hide the 4.2 CPU s
+        # the unit uses in its last 30 s.
+        q = Queue(self, cap=1)
+        w = proc(212, 211, argv=("node", "worker.js"), start=901, cpu=int(10e9))
+        q.tick(q.check(1, 900) + [w], q.check(2))
+        q.tick(q.check(1, 900), q.check(2, 1000))
+        q.tick(q.check(1, 900) + [w], q.check(2, 1000))
+        q.tick(q.check(1, 900, reaped=int(10e9)), q.check(2, 1000))
+        for n in range(1, 64):
+            q.tick(q.check(1, 900, reaped=int(10e9) + n * int(70e6)), q.check(2, 1000))
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+        self.assertEqual(q.stopped(), {221})
+
+    def test_a_unit_whose_short_lived_workers_use_little_frees_its_slot(self):
+        # A 0.01 CPU s worker every 10 s is 0.001 cores: idle, though its processes change.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        reaped = 0
+        for tick in range(1, 121):
+            if tick % 20 == 1 and tick > 1:
+                reaped += int(10e6)
+            members = q.check(1, 1000, reaped=reaped)
+            if tick % 20 == 0:
+                members += [proc(3000 + tick, 211, argv=("node", "worker.js"), start=q.wall - .1, cpu=int(10e6))]
+            q.tick(members, q.check(2, 1000))
+        self.assertTrue(q.governor._idle(211, q.now - .5))
+        self.assertEqual(q.stopped(), set())
+
+    def test_a_late_scan_divides_by_the_idle_window(self):
+        # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
+        # it may be 0.117: read it as busy.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1))
+        q.now += 39.5
+        q.tick(q.check(1, 1000, cpu=int(3.5e9)))
+        self.assertFalse(q.governor._idle(211, q.now - .5))
+
+    def test_the_fifteen_minute_kill_counts_only_busy_checks(self):
+        # Cap 2, checks 1 and 2 idle, 3 and 4 held 15 min: 3 resumes and the spacing keeps 4
+        # waiting, but with one busy check under the cap, 4 isn't killed.
+        q = Queue(self, cap=2)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3), q.check(4))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000), q.check(4, 1000))
+        self.assertEqual(q.killed(), set())
+
+    def test_an_idle_blocker_lets_a_held_unit_resume_instead_of_dying(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000))
+        self.assertEqual((q.killed(), q.stopped()), (set(), set()))
+
+    def test_memory_rules_still_kill_the_biggest_command_with_held_units(self):
+        q = Queue(self, cap=1)
+        killed = []
+        big = [proc(220, 100, argv=("/bin/zsh", "-lc", "check 2")),
+               proc(221, 220, argv=TSC, start=1000.0, footprint=30 * GB)]
+        scan = lambda: snapshot(AGENT, *q.check(1), *big)
+        with mock.patch.multiple(guard, notify=lambda *args: None, record=lambda line: None,
+                                 kill=lambda owners, head, scan, log: log([]) or killed.append(head) or ([], [])):
+            guard.tick(q.owners, scan, governor=q.governor, now=lambda: 0.0, wall=lambda: 1000.0)
+        self.assertEqual(q.stopped(), {221})
+        self.assertEqual(killed, [220])
+
+    def test_a_resolved_json_change_applies_without_a_restart(self):
+        import resolved
+        folder = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder)
+        state = folder / "resolved.json"
+        built = resolved._kit_defaults()
+        built["checkQueue"]["maxChecks"] = 2
+        state.write_text(json.dumps(built))
+        with mock.patch.object(resolved, "STATE", state):
+            self.assertEqual(guard.settings().maxChecks, 2)
+            built["checkQueue"]["maxChecks"] = 3
+            state.write_text(json.dumps(built))
+            os.utime(state, ns=(time.time_ns(), time.time_ns() + 10 ** 9))
+            self.assertEqual(guard.settings().maxChecks, 3)
+
+    def test_the_state_file_holds_one_record_per_held_unit(self):
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2) + [proc(222, 221, argv=("node", "w.js"))], q.check(3))
+        with open(q.state) as file:
+            self.assertEqual(json.load(file), {"held": [
+                {"unit": 221, "members": [[221, 221], [222, 222]]}, {"unit": 231, "members": [[231, 231]]}]})
 
 
 if __name__ == "__main__":

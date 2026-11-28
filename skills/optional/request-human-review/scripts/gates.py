@@ -7,7 +7,8 @@ GATES.json, written by the agent from the whole PR (base...head), never a re-rev
     {"pr": 412, "base": "<sha>", "head": "<sha>",
      "decisions": [{"id": "D2" | null, "decision": "one line", "code": "path:line",
                     "gate": "one-way-door" | "pattern" | "interface" | "product" | null,
-                    "why": "what makes it a gate, or the precedent it follows as path:line"}],
+                    "why": "what makes it a gate, or the precedent it follows as path:line",
+                    "ask": "the question the human answers; a gated decision only"}],
      "sensitive": [{"area": "money-movement" | "auth" | "tenancy" | "concurrency" | "dependencies",
                     "code": "path:line"}]}
 
@@ -64,7 +65,7 @@ def load(path) -> dict:
         name = decision.get('id') or f'decision {index + 1}'
         if decision.get('gate') not in (*GATES, None):
             problems.append(f'{name}: gate {decision.get("gate")!r} is not one of {", ".join(GATES)}, or null')
-        for field in ('decision', 'code', 'why'):
+        for field in ('decision', 'code', 'why') + (('ask',) if decision.get('gate') else ()):
             if not str(decision.get(field) or '').strip():
                 problems.append(f'{name}: {field} is empty')
     for entry in verdict.get('sensitive', []):
@@ -120,6 +121,16 @@ def doors(verdict: dict, base: str, cwd: str = '.') -> list:
     return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
             'decision at that code' for entry in verdict['sensitive']
             if items & {entry['area'], entry['area'].replace('-', ' ')} and entry['code'] not in covered]
+def current(verdict: dict, pr_body: str, base: str, head: str, number: int | None = None) -> list:
+    """Every problem with acting on a loaded verdict now: check's, then, once those pass, a PR
+    whose diff against its current base isn't the one judged from the verdict's base, as after
+    a move to another base, then the repository's one-way doors at that base. Each caller that
+    acts on a verdict asks this, so they stay in step."""
+    problems = check(verdict, pr_body, head, number)
+    if not problems and not same_diff(verdict['base'], base, head):
+        problems.append(f"the PR's diff against its base is not the one the gates judged from {verdict['base']}; "
+                        'review it again')
+    return problems or doors(verdict, base)
 
 
 def same_diff(judged_base: str, base: str, head: str, cwd: str = '.') -> bool:
@@ -165,15 +176,18 @@ def decide(verdict: dict, holds: bool, required: str, second_opinion: str) -> st
     return {'passed': 'approve', 'pending': 'wait', 'failed': 'not-approved'}[required]
 
 
+def line(decision: dict) -> str:
+    """A gated decision as one Markdown list item, the same in a review and a handoff."""
+    label = decision['id'] or 'Not in the Decisions table'
+    return f'- **{label}** · {GATES[decision["gate"]]}: {decision["decision"]} · `{decision["code"]}` · {decision["why"]}'
+
+
 def section(verdict: dict, no_second_opinion: str | None = None) -> str:
     """The review's "Needs a human" Markdown, naming each gated decision, and, given why, that
     the review's second opinion didn't run."""
     lines = ['**Needs a human.** ' + ("These decisions need a person's approval; the rest of the PR follows "
                                      'established patterns:' if gated(verdict) else 'A person approves this PR:'), '']
-    for decision in gated(verdict):
-        label = decision['id'] or 'Not in the Decisions table'
-        lines.append(f'- **{label}** · {GATES[decision["gate"]]}: {decision["decision"]} · `{decision["code"]}` · '
-                     f'{decision["why"]}')
+    lines += [line(decision) for decision in gated(verdict)]
     if no_second_opinion is not None:
         lines.append(f"- **Second opinion** · the other provider's review didn't run ({no_second_opinion}), "
                      'so a person reviews in its place')
@@ -185,11 +199,7 @@ def main(arguments):
         verdict = load(arguments[2])
         pr = json.loads(subprocess.run(['gh', 'pr', 'view', arguments[1], '--json', 'body,headRefOid,baseRefOid'],
                                        capture_output=True, text=True, check=True, timeout=60).stdout)
-        problems = check(verdict, pr['body'], pr['headRefOid'], int(arguments[1]))
-        if not problems and not same_diff(verdict['base'], pr['baseRefOid'], pr['headRefOid']):
-            problems.append(f"the PR's diff against its base is not the one the verdict judged from {verdict['base']}")
-        if not problems:
-            problems = doors(verdict, pr['baseRefOid'])
+        problems = current(verdict, pr['body'], pr['baseRefOid'], pr['headRefOid'], int(arguments[1]))
         print('\n'.join(problems) or f'{arguments[2]} covers the PR at {verdict["head"]}')
         return 1 if problems else 0
     if len(arguments) == 3 and arguments[0] == 'own-diff':
