@@ -145,26 +145,15 @@ show the test that fails on the base and passes here, or the command output.
 - **Review artifact**: when the repo's PR rules or the user ask for one, build it with
   the installed skill for review artifacts and link it first in the Review guide.
 - **Links**: link issues and plans rather than copying them, with the repo's
-  issue-linking phrase (for example `Closes EX-12`). In Linear:
-  - Open each PR that closes the issue on a branch whose name has the issue key. A
-    stacking tool such as `gh stack submit --auto` opens the PR before its description
-    has the phrase, and a PR Linear matches to an issue on its own gets a contributing
-    link, which never applies the merge status. Adding the phrase later may not change it.
-  - Keep magic phrases out of commit messages: a commit with a closing phrase closes
-    the issue when it reaches the default branch, even before its work is done.
-  - Write the closing phrase on every PR that carries the issue's planned work, each
-    stack layer included: Linear applies the team's merge status when the issue's last
-    linked PR merges, and only if that PR closes it.
-  - While any of the issue's planned work has no PR yet, write "Part of" on every one
-    instead, with no issue key in their branch names, so none closes it early. When
-    the last of that work gets its PR, change the open "Part of" PRs to the closing
-    phrase, then check in Linear that each one now shows as closing. If one still shows
-    as contributing, say so in its description, and move the issue by hand once the
-    last one merges.
-
-  In a tracker that closes on the first merge into the default branch, such as GitHub
-  Issues, the closing phrase goes on the PR that brings the finished work into the
-  default branch, a promotion PR included.
+  issue-linking phrase (for example `Closes EX-12`). In Linear, open each PR on a
+  branch whose name has the issue key, and write the closing phrase on every PR that
+  carries the issue's work, each stack layer included: Linear moves the issue when its
+  last linked PR merges, and only if that PR closes it. File work no PR covers yet as
+  its own issue instead of writing "Part of". Without the key, Linear may guess the
+  issue and link it as contributing, which never moves it and doesn't change when the
+  description does. In a tracker that closes on the first merge into the default
+  branch, such as GitHub Issues, the closing phrase goes on the PR that brings the
+  finished work into the default branch, a promotion PR included.
 - **Words**: the terms in the `domain-modeling` glossary (`CONTEXT.md`), when the repo has one.
 - **Title**: the outcome in the imperative, under 70 characters.
 - **Describe only.** Code review belongs to `verify-work` and `review-loop`. Put known
