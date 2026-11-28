@@ -295,6 +295,35 @@ hook in its own logger was the other option.
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"shared callback runner"}],"options":[{"key":"a","class":"decision","text":"yes, switch it and show group 2"},{"key":"b","class":"decision","text":"no, keep it as is and show group 2"}]} -->
 ````
 
+## Batch card
+
+The calls `queue show` puts on one card: several of one batch, each without a ⚠️ row,
+waiting at once. Its headline asks once, and each item is a bullet led by its queue id in
+bold, as its need numbers it, naming its target, then its draft in full, so a yes needs
+no fold. A Markdown list number would renumber ids that skip, such as 7, 9. `a` takes
+all; on any card but a merge, "a except 8" or an edit by number changes one, and each
+item leaves the queue with that answer. A merge batch is a stack's ship gate, its option
+the plain request, and holds the whole stack. A stack merges bottom up, so its only part
+is its lower layers, offered as `b`, "merge #12"; the merge gate reads no "except".
+
+````markdown
+🟡 **Post the three review replies on Ana's PRs?**
+
+- **7** · [#41, Retries reuse their receipt](https://github.com/acme/app/pull/41): answer the question
+  > The retry keeps the first receipt's id, so the client never sees a second one.
+- **8** · [#42, Receipts return their upload id](https://github.com/acme/app/pull/42): re-request the review
+- **9** · [#43, Exports page their rows](https://github.com/acme/app/pull/43): approve it
+
+---
+
+**Next**
+
+- **`a` → post all three** · *recommended*
+- `b` → post 7 and 8 only
+
+<!-- turn {"state":"stop","needs":[{"id":7,"kind":"review","name":"answer on #41"},{"id":8,"kind":"review","name":"re-request on #42"},{"id":9,"kind":"review","name":"approve #43"}],"options":[{"key":"a","class":"stop:post","text":"post all three"},{"key":"b","class":"stop:post","text":"post 7 and 8 only"}]} -->
+````
+
 ## Reply kinds
 
 The fact table for the kinds of reply the examples above don't show. Finished work ends

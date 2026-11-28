@@ -16,8 +16,9 @@ when). Its sections:
   added by `phase`.
 - **Queue**: what waits on the user, as step 5 orders it: a row per real call, stuck
   run, or Do, with the id its turn-block need carries, never reused, and `Next id:` above
-  the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
-  who asked it, and the answer under Decisions. A phase end carries it over. A project
+  the table. `queue import`, `queue add`, `queue batch` (a call queued before its batch
+  was known), and `queue done` are its only writers, and `done` adds the item, who asked
+  it, and the answer under Decisions. A phase end carries it over. A project
   from before the queue starts it with `queue import`, given a turn block naming every
   item still open, with `--from <id>=<worker>` and `--stuck <id>` for what a block can't
   say, and `queue add` refuses it until then.
@@ -62,3 +63,9 @@ At the close, add `## Result` under Goal: the integrated check's result (the hea
 it merged, the checks it ran, and a pass, or the limitation the user accepted), what
 shipped, with each PR and its merge state, each worker's final state, and the follow-ups
 left open.
+
+## Credits
+
+The coordinator is inspired by Cursor Projects and Claude Code Projects, with rules from
+Lauren Tan's pstack Orchestrate playbook, agentbox's hyperfocus inbox, and Johan's
+orchestrate-project (jokklan/skills#29).

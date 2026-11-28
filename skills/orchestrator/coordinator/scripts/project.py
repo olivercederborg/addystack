@@ -9,13 +9,16 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L]
                                     set a Workers row's columns, adding the row if it's new
   project.py DIR listen KEY VALUE   set `- KEY: VALUE` under Listening
-  project.py DIR queue add KIND NAME [--from F]
+  project.py DIR queue add KIND NAME [--from F] [--batch B]
                                     queue an item that waits on the user (KIND: stuck,
-                                    decide, review, or do), then print the queue
+                                    decide, review, or do), then print the queue; items
+                                    of one batch B, such as post, share a card
   project.py DIR queue done ID --answer A
                                     take the item off the queue, adding it, who asked, and
                                     the answer A (the pick in words and the user's own)
                                     under Decisions, then print the queue
+  project.py DIR queue batch KEY ID...
+                                    put open items, such as imported ones, in batch KEY
   project.py DIR queue show         print the strip and need a reply shows, and every item
   project.py DIR queue import [--from ID=F] [--stuck ID]
                                     start the Queue of a project from before it: queue each
@@ -128,8 +131,10 @@ def imported(lines: list[str], text: str, sources: dict[int, str] | None = None,
 
 
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
+          batch: str | None = None,
           source: str | None = None, ident: int | None = None, answer: str | None = None,
           block: str | None = None, sources: list[str] | None = None, stuck: list[int] | None = None,
+          idents: list[int] | None = None,
           line: "Priority | None" = None) -> str:
     """Runs a `queue` action on lines and returns what it prints: the queue as `show` gives
     it, in the priority line's order, after a line naming the item an add or done touched,
@@ -137,8 +142,10 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
     under Decisions, so a resolved call keeps its trail."""
     try:
         if action == "add":
-            item = project_queue.add(lines, kind, name, source or "coordinator")
+            item = project_queue.add(lines, kind, name, source or "coordinator", batch=batch or "")
             head = [f"queued {item.id}: {item.kind} · {item.name}"]
+        elif action == "batch":
+            head = [f"batched {item.id}: {item.batch} · {item.name}" for item in project_queue.batch(lines, batch, idents)]
         elif action == "done":
             if not (answer or "").strip():
                 raise ProjectError("--answer takes the answer: the pick in words and the user's own")
@@ -848,10 +855,14 @@ def main(argv: list[str]) -> int:
     adding.add_argument("kind", choices=project_queue.KINDS)
     adding.add_argument("name")
     adding.add_argument("--from", dest="source")
+    adding.add_argument("--batch")
     resolving = queued.add_parser("done", allow_abbrev=False)
     resolving.add_argument("ident", type=int, metavar="id")
     resolving.add_argument("--answer", required=True)
     queued.add_parser("show", allow_abbrev=False)
+    batching = queued.add_parser("batch", allow_abbrev=False)
+    batching.add_argument("batch", metavar="key")
+    batching.add_argument("idents", type=int, nargs="+", metavar="id")
     importing = queued.add_parser("import", allow_abbrev=False)
     importing.add_argument("--from", dest="sources", action="append", metavar="ID=WHO")
     importing.add_argument("--stuck", type=int, action="append", metavar="ID")
@@ -902,6 +913,7 @@ def main(argv: list[str]) -> int:
         if args.command == "queue":
             answer = getattr(args, "answer", None)
             printed = queue(lines, args.action, kind=getattr(args, "kind", None), name=getattr(args, "name", None),
+                            batch=getattr(args, "batch", None), idents=getattr(args, "idents", None),
                             source=getattr(args, "source", None), ident=getattr(args, "ident", None),
                             answer=sys.stdin.read() if answer == "-" else answer,
                             block=sys.stdin.read() if args.action == "import" else None,

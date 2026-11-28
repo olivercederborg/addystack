@@ -204,6 +204,21 @@ class Queue(Fixture, unittest.TestCase):
         self.assertIn(f"- {TODAY} · coordinator asked: pull the laptop's dotfiles (queue 1, do) → pulled · the user: "
                       "\"done.\n  Both machines.\"\n", self.text())
 
+    def test_add_with_a_batch_puts_the_batch_on_one_card(self):
+        self.project("queue", "add", "decide", "keep the v1 export")
+        for name in ("post the reply to Ana on #41", "re-request Ana on #42"):
+            self.project("queue", "add", "review", name, "--from", "rv", "--batch", "post")
+        self.assertIn("| # | Kind | Name | From | Since | Batch |", self.text())
+        self.assertIn("| 1 | decide | keep the v1 export | coordinator |", self.text())
+        out = self.project("queue", "done", "1", "--answer", "keep · the user: \"a\"").stdout
+        self.assertIn("2 of 2 need you, on one card · post · 2 post the reply to Ana on #41; 3 re-request Ana on #42\n"
+                      'needs: [{"id":2,"kind":"review","name":"post the reply to Ana on #41"},'
+                      '{"id":3,"kind":"review","name":"re-request Ana on #42"}]', out)
+        self.assertIn("--batch takes one word", self.project("queue", "add", "review", "post it", "--batch", "post it",
+                                                             code=1).stderr)
+        self.project("queue", "add", "review", "approve #43", "--from", "rv")
+        self.assertIn("batched 4: post · approve #43", self.project("queue", "batch", "post", "4").stdout)
+
     def test_an_answer_with_any_line_ending_stays_inside_its_decision(self):
         self.project("queue", "add", "decide", "keep the v1 export")
         self.project("queue", "done", "1", "--answer", "yes\r## Workers\r\nno table")

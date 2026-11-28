@@ -181,18 +181,20 @@ cleared. A real call is one of the stops in the user's instructions, or a produc
 no probe settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
-Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
---from "<worker> <thread link>"`. It orders what waited a day under the priority, its
-items, then stuck runs, calls, and Do items, oldest first. While it holds one, every
-reply here, ⏳ statuses and quiet wakes included, ends on the top item: the
+Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>" --from
+"<worker> <thread link>"`, and `--batch <kind>` (`post`, `merge:<stack>`, `follow-ups`)
+for a call with no ⚠️ row that a [batch card](references/views.md#batch-card) can share.
+It orders what waited a day under the priority, its items, then stuck runs, calls, and
+Do items, oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
+included, ends on the top item and its batch: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-keep the v1 export · export-v2`, and the need that leads the turn block's `needs`.
+keep the v1 export · export-v2`, and the needs that lead the turn block's.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
-words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"`. In
-the same reply, show the next item with no recap. With the queue empty, the reply is one
-line: a ⏳ line while any worker runs, else a **Done** line.
+words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"` per
+item. In the same reply, show the next item with no recap. With the queue empty, the
+reply is one line: a ⏳ line while any worker runs, else a **Done** line.
 
 **Done when:** every answer is sent and off the queue, and the reply ends on the queue's
 top item or the one-line status.
@@ -221,7 +223,3 @@ When the phase's proof holds, follow [phases](references/phases.md): start the n
 phase, park, or, on the user's word only, [close](references/close.md).
 
 **Done when:** phases' **Done when** holds.
-
-Inspired by Cursor Projects and Claude Code Projects, with rules from Lauren Tan's
-pstack Orchestrate playbook, agentbox's hyperfocus inbox, and Johan's
-orchestrate-project (jokklan/skills#29).

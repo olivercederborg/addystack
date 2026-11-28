@@ -31,7 +31,7 @@ REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo wo
 # #10-dotfiles#14, but not #53-#55.
 REPO_NAMED = re.compile(rf"{REPO_REF.pattern}|(?<![#\w./])(?:[\w.-]+/[\w.-]+|[\w.-]*[a-z][\w.-]*)#\d", re.I)
 REF = rf"(?:(?:[\w.-]+/)?[\w.-]+#\d+|{REPO}\s+#\d+|#?\d+)"
-REFS = rf"{REF}(?:(?:\s*[,&-]\s*|\s+(?:and|through|to)\s+){REF})*"
+REFS = rf"{REF}(?:(?:\s*[,&-]\s*|,?\s+(?:and|through|to)\s+){REF})*"  # "#12, #13, and #14" too
 STATE = r"(?:ready|passing|green|safe|done|verified)"
 TARGET = (rf"(?:\s+(?:it(?: all)?|them(?: all|,? the (?:full|whole) list)?|both(?: open)?(?: prs| stacks)?|all(?: of them)?"
           rf"|everything|anything|whats? ready|the rest|this(?: pr| one)?|{REFS}"

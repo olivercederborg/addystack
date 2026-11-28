@@ -116,5 +116,103 @@ class Queue(unittest.TestCase):
                 self.assertEqual(turn_block.parse(block).needs[0].name, name)
 
 
+class Batch(unittest.TestCase):
+    """Calls of one batch waiting at the same moment go on one card, so one go answers them."""
+
+    def test_the_first_batched_add_writes_the_column_and_keeps_every_row(self):
+        lines = project(("decide", "keep the v1 export"))
+        q.add(lines, "review", "post the reply to Ana on #41", "rv41", NOW, batch="post")
+        at = lines.index("| # | Kind | Name | From | Since | Batch |")
+        self.assertEqual(lines[at:at + 4], [
+            "| # | Kind | Name | From | Since | Batch |", "|---|---|---|---|---|---|",
+            "| 1 | decide | keep the v1 export | coordinator | 2026-11-18 14:05 |  |",
+            "| 2 | review | post the reply to Ana on #41 | rv41 | 2026-11-18 14:05 | post |"])
+        self.assertEqual([(item.id, item.batch) for item in q.read(lines)], [(1, ""), (2, "post")])
+        self.assertEqual(q.done(lines, 1).name, "keep the v1 export")
+
+    def test_the_top_item_shares_its_card_with_its_batch_alone(self):
+        lines = project(("decide", "keep the v1 export"))
+        for name, batch in [("post the reply to Ana on #41", "post"), ("merge #12 and #13", "merge:receipts"),
+                            ("re-request Ana on #42", "post"), ("approve #43 with two comments", "post")]:
+            q.add(lines, "review", name, "rv", NOW, batch=batch)
+        self.assertTrue(q.show(q.read(lines)).startswith("1 of 5 need you · keep the v1 export · coordinator\n"),
+                        "an unbatched top item shows alone")
+        q.done(lines, 1)
+        shown = q.show(q.read(lines)).splitlines()
+        self.assertEqual(shown[0], "3 of 4 need you, on one card · post · 2 post the reply to Ana on #41; "
+                                   "4 re-request Ana on #42; 5 approve #43 with two comments")
+        self.assertEqual(turn_block.parse('<!-- turn {"state":"stop","' + shown[1].replace(": ", '":', 1) + ',"options":[]} -->')
+                         .needs, (turn_block.Need(2, "review", "post the reply to Ana on #41"),
+                                  turn_block.Need(4, "review", "re-request Ana on #42"),
+                                  turn_block.Need(5, "review", "approve #43 with two comments")))
+        for ident in (2, 4, 5):
+            q.done(lines, ident)
+        self.assertTrue(q.show(q.read(lines)).startswith("1 of 1 needs you · merge #12 and #13 · rv\n"),
+                        "a batch of one is a card of one")
+
+    def test_a_card_stays_in_its_priority_band(self):
+        # Codex review of r204/batch, round 1: a card took a batch item the priority puts last.
+        lines = project()
+        q.add(lines, "review", "priority: post to Ana on #41", "rv41", NOW, batch="post")
+        q.add(lines, "decide", "priority: settle the export", "w", NOW)
+        q.add(lines, "review", "post to Bo on #42", "rv42", NOW, batch="post")
+        q.add(lines, "review", "priority: post to Ana on #43", "rv43", NOW, batch="post")
+        ranked = q.read(lines, lambda item: item.name.startswith("priority"), NOW)
+        self.assertEqual([item.id for item in q.card(ranked)], [1, 4], "Bo's post waits behind the priority's decide")
+        self.assertEqual([item.id for item in q.card(q.read(lines))], [1, 3, 4], "with no priority, one band")
+
+    def test_open_items_join_a_batch_and_keep_their_ids(self):
+        lines = project(("review", "post to Ana on #41"), ("decide", "keep the v1 export"), ("review", "post to Ana on #42"))
+        self.assertEqual([item.id for item in q.batch(lines, "post", [1, 3])], [1, 3])
+        self.assertTrue(q.show(q.read(lines)).startswith("2 of 3 need you, on one card · post · 1 post to Ana on #41; "
+                                                         "3 post to Ana on #42\n"))
+        with self.assertRaisesRegex(q.QueueError, "no open Queue item 9"):
+            q.batch(lines, "post", [9])
+
+    def test_a_queue_section_with_no_table_says_how_to_fix_it(self):
+        with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
+            q.read(["## Queue", "", "Next id: 1", ""])
+
+    def test_batch_leaves_a_table_it_cant_read_as_it_is(self):
+        # Codex review of r204/batch, round 2: it rewrote a header with From and Since swapped.
+        swapped = ["## Queue", "", "Next id: 2", "", "| # | Kind | Name | Since | From |", "|---|---|---|---|---|",
+                   "| 1 | review | post Ana | 2026-11-18 14:05 | rv41 |", ""]
+        for lines in (list(swapped), ["## Queue", "", "Next id: 1", ""]):
+            before = list(lines)
+            with self.assertRaisesRegex(q.QueueError, "the Queue table's header isn't"):
+                q.batch(lines, "post", [1])
+            self.assertEqual(lines, before)
+        # Codex review of r204/batch, round 3: a bad row raised after the header was rewritten.
+        bad_row = ["## Queue", "", "Next id: 2", "", "| # | Kind | Name | From | Since |", "|---|---|---|---|---|",
+                   "| 1 | blocked | post Ana | rv | 2026-11-18 14:05 |", ""]
+        for change in (lambda lines: q.batch(lines, "post", [1]),
+                       lambda lines: q.add(lines, "review", "post Bo", "rv", NOW, batch="post")):
+            lines = list(bad_row)
+            with self.assertRaisesRegex(q.QueueError, "a Queue row it can't read"):
+                change(lines)
+            self.assertEqual(lines, bad_row)
+
+    def test_a_merge_card_takes_its_whole_stack_past_the_priority(self):
+        # Codex review of r204/batch, round 3: a priority on #14 alone put "merge #14" on a card
+        # by itself, and `gh stack merge 14` merges #12 and #13 under it too.
+        lines = project()
+        for n in (12, 13, 14):
+            q.add(lines, "review", f"merge #{n}", "w", NOW, batch="merge:receipts")
+        q.add(lines, "review", "post to Bo on #42", "rv42", NOW, batch="post")
+        q.add(lines, "review", "post to Ana on #43", "rv43", NOW, batch="post")
+        ranked = q.read(lines, lambda item: item.name in ("merge #14", "post to Ana on #43"), NOW)
+        self.assertEqual([item.id for item in q.card(ranked)], [3, 1, 2])
+        q.done(lines, 1), q.done(lines, 2), q.done(lines, 3)
+        self.assertEqual([item.id for item in q.card(q.read(lines, lambda item: "#43" in item.name, NOW))], [5],
+                         "any other batch keeps to its band")
+
+    def test_a_batch_is_one_word(self):
+        lines = project()
+        for batch in ["post replies", "x" * 41, "post|merge"]:
+            with self.assertRaisesRegex(q.QueueError, "--batch takes one word"):
+                q.add(lines, "review", "post the reply", "rv", NOW, batch=batch)
+        self.assertNotIn("Batch", " ".join(lines))
+
+
 if __name__ == "__main__":
     unittest.main()
