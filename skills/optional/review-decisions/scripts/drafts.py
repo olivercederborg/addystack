@@ -25,6 +25,7 @@ import sys
 
 MARK, VERSION = 'review-decisions:drafts', 1
 BLOCK = re.compile(rf'<!-- {MARK} v(\d+)\s(.*?)\s*-->', re.S)
+START = f'<!-- {MARK} v'
 SHA = re.compile(r'[0-9a-f]{40}')
 SIDES = ('RIGHT', 'LEFT')
 
@@ -62,11 +63,14 @@ def render(drafts: dict) -> str:
 
 def read(text: str) -> dict | None:
     """The last block's drafts, or None without one, or when it is another version or malformed."""
-    blocks = BLOCK.findall(text or '')
-    if not blocks or int(blocks[-1][0]) != VERSION:
+    # The last marker decides, closed or not: an unclosed later block must not revive an earlier
+    # one, and an unclosed earlier one must not swallow a later block.
+    start = (text or '').rfind(START)
+    block = BLOCK.match(text, start) if start >= 0 else None
+    if block is None or int(block[1]) != VERSION:
         return None
     try:
-        drafts = json.loads(blocks[-1][1])
+        drafts = json.loads(block[2])
     except ValueError:
         return None
     return None if problems(drafts) else drafts

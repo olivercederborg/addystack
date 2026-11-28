@@ -71,6 +71,13 @@ class Read(unittest.TestCase):
         self.assertIsNone(drafts.read(f'{block(review())}\n{block(review(), version=2)}'))
         self.assertIsNone(drafts.read(f'{block(review())}\n{block(review(head="abc"))}'))
 
+    def test_an_unclosed_last_block_hides_earlier_ones(self):
+        self.assertIsNone(drafts.read(f'{block(review())}\n<!-- review-decisions:drafts v1 {{"pr": 12'))
+
+    def test_an_unclosed_earlier_block_never_swallows_a_later_one(self):
+        later = review(summary='later', comments=[], replies=[])
+        self.assertEqual(drafts.read(f'<!-- review-decisions:drafts v1 {{"pr": 12\nChanged.\n{block(later)}'), later)
+
     def test_a_block_split_over_lines_reads(self):
         self.assertEqual(drafts.read(f'<!-- review-decisions:drafts v1\n{json.dumps(review())}\n-->'), review())
 
