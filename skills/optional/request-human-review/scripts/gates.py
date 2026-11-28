@@ -44,7 +44,9 @@ TABLE_ROW = re.compile(r'^\s*\|\s*(D\d+)\s*\|', re.M)
 # A repository's own list of one-way doors, in a PR template where GitHub looks for one.
 # The list ends with its sentence, a blank line, a heading, or the comment it sits in.
 DOORS = re.compile(r'one-way\s+doors\s+include:?\s+(.+?)(?=\.(?:\s|\Z)|-->|\n\s*\n|\n\s*#|\Z)', re.I | re.S)
-ITEM = re.compile(r',|\s(?:and|or)\s')
+ITEM = re.compile(r'[,;]|\s(?:and|or)\s')
+# Markdown emphasis and code marks, and an aside in parentheses, are not part of an item's name.
+PLAIN = re.compile(r'[*`]|\([^)]*\)')
 TEMPLATE = re.compile(r'(\.github/|docs/)?pull_request_template\.md', re.I)
 TEMPLATE_FOLDERS = ('.github/', '', 'docs/')
 
@@ -113,7 +115,7 @@ def doors(verdict: dict, base: str, cwd: str = '.') -> list:
     if definition is None:
         return []
     source, listed = definition
-    items = {item.strip().lower() for item in ITEM.split(listed)}
+    items = {item.strip().lower() for item in ITEM.split(PLAIN.sub('', listed))}
     covered = {decision['code'] for decision in verdict['decisions'] if decision['gate'] == 'one-way-door'}
     return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
             'decision at that code' for entry in verdict['sensitive']

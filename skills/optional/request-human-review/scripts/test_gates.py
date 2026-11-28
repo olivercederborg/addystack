@@ -172,6 +172,15 @@ class OneWayDoors(unittest.TestCase):
         # Only an item that is an area's own name counts, in either spelling; a narrower one is the agent's to gate.
         self.assertEqual(named('One-way doors include authorization changes, or changes to money movement limits.\n'), [])
         self.assertEqual(named('One-way doors include auth or money-movement.\n'), ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
+        # Markdown marks, an aside in parentheses, and semicolons leave an item its name.
+        for template in ('One-way doors include **money movement**, migrations.\n',
+                         'One-way doors include `money movement` and migrations.\n',
+                         'One-way doors include money movement (payouts, transfers), and migrations.\n',
+                         'One-way doors include migrations; money movement; sent emails.\n'):
+            self.assertEqual(named(template), ['money-movement at pay.ts:3'], template)
+        # Known limits, left to the agent: "e.g." ends the sentence, and a bulleted list reads as one item.
+        self.assertEqual(named('One-way doors include e.g. money movement and migrations.\n'), [])
+        self.assertEqual(named('One-way doors include:\n- money movement\n- migrations\n'), [])
         self.assertIn('by PULL_REQUEST_TEMPLATE.md:2:', self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md':
                                                                                    '# PR\nOne-way doors include auth.\n'})[0])
 
