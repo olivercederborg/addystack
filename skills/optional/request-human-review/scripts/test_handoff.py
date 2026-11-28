@@ -192,6 +192,10 @@ class Plan(unittest.TestCase):
         chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
         self.assertNotIn('Away, so not asked', chosen['comment'])
+        # The PR's author is never listed as away, even when they are.
+        own = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
+                        self.facts(author='dave', standing=standing(away={'dave'})))
+        self.assertEqual(handoff.read(own['comment'])['away'], [])
         # With --with-suggested, a domain the suggestion can't fill is named too.
         both = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
                          self.facts(viewer='carol', standing=standing(away={'bob', 'dave'})), chosen=('alice',),
