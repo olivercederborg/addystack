@@ -261,6 +261,21 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertIn("- acme/app#21 waits on acme/tools#9, which closed", "".join(m["message"] for m in self.sent()))
 
+    def test_an_unread_waiting_pr_keeps_its_blocker_clock(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #21 | waiting | #21 ← acme/tools#138 |"})
+        self.prs["acme/app#21"] = {"state": "OPEN", "isDraft": False, "headRefOid": "21aaaaaaa"}
+        self.prs["acme/tools#138"] = {"state": "MERGED", "isDraft": False}
+        self.watch(7, 21)
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged", self.sent()[0]["message"])
+        waiting = self.prs.pop("acme/app#21")
+        self.age(600)
+        self.tick("--send")
+        self.prs["acme/app#21"] = waiting
+        self.age(600)
+        self.tick("--send")
+        self.assertNotIn("waits on", "".join(m["message"] for m in self.sent()), "read again 20 min after the alert")
+
     def test_a_wait_on_a_pr_that_merged_or_closed_is_flagged(self):
         self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
                                  "| #21 · #22 | waiting | #21 ← acme/tools#138; #22 ← acme/tools#139 |"})

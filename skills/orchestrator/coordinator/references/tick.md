@@ -28,6 +28,8 @@ the rest:
   watch, or a stack-dismissed one. T3 ends a thread's watches unannounced when the user
   stops or rolls back a turn. Call `watch_pull_request` on it. When T3's state database
   can't be read, the tick skips this check and logs why.
+- **Old Watches line**: Listening still lists Watches, which T3's watch state replaced:
+  remove it with `project.py <folder> listen Watches none`.
 - **Idle draft**: an open draft Worker PR at one head for 30 minutes that no Waits on
   entry on its row names as `<PR> ← <blocker>`. Mark it ready, or name what it waits on.
   A push, or leaving draft, restarts its clock.
