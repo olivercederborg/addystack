@@ -126,13 +126,16 @@ The **handoff** follows a needs-human review, through `scripts/handoff.py`: a PR
 that gives the agent running the human's review every gated decision in full, then a
 review request. It reads `.github/REVIEWERS` at the PR's base: each decision's domain is
 the one its code is in, or the PR's main change's when its file is in no domain, such as an
-ADR. For the domain with the most decisions, then each domain the people picked so far
-aren't P1 or P2 of, it asks whoever scores highest among everyone the file names but the
-author and anyone already asked: the domain's P1, P2 or P3 points from the settings above
-REVIEWERS' first domain, less their open review asks and their share of recent reviews, as
-`scripts/standing.py` counts them (`scripts/reviewers.py` names the settings). A domain with nobody listed gives
-nobody points, and someone already requested, who has reviewed this head, or who is picked for another
-domain covers it. Someone already requested, or whose review of this head stands, covers the domains
+ADR. For the PR's main area, the domain with the most decisions, it asks whoever scores
+highest among everyone the file names but the author and anyone already asked: the domain's
+P1, P2 or P3 points from the settings above REVIEWERS' first domain, less their open review
+asks and their share of recent reviews, as `scripts/standing.py` counts them
+(`scripts/reviewers.py` names the settings). Each other domain the people picked so far
+aren't P1 or P2 of is scored the same way, except that someone already asked may take it
+without a new request, and anyone already asked or picked gets the `reuse` points: one
+person reviewing several areas is slightly preferred to asking another. A domain with nobody
+listed gives nobody points, and someone already requested, who has reviewed this head, or who is
+picked for another domain covers it. Someone already requested, or whose review of this head stands, covers the domains
 they're P1 or P2 of, and whomever its own earlier handoff picked for a domain keeps it while
 they're requested or have reviewed. A re-review with the same decisions as its own last
 handoff posts no new one. A base without REVIEWERS hands off nothing, and one without the settings stops the handoff with the missing line named, and a handoff that fails is named in the Outcome, as a thread it couldn't resolve is. End with its Outcome line.

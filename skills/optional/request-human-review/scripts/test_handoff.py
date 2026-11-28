@@ -13,7 +13,7 @@ import reviewers  # noqa: E402
 HEAD, BASE = 'a' * 40, 'b' * 40
 RULES = reviewers.parse('## billing\n/packages/billing/ @alice @bob\n\n## auth\n/packages/auth/ @dave\n')
 DISCLOSURE = '<sub>`AGENT`</sub><br>'
-SETTINGS = {'weights': {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10}, 'share_since': None}
+SETTINGS = {'weights': {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10, 'reuse': 2}, 'share_since': None}
 
 
 def standing(**asks):

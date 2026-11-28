@@ -35,7 +35,7 @@ CONTEXT.md
 **/docs/adr/
 """
 RULES = reviewers.parse(FILE)
-WEIGHTS = {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10}
+WEIGHTS = {'P1': 3, 'P2': 2, 'P3': 1, 'open ask': 1, 'share': 10, 'reuse': 2}
 
 
 def decision(code, id_='D1'):
@@ -56,13 +56,14 @@ class Parse(unittest.TestCase):
                          [('/apps/web/', 'web', ['bob'])])
 
     def test_settings_come_from_the_lines_above_the_first_domain(self):
-        text = '# how the pick weighs people\npriority: 3 2 1\nopen ask: 1\nshare: 10\nshare since: 2026-12-01\n\n' + FILE
+        text = '# how the pick weighs people\npriority: 3 2 1\nopen ask: 1\nshare: 10\nreuse: 2\nshare since: 2026-12-01\n\n' + FILE
         self.assertEqual(reviewers.settings(text), {'weights': WEIGHTS, 'share_since': reviewers.dt.date(2026, 12, 1)})
 
     def test_a_missing_or_unreadable_setting_is_named(self):
         with self.assertRaises(ValueError) as raised:
             reviewers.settings('priority: 3 2\nshare: lots\nshare since: 2026-12-01\n## web\nopen ask: 1\n')
-        for named in ('line 1: priority: 3 2', 'line 2: share: lots', 'no `open ask:` line', 'no `priority:` line'):
+        for named in ('line 1: priority: 3 2', 'line 2: share: lots', 'no `open ask:` line', 'no `priority:` line',
+                      'no `reuse:` line'):
             self.assertIn(named, str(raised.exception))
 
     def test_a_pinned_heading_names_its_domain_and_comments_are_skipped(self):
@@ -199,6 +200,32 @@ class Score(unittest.TestCase):
         picked = reviewers.pick(rules, [{'domain': 'rpc'}, {'domain': 'other'}], 'someone', [],
                                 standing(asks, rules=rules), WEIGHTS, {})
         self.assertEqual([(reviewer['login'], reviewer['domains']) for reviewer in picked], [('Cole', ['other', 'rpc'])])
+
+    def test_a_secondary_area_prefers_someone_already_picked_but_the_main_area_does_not(self):
+        rules = reviewers.parse(self.FILE)
+        asks = {**dict.fromkeys(self.ASKS, 0), 'owen': 2}
+        both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'rpc'}]
+        # bookkeeping is the main area: ann, its P1. rpc's P1 owen scores 3 - 2 = 1, and ann,
+        # already picked, scores 0 + 2 reuse, so ann takes rpc too instead of a second person.
+        picked = reviewers.pick(rules, both, 'someone', [], standing(asks, rules=rules), WEIGHTS, {})
+        self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping', 'rpc'])])
+        # Alone, rpc is the main area: no reuse, so its P1 owen (1) beats everyone else (0).
+        self.assertEqual(self.pick('rpc', asks), [('owen', 'P1', ['rpc'])])
+
+    def test_someone_already_on_the_pr_can_take_a_secondary_area_but_not_the_main_one(self):
+        rules = reviewers.parse(self.FILE)
+        asks = {**dict.fromkeys(self.ASKS, 0), 'owen': 2, 'ann': 1}
+        both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'rpc'}]
+        # lee was asked by the author: left out of the main area, which goes to ann; for rpc lee
+        # scores 0 + 2 reuse, above owen (1) and ann (0 - 1 + 2), so lee keeps it, unrequested.
+        picked = reviewers.pick(rules, both, 'someone', ['lee'], standing(asks, rules=rules), WEIGHTS, {})
+        self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping'])])
+
+    def test_a_free_p1_still_beats_someone_reused(self):
+        rules = reviewers.parse(self.FILE)
+        both = [{'domain': 'bookkeeping'}, {'domain': 'bookkeeping'}, {'domain': 'transactions'}]
+        picked = reviewers.pick(rules, both, 'someone', [], standing(dict.fromkeys(self.ASKS, 0), rules=rules), WEIGHTS, {})
+        self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping']), ('lee', ['transactions'])])
 
     def test_whom_an_earlier_handoff_picked_keeps_the_domain_while_they_are_asked(self):
         self.assertEqual(Pick.pick(Pick(), 'billing', engaged=['carol'], held={'billing': 'carol'}), [])
