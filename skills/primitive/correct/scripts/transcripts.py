@@ -198,7 +198,8 @@ def said(parts):
 def stops(found):
     """Each turn boundary in found, a transcript's entries, by position: "continued" at a
     Stop's stop_hook_summary record when a hook continued the turn there (a CONTINUED record
-    for that Stop's toolUseID), "ended" at one that ended the turn, and "interrupted" at the
+    for that Stop's toolUseID), "ended" at one that ended the turn and at a Codex reply whose
+    phase is final_answer, which Codex writes only to end a turn, and "interrupted" at the
     record of a turn the user interrupted, which ends it without a Stop."""
     continued = {part.get("toolUseID") for entry in found if isinstance(entry, dict)
                  and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED}
@@ -206,6 +207,9 @@ def stops(found):
     for at, entry in enumerate(found):
         if isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "stop_hook_summary":
             out[at] = "continued" if entry.get("toolUseID") in continued else "ended"
+        elif isinstance(entry, dict) and entry.get("type") == "response_item" and isinstance(
+                payload := entry.get("payload"), dict) and payload.get("phase") == "final_answer" and reply_text(entry):
+            out[at] = "ended"
         elif any(text.startswith(INTERRUPTED) for text in said(text_parts(entry) or [])):
             out[at] = "interrupted"
     return out
@@ -288,7 +292,7 @@ def exchanges(path, strict=False):
             text = prompt_text(entry)
             if text is None:
                 said = reply_text(entry)
-                reply, command, ended = (said, False, False) if said else (
+                reply, command, ended = (said, False, ends.get(at) == "ended") if said else (
                     reply, command, ended or ends.get(at) in ("ended", "interrupted"))
                 continue
             ended = ended or ends.get(at) in ("ended", "interrupted")
