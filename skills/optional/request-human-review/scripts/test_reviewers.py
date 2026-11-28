@@ -182,12 +182,15 @@ class Score(unittest.TestCase):
         # 3 points less 3 open asks ties lee's 0, and the tie goes to fewer open asks.
         self.assertEqual(self.pick('rpc'), [('lee', 'fallback', ['rpc'])])
 
-    def test_a_share_far_above_the_lowest_outweighs_a_p1(self):
+    def test_a_large_review_share_outweighs_a_p1(self):
         asks = dict.fromkeys(self.ASKS, 0)
-        self.assertEqual(self.pick('transactions', asks, {'lee': 0.45, 'Cole': 0.02}),
-                         [('ann', 'fallback', ['transactions'])])
-        self.assertEqual(self.pick('transactions', asks, {'lee': 0.2, 'Cole': 0.02}),
-                         [('lee', 'P1', ['transactions'])])
+        self.assertEqual(self.pick('transactions', asks, {'lee': 0.45}), [('ann', 'fallback', ['transactions'])])
+        self.assertEqual(self.pick('transactions', asks, {'lee': 0.2}), [('lee', 'P1', ['transactions'])])
+
+    def test_an_exact_tie_goes_to_fewer_open_asks_whatever_the_float_noise(self):
+        # ann: 3 - 1 - 10 * 5/6 and jo: 0 - 3 - 10 * 1/3 are both -19/3, apart only in the last digit.
+        asks = {**dict.fromkeys(self.ASKS, 9), 'ann': 1, 'jo': 3}
+        self.assertEqual(self.pick('bookkeeping', asks, {'ann': 5 / 6, 'jo': 1 / 3}), [('ann', 'P1', ['bookkeeping'])])
 
     def test_a_p3_counts_and_a_winner_takes_another_domain_it_wins(self):
         asks = {**dict.fromkeys(self.ASKS, 2), 'Cole': 0, 'owen': 4}
