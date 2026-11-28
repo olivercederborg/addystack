@@ -2588,7 +2588,10 @@ class MergeGate(unittest.TestCase):
         for name, said in {"one wake": (self.card(merge), self.WAKE, quiet(merge), "a"),
                            "two wakes": (self.card(merge), self.WAKE, quiet(merge), notice, quiet(merge), "a"),
                            "a notice mid-wake": (self.card(merge), self.WAKE, claude_wrote("Reading the result."),
-                                                 notice, quiet(merge), "a")}.items():
+                                                 notice, quiet(merge), "a"),
+                           "a mid-wake line naming the marker": (self.card(merge), self.WAKE,
+                                                                 claude_wrote("Checking the `<!-- turn` marker."),
+                                                                 notice, quiet(merge), "a")}.items():
             with self.subTest(case=name):
                 self.assertIsNone(reason(said))
         other = [{"key": "a", "class": "stop:merge", "text": "merge #12 and #13"}]
@@ -2596,7 +2599,11 @@ class MergeGate(unittest.TestCase):
                            "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
                            "a typed message that reads as untyped": (self.card(merge), "Caveat: don't merge yet",
                                                                      quiet(merge), "a"),
-                           "no card above it": ("fix it", quiet(merge), "a")}.items():
+                           "no card above it": ("fix it", quiet(merge), "a"),
+                           # Codex review of r204/quiet, round 2: the user read the turn that ended on it.
+                           "a turn that ended on a reply with no block": (
+                               self.card(merge), self.WAKE, claude_wrote("Updated decision:\n\n- a → keep #12 open"),
+                               ENDED, notice, quiet(merge), "a")}.items():
             with self.subTest(case=name):
                 self.assertIn("picks nothing: no reply of yours came before it, or one with only its turn block "
                               "offered options the card above it doesn't", reason(said))
@@ -5399,7 +5406,12 @@ class CardCheckQuiet(unittest.TestCase):
                                      ("no card above it", block(self.CARD), (wake,)),
                                      ("a reply to a typed message", block(self.CARD), (card, typed)),
                                      ("a reply with no block after a typed message", block(self.CARD),
-                                      (card, typed, claude_wrote("Working on it."), wake))]:
+                                      (card, typed, claude_wrote("Working on it."), wake)),
+                                     # Codex review of r204/quiet, round 2: a turn that ended on a line with
+                                     # no block showed the user other options.
+                                     ("a turn that ended on a reply with no block", block(self.CARD),
+                                      (card, wake, claude_wrote("Updated decision:\n\n- a → keep #41 open"), ENDED,
+                                       wake))]:
             with self.subTest(name):
                 self.assertIn("this reply is its turn block alone", self.run_hook(reply, *earlier).lower())
         self.assertIsNone(self.run_hook("🟡 **Post it?**\n\n" + block(other), card, wake), "a card with text is new")
@@ -5527,17 +5539,19 @@ class CardCheckWakes(unittest.TestCase):
                      tasks=[{"taskId": "b1", "kind": "command"}])
         folder = pathlib.Path(tempfile.mkdtemp(dir=self.dir))
         path = folder / "s.jsonl"
-        quiet = block({"state": "running", "elapsed": "4 min"})
-        path.write_text("".join(json.dumps(entry) + "\n" for entry in [
-            claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),
-            claude_said("Update on pull request #6153: a check passed"), claude_wrote(quiet)]))
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
                "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
-        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
-                             input=json.dumps({"hook_event_name": "Stop", "last_assistant_message": quiet,
-                                               "transcript_path": str(path)})).stdout
-        self.assertIn("names #6153, which this thread watched and never unwatched",
-                      json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        for unseen in ("",):
+            quiet = unseen + block({"state": "running", "elapsed": "4 min"})
+            path.write_text("".join(json.dumps(entry) + "\n" for entry in [
+                claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),
+                claude_said("Update on pull request #6153: a check passed"), claude_wrote(quiet)]))
+            out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
+                                 input=json.dumps({"hook_event_name": "Stop", "last_assistant_message": quiet,
+                                                   "transcript_path": str(path)})).stdout
+            with self.subTest(unseen=unseen):
+                self.assertIn("names #6153, which this thread watched and never unwatched",
+                              json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_sends_back_a_named_pr_whose_watch_t3_ended(self):
         # Nov 26, 2026, 12:27: "#6153's browser tests are re-running", while #6253's later watch still ran.
@@ -6362,6 +6376,9 @@ def t3_state(folder, sent, native_id):
             for at, (text, creator) in enumerate(sent)])
         db.commit()
     return path
+
+
+ENDED = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "ended"}  # a Stop that ended a turn
 
 
 def claude_said(text):

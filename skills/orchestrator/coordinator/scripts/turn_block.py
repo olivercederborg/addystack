@@ -353,17 +353,23 @@ def quiet(reply):
         return False
 
 
-def located(reply):
-    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
-    if not isinstance(reply, str):
-        raise Malformed("no turn block at the end of the reply")
-    reply = lines_ended(reply)
+def block_starts(reply):
+    """Where turn blocks start in reply, as lines_ended writes it, outside code."""
     starts, offset = [], 0
     lines = reply.split("\n")
     for line, fenced in zip(lines, in_fence(lines)):
         if not fenced:
             starts += [offset + at for at in carriers(line)]
         offset += len(line) + 1
+    return starts
+
+
+def located(reply):
+    """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
+    if not isinstance(reply, str):
+        raise Malformed("no turn block at the end of the reply")
+    reply = lines_ended(reply)
+    starts = block_starts(reply)
     if not starts:
         raise Malformed("no turn block at the end of the reply")
     if len(starts) > 1:

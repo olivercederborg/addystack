@@ -56,15 +56,14 @@ def answered(found):
     other message in between that got no reply, typed or not, gives None. A quiet wake's
     reply, its turn block alone (turn_block.quiet), shows the user nothing, so the reply is
     the card on screen above it: back past messages T3 says another agent sent, and the
-    replies to them that show no card, none or a progress line with no block, and only
-    while each quiet block offers that card's options, so a key never picks an option they
-    didn't see. A message the user typed, even one that reads as untyped, ends the walk."""
+    replies to them that show no card (shows_none), and only while each quiet block offers
+    that card's options, so a key never picks an option they didn't see. A message the user
+    typed, even one that reads as untyped, ends the walk."""
     at = len(found) - 1
     while found[at].reply is None and at and found[at - 1].agent:
         at -= 1
     reply, quiet = found[at].reply, []
-    shows_none = lambda text: text is None or turn_block.quiet(text) or not turn_block.CARRIER.search(text)
-    while turn_block.quiet(reply) or quiet and shows_none(reply):
+    while turn_block.quiet(reply) or quiet and shows_none(found[at]):
         if not (at and found[at - 1].agent):
             return None  # the user typed what this reply answers, or nothing is above it
         quiet += [reply] if turn_block.quiet(reply) else []
@@ -84,6 +83,16 @@ def said(prompt):
     log doesn't come back to the agent in full."""
     shown = prompt.strip()
     return f'the user\'s "{shown if len(shown) <= 80 else shown[:79] + "…"}"'
+
+
+def shows_none(exchange):
+    """Whether an exchange's reply shows no card: none, a quiet one, or a line with no turn
+    block that a prompt landed after mid-turn. A reply with no block that ended its turn is
+    one the user read, which may offer its own options, so it shows one."""
+    reply = exchange.reply
+    if reply is None or turn_block.quiet(reply):
+        return True
+    return not exchange.ended and not turn_block.block_starts(turn_block.lines_ended(reply))
 
 
 def letter_miss(reply, key):
