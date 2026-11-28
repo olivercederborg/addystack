@@ -635,9 +635,9 @@ def notify(title, subtitle, text):
 
 # The check queue: at most checkQueue.maxChecks busy heavy checks run across every agent's
 # commands, and a new one other than a test run waits, stopped, until a slot frees and
-# running checks use under checkQueue.maxCores. A unit is the topmost heavy process with its descendants, so
-# turbo's eight lint tasks are eight units while oxlint's own tsgolint child shares
-# oxlint's slot: a child waiting on a slot its parent holds would deadlock.
+# running checks use under checkQueue.maxCores. A unit is the topmost heavy process with
+# its descendants, so turbo's eight lint tasks are eight units while oxlint's own tsgolint
+# child shares oxlint's slot: a child waiting on a slot its parent holds would deadlock.
 HOLD_SECONDS = 15 * 60  # a unit still held this long, with the queue still full, dies
 GATE_WINDOW_SECONDS = 2  # the CPU gate's window, and the least time between admissions
 # A unit first seen older than this is never held: SIGSTOP mid-run turns a test's timers
