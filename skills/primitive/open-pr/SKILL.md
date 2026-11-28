@@ -149,7 +149,9 @@ show the test that fails on the base and passes here, or the command output.
   branch whose name has the issue key, and write the closing phrase on every PR that
   carries the issue's work, each stack layer included: Linear moves the issue when its
   last linked PR merges, and only if that PR closes it. File work no PR covers yet as
-  its own issue instead of writing "Part of". Without the key, Linear may guess the
+  its own issue. Write "Part of" only when merging can't finish the issue: done needs a
+  step after the merge (a check after deploy, a backfill, a message), or the issue is
+  a long-running umbrella; then move it by hand. Without the key, Linear may guess the
   issue and link it as contributing, which never moves it and doesn't change when the
   description does. In a tracker that closes on the first merge into the default
   branch, such as GitHub Issues, the closing phrase goes on the PR that brings the
