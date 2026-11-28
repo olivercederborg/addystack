@@ -36,12 +36,13 @@ T3's state database, since `t3 thread show` lists no pending task while a run is
 and passes outside T3 or when the database can't be read.
 
 A quiet wake's reply is its turn block alone (turn_block.quiet), which shows the user
-nothing, so the card on screen stays the last reply with text above its block. It goes back
-when its block is `stop` but its needs or options differ from that card's, since a key
-answers the card the user sees (user_turn.answered); and its wake check counts every watch
-T3 ended, since a block names no PR. Of 544 quiet `running` turns in a replay of Nov 23-27,
-101 had named a PR in their own text that the card on screen didn't. On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed again a
-card the user already had."""
+nothing, so the card on screen stays the card above it. It goes back when its block is
+`stop` but a key typed next would answer no card, or one whose needs or options differ
+(user_turn.answered, which the gates read a key with); and its wake check counts every
+watch T3 ended, since a block names no PR. Of 544 quiet `running` turns in a replay of
+Nov 23-27, 2026, 101 had named a PR in their own text that the card on screen didn't.
+On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed
+again a card the user already had."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
 
@@ -227,30 +228,20 @@ def wake_gap(turn, reply, thread, now):
 
 
 def on_screen(path, reply):
-    """The last reply with text above its turn block in the transcript at path, before reply:
-    the card the user sees under a quiet one. None when there's none or it can't be read."""
-    import transcripts, turn_block
-    try:
-        said = [text for entry in transcripts.entries(path) if (text := transcripts.reply_text(entry))]
-    except (OSError, TypeError, UnicodeDecodeError):
-        return None
-    if said and said[-1].strip() == reply.strip():
-        said.pop()
-    for text in reversed(said):
-        try:
-            turn_block.located(text)
-        except turn_block.Malformed:
-            continue  # a mid-turn progress line, which carries no block
-        if not turn_block.quiet(text):
-            return text
-    return None
+    """The card a key typed after reply would answer (user_turn.answered), read from the
+    transcript at path, so card-check and the gates walk to one card. None when there's
+    none: a message the user typed comes first, or a quiet block offers other options."""
+    import transcripts, user_turn
+    return user_turn.answered([*transcripts.exchanges(path), transcripts.Exchange(reply, "")])
 
 
 def unlike(turn, card):
     """Why a quiet `stop` block isn't the card on screen's, or None when it is."""
     import turn_block
     if card is None:
-        return "this reply is its turn block alone, and no card with text comes before it"
+        return ("this reply is its turn block alone, but a key typed next would answer no card: the user typed "
+                "the message it answers, no card with text comes before it, or a quiet block between offers "
+                "other options. Show the card in full")
     try:
         shown = turn_block.parse(card)
     except turn_block.Malformed:

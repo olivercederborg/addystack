@@ -2518,21 +2518,8 @@ class MergeGate(unittest.TestCase):
         self.assertIn("can't be sure your reply's turn block was hidden", self.reason("gh pr merge 12", said=(hidden, "a")))
 
     def t3_sent(self, folder, sent, native_id=ReplyShapeContext.SESSION):
-        """A T3 state database whose one thread owns native_id and holds sent, (text, creator)
-        pairs oldest first, as its user-role messages."""
-        path = self.env["T3_STATE_DB"] = os.path.join(folder, "statev2.sqlite")
-        with contextlib.closing(sqlite3.connect(path)) as db:
-            db.execute("create table orchestration_v2_projection_provider_threads "
-                       "(thread_id text, provider_thread_id text, payload_json text)")
-            db.execute("create table orchestration_v2_projection_messages "
-                       "(thread_id text, role text, created_at text, payload_json text, run_id text)")
-            db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
-            db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
-                       ("thread:main", "p1", json.dumps({"nativeThreadRef": {"nativeId": native_id}})))
-            db.executemany("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)", [
-                ("thread:main", "user", str(at), json.dumps({"text": text.strip(), "createdBy": creator}), None)
-                for at, (text, creator) in enumerate(sent)])
-            db.commit()
+        """T3's state database for sent, as t3_state writes it, set as this test's."""
+        self.env["T3_STATE_DB"] = t3_state(folder, sent, native_id)
 
     def test_a_pick_answers_the_card_before_a_wake_in_the_same_turn(self):
         # skills#269: a worker's result, offering its own "a" = "merge #13", landed 2 s before
@@ -5382,28 +5369,37 @@ class CardCheckQuiet(unittest.TestCase):
     CARD = {"state": "stop", "needs": [{"id": 4, "kind": "review", "name": "post the reply to Ana on #41"}],
             "options": [{"key": "a", "class": "stop:post", "text": "post the reply"},
                         {"key": "b", "class": "decision", "text": "no: hold it"}]}
+    WAKE = "Update on pull request #41: checks passed"
+    SESSION = "6b1d2f40-8e3a-4c5b-9d7e-1f2a3b4c5d6e"
 
     def run_hook(self, reply, *earlier):
         folder = tempfile.TemporaryDirectory()
         self.addCleanup(folder.cleanup)
-        path = pathlib.Path(folder.name) / "s.jsonl"
+        path = pathlib.Path(folder.name) / f"{self.SESSION}.jsonl"
         path.write_text("".join(json.dumps(entry) + "\n" for entry in [*earlier, claude_wrote(reply)]))
+        db = t3_state(folder.name, [(self.WAKE, "agent")] * 2 + [("status?", "user")], self.SESSION)
         out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
             {"hook_event_name": "Stop", "last_assistant_message": reply, "transcript_path": str(path)}),
-            env={k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}).stdout
+            env={**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db}).stdout
         return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
 
     def test_a_quiet_card_must_be_the_card_on_screen(self):
         card = claude_wrote("🟡 **Post the reply to Ana on #41?**\n\n" + block(self.CARD))
         progress = claude_wrote("Reading the worker's result.")  # a mid-turn line has no block
-        wake = claude_said("Update on pull request #41: checks passed")
+        wake = claude_said(self.WAKE)
         self.assertIsNone(self.run_hook(block(self.CARD), card, wake, progress))
         self.assertIsNone(self.run_hook(block(self.CARD), card, wake, claude_wrote(block(self.CARD)), wake))
         other = {**self.CARD, "options": [{"key": "a", "class": "stop:post", "text": "post the reply and approve #41"}]}
         moved = {**self.CARD, "needs": [{"id": 5, "kind": "review", "name": "approve #41"}]}
+        typed = claude_said("status?")
+        # Verify-work of r204/quiet: card-check passed these two while the gates read a key on them as picking
+        # nothing, so both now read the card through user_turn.answered.
         for name, reply, earlier in [("other options", block(other), (card, wake)),
                                      ("another need", block(moved), (card, wake)),
-                                     ("no card above it", block(self.CARD), (wake,))]:
+                                     ("no card above it", block(self.CARD), (wake,)),
+                                     ("a reply to a typed message", block(self.CARD), (card, typed)),
+                                     ("a reply with no block after a typed message", block(self.CARD),
+                                      (card, typed, claude_wrote("Working on it."), wake))]:
             with self.subTest(name):
                 self.assertIn("this reply is its turn block alone", self.run_hook(reply, *earlier).lower())
         self.assertIsNone(self.run_hook("🟡 **Post it?**\n\n" + block(other), card, wake), "a card with text is new")
@@ -6347,6 +6343,25 @@ class TurnBlockAgainstCommonMark(unittest.TestCase):
                     if any(token.type == "html_block" for token in md.parse(prefix + line + "\n")):
                         self.assertTrue(turn_block.HTML_START.match(prefix + line) or turn_block.UNSAFE.search(line))
         self.assertIsNone(turn_block.HTML_START.match("> <sub>`AGENT` Claude · on behalf of **the user**</sub><br>"))
+
+
+def t3_state(folder, sent, native_id):
+    """A T3 state database in folder whose one thread owns native_id and holds sent, (text,
+    creator) pairs oldest first, as its user-role messages; its path."""
+    path = os.path.join(folder, "statev2.sqlite")
+    with contextlib.closing(sqlite3.connect(path)) as db:
+        db.execute("create table orchestration_v2_projection_provider_threads "
+                   "(thread_id text, provider_thread_id text, payload_json text)")
+        db.execute("create table orchestration_v2_projection_messages "
+                   "(thread_id text, role text, created_at text, payload_json text, run_id text)")
+        db.execute("create table orchestration_v2_projection_runs (run_id text, provider_thread_id text)")
+        db.execute("insert into orchestration_v2_projection_provider_threads values (?, ?, ?)",
+                   ("thread:main", "p1", json.dumps({"nativeThreadRef": {"nativeId": native_id}})))
+        db.executemany("insert into orchestration_v2_projection_messages values (?, ?, ?, ?, ?)", [
+            ("thread:main", "user", str(at), json.dumps({"text": text.strip(), "createdBy": creator}), None)
+            for at, (text, creator) in enumerate(sent)])
+        db.commit()
+    return path
 
 
 def claude_said(text):
