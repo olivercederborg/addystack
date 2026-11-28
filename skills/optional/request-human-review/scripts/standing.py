@@ -10,9 +10,10 @@ windows, so the pick only weighs the numbers.
 - **A share**: the PRs someone reviewed since `share since`, at most 14 days back, out of
   every PR each person reviewed in that time; bots and authors' own PRs don't count. 0 for
   everyone before the first review.
-- **Away**: their GitHub status is Busy, or they haven't opened, reviewed or commented on a
-  PR, or authored a commit on one (by its author date: GitHub doesn't record who pushed), in
-  the last 3 working days, Monday to Friday in UTC.
+- **Away**: their GitHub status is Busy and public (a GitHub App's token reads a status shown
+  only to the organization as none), or they haven't opened, reviewed or commented on a PR, or
+  authored a commit on one (by its author date: GitHub doesn't record who pushed), in the
+  last 3 working days, Monday to Friday in UTC.
 """
 from __future__ import annotations
 
