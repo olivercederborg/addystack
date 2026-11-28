@@ -54,7 +54,7 @@ subagents skip SessionStart hooks. Each brief opens with
 and players must get the rules as Oliver's own sessions do.
 
 Each trial writes to its own folder, `OUT`. A side is a folder of trials, such as
-`/tmp/skill-evals/<change>/after/t1` and `after/t2`. Run 2 trials a side when the
+`/tmp/skill-evals/<change>/X/t1` and `X/t2`. Run 2 trials a side when the
 player's path varies from run to run, as autopilot's does; one is enough for a short
 scenario. For each scenario in a trial:
 
