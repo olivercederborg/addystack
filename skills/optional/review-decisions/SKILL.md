@@ -64,7 +64,7 @@ the reviewer.
      the commit it judged. A comment whose block doesn't parse is skipped, never the
      whole scan.
   2. **The App's review**: the latest review by an App whose body lists **Needs a
-     human**; each item there is a decision.
+     human**; each item there is a decision, except **Second opinion** below.
   3. **Neither**: find them yourself with `request-human-review`'s four gates (its **The
      gates** section): **one-way-door** (hard to reverse once shipped), **pattern** (a
      new or changed one), **interface** (a new module or service, or a public API,
@@ -80,6 +80,11 @@ the reviewer.
   gh api "repos/{owner}/{repo}/pulls/<PR>/reviews" --paginate \
     --jq '.[] | select(.commit_id == "<head>") | {id, user: .user.login, app: (.user.type == "Bot"), state, body}'
   ```
+
+  An App's review counts only when its code review ran whole: a **Second opinion** item
+  (in its **Needs a human** list, or a handoff decision with no `code`) says the other
+  provider's pass didn't run, so the code still lacks a review. Treat it as no review, and
+  never as a decision to walk.
 
   With none, offer these before step 2, and go on only on `C`:
   - `A` stop here and run `review-code` on the PR first (recommended).
