@@ -2603,7 +2603,11 @@ class MergeGate(unittest.TestCase):
                            # Codex review of r204/quiet, round 2: the user read the turn that ended on it.
                            "a turn that ended on a reply with no block": (
                                self.card(merge), self.WAKE, claude_wrote("Updated decision:\n\n- a → keep #12 open"),
-                               ENDED, notice, quiet(merge), "a")}.items():
+                               ENDED, notice, quiet(merge), "a"),
+                           "unseen text before a block": (self.card(merge), self.WAKE, claude_wrote(
+                               "[silent]: #\n\n" + block({"state": "stop", "needs": [{"id": 1, "kind": "review",
+                                                                                     "name": "merge #12"}],
+                                                          "options": other})), "a")}.items():
             with self.subTest(case=name):
                 self.assertIn("picks nothing: no reply of yours came before it, or one with only its turn block "
                               "offered options the card above it doesn't", reason(said))
@@ -5408,10 +5412,11 @@ class CardCheckQuiet(unittest.TestCase):
                                      ("a reply with no block after a typed message", block(self.CARD),
                                       (card, typed, claude_wrote("Working on it."), wake)),
                                      # Codex review of r204/quiet, round 2: a turn that ended on a line with
-                                     # no block showed the user other options.
+                                     # no block showed the user other options, and unseen text hid a block.
                                      ("a turn that ended on a reply with no block", block(self.CARD),
                                       (card, wake, claude_wrote("Updated decision:\n\n- a → keep #41 open"), ENDED,
-                                       wake))]:
+                                       wake)),
+                                     ("unseen text before the block", "[silent]: #\n\n" + block(other), (card, wake))]:
             with self.subTest(name):
                 self.assertIn("this reply is its turn block alone", self.run_hook(reply, *earlier).lower())
         self.assertIsNone(self.run_hook("🟡 **Post it?**\n\n" + block(other), card, wake), "a card with text is new")
@@ -5541,7 +5546,8 @@ class CardCheckWakes(unittest.TestCase):
         path = folder / "s.jsonl"
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
                "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
-        for unseen in ("",):
+        # Codex review of r204/quiet, round 2: text that renders nothing kept a reply from reading as quiet.
+        for unseen in ("", "[silent]: #\n\n", "\n\ufeff\n", "<!-- note -->\n"):
             quiet = unseen + block({"state": "running", "elapsed": "4 min"})
             path.write_text("".join(json.dumps(entry) + "\n" for entry in [
                 claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),

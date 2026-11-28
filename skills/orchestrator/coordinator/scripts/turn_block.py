@@ -344,11 +344,18 @@ def before_block(reply):
     return text[:block.start()]
 
 
+# What renders nothing above a block: an HTML comment, a link reference definition, and
+# space, a byte-order mark or a zero-width character.
+UNSEEN = re.compile(r"<!--.*?-->|^ {0,3}\[[^\]\n]+\]:[ \t]*\S[^\n]*$|[\u200b-\u200d\u2060" + JS_SPACE + "]",
+                    re.S | re.M)
+
+
 def quiet(reply):
     """Whether the reply is its turn block alone, as a quiet wake's is: the user sees none of
-    it, so the card on screen is still the reply above it."""
+    it, so the card on screen is still the reply above it. Text that renders nothing, as
+    UNSEEN finds it, counts as none."""
     try:
-        return not before_block(reply).strip()
+        return not UNSEEN.sub("", before_block(reply))
     except Malformed:
         return False
 
