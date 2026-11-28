@@ -94,7 +94,7 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
   answer, a babysit pass, a retry, more work) goes into a free slot ahead of queued
   units, since it finishes an open PR. A task that only reads, reviews code, or drives
   an app without building takes none, and starts once Parallel by default lets it.
-  Queue the rest, oldest first, and start one as a slot frees.
+  Queue the rest; a freed slot starts `queue show`'s units, then the oldest.
 - **Parallel by default**: start every step whose inputs exist now, so verifies, in-app
   checks, the next PR, and probes overlap; a pilot's siblings need its proven brief
   (step 2). A test-only fix leaves running checks standing: follow it with a delta
@@ -104,15 +104,15 @@ List each lesson a sibling worker should know under `## Learnings` in your repor
   on a head that a pending non-test fix will change.
 - **Startup**: within about two minutes of each `delegate_task`, confirm the worker
   started with a status read of its thread (`t3_thread_read`, with its `environmentId`
-  on another machine): `running`, `waiting`, or `completed` counts as started; `failed`,
-  `cancelled`, `interrupted`, or `rolled_back` is a startup error; any other status,
-  such as `queued` or `starting`, isn't started yet. Nothing wakes you for a start, so
+  on another machine): `running`, `waiting`, or `completed` is started; `failed`,
+  `cancelled`, `interrupted`, or `rolled_back` a startup error; any other, such as
+  `queued` or `starting`, not yet. Nothing wakes you for a start, so
   after a launch keep a bound `schedule_task` with `{type: "interval", everyMs:
   120000}`, its id under Listening as `Startup`, until every new launch has a startup
   state; then delete it and set that line to none. Record its status or startup error in
   Last side effect. A launch not started by the deadline is `overdue`: read its thread
-  for the cause and retry it as the stuck rule does. A read that fails leaves it
-  `unknown`, never `running` or `failed`; read again next wake. An overdue one keeps its
+  for the cause and retry it as the stuck rule does. A failed read is
+  `unknown`: read again next wake. An overdue one keeps its
   slot only while you diagnose it.
 - **More work**: a PR's work goes to its worker, and work no worker owns, such as a
   verifier or a probe, to a subthread, a `delegate_task` like a worker's. Reuse a
@@ -128,7 +128,9 @@ inputs or one of Parallel by default's three reasons.
 
 ## 4. On each wake
 
-- **The user's message**: an answer goes through step 5; anything else updates the plan.
+- **The user's message**: an answer goes through step 5. A priority, for every
+  project here, goes to `project.py <folder> priority set '<their words>' --match
+  <term>`. Anything else updates the plan.
 - **A worker result**: read `task_status` once. **Check its claims**: read its diff, and
   the PR's live state with `gh pr view` and `gh pr checks` at the head it reports; a
   claim that needs running goes to a verifier subthread. Copy its Learnings into
@@ -148,11 +150,10 @@ inputs or one of Parallel by default's three reasons.
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
   scheduled task's id: `delete_scheduled_task` it first. This machine's
   [tick](references/tick.md) timer then checks the project every 10 minutes, and
-  messages this thread only with news T3 doesn't send, such as a worker that stopped
-  while its row says running. Its message opens `<coordinator-tick>`: handle each line as
-  this step says and fix its row, or the line repeats hourly. When you set `tick`, run
-  `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
-  a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
+  messages this thread only with news T3 doesn't send. Its message opens
+  `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
+  repeats hourly. When you set `tick`, run `project.py <folder> tick` once. A wait for
+  a time, such as a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
@@ -181,9 +182,9 @@ no probe settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
---from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
-oldest first. While it holds one, every reply here, ⏳ statuses and quiet wakes
-included, ends on the top item: the
+--from "<worker> <thread link>"`. It orders what waited a day under the priority, its
+items, then stuck runs, calls, and Do items, oldest first. While it holds one, every
+reply here, ⏳ statuses and quiet wakes included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
 keep the v1 export · export-v2`, and the need that leads the turn block's `needs`.

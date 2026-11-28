@@ -4,8 +4,9 @@ The coordinator's memory for one project, at
 `~/.local/state/orchestrate/<project>/project.md`. The coordinator is its only writer.
 Start it with `scripts/project.py <folder> init`, and write decisions, learnings,
 Workers rows, Queue items, and Listening lines with `project.py` (`decide`, `learn`,
-`worker`, `queue`, `listen`; `--help` shows each). End a phase with `phase`, and start
-the next on a parked project with `start` ([phases](phases.md) says when). Its sections:
+`worker`, `queue`, `listen`, `priority`; `--help` shows each). End a phase with
+`phase`, and start the next on a parked project with `start` ([phases](phases.md) says
+when). Its sections:
 
 - **Goal**: the current phase's goal, one sentence a stranger could act on, its
   `Proof:`, and `Follow-ups:`, scope drift a worker found, kept out of the goal. A
@@ -23,8 +24,9 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.
-- **Listening**: `Heartbeat`, `tick` while the [tick](tick.md) checks the project, or
-  none; `Startup`, its scheduled task id or none; and
+- **Listening**: `Priority`, the time of the priority line this thread echoed;
+  `Heartbeat`, `tick` while the [tick](tick.md) checks the project, or none; `Startup`,
+  its scheduled task id or none; and
   `Watches`: each watched PR with its owner. Each recurring check is a `Duty <name>`
   line, `<task id> · <cadence> · <source> · until <end> · last <ISO time>, <n> new`, or
   `none (ended <date>: <reason>)` once it ends. Its findings so far are in

@@ -31,6 +31,11 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
+  project.py DIR priority set WORDS --match TERM [TERM...] [--until WHEN]
+                                    write the user's priority, in their words, for every
+                                    project on this machine: items and queued units a TERM
+                                    names go first, until WHEN (default a day); `priority
+                                    clear` ends it, `priority show` prints it
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -45,7 +50,8 @@ import subprocess
 import sys
 import tempfile
 import time
-from datetime import date, datetime, timezone
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import project_md
@@ -123,10 +129,12 @@ def imported(lines: list[str], text: str, sources: dict[int, str] | None = None,
 
 def queue(lines: list[str], action: str, *, kind: str | None = None, name: str | None = None,
           source: str | None = None, ident: int | None = None, answer: str | None = None,
-          block: str | None = None, sources: list[str] | None = None, stuck: list[int] | None = None) -> str:
+          block: str | None = None, sources: list[str] | None = None, stuck: list[int] | None = None,
+          line: "Priority | None" = None) -> str:
     """Runs a `queue` action on lines and returns what it prints: the queue as `show` gives
-    it, after a line naming the item an add or done touched. `done` records the item, who
-    asked it, and the answer under Decisions, so a resolved call keeps its trail."""
+    it, in the priority line's order, after a line naming the item an add or done touched,
+    and then the priority's note. `done` records the item, who asked it, and the answer
+    under Decisions, so a resolved call keeps its trail."""
     try:
         if action == "add":
             item = project_queue.add(lines, kind, name, source or "coordinator")
@@ -148,9 +156,170 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
                     for item in imported(lines, block or "", asked, stuck or ())]
         else:
             head = []
-        return "\n".join([*head, project_queue.show(project_queue.read(lines))])
+        note = priority_note(lines, line)
+        shown = project_queue.show(project_queue.read(lines, _ahead(line, lines), held_since=_said(line)))
+        return "\n".join([*head, shown, *([note] if note else [])])
     except project_queue.QueueError as error:
         raise ProjectError(str(error))
+
+
+# The priority line: the user says a priority once, in their words, and every coordinator on
+# the machine orders its queue and queued units by it. On Nov 27, 2026 they set one by hand,
+# a teammate's PRs being "the most important right now", one of 31 priority messages in four
+# weeks, and both queues ran oldest first, so it had nothing to bind to.
+PRIORITY_FILE = "priority.md"  # in the orchestrate folder, beside every project folder
+PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d(?::\d\d(?:\.\d{6})?)?) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
+                           r"match: (.+?) · \"(.*)\"\Z")
+PRIORITY_HEAD = """# Priority
+
+The user's priority, in their words, which every coordinator on this machine reads: what
+its terms match goes first in each Queue and in each project's start order, ahead of age,
+behind only what has waited a day under it.
+`project.py <folder> priority set` writes it and `priority clear` removes it.
+"""
+STAMP = "%Y-%m-%d %H:%M"
+SAID = f"{STAMP}:%S.%f"  # to the microsecond, since it names the line a coordinator echoed
+LASTS = timedelta(days=1)  # a priority with no `until` holds for a day
+
+
+@dataclass(frozen=True)
+class Priority:
+    said: str  # when, as SAID
+    heard_in: str  # the project whose coordinator heard it
+    until: str  # STAMP
+    terms: tuple[str, ...]
+    words: str
+
+    def matches(self, text: str) -> bool:
+        """Whether a term is in text. A term or text that names PRs, as a range `#20–#22`,
+        a URL, `owner/repo#N`, `repo#N`, or `#N`, names each PR as `#N`, and with what it
+        names of its repo as `repo#N` and `owner/repo#N`. A term that is only PRs matches
+        any of them in its fullest form; an owner rules out only text that names another
+        owner, so `alice/api#41` takes `api#41` but not `bob/api#41`. Any other term
+        matches as written."""
+        named = _prs(text)
+        if any(refs and any(_names(named, ref) for ref in refs) for refs in map(_only_prs, self.terms)):
+            return True
+        text = f"{text} {' '.join(named)}"
+        return any(re.search(("(?<!\\w)" if term[0].isalnum() else "") + re.escape(term)
+                             + ("(?!\\w)" if term[-1].isalnum() else ""), text, re.I)
+                   for term in self.terms if not _only_prs(term))
+
+    def line(self) -> str:
+        return f"- {self.said} · {self.heard_in} · until {self.until} · match: {', '.join(self.terms)} · \"{self.words}\""
+
+
+SPAN_MAX = 1000  # PRs a range may name, so a typo like #1–#99999 stays one range
+
+
+def _prs(text: str) -> list[str]:
+    """Each PR text names, as `#N`, and as `repo#N` and `owner/repo#N` when it names them,
+    lowercase."""
+    found = []
+    for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(project_md.ranges(text, SPAN_MAX)):
+        number, named = url_n or n or local, (url_repo or repo).lower()
+        found += [f"#{number}", *([f"{named.split('/')[-1]}#{number}"] if named else []),
+                  *([f"{named}#{number}"] if "/" in named else [])]
+    return found
+
+
+def _names(named: list[str], ref: str) -> bool:
+    """Whether named, as _prs gives it, holds ref; an `owner/repo#N` ref also takes a
+    `repo#N` that came with no owner."""
+    repo = ref.partition("/")[2]
+    return ref in named or bool(repo) and repo in named and not any(n.endswith(f"/{repo}") for n in named)
+
+
+def _only_prs(term: str) -> list[str]:
+    """The PRs a term names when it's nothing else, each in the fullest form it gives
+    (`owner/repo#N`, else `repo#N`, else `#N`), else []."""
+    if not re.fullmatch(r"(?:\S+#\d+|#\d+\s*[–-]\s*#?\d+|https?://\S+/pull/\d+)", term.strip()):
+        return []
+    found = _prs(term)
+    return ([ref for ref in found if "/" in ref] or [ref for ref in found if not ref.startswith("#")]
+            or found)
+
+
+def priority(root: Path, now: datetime | None = None) -> Priority | None:
+    """The priority line in root's PRIORITY_FILE while it holds, else None. Raises
+    ProjectError on a file whose line it can't read."""
+    path = root / PRIORITY_FILE
+    try:
+        text = path.read_text()
+    except FileNotFoundError:  # none, or another coordinator's `priority clear` just removed it
+        return None
+    except (OSError, UnicodeDecodeError) as error:  # a directory, a disk fault, a hand edit
+        raise ProjectError(f"{path} can't be read ({error}): fix it or remove it by hand") from error
+    found = [PRIORITY_LINE.match(line) for line in text.splitlines() if line.startswith("- ")]
+    if len(found) != 1 or not found[0]:
+        raise ProjectError(f"{path} holds no one priority line it can read: run `priority set` or `priority clear`")
+    line = Priority(*found[0].groups()[:3], tuple(term.strip() for term in found[0][4].split(",")), found[0][5])
+    try:
+        until, _ = datetime.strptime(line.until, STAMP), _said(line)
+    except ValueError as error:
+        raise ProjectError(f"{path} holds a date that isn't one ({error}): run `priority set` or "
+                           "`priority clear`") from error
+    return line if until > (now or datetime.now()) else None
+
+
+def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until: str | None = None,
+                 now: datetime | None = None) -> Priority:
+    now = now or datetime.now()
+    words, terms = _line("words", words), [_line("match", term) for term in terms or []]
+    if not terms or any("," in term or "·" in term for term in terms):
+        raise ProjectError("priority set takes at least one --match TERM, each without a comma or ·")
+    try:
+        end = datetime.strptime(until, STAMP if " " in until else "%Y-%m-%d") if until else now + LASTS
+    except ValueError:
+        raise ProjectError(f"--until takes YYYY-MM-DD or YYYY-MM-DD HH:MM, not {until!r}")
+    if end <= now:
+        raise ProjectError("--until is already past")
+    line = Priority(now.strftime(SAID), heard_in, end.strftime(STAMP), tuple(terms), words)
+    _write(root / PRIORITY_FILE, f"{PRIORITY_HEAD}\n{line.line()}\n")
+    return line
+
+
+def _queued(lines: list[str]) -> list[tuple[str, str, str]]:
+    """Each queued Workers row as (slug, the cells that say what it is, what it waits on),
+    in table order, oldest first: Waits on stays out of the second, so a unit waiting on the
+    priority's work isn't it."""
+    return [(row.get("Worker", "?").split(" (")[0],
+             " ".join(value for key, value in row.items() if key != COLUMNS["waits"]), row.get(COLUMNS["waits"], ""))
+            for row in _workers(lines)[0] if row.get(COLUMNS["state"], "").startswith("queued")]
+
+
+def _said(line: Priority | None) -> datetime | None:
+    return datetime.fromisoformat(line.said) if line else None
+
+
+def _ahead(line: Priority | None, lines: list[str]):
+    """The Queue's priority test, or None when no line holds or it names no item here, so
+    aging reorders only a queue the priority does."""
+    test = (lambda item: line.matches(f"{item.name} {item.source}")) if line else None
+    return test if test and any(map(test, project_queue.read(lines) or [])) else None
+
+
+def priority_note(lines: list[str], line: Priority | None) -> str | None:
+    """The line `queue show` adds while a priority holds: what it moves first here, and,
+    until Listening's Priority records its time, that the coordinator should echo it once."""
+    if line is None:
+        return None
+    items = project_queue.read(lines, _ahead(line, lines), held_since=_said(line)) or []
+    hit = lambda item: line.matches(f"{item.name} {item.source}")
+    last = max((at for at, item in enumerate(items) if hit(item)), default=-1)
+    # In ranked order up to its last item: an item it doesn't name there has waited a day under it.
+    first = [f"{item.id} {item.name}" + ("" if hit(item) else " (waited a day under it)") for item in items[:last + 1]]
+    moved = [slug + (f" (waits on {waits})" if waits not in ("", "—", "slot") else "")
+             for slug, text, waits in _queued(lines) if line.matches(text)]
+    head = f'priority ({line.said[5:16]} in {line.heard_in}, until {line.until[5:]}): "{line.words}"'
+    if not first and not moved:
+        return f"{head} · names nothing here"
+    head += " · first here: " + "; ".join([*([", ".join(first)] if first else []),
+                                           *([f"units {' ▸ '.join(moved)}"] if moved else [])])
+    if _listened(lines, "Priority") == line.said:
+        return head
+    return (f"{head}\nNew here: echo it in one line, then run "
+            f"`project.py <folder> listen Priority '{line.said}'`, so it shows once")
 
 
 def _section(lines: list[str], name: str) -> tuple[int, int]:
@@ -579,11 +748,25 @@ def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> st
                       "if it isn't in your context. Fix the line's row in project.md, or the tick repeats it hourly."])
 
 
+def _held(folder: Path) -> Priority | None:
+    """The machine's priority line, or None with the reason on stderr when it can't be read,
+    so a broken file never stops a queue or a board."""
+    try:
+        return priority(folder.resolve().parent)
+    except ProjectError as error:
+        print(error, file=sys.stderr)
+        return None
+
+
 def _write(path: Path, text: str) -> None:
     handle, tmp = tempfile.mkstemp(dir=path.parent, prefix=".project.md.")
     with os.fdopen(handle, "w") as f:
         f.write(text)
-    os.chmod(tmp, path.stat().st_mode if path.exists() else 0o644)  # mkstemp makes it 0600
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:  # a new file, or one another process just removed
+        mode = 0o644
+    os.chmod(tmp, mode)  # mkstemp makes it 0600
     os.replace(tmp, path)
 
 
@@ -653,6 +836,13 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
+    ranking = commands.add_parser("priority", allow_abbrev=False).add_subparsers(dest="action", required=True)
+    setting = ranking.add_parser("set", allow_abbrev=False)
+    setting.add_argument("words")
+    setting.add_argument("--match", action="extend", nargs="+", required=True)
+    setting.add_argument("--until")
+    ranking.add_parser("clear", allow_abbrev=False)
+    ranking.add_parser("show", allow_abbrev=False)
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
     adding.add_argument("kind", choices=project_queue.KINDS)
@@ -679,6 +869,17 @@ def main(argv: list[str]) -> int:
             return 0
         if not path.is_file():
             raise ProjectError(f"no {path}: run init first")
+        if args.command == "priority":
+            root = args.dir.resolve().parent
+            if args.action == "set":
+                held = set_priority(root, args.words, args.match, args.dir.resolve().name, args.until)
+            elif args.action == "clear":
+                (root / PRIORITY_FILE).unlink(missing_ok=True)
+                held = None
+            else:
+                held = priority(root)
+            print(held.line() if held else "no priority holds")
+            return 0
         if args.command == "phase":
             snapshot = path.read_bytes()
             lines = snapshot.decode().replace("\r\n", "\n").replace("\r", "\n").split("\n")  # as read_text does
@@ -704,7 +905,8 @@ def main(argv: list[str]) -> int:
                             source=getattr(args, "source", None), ident=getattr(args, "ident", None),
                             answer=sys.stdin.read() if answer == "-" else answer,
                             block=sys.stdin.read() if args.action == "import" else None,
-                            sources=getattr(args, "sources", None), stuck=getattr(args, "stuck", None))
+                            sources=getattr(args, "sources", None), stuck=getattr(args, "stuck", None),
+                            line=_held(args.dir))
             if args.action != "show":
                 _write(path, "\n".join(lines))
             print(printed)

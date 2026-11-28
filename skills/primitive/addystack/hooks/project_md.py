@@ -16,10 +16,10 @@ def cells(row):
     return [cell.strip() for cell in CELL.split(row.strip())[1:-1]]
 
 
-def ranges(text):
-    """text with each range `#20–#22`, up to 20 apart, written out as `#20 #21 #22`."""
+def ranges(text, bound=20):
+    """text with each range `#20–#22`, up to bound apart, written out as `#20 #21 #22`."""
     return re.sub(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b", lambda m: " ".join(
-        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
+        f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= bound else m[0], text)
 
 
 def workers(lines, start, end):
