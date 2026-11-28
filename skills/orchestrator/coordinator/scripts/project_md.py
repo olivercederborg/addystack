@@ -93,6 +93,28 @@ def pulls(text, origin):
     return Pulls(tuple(dict.fromkeys(refs)), tuple(dict.fromkeys(unread)))
 
 
+class Wait(NamedTuple):
+    pull: str  # the PR that waits, "owner/repo#N"
+    blocker: str  # what it waits on, as written
+    blocker_pull: str | None  # "owner/repo#N" when the blocker is one PR written alone
+
+
+def waits(cell, origin):
+    """The Waits on entries, split at `;`, that name their PR as `<PR> ← <blocker>`, such as
+    `#21 ← acme/tools#138` or `#20 ← sandbox tests`, resolved as pulls() resolves refs. Any
+    other entry, such as a call, a slot, or a worker, is free text and isn't returned."""
+    found = []
+    for entry in cell.split(";"):
+        pull, arrow, blocker = (part.strip() for part in entry.partition("←"))
+        bare = re.sub(r"\([^()]*\)|<|>|\bsince\b.*", "", LINKED.sub(r" \1 ", blocker)).strip(" —–-")  # notes out
+        if not arrow or bare.lower() in ("", "none"):  # `#12 ←`, `— `, `none`, `(since 10:00)` name no wait
+            continue
+        named = pulls(blocker, origin)  # one PR, with no other word beside it
+        alone = len(named.refs) == 1 and not named.unread and not re.sub(r"https?://", "", PR_REF.sub("", bare)).strip()
+        found += [Wait(ref, blocker, named.refs[0] if alone else None) for ref in pulls(pull, origin).refs]
+    return found
+
+
 def workers(lines, start, end):
     """The Workers table in lines[start:end] as rows of {column: cell}, and the rows whose
     cells don't match the header."""

@@ -21,7 +21,7 @@ Follow-ups: none
 
 | Worker | Thread | Branch or PR | State | Waits on | Last side effect |
 |---|---|---|---|---|---|
-| build | <t3-thread://v2/env/w1> · task t1 | `export` · #12 | running | — | pushed abc |
+| build | <t3-thread://v2/env/w1> · task t1 | `export` · #12 | running | #12 ← review | pushed abc |
 | probe | <t3-thread://v2/env/w2> · task t2 | acme/app#7 | done | — | report |
 | remote | <t3-thread://v2/other/w3> · task t3 | — | {remote} | — | launched |
 
@@ -55,7 +55,8 @@ with open(os.environ["FAKE"] + "/gh-calls.jsonl", "a") as out:
     out.write(json.dumps({"key": key}) + "\n")
 if key not in prs:
     sys.exit("no pull requests found")
-print(json.dumps(prs[key]))
+pr = {"headRefOid": "c0ffee1234", **prs[key]}  # a head that never moves, unless a test sets one
+print(json.dumps({field: pr[field] for field in args[args.index("--json") + 1].split(",")}))
 """
 
 
@@ -125,6 +126,8 @@ class Tick(unittest.TestCase):
         state = self.state()
         for saved in state["threads"].values():
             saved["since"] -= seconds
+        for draft in state.get("drafts", {}).values():
+            draft["since"] -= seconds
         state["sent"] = {key: at - seconds for key, at in state["sent"].items()}
         (self.dir / "tick.json").write_text(json.dumps(state))
 
@@ -190,6 +193,143 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
+    def test_a_push_to_a_draft_is_no_pr_event(self):
+        self.tick("--send")
+        self.prs["acme/app#12"]["headRefOid"] = "d00d"
+        self.tick("--send")
+        self.assertEqual(self.sent(), [])
+        self.assertEqual(self.state()["prs"]["acme/app#12"], ["OPEN", True], "tick.json keeps [state, draft]")
+
+    def test_a_draft_idle_for_30_min_that_no_wait_names_is_flagged(self):
+        # Nov 25-27, 2026: a row held two repos' PRs with one Waits on, so two drafts that needed nothing
+        # sat for two days behind another PR's blocker.
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #20 · #21 · #31 | waiting | #21 ← acme/tools#138 |"})
+        for n in (20, 21, 31):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": True, "headRefOid": f"{n}aaaaaaaa"}
+        self.prs["acme/tools#138"] = {"state": "OPEN", "isDraft": False}
+        self.watch(7, 20, 21, 31)
+        self.tick("--send")
+        self.age(1700)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "under 30 min at one head")
+        self.age(200)
+        self.tick("--send")
+        [sent] = self.sent()
+        for n in (20, 31):
+            self.assertIn(f"- acme/app#{n}: a draft at {n}aaaaa for 31 min, and its row's Waits on names nothing it "
+                          f"waits for: mark it ready, or write `acme/app#{n} ← <what it waits on>`\n", sent["message"])
+        self.assertNotIn("acme/app#21", sent["message"])
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #20 · #21 · #31 | waiting | "
+                                 "#21 ← acme/tools#138; #20 ← sandbox tests; #31 ← review |"})
+        self.age(3600)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "a named wait silences it")
+
+    def test_an_unread_pr_keeps_its_idle_and_blocker_clocks(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
+                                 "| #20 · #21 | waiting | #21 ← acme/tools#138 |"})
+        for n in (20, 21):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": True, "headRefOid": f"{n}aaaaaaaa"}
+        self.prs["acme/tools#138"] = {"state": "MERGED", "isDraft": False}
+        self.watch(7, 20, 21)
+        self.tick("--send")
+        self.age(1900)
+        self.tick("--send")
+        message = "".join(m["message"] for m in self.sent())
+        self.assertIn("- acme/app#20: a draft at 20aaaaa", message)
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged", message)
+        saved = {ref: self.prs.pop(ref) for ref in ("acme/app#20", "acme/tools#138")}
+        self.age(600)
+        self.tick("--send")
+        self.prs.update(saved)
+        self.age(600)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "read again 20 min after the alert, so each waits for the hour")
+
+    def test_a_closed_pr_that_reopens_on_an_unread_blocker_is_judged_again(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #21 | waiting | #21 ← acme/tools#9 |"})
+        self.prs["acme/app#21"] = {"state": "OPEN", "isDraft": False, "headRefOid": "21aaaaaaa"}
+        self.prs["acme/tools#9"] = {"state": "CLOSED", "isDraft": False}
+        self.watch(7, 21)
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#9, which closed", self.sent()[0]["message"])
+        self.prs["acme/app#21"]["state"] = "CLOSED"
+        blocker = self.prs.pop("acme/tools#9")
+        self.tick("--send")  # known closed, so the finding clears though its blocker is unread
+        self.prs["acme/app#21"]["state"] = "OPEN"
+        self.prs["acme/tools#9"] = blocker
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#9, which closed", "".join(m["message"] for m in self.sent()))
+
+    def test_an_unread_waiting_pr_keeps_its_blocker_clock(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| #21 | waiting | #21 ← acme/tools#138 |"})
+        self.prs["acme/app#21"] = {"state": "OPEN", "isDraft": False, "headRefOid": "21aaaaaaa"}
+        self.prs["acme/tools#138"] = {"state": "MERGED", "isDraft": False}
+        self.watch(7, 21)
+        self.tick("--send")
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged", self.sent()[0]["message"])
+        waiting = self.prs.pop("acme/app#21")
+        self.age(600)
+        self.tick("--send")
+        self.prs["acme/app#21"] = waiting
+        self.age(600)
+        self.tick("--send")
+        self.assertNotIn("waits on", "".join(m["message"] for m in self.sent()), "read again 20 min after the alert")
+
+    def test_a_wait_on_a_pr_that_merged_or_closed_is_flagged(self):
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |":
+                                 "| #21 · #22 | waiting | #21 ← acme/tools#138; #22 ← acme/tools#139 |"})
+        for n in (21, 22):
+            self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": True}
+        for n in (138, 139):
+            self.prs[f"acme/tools#{n}"] = {"state": "OPEN", "isDraft": False}
+        self.watch(7, 21, 22)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "its blocker is still open")
+        self.prs["acme/tools#138"]["state"] = "MERGED"
+        self.prs["acme/tools#139"]["state"] = "CLOSED"
+        self.tick("--send")
+        [sent] = self.sent()
+        self.assertIn("- acme/app#21 waits on acme/tools#138, which merged\n", sent["message"])
+        self.assertIn("- acme/app#22 waits on acme/tools#139, which closed\n", sent["message"])
+        self.assertNotIn("acme/tools#138", self.state()["prs"], "a blocker has no merge event of its own")
+        self.prs["acme/app#21"]["state"] = "MERGED"
+        self.age(3600)
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertNotIn("acme/app#21 waits on", message, "a PR that's no longer open waits on nothing")
+        self.assertIn("- acme/app#22 waits on acme/tools#139, which closed\n", message, "repeats hourly")
+        saved = self.prs.pop("acme/app#22")  # closed meanwhile, but its read fails
+        self.age(3600)
+        self.tick("--send")
+        self.assertNotIn("acme/app#22 waits on", "".join(m["message"] for m in self.sent()),
+                         "a wait is judged on fresh reads only")
+        self.prs["acme/app#22"] = saved
+
+    def test_a_push_or_leaving_draft_restarts_the_draft_clock_and_a_failed_read_keeps_it(self):
+        self.write_project(rows={"| running | #12 ← review |": "| waiting | — |"})
+        self.tick("--send")
+        self.age(1900)
+        self.prs["acme/app#12"]["headRefOid"] = "d00d"
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "a push restarts the clock")
+        self.age(1900)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: a draft at d00d for 31 min", self.sent()[0]["message"])
+        self.prs["acme/app#12"]["isDraft"] = False
+        self.tick("--send")
+        self.assertEqual(self.state()["drafts"], {}, "a ready PR leaves the draft clocks")
+        self.prs["acme/app#12"]["isDraft"] = True
+        self.tick("--send")
+        self.assertEqual([m["message"].count("- acme/app#12: a draft") for m in self.sent()], [0, 0])
+        self.age(1900)
+        del self.prs["acme/app#12"]
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "no finding on a stale look")
+        self.prs["acme/app#12"] = {"state": "OPEN", "isDraft": True, "headRefOid": "d00d"}
+        self.tick("--send")
+        self.assertIn("- acme/app#12: a draft at d00d for 31 min", self.sent()[0]["message"], "the clock survived")
+
     def test_an_open_worker_pr_t3_isnt_watching_repeats_until_watched(self):
         # Nov 26-27, 2026: a user's Stop ended a coordinator's watches on 4 open PRs, twice, and a
         # reviewer's two reviews woke nobody for an hour. Links as T3 kept them: watch null, endedWatch set.
@@ -199,7 +339,8 @@ class Tick(unittest.TestCase):
             "url": f"https://github.com/{repository}/pull/{n}", "linkedAt": "2026-11-27T11:58:18Z",
             "snapshot": {"state": "open", "isDraft": n == 122}, "stack": None, "watch": None, "endedWatch": ended}
         self.watch(links=[link(n) for n in (109, 110, 122)])
-        self.write_project(rows={"| `export` · #12 | running |": "| acme/tools#109 → acme/tools#110 → acme/tools#122 | waiting |"})
+        self.write_project(rows={"| `export` · #12 | running | #12 ← review |": "| acme/tools#109 → acme/tools#110 → "
+                                 "acme/tools#122 | waiting | acme/tools#122 ← acme/tools#110 |"})
         for n in (109, 110, 122):
             self.prs[f"acme/tools#{n}"] = {"state": "OPEN", "isDraft": n == 122}
         self.tick("--send")

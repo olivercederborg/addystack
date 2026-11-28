@@ -192,6 +192,34 @@ class Pulls(unittest.TestCase):
                 self.assertEqual(project_md.pulls(text, origin), project_md.Pulls(refs, unread))
 
 
+class Waits(unittest.TestCase):
+    """project_md.waits on Waits on cells: only entries that name their PR count."""
+    def test_entries_split_at_semicolons_name_the_pr_that_waits(self):
+        Wait = project_md.Wait
+        self.assertEqual(project_md.waits("#21 ← acme/tools#138; #20 ← sandbox tests;box#31 ← review", "acme/box"),
+                         [Wait("acme/box#21", "acme/tools#138", "acme/tools#138"),
+                          Wait("acme/box#20", "sandbox tests", None), Wait("acme/box#31", "review", None)])
+
+    def test_a_blocker_pull_is_one_pr_written_alone(self):
+        cases = [("https://github.com/acme/tools/pull/9", "acme/tools#9"), ("#9", "acme/box#9"),
+                 ("acme/tools#9 and a review", None), ("tools #9", None), ("#9 #10", None),
+                 ("acme/tools#9 (since 2026-11-27 10:00 UTC)", "acme/tools#9"),  # the wait's start is a note
+                 ("[#9, Fix it](https://github.com/acme/tools/pull/9)", "acme/tools#9"),
+                 ("acme/tools#9 since 10:00", "acme/tools#9"), ("<https://github.com/acme/tools/pull/9>", "acme/tools#9")]
+        for blocker, pull in cases:
+            with self.subTest(blocker):
+                self.assertEqual(project_md.waits(f"#5 ← {blocker}", "acme/box"),
+                                 [project_md.Wait("acme/box#5", blocker, pull)])
+
+    def test_every_other_entry_is_free_text(self):
+        cases = ["—", "#12 open", "the user's call on retries", "slot 2; worker review", "web #20 ← review",
+                 "tools#4 ← review", " ← review", "#12 ←", "#12 ← —", "#12 ← (since 10:00)", "#12 ← none"]
+        for cell in cases:
+            with self.subTest(cell):
+                self.assertEqual(project_md.waits(cell, "acme/box"), [])
+        self.assertEqual(project_md.waits("#5 ← review", ""), [], "#N with no origin is unread")
+
+
 class WorkerPrs(Fixture, unittest.TestCase):
     """`worker --pr` against a checkout whose origin is acme/box."""
     def setUp(self):

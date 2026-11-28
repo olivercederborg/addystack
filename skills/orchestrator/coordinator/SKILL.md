@@ -149,9 +149,9 @@ inputs or one of Parallel by default's three reasons.
   Heartbeat tick`), and `none` once neither holds. A Heartbeat line that holds an older
   scheduled task's id: `delete_scheduled_task` it first. This machine's
   [tick](references/tick.md) timer then checks the project every 10 minutes, and
-  messages this thread only with news T3 doesn't send, such as a worker that stopped
-  while its row says running. Its message opens `<coordinator-tick>`: handle each line as
-  this step says and fix its row, or the line repeats hourly. When you set `tick`, run
+  messages this thread only with news T3 doesn't send. Its message opens
+  `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
+  repeats hourly. When you set `tick`, run
   `project.py <folder> tick` once to see that the timer runs. A wait for a time, such as
   a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
@@ -176,9 +176,10 @@ the standing rules, or running something settles it: a probe subthread runs it, 
 answer from its report. Record it under Decisions and **send the answer**: a pending
 question gets `t3_pending_request` `respond`; a card gets `t3_thread_send` once step
 3 lets its task start, and until then the worker stays `waiting`, with Waits on naming
-the slot or resource. Once it's sent, set the worker back to `running` with Waits on
-cleared. A real call is one of the stops in the user's instructions, or a product call
-no probe settles; only those reach the user.
+the slot or resource, then `running` once it's sent. Clear a Waits on entry the turn its
+blocker goes, by a send or decision (a hand-install, not a merge). A real call is one
+of the stops in the user's instructions, or a product call no probe settles; only those
+reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
