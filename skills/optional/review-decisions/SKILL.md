@@ -41,8 +41,9 @@ the reviewer.
 ## 1. Load the PR
 
 - Fetch the PR's title, body, author, base and head SHAs, linked issue, and changed
-  files, its review threads (`scripts/github.sh threads <PR>`), and the diff (`git
-  fetch`, then `git diff <base>...<head>`).
+  files, its review threads (`scripts/github.sh threads <PR>`), and the diff (`git fetch
+  origin <base> pull/<PR>/head`, since a fork's head isn't in a plain fetch, then `git diff
+  <base>...<head>`).
 - **The decisions**, from the first source that has them:
   1. **The handoff**: a PR comment ending in an `addystack-handoff:v1` block, which an
      App's needs-human review posts. When there are several, the App's last one wins
