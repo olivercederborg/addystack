@@ -1,11 +1,13 @@
 """gates.py: the GATES.json shape, its coverage of the PR's Decisions table, and the rule an
 unattended reviewer follows."""
+import io
 import json
 import pathlib
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gates  # noqa: E402
@@ -97,6 +99,99 @@ class Decide(unittest.TestCase):
         self.assertIn('- **D1** · architectural or interface decision: D1 call · `db/schema.ts:12` · adds a column', text)
         self.assertIn('- **Not in the Decisions table** · new or changed pattern: found call', text)
         self.assertNotIn('D2', text)
+
+
+class OneWayDoors(unittest.TestCase):
+    """The repository's own one-way doors, read from its PR template at the base, gate a sensitive
+    area they name even when its change follows a pattern."""
+
+    TEMPLATE = ('## Risk\n\n<!-- A one-way door is not cheap to reverse. One-way doors include migrations that drop '
+                'data, removed or changed public API, RPC, or event fields, money movement, and writes to providers. '
+                'When unsure, call it one-way. -->\n')
+
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.repo = pathlib.Path(folder.name)
+        subprocess.run(['git', 'init', '-q', '-b', 'main', str(self.repo)], check=True)
+
+    def base(self, files):
+        for path, text in files.items():
+            (self.repo / path).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / path).write_text(text)
+        run = lambda *arguments: subprocess.run(['git', '-C', str(self.repo), '-c', 'user.name=t', '-c',
+                                                 'user.email=t@example.com', *arguments], capture_output=True,
+                                                text=True, check=True).stdout
+        run('add', '-A')
+        run('commit', '-q', '--allow-empty', '-m', 'base')
+        return run('rev-parse', 'HEAD').strip()
+
+    def problems(self, gated_verdict, files):
+        return gates.doors(gated_verdict, self.base(files), str(self.repo))
+
+    def test_a_money_movement_change_that_follows_a_pattern_needs_a_human_where_the_template_lists_it(self):
+        paying = verdict(decision(None, code='pay.ts:3'), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'}])
+        self.assertEqual(self.problems(paying, {'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE}),
+                         ['money-movement at pay.ts:3 is a one-way door by .github/PULL_REQUEST_TEMPLATE.md:3: it needs '
+                          'a one-way-door decision at that code'])
+        gated = verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=paying['sensitive'])
+        self.assertEqual(self.problems(gated, {}), [])
+        self.assertEqual(gates.decide(gated, False, 'passed', 'ran'), 'needs-human')
+
+    def test_a_repo_without_such_a_list_keeps_sensitive_areas_for_blast_radius_only(self):
+        paying = verdict(decision(None), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
+                                                    {'area': 'auth', 'code': 'auth.ts:1'}])
+        for files in ({}, {'.github/pull_request_template.md': '## Risk\n\nSay what could break.\n'}):
+            self.assertEqual(self.problems(paying, files), [])
+        self.assertEqual(gates.decide(paying, False, 'passed', 'ran'), 'approve')
+        # A list that names other kinds leaves these areas alone.
+        self.assertEqual(self.problems(paying, {'docs/pull_request_template.md': 'One-way doors include sent emails.\n'}),
+                         [])
+
+    def test_only_the_template_github_uses_counts(self):
+        self.base({'docs/PULL_REQUEST_TEMPLATE.md': 'One-way doors include auth.\n',
+                   'PULL_REQUEST_TEMPLATE.md': 'One-way doors include money movement.\n'})
+        self.assertEqual(gates.one_way_doors('HEAD', str(self.repo)), ('PULL_REQUEST_TEMPLATE.md:1', 'money movement'))
+        # A .github/ template shadows the root's, even when it lists none.
+        self.base({'.github/pull_request_template.md': '## Risk\n'})
+        self.assertIsNone(gates.one_way_doors('HEAD', str(self.repo)))
+
+    def test_the_list_is_read_whole_and_ends_where_it_does(self):
+        sensitive = verdict(sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
+                                       {'area': 'auth', 'code': 'auth.ts:1'}])
+        def named(template):
+            return [problem.split(' is ')[0] for problem in self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md': template})]
+        # Wrapped across lines, after another sentence about one-way doors.
+        self.assertEqual(named('One-way doors are hard to reverse. One-way doors\ninclude sent emails and money\nmovement.\n'),
+                         ['money-movement at pay.ts:3'])
+        # A list without its period stops at the blank line or the comment's end.
+        self.assertEqual(named('One-way doors include money movement\n\n## Auth\n'), ['money-movement at pay.ts:3'])
+        self.assertEqual(named('<!-- One-way doors include money movement --> auth\n'), ['money-movement at pay.ts:3'])
+        self.assertEqual(named('One-way doors include sent emails\n## Auth\n'), [])
+        self.assertEqual(named('One-way doors include money movement\n\nauth\n'), ['money-movement at pay.ts:3'])
+        # Only an item that is an area's own name counts, in either spelling; a narrower one is the agent's to gate.
+        self.assertEqual(named('One-way doors include authorization changes, or changes to money movement limits.\n'), [])
+        self.assertEqual(named('One-way doors include auth or money-movement.\n'), ['money-movement at pay.ts:3', 'auth at auth.ts:1'])
+        # Markdown marks, an aside in parentheses, and semicolons leave an item its name.
+        for template in ('One-way doors include **money movement**, migrations.\n',
+                         'One-way doors include `money movement` and migrations.\n',
+                         'One-way doors include money movement (payouts, transfers), and migrations.\n',
+                         'One-way doors include migrations; money movement; sent emails.\n'):
+            self.assertEqual(named(template), ['money-movement at pay.ts:3'], template)
+        # Known limits, left to the agent: "e.g." ends the sentence, and a bulleted list reads as one item.
+        self.assertEqual(named('One-way doors include e.g. money movement and migrations.\n'), [])
+        self.assertEqual(named('One-way doors include:\n- money movement\n- migrations\n'), [])
+        self.assertIn('by PULL_REQUEST_TEMPLATE.md:2:', self.problems(sensitive, {'PULL_REQUEST_TEMPLATE.md':
+                                                                                   '# PR\nOne-way doors include auth.\n'})[0])
+
+    def test_a_review_in_a_subfolder_reads_the_repository_s_template(self):
+        base = self.base({'.github/PULL_REQUEST_TEMPLATE.md': self.TEMPLATE, 'src/pay.ts': ''})
+        self.assertEqual(gates.one_way_doors(base, str(self.repo / 'src'))[0], '.github/PULL_REQUEST_TEMPLATE.md:3')
+
+    def test_a_base_the_checkout_lacks_fails_loudly(self):
+        self.base({})
+        with self.assertRaises(subprocess.CalledProcessError):
+            gates.one_way_doors(BASE, str(self.repo))
 
 
 class OwnDiff(unittest.TestCase):
@@ -196,6 +291,30 @@ class Cli(unittest.TestCase):
         script = pathlib.Path(gates.__file__)
         result = subprocess.run([sys.executable, str(script), 'decide', str(path)], capture_output=True, text=True)
         self.assertEqual((result.returncode, result.stdout), (0, 'needs a human: D1\n'))
+
+    def test_check_refuses_a_sensitive_area_the_repo_calls_a_one_way_door_until_it_is_gated(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / 'GATES.json'
+        sensitive = [{'area': 'money-movement', 'code': 'pay.ts:3'}]
+        pr = json.dumps({'body': '', 'headRefOid': HEAD, 'baseRefOid': BASE})
+        gh = lambda *arguments, **options: subprocess.CompletedProcess(arguments, 0, stdout=pr)
+        listed = ('.github/PULL_REQUEST_TEMPLATE.md:36', 'money movement, and writes to providers')
+        with patch.object(gates.subprocess, 'run', gh), patch.object(gates, 'same_diff', lambda *arguments: True), \
+                patch.object(gates, 'one_way_doors', lambda base, cwd='.': listed if base == BASE else None), \
+                patch('sys.stdout', new_callable=io.StringIO) as printed:
+            path.write_text(json.dumps(verdict(decision(None, code='pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
+            # Only a one-way-door gate covers it.
+            path.write_text(json.dumps(verdict(decision(None, 'pattern', 'pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
+            path.write_text(json.dumps(verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=sensitive)))
+            self.assertEqual(gates.main(['check', '7', str(path)]), 0)
+            # A gated verdict for an older head still fails.
+            pr = json.dumps({'body': '', 'headRefOid': BASE, 'baseRefOid': BASE})
+            self.assertEqual(gates.main(['check', '7', str(path)]), 1)
+        self.assertIn('money-movement at pay.ts:3 is a one-way door by .github/PULL_REQUEST_TEMPLATE.md:36',
+                      printed.getvalue())
 
 
 if __name__ == '__main__':

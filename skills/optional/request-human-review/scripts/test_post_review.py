@@ -59,6 +59,10 @@ class Post(unittest.TestCase):
         (self.folder / 'BODY.md').write_text('<sub>`AGENT`</sub><br>\nAdds a totals column.\n')
         (self.folder / 'note.md').write_text('Nit: name it total_cents.')
         self.gate(None)
+        self.doors = {}
+        doors = patch.object(post_review.gates, 'one_way_doors', lambda base, cwd: self.doors.get(base))
+        doors.start()
+        self.addCleanup(doors.stop)
 
     def gate(self, gate):
         (self.folder / 'GATES.json').write_text(json.dumps({
@@ -384,6 +388,23 @@ class Post(unittest.TestCase):
         (self.folder / 'GATES.json').write_text(json.dumps({'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [], 'decisions': []}))
         with self.assertRaisesRegex(ValueError, 'D1 from the Decisions table has no entry'):
             self.post(Fake())
+
+    def test_a_sensitive_area_the_repos_one_way_doors_name_is_refused_without_its_gate(self):
+        gates_json = json.loads((self.folder / 'GATES.json').read_text())
+        (self.folder / 'GATES.json').write_text(json.dumps({
+            **gates_json, 'sensitive': [{'area': 'money-movement', 'code': 'db/schema.ts:12'}]}))
+        listed = ('.github/PULL_REQUEST_TEMPLATE.md:36', 'money movement, and writes to providers')
+        fake = Fake()
+        self.doors = {BASE: listed}
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake)
+        # The list is read at the PR's base now, also when the base moves on while checks are waited on.
+        self.doors = {NEWER: listed}
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake, base=NEWER)
+        with self.assertRaisesRegex(ValueError, 'money-movement at db/schema.ts:12 is a one-way door'):
+            self.post(fake, bases=[BASE, NEWER])
+        self.assertEqual(fake.writes, [])
 
 
 if __name__ == '__main__':
