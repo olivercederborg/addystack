@@ -93,8 +93,8 @@ disclosure line and `--send`. An unattended review still hands off on its own la
 may still request a domain's P1 the author's pick doesn't cover.
 
 An App's unattended review runs the gates and steps 1 and 2 through its own skill, which
-posts its outcome with `scripts/post-review.py`, so these steps and the scripts' usage are
-its contract too.
+posts its outcome with its own writer and hands off with `scripts/handoff.py`, so these
+steps and the scripts' usage are its contract too.
 
 **Done when:** the author has the gated decisions and, after their go, the handoff's comment
 and request.

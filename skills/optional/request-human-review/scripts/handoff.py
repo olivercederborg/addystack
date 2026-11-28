@@ -6,7 +6,7 @@ for people glancing at the PR, every decision in full, and a versioned block tha
 parses. It names whom it asks without an @mention, since the request notifies them, and says
 asking, not requested, since it posts before the request, which GitHub may refuse.
 
-An unattended review hands off through post-review.py once its needs-human review posted. A
+An App's unattended review hands off once its needs-human review posted. A
 PR's author runs it with their go, and may name the reviewer:
 
     handoff.py N GATES.json [--reviewer LOGIN]... [--with-suggested]   print the draft
