@@ -87,8 +87,8 @@ A repo's trust is the `trust` field of its policy, from
 `<kit>/bin/addystack policy --repo <checkout>`. The user's config sets it per repo, and a repo's
 own `.agents/addystack.jsonc` can only make it stricter.
 
-- **`draft`**: autopilot ends at a draft stack. The user requests reviewers and merges,
-  or tells the agent to, in their latest message. Asking to merge covers marking ready.
+- **`draft`**: autopilot ends at a draft stack. The user marks it ready and merges, or
+  tells the agent to, in their latest message. Asking to merge covers marking ready.
 - **`merge on go`** (`merge-on-go`): the agent marks ready and merges a verified stack
   when the user's go names merging ("merge it and start next"), whether that's their
   latest message or the go that started the run.
@@ -106,6 +106,40 @@ own `.agents/addystack.jsonc` can only make it stricter.
     with `cd <checkout> && …` on a literal, unquoted path.
   - Codex runs the hook only while its `/hooks` entry is trusted, and skips a changed
     entry until it's trusted again. Until then, `gate` works like `merge on go` in Codex.
+
+## Review App
+
+A repo whose policy sets `review`, as `"review": {"app": "<slug>"}` from the repo's own
+`.agents/addystack.jsonc`, is reviewed by that GitHub App: it reviews every ready PR, and
+its approval is the one the repo requires. After a PR is marked ready, the next wait is
+that App's review, not a request for a person's. Watch the PR, then read the App's
+review at once, since it may have posted before the watch, and again on each wake, with
+`scripts/github.sh reviewed <N> '<slug>[bot]'`:
+
+- **Approved**: `active` is an approval whose `commit_id` is `scripts/github.sh head <N>`.
+  Go on to the merge line, as the repo's trust allows.
+- **Changes requested**: handle its threads as any reviewer's, then push.
+- **Needs a human**: its latest review is a comment, with no active request for changes,
+  whose body in `scripts/github.sh feedback <N>` carries **Needs a human**. That's the
+  App's handoff: a person approves in its place. Report the decisions it names to the
+  user, and don't request a reviewer; that stays a stop. Then wait until each person it
+  requested has reviewed (`gh pr view <N> --json reviewRequests` lists none) and each
+  one's `scripts/github.sh reviewed <N> <login>` has an `active` approval whose
+  `commit_id` is the head. That leads to the merge line as the App's approval would. merge-gate denies a merge while a request is pending or nobody
+  has approved the head.
+- **Not approved**: the body names required checks that failed or didn't finish. Fix
+  them as any failed check; the push starts the App's re-review. When they pass without
+  a push, such as on a rerun, the App doesn't review again: tell the user it needs a new
+  review, and keep waiting.
+- **Pushed since**: a push can dismiss the App's approval and starts its re-review, so
+  wait for its review of the new head.
+- **No review**: `reviewed` prints nothing both before the App posts and when it never
+  will, as with a slug that isn't the App's or an App that's uninstalled or down. A
+  running App posts once the PR's checks finish, so once they pass and it still hasn't
+  reviewed the head, tell the user which login you wait on, `<slug>[bot]`, and keep
+  watching.
+
+Without `review`, a ready PR waits on reviewers as before.
 
 ## Two tracks
 

@@ -263,11 +263,12 @@ elif a.startswith("api --paginate repos/o/r/issues/7/timeline") and "review_dism
     print('{"review_id":"4","state":"approved"}')
     print('{"review_id":5,"state":"changes_requested"}')
 elif a.startswith("api --paginate repos/o/r/pulls/7/reviews") and '"reviewer-app[bot]"' in a and '"PENDING"' in a:
-    print('{"id":1,"state":"APPROVED","commit_id":"abc"}')
-    print('{"id":4,"state":"DISMISSED","commit_id":"bcd"}')
-    print('{"id":5,"state":"DISMISSED","commit_id":"cde"}')
-    print('{"id":2,"state":"CHANGES_REQUESTED","commit_id":"def"}')
-    print('{"id":3,"state":"COMMENTED","commit_id":"fed"}')
+    print('{"id":1,"state":"APPROVED","commit_id":"abc","bare":false}')
+    print('{"id":4,"state":"DISMISSED","commit_id":"bcd","bare":false}')
+    print('{"id":5,"state":"DISMISSED","commit_id":"cde","bare":false}')
+    print('{"id":2,"state":"CHANGES_REQUESTED","commit_id":"def","bare":false}')
+    print('{"id":3,"state":"COMMENTED","commit_id":"fed","bare":false}')
+    print('{"id":6,"state":"COMMENTED","commit_id":"fed","bare":true}')
 else:
     sys.exit(f"unexpected: gh {a}")
 """
@@ -284,12 +285,20 @@ class Reviewed(unittest.TestCase):
         viewer = subprocess.run([str(SCRIPT), "viewer"], capture_output=True, text=True, env=env)
         self.assertEqual((viewer.returncode, viewer.stdout), (0, "reviewer-app[bot]\n"), viewer.stderr)
         reviewed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env=env)
-        # The latest review is a comment; the request for changes before it still counts. The
-        # latest approval is the one a push dismissed, which the timeline says was an approval.
+        # The latest review is a comment, since a bare thread reply after it doesn't count; the
+        # request for changes before it still counts. The latest approval is the one a push
+        # dismissed, which the timeline says was an approval.
         self.assertEqual((reviewed.returncode, json.loads(reviewed.stdout)),
                          (0, {"id": 3, "state": "COMMENTED", "commit_id": "fed",
                               "active": {"id": 2, "state": "CHANGES_REQUESTED", "commit_id": "def"},
                               "approved": {"id": 4, "state": "DISMISSED", "commit_id": "bcd"}}), reviewed.stderr)
+        # A login names whose review to read, such as a review App's, without asking for the viewer.
+        app = subprocess.run([str(SCRIPT), "reviewed", "7", "reviewer-app[bot]"], capture_output=True, text=True,
+                             env={**env, "VIEWER_FAILS": "1"})
+        self.assertEqual((app.returncode, app.stdout), (0, reviewed.stdout), app.stderr)
+        # A login that isn't one, such as one that would change the jq filter, is refused.
+        bad = subprocess.run([str(SCRIPT), "reviewed", "7", 'x" or true or "'], capture_output=True, text=True, env=env)
+        self.assertEqual((bad.returncode, bad.stdout), (2, ""), bad.stderr)
         # A viewer it can't read fails the command, rather than reading as no reviews at all.
         failed = subprocess.run([str(SCRIPT), "reviewed", "7"], capture_output=True, text=True, env={**env, "VIEWER_FAILS": "1"})
         self.assertNotEqual(failed.returncode, 0)

@@ -11,7 +11,11 @@ command would merge, and deny it unless
 - a fresh work-verifier's latest verdict for that exact diff is Done (verdicts.py),
 - the PR's base branch gained no commits since the PR branched that touch files the PR
   changes: its checks and verdict ran against the older base, GitHub can't require
-  up-to-date branches here, and owner threads build and merge PRs in parallel.
+  up-to-date branches here, and owner threads build and merge PRs in parallel,
+- in a checkout whose policy names a review App (resolved.py), the PR's head is approved
+  by that App or by a person, neither has an active request for changes, and no requested
+  review is pending: a base that keeps stale approvals would otherwise merge a head the App
+  hasn't reviewed, or one whose handoff named several people before each reviewed.
 GitHub can't require checks on these private repos on a free plan (branch protection and
 rulesets return HTTP 403), so nothing on GitHub's side stops a red merge. On Oct 11, 2026
 a Strict stack merged 11 minutes after main went red, and a noyer PR merged with no CI,
@@ -154,6 +158,25 @@ def user_go(numbers, owner, repo):
     except Exception:
         return False, None
 
+def review_reasons(n, pull, app):
+    """Why PR n can't merge yet in a checkout whose policy names the review App app: each
+    reviewer's latest approval or request for changes counts when it's the App's (GitHub
+    names it by its slug here) or a person's, and one of them must approve the head."""
+    head = pull["headRefOid"]
+    counted = [review for review in pull["latestOpinionatedReviews"]["nodes"] if review["author"]
+               and (review["author"]["__typename"] == "User" or review["author"]["login"] == app)]
+    reasons = []
+    pending = pull["reviewRequests"]["totalCount"]
+    if pending:
+        reasons.append(f"#{n} waits on {pending} requested review{'s' if pending > 1 else ''}: wait for each")
+    if any(review["state"] == "CHANGES_REQUESTED" for review in counted):
+        reasons.append(f"#{n} has a request for changes from {app}[bot] or a person: address it and wait for "
+                       "their review of the new head")
+    if not any(review["state"] == "APPROVED" and (review["commit"] or {}).get("oid") == head for review in counted):
+        reasons.append(f"#{n} has no approval of its head {head[:8]} from {app}[bot] or a person: wait for the "
+                       "review App's review (shared/workflow.md, Review App)")
+    return reasons
+
 def base_overlap(pull):
     """Paths both the PR and its base branch changed since the PR branched, against the
     fetched base tip: GitHub's baseRefOid stays where the PR last synced."""
@@ -272,6 +295,7 @@ try:
                  f"it from one, as `cd <checkout of {owner}/{name}> && gh {kind} merge {' '.join(args)}`", WHERE)
     prs = " ".join(f"p{n}: pullRequest(number: {n}) {{ number state baseRefName baseRefOid headRefOid "
                    "potentialMergeCommit { oid } stack { number } "
+                   "reviewRequests { totalCount } latestOpinionatedReviews(first: 100) { nodes { state author { __typename login } commit { oid } } } "
                    "commits(last: 1) { nodes { commit { oid statusCheckRollup { state } } } } }"
                    for n in numbers)
     query = (f"query {{ repository(owner: {json.dumps(owner)}, name: {json.dumps(name)}) {{ "
@@ -340,6 +364,8 @@ for n in numbers:
     if not done[n]:
         reasons.append(f"#{n} has no Done verdict from a fresh work-verifier for its current "
                        "diff: run /verify-work")
+    if policy.review:
+        reasons.extend(review_reasons(n, pr, policy.review.app))
     if overlap[n]:
         paths = ", ".join(f"`{path}`" for path in overlap[n][:3])
         more = f", and {len(overlap[n]) - 3} more" if len(overlap[n]) > 3 else ""

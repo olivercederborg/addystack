@@ -2728,6 +2728,41 @@ class MergeGate(unittest.TestCase):
         os.makedirs(self.env["ADDYSTACK_STATE"], exist_ok=True)
         resolved_state(self.env["ADDYSTACK_STATE"], json.dumps({"policy": policy}))
 
+    def test_a_review_app_must_approve_the_head(self):
+        # Review of #141: with a review App, a base that keeps stale approvals merged a head
+        # the App hadn't reviewed yet, since the gate read no reviews.
+        os.makedirs(self.env["ADDYSTACK_STATE"], exist_ok=True)
+        resolved_state(self.env["ADDYSTACK_STATE"], '{"policy": {"defaults": {"review": {"app": "acme-reviewer"}}}}')
+        self.verify(12)
+
+        def reviews(*nodes, pending=0):
+            self.scenario()
+            data = json.loads(pathlib.Path(self.env["FAKE_GH"]).read_text())
+            data["repository"]["p12"]["reviewRequests"] = {"totalCount": pending}
+            data["repository"]["p12"]["latestOpinionatedReviews"] = {"nodes": [
+                {"state": state, "author": {"__typename": kind, "login": login}, "commit": {"oid": oid or self.pr(12)}}
+                for state, kind, login, oid in nodes]}
+            pathlib.Path(self.env["FAKE_GH"]).write_text(json.dumps(data))
+        for nodes in [[("APPROVED", "Bot", "acme-reviewer", None)], [("APPROVED", "User", "sam", None)],
+                      [("COMMENTED", "Bot", "other-bot", None), ("APPROVED", "Bot", "acme-reviewer", None)]]:
+            with self.subTest(nodes=nodes):
+                reviews(*nodes)
+                self.assertIsNone(self.reason("gh pr merge 12"))
+        stale = "#12 has no approval of its head"
+        for nodes in [[], [("APPROVED", "Bot", "acme-reviewer", self.main)], [("APPROVED", "Bot", "other-bot", None)]]:
+            with self.subTest(nodes=nodes):
+                reviews(*nodes)
+                self.assertIn(stale, self.reason("gh pr merge 12"))
+        reviews(("APPROVED", "User", "sam", None), ("CHANGES_REQUESTED", "Bot", "acme-reviewer", self.main))
+        self.assertIn("#12 has a request for changes", self.reason("gh pr merge 12"))
+        # A handoff that requested two people: one approval leaves the other's request pending.
+        reviews(("APPROVED", "User", "sam", None), pending=1)
+        self.assertIn("#12 waits on 1 requested review: wait for each", self.reason("gh pr merge 12"))
+        # Without a review App the gate reads no reviews, as before.
+        resolved_state(self.env["ADDYSTACK_STATE"], "{}")
+        reviews()
+        self.assertIsNone(self.reason("gh pr merge 12"))
+
     def test_a_gate_repo_merges_a_pr_without_checks_on_a_fresh_done_alone(self):
         # Nov 8, 2026: the user asked twice for prefrontal, a repo with no CI, to merge on
         # its own, then still answered 56 merge cards that week.

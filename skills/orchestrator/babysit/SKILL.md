@@ -64,6 +64,8 @@ Patch-id changed: verify-work done, review-loop clean.
   `DIRTY` means it conflicts with its base. A draft prints it too, as in
   `merge state once ready: DIRTY`.
 - **Trust**: the repo policy's `trust`, as [workflow.md](references/workflow.md) defines it.
+- **Review App**: the repo policy's `review`. When it names an App, read that App's
+  review of each ready PR as [workflow.md](references/workflow.md#review-app) says.
 - **Patch-ids**: record each PR's patch-id and verdict with `scripts/github.sh target N`,
   which fetches and hashes the diff as the merge gate does.
 
@@ -148,7 +150,8 @@ watch, and the report offers marking it ready, which starts CI and then needs a 
   watching yet, including a PR the user asked to babysit that had no watch. The next
   wake runs another pass.
 - **Done**: hand the thread back to the user's inbox. A PR of the user's in scope that's
-  open and ready (not a draft) still waits on reviewers, so it stays watched until
+  open and ready (not a draft) still waits on reviewers, or on the review App's approval
+  of its head, so it stays watched until
   checks, which returns the thread to the inbox and still wakes it on reviews, comments,
   and failed checks. T3's PR list doesn't show a watch's mode, so call
   `watch_pull_request` with `until: "checks"` on it whatever its watch is; the call is

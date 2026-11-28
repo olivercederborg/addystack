@@ -13,9 +13,9 @@ working folder, or the current one. Run:
 ```
 
 It prints the fields in force (`planning`, `trust`, `pushVia`, `issues`, `lenses`,
-`verifySkill`, `decisionsSection`), `matched` (the sources that set them, in order), and
-`explain`: each matched rule's `match` and `set`, plus `repoFile` and `unresolved` when
-they apply.
+`verifySkill`, `decisionsSection`, `review`), `matched` (the sources that set them, in
+order), and `explain`: each matched rule's `match` and `set`, plus `repoFile` and
+`unresolved` when they apply.
 
 Read `matched` this way:
 
