@@ -180,14 +180,7 @@ class Plan(unittest.TestCase):
         nobody = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(standing=standing(away={'alice', 'bob', 'dave'})))
         self.assertEqual((nobody['why'], nobody['request']), ('nobody to ask', []))
-        self.assertIn('- Nobody to ask for `billing`: everyone else REVIEWERS names is away or already asked.',
-                      nobody['comment'])
-        # alice already covers billing, but nobody is left for auth: the comment says so.
-        partly = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
-                           self.facts(engaged=['alice'], standing=standing(away={'bob', 'dave'})))
-        self.assertEqual(partly['request'], [])
-        self.assertIn('- Nobody to ask for `auth`:', partly['comment'])
-        self.assertNotIn('cover these decisions', partly['comment'])
+        self.assertIn("- Nobody available: everyone REVIEWERS names but the PR's author is away.", nobody['comment'])
         # The author's own pick is requested, so it isn't listed as away and not asked.
         chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
@@ -196,11 +189,6 @@ class Plan(unittest.TestCase):
         own = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                         self.facts(author='dave', standing=standing(away={'dave'})))
         self.assertEqual(handoff.read(own['comment'])['away'], [])
-        # With --with-suggested, a domain the suggestion can't fill is named too.
-        both = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
-                         self.facts(viewer='carol', standing=standing(away={'bob', 'dave'})), chosen=('alice',),
-                         with_suggested=True)
-        self.assertEqual(handoff.read(both['comment'])['unfilled'], ['auth'])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
@@ -247,7 +235,7 @@ class Plan(unittest.TestCase):
         lonely = self.plan(verdict(decision('D1', 'packages/auth/a.ts:1')), self.facts(author='dave', rules=reviewers.parse(
             '## auth\n/packages/auth/ @dave\n')))
         self.assertEqual((lonely['post'], lonely['why'], lonely['request']), (True, 'nobody to ask', []))
-        self.assertIn("- Nobody to ask for `auth`: REVIEWERS names no one but the PR's author", lonely['comment'])
+        self.assertIn("- Nobody to ask: REVIEWERS names no one here but the PR's author", lonely['comment'])
         self.assertIn('· asking: nobody\n', lonely['comment'])
 
     def test_a_base_without_reviewers_or_a_moved_head_or_base_hands_off_nothing(self):
