@@ -2,7 +2,7 @@
 state from JSON files and record each `t3 thread send`. The rule under test: a change T3
 doesn't tell the coordinator wakes it once, and an unchanged project wakes nothing.
 Run: python3 -m unittest discover -s coordinator/scripts"""
-import json, os, pathlib, subprocess, sys, tempfile, time, unittest
+import contextlib, json, os, pathlib, sqlite3, subprocess, sys, tempfile, time, unittest
 
 HERE = pathlib.Path(__file__).resolve().parent
 SCRIPT = HERE / "project.py"
@@ -22,14 +22,13 @@ Follow-ups: none
 | Worker | Thread | Branch or PR | State | Waits on | Last side effect |
 |---|---|---|---|---|---|
 | build | <t3-thread://v2/env/w1> · task t1 | `export` · #12 | running | — | pushed abc |
-| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |
+| probe | <t3-thread://v2/env/w2> · task t2 | acme/app#7 | done | — | report |
 | remote | <t3-thread://v2/other/w3> · task t3 | — | {remote} | — | launched |
 
 ## Listening
 
 - Heartbeat: {heartbeat}
 - Startup: none
-- Watches: #12 (build), acme/app#7 (the user)
 """
 
 FAKE_T3 = r"""#!/usr/bin/env python3
@@ -82,6 +81,19 @@ class Tick(unittest.TestCase):
         self.write_project()
         self.threads = {"lead": thread("completed", 40), "w1": thread()}
         self.prs = {"acme/app#12": {"state": "OPEN", "isDraft": True}, "acme/app#7": {"state": "OPEN", "isDraft": False}}
+        self.watch(12, 7)
+
+    def watch(self, *numbers, links=None):
+        """T3's state database with the lead thread watching acme/app's numbers, or the given links."""
+        path = self.fake / "userdata" / "statev2.sqlite"
+        path.unlink(missing_ok=True)
+        links = links if links is not None else [
+            {"repository": "Acme/App", "number": n, "source": "agent", "snapshot": {"state": "open"},
+             "watch": {"startedAt": "2026-11-27T12:00:00Z", "headSha": "c0ff", "wakes": 0}} for n in numbers]
+        with contextlib.closing(sqlite3.connect(path)) as db, db:
+            db.execute("create table orchestration_v2_projection_threads (thread_id text, payload_json text, deleted_at text)")
+            db.execute("insert into orchestration_v2_projection_threads values ('lead', ?, null)",
+                       (json.dumps({"pullRequests": links}),))
 
     def write_project(self, heartbeat="tick", remote="done", rows=None):
         text = PROJECT.format(checkout=self.checkout, heartbeat=heartbeat, remote=remote)
@@ -168,7 +180,6 @@ class Tick(unittest.TestCase):
         self.assertIn("- build: its thread waits on 1 question(s) its row doesn't show\n", sent["message"])
 
     def test_a_pr_that_merges_or_turns_ready_wakes_it_once(self):
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: acme/app#7 (the user)"})
         self.tick("--send")
         self.prs["acme/app#12"] = {"state": "MERGED", "isDraft": False}
         self.prs["acme/app#7"] = {"state": "OPEN", "isDraft": True}
@@ -179,33 +190,131 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
-    def test_a_finished_pr_left_under_watches_repeats_until_unwatched(self):
-        self.prs["acme/app#7"] = {"state": "MERGED", "isDraft": False}
+    def test_an_open_worker_pr_t3_isnt_watching_repeats_until_watched(self):
+        # Nov 26-27, 2026: a user's Stop ended a coordinator's watches on 4 open PRs, twice, and a
+        # reviewer's two reviews woke nobody for an hour. Links as T3 kept them: watch null, endedWatch set.
+        ended = {"startedAt": "2026-11-27T11:58:18Z", "headSha": "a5b7", "wakes": 1}
+        link = lambda n, repository="acme/tools": {
+            "host": "github.com", "repository": repository, "number": n, "source": "agent",
+            "url": f"https://github.com/{repository}/pull/{n}", "linkedAt": "2026-11-27T11:58:18Z",
+            "snapshot": {"state": "open", "isDraft": n == 122}, "stack": None, "watch": None, "endedWatch": ended}
+        self.watch(links=[link(n) for n in (109, 110, 122)])
+        self.write_project(rows={"| `export` · #12 | running |": "| acme/tools#109 → acme/tools#110 → acme/tools#122 | waiting |"})
+        for n in (109, 110, 122):
+            self.prs[f"acme/tools#{n}"] = {"state": "OPEN", "isDraft": n == 122}
         self.tick("--send")
-        self.assertIn("- acme/app#7: merged, and still under Watches\n", self.sent()[0]["message"],
-                      "even one that merged before the tick first saw it")
+        [sent] = self.sent()
+        for ref in ("acme/tools#109", "acme/tools#110", "acme/tools#122", "acme/app#7"):
+            self.assertIn(f"- {ref}: open, and T3 isn't watching it for this thread, so call `watch_pull_request` "
+                          "on it\n", sent["message"])
         self.tick("--send")
-        self.assertEqual(self.sent(), [])
+        self.assertEqual(self.sent(), [], "sent once an hour, not each tick")
         self.age(3600)
-        self.threads["w1"] = thread(items=11)  # the worker is busy, so only the watch repeats
         self.tick("--send")
-        self.assertEqual(len(self.sent()), 1)
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12 (build)"})
+        self.assertEqual(len(self.sent()), 1, "still unwatched an hour later, so it repeats")
+        on = {"startedAt": "2026-11-27T13:00:00Z", "headSha": "a5b7", "wakes": 0}
+        self.watch(links=[{**link(n), "watch": on} for n in (109, 110, 122)] + [{**link(7, "Acme/App"), "watch": on}])
         self.age(3600)
-        self.threads["w1"] = thread(items=12)
         self.tick("--send")
         self.assertEqual(self.sent(), [])
 
+    def test_a_stack_dismissed_watch_counts_as_unwatched(self):
+        self.watch(links=[{"repository": "acme/app", "number": 12, "source": "stack-dismissed", "watch": {"wakes": 0}},
+                          {"repository": "acme/app", "number": 7, "source": "stack", "watch": {"wakes": 0}}])
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", message)
+        self.assertNotIn("acme/app#7", message)
+
+    def test_a_pr_seen_closed_while_t3_is_unreadable_is_judged_anew_on_reopening(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        (self.fake / "userdata" / "statev2.sqlite").unlink()
+        self.prs["acme/app#12"]["state"] = "CLOSED"
+        self.age(600)
+        self.tick("--send")
+        self.watch(7)
+        self.prs["acme/app#12"]["state"] = "OPEN"
+        self.age(600)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", "".join(m["message"] for m in self.sent()))
+
+    def test_a_failed_read_judges_no_watch_and_keeps_the_repeat_clock(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        saved = self.prs.pop("acme/app#12")
+        self.age(3600)
+        self.tick("--send")
+        self.assertNotIn("acme/app#12: open", "".join(m["message"] for m in self.sent()),
+                         "an unread PR's saved state isn't news")
+        self.prs["acme/app#12"] = saved
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"],
+                      "read again, still unwatched past the hour, so it repeats")
+
+    def test_a_finished_pr_needs_no_watch_and_isnt_read_again(self):
+        self.prs["acme/app#7"] = {"state": "MERGED", "isDraft": False}
+        self.watch(12)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [], "a PR merged before the first look needs no watch")
+        (self.fake / "gh-calls.jsonl").unlink()
+        self.tick("--send")
+        calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(calls, ["acme/app#12"], "a merged PR isn't viewed again")
+
+    def test_an_unreadable_t3_database_skips_the_watch_check(self):
+        self.watch()
+        (self.fake / "userdata" / "statev2.sqlite").unlink()
+        self.assertIn("so the tick skips its unwatched-PR check", self.tick("--send").stderr)
+        self.assertEqual(self.sent(), [])
+        self.watch()  # nothing watched, but the database has no thread `missing`
+        self.threads["missing"] = self.threads["lead"]
+        self.write_project(rows={"<t3-thread://v2/env/lead>": "<t3-thread://v2/env/missing>"})
+        self.assertIn("so the tick skips its unwatched-PR check", self.tick("--send").stderr)
+        self.assertEqual(self.sent(), [])
+
+    def test_while_the_coordinator_runs_no_watch_is_checked(self):
+        self.watch()
+        self.threads["lead"] = thread("running", 41)
+        self.tick("--send")
+        self.assertEqual(self.sent(), [])
+        self.threads["lead"] = thread("completed", 41)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+
+    def test_a_legacy_watches_line_is_named_until_removed(self):
+        self.write_project(rows={"- Startup: none\n": "- Startup: none\n- Watches: acme/app#99 (the user)\n"})
+        before = (self.dir / "project.md").read_text()
+        self.tick("--send")
+        self.assertIn("remove it with `project.py <folder> listen Watches none`", self.sent()[0]["message"])
+        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#7"], "its PRs aren't read")
+        self.assertEqual((self.dir / "project.md").read_text(), before, "the tick writes no project.md")
+
+    def test_an_unreadable_t3_keeps_an_unwatched_findings_clock(self):
+        self.watch(7)
+        self.tick("--send")
+        self.assertIn("- acme/app#12: open, and T3 isn't watching it", self.sent()[0]["message"])
+        (self.fake / "userdata" / "statev2.sqlite").unlink()
+        self.age(1200)
+        self.tick("--send")
+        self.watch(7)
+        self.age(1200)
+        self.tick("--send")
+        self.assertNotIn("acme/app#12: open", "".join(m["message"] for m in self.sent()),
+                         "T3 read again 40 min after the alert, so it waits for the hour")
+
     def test_one_pr_written_two_ways_or_in_a_range_is_checked_once_each(self):
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12, acme/app#12, app#12, #20–#22"})
+        self.write_project(rows={"`export` · #12": "`export` · #12, acme/app#12, app#12, #20–#22"})
         for n in (20, 21, 22):
             self.prs[f"acme/app#{n}"] = {"state": "OPEN", "isDraft": False}
         self.tick("--send")
-        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#20", "acme/app#21", "acme/app#22"])
+        self.assertEqual(sorted(self.state()["prs"]), ["acme/app#12", "acme/app#20", "acme/app#21", "acme/app#22", "acme/app#7"])
 
     def test_a_repo_ref_without_a_known_owner_is_flagged(self):
         subprocess.run(["git", "-C", str(self.checkout), "remote", "remove", "origin"], check=True)
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: skills#246"})
+        self.write_project(rows={"`export` · #12": "`export` · skills#246"})
         self.tick("--send")
         self.assertIn("- skills#246: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", self.sent()[0]["message"])
 
@@ -236,14 +345,24 @@ class Tick(unittest.TestCase):
         self.assertIn("- #12: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", message)
         self.assertNotIn("acme/app#7:", message, "a full owner/repo#N needs no checkout")
 
-    def test_a_reopened_pr_says_so(self):
+    def test_a_closed_pr_that_reopens_is_news(self):
         self.tick("--send")
         self.prs["acme/app#12"] = {"state": "CLOSED", "isDraft": True}
         self.tick("--send")
-        self.sent()
+        self.assertIn("- acme/app#12: closed\n", self.sent()[0]["message"])
         self.prs["acme/app#12"] = {"state": "OPEN", "isDraft": True}
         self.tick("--send")
         self.assertIn("- acme/app#12: reopened\n", self.sent()[0]["message"])
+
+    def test_a_merged_pr_isnt_read_again(self):
+        self.tick("--send")
+        self.prs["acme/app#12"] = {"state": "MERGED", "isDraft": False}
+        self.tick("--send")
+        self.assertIn("- acme/app#12: merged\n", self.sent()[0]["message"])
+        (self.fake / "gh-calls.jsonl").unlink()
+        self.tick("--send")
+        calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(calls, ["acme/app#7"])
 
     def test_a_metadata_update_doesnt_reset_the_stall_clock(self):
         stamp = lambda ago: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - ago))
@@ -268,24 +387,19 @@ class Tick(unittest.TestCase):
 
     def test_links_paths_and_refs_parse_as_coordinators_write_them(self):
         self.write_project(rows={"<t3-thread://v2/env/w1> · task t1": "[build](t3-thread://v2/env/w1) · task t1",
-                                 "- Watches: #12 (build), acme/app#7 (the user)": "- Watches: #12 (build), app#7 and acme/app#7"})
+                                 "| acme/app#7 | done |": "| app#7 and acme/app#7 | done |"})
         self.tick("--send")
         calls = [json.loads(line) for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
         self.assertEqual(sorted({call["key"] for call in calls}), ["acme/app#12", "acme/app#7"],
                          "#12 resolved through the origin of a checkout path with a space")
         self.assertEqual(list(self.state()["threads"]), ["w1"])
 
-    def test_a_watches_line_that_says_none_names_no_pr(self):
-        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none (#7 unwatched at handback)"})
-        self.tick("--send")
-        self.assertEqual(list(self.state()["prs"]), ["acme/app#12"])
-
     def test_a_live_row_the_tick_cant_parse_is_flagged(self):
-        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |":
+        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | acme/app#7 | done | — | report |":
                                  "| probe | <t3-thread://v2/env/w2> | running (round 2) |"})
         self.tick("--send")
         self.assertIn("- probe: its row's cells don't match the Workers header", self.sent()[0]["message"])
-        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | — | done | — | report |":
+        self.write_project(rows={"| probe | <t3-thread://v2/env/w2> · task t2 | acme/app#7 | done | — | report |":
                                  "| probe | <t3-thread://v2/env/w2> | done | was running fine |"})
         self.age(3600)
         self.threads["w1"] = thread(items=11)

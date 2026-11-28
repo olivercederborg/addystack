@@ -24,8 +24,7 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.
 - **Listening**: `Heartbeat`, `tick` while the [tick](tick.md) checks the project, or
-  none; `Startup`, its scheduled task id or none; and
-  `Watches`: each watched PR with its owner. Each recurring check is a `Duty <name>`
+  none; and `Startup`, its scheduled task id or none. T3 holds the PR watches. Each recurring check is a `Duty <name>`
   line, `<task id> · <cadence> · <source> · until <end> · last <ISO time>, <n> new`, or
   `none (ended <date>: <reason>)` once it ends. Its findings so far are in
   `duties/<name>.md` beside `project.md` ([duties](duties.md)).

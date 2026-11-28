@@ -40,7 +40,8 @@ heartbeat` prompt are read, from 2026-10-29 on (`SINCE` in `collect.py`).
   the tick would still see it stopped and report it on its next step.
 - **PRs are the ones the coordinator named** in the last 48 hours (URLs, or a bare `#5NNN`
   in a Franklin project), on one open row, with the state the coordinator saw when it first
-  named them. A real project tracks only its rows' and Watches' PRs.
+  named them. A real project tracks only its rows' PRs. The recordings hold no T3 watch
+  state, so the replay counts every tracked PR as watched.
 - **A tick wake's cost is the coordinator's median no-op heartbeat**, and an acting
   heartbeat keeps its real cost. "With a tick wake in its window" means any wake in the
   hour before it, not one with the cause it acted on.

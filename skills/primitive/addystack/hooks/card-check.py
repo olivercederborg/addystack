@@ -107,13 +107,10 @@ def wakes(thread):
     import t3_child
     db = t3_child.connect()
     try:
-        row = db.execute("select payload_json, active_provider_thread_id from orchestration_v2_projection_threads "
+        links = t3_child.pull_requests(thread, db)
+        row = db.execute("select active_provider_thread_id from orchestration_v2_projection_threads "
                          "where thread_id = ? and deleted_at is null", (thread,)).fetchone()
-        if row is None:
-            raise LookupError(thread)
-        links = json.loads(row[0]).get("pullRequests") or []
-        # A stack-dismissed link's watch wakes nobody (T3's pullRequestWatchTasks).
-        watched = {link.get("number") for link in links if link.get("watch") and link.get("source") != "stack-dismissed"}
+        watched = {link.number for link in links if link.wakes}
         calls = {}  # (repository, number) -> whether its last watch or unwatch call that went through was a watch
         for name, given, output in db.execute(
                 "select json_extract(payload_json, '$.toolName'), json_extract(payload_json, '$.input'), "
@@ -130,12 +127,11 @@ def wakes(thread):
                 str(given.get("repository")), given.get("number"))
             if isinstance(pr[1], int) and not re.search(r'"isError": ?true|hook error', str(output)):
                 calls[(pr[0].lower(), pr[1])] = not name.endswith("unwatch_pull_request")
-        ended = {(str(link.get("repository")).lower(), link.get("number")) for link in links
-                 if calls.get((str(link.get("repository")).lower(), link.get("number"))) and not link.get("watch")
-                 and (link.get("snapshot") or {}).get("state") == "open"}
+        ended = {(link.repository, link.number) for link in links
+                 if calls.get((link.repository, link.number)) and not link.watched and link.open}
         tasks = [task.get("kind") for payload, in db.execute(
             "select payload_json from orchestration_v2_projection_provider_threads where thread_id = ?1 "
-            "and (?2 is null or provider_thread_id = ?2)", (thread, row[1]))
+            "and (?2 is null or provider_thread_id = ?2)", (thread, row[0]))
             for task in json.loads(payload).get("pendingBackgroundTasks") or []]
         tasks += [kind for kind, persistent in db.execute(
             "select i.type, json_extract(i.payload_json, '$.input.persistent') from orchestration_v2_projection_turn_items i "

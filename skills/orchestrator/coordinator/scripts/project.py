@@ -41,6 +41,7 @@ import argparse
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -50,6 +51,7 @@ from pathlib import Path
 
 import project_md
 import project_queue
+import t3_child
 import turn_block
 
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
@@ -87,7 +89,6 @@ Next id: 1
 
 - Heartbeat: none
 - Startup: none
-- Watches: none
 """
 
 
@@ -249,8 +250,15 @@ def listen(lines: list[str], key: str, value: str) -> None:
     start, end = _section(lines, "Listening")
     if not key.strip() or ":" in key or not value.strip() or "\n" in value.strip():
         raise ProjectError("listen takes a KEY without a colon and a one-line VALUE")
-    line = _bullet(f"{key}: {value.strip()}")
     found = [i for i in range(start + 1, end) if lines[i].startswith(f"- {key}:")]
+    if key.strip() == "Watches":  # an old project's line: `none` removes it
+        if value.strip() != "none":
+            raise ProjectError("T3 keeps the watches, not project.md: call `watch_pull_request` on each open "
+                               "Worker PR, and the tick flags one T3 isn't watching")
+        for i in reversed(found):
+            del lines[i]
+        return
+    line = _bullet(f"{key}: {value.strip()}")
     if found:
         lines[found[0]] = line
     else:
@@ -387,7 +395,6 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 # the coordinator's model wakes only for news T3 doesn't deliver. A heartbeat that woke it
 # hourly took no action on 91% of its turns.
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
-PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
 LINK, THREAD_ROW = project_md.LINK, project_md.THREAD_ROW
 REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
@@ -443,6 +450,16 @@ def view_pr(ref: str) -> list | None:
         return None
 
 
+def watched(thread: str) -> set[str] | None:
+    """Each PR T3 wakes the thread on, as lowercased `owner/repo#N`; None, named on stderr,
+    when T3's state database can't be read or has no such thread."""
+    try:
+        return {f"{link.repository}#{link.number}" for link in t3_child.pull_requests(thread) if link.wakes}
+    except (sqlite3.Error, LookupError) as error:
+        _warn(f"tick: can't read T3's watches for thread {thread}: {error!r}")
+        return None
+
+
 def _header(lines: list[str], field: str) -> str:
     """A `Field: value` from the line under the title, up to the next ` · `."""
     line = next((text for text in lines if text.startswith("Coordinator:")), "")
@@ -482,7 +499,7 @@ def _when(stamp: str | None) -> float | None:
         return None
 
 
-def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr,
+def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_pr, watching=watched,
          hold: bool = True) -> tuple[list[tuple[str, str]], dict] | None:
     """What changed since the last tick that T3 doesn't tell the coordinator, as (key, line)
     pairs due to send, and the state to save once they're sent; None when the coordinator's
@@ -493,10 +510,12 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     it stopped, or has a question, through two ticks while its row says running, since a
     completion T3 delivers gets its row fixed by then; when it runs with no new item for
     STALL since its `updatedAt`; or when it's on another machine, which `t3 thread show` can't read. Each of
-    these repeats every REPEAT until its row changes. A PR on an open row or under Watches
-    is news once when it merges, closes, reopens, or turns ready or draft against what the
-    tick last saw, and a merged or closed PR still under Watches repeats like a row: T3's watch sends
-    checks, comments, reviews, and conflicts, not those."""
+    these repeats every REPEAT until its row changes. A PR any row names is news once when
+    it merges, closes, or turns ready or draft against what the tick last saw: T3's
+    watch sends checks, comments, reviews, and conflicts, not those. An open one T3 doesn't
+    wake the coordinator's thread on repeats like a row, since T3 ends a thread's watches
+    unannounced when the user stops or rolls back a turn, judged only on a PR it could read.
+    A PR the tick saw merged isn't read again; a closed one can reopen."""
     coordinator = LINK.search(_header(lines, "Coordinator"))
     lead = coordinator and show(coordinator.group(2))
     if not lead or lead.get("archived"):
@@ -505,9 +524,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     busy = hold and lead.get("status") in ACTIVE
     origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    watches = _listened(lines, "Watches")
-    named = [project_md.pulls("" if watches.startswith("none") else watches, origin)]
-    watched = set(named[0].refs)
+    named = []
     rows, odd = _workers(lines)
     for line in odd:
         if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
@@ -516,8 +533,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
                                           "can't read it"))
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
-        if PR_ROW.match(row_state):
-            named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
+        named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -559,18 +575,34 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         return [], {**state, "threads": threads}
     events = []
     saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
+    wakes, unread = watching(coordinator.group(2)), set()
+    if wakes is None:  # unknown, not cleared: each unwatched finding keeps its repeat clock
+        unread |= {key for key in state.get("sent", {}) if key.startswith("unwatched:")}
+    if _listened(lines, "Watches"):
+        found.append(("legacy:watches", "Listening still has a Watches line, which T3's own watch state replaced: "
+                                        "remove it with `project.py <folder> listen Watches none`"))
+    if wakes is None:
+        _warn("tick: can't tell which PRs T3 watches for the coordinator, so the tick skips its unwatched-PR check")
     for ref in sorted(refs):
         known = saved.get(ref)
-        prs[ref] = view(ref) or known
-        if prs[ref] is known:
+        if known and known[0] == "MERGED":  # a merged PR can't reopen; a closed one can
+            prs[ref] = known
+            continue
+        fresh = view(ref)
+        prs[ref] = fresh or known
+        if not fresh:  # judge nothing on a saved state, and keep a finding's repeat clock
             _warn(f"tick: can't read PR {ref}")
-        if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
-            found.append((f"watch:{ref}", f"{ref}: {prs[ref][0].lower()}, and still under Watches"))
-        elif known and prs[ref] != known:
+            unread.add(f"unwatched:{ref}")
+        if fresh and fresh[0] != "OPEN":  # seen closed, so a reopening is judged anew
+            unread.discard(f"unwatched:{ref}")
+        if wakes is not None and fresh and fresh[0] == "OPEN" and ref.lower() not in wakes:
+            found.append((f"unwatched:{ref}", f"{ref}: open, and T3 isn't watching it for this thread, so call "
+                                              "`watch_pull_request` on it"))
+        if known and prs[ref] != known:
             change = ({"OPEN": "reopened"}.get(prs[ref][0], prs[ref][0].lower()) if prs[ref][0] != known[0]
                       else "turned draft" if prs[ref][1] else "marked ready")
             events.append((f"pr:{ref}", f"{ref}: {change}"))
-    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
+    sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found} | unread}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**saved, **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
