@@ -443,8 +443,7 @@ def user_go():
         if found is None:
             return False, None
         prompt = found[-1].prompt if found else ""
-        shown = prompt.strip()
-        said = f'the user\'s "{shown if len(shown) <= 80 else shown[:79] + "…"}"'  # not a pasted log in full
+        said = user_turn.said(prompt)
         go = literal_go(prompt)
         if go:
             why = unmet(go)

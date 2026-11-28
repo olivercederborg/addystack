@@ -60,6 +60,13 @@ def answered(found):
     return found[at].reply
 
 
+def said(prompt):
+    """The user's prompt as a gate's denial quotes it: at most 80 characters, so a pasted
+    log doesn't come back to the agent in full."""
+    shown = prompt.strip()
+    return f'the user\'s "{shown if len(shown) <= 80 else shown[:79] + "…"}"'
+
+
 def letter_miss(reply, key):
     """Why the key picks no option of the reply."""
     if reply is None:
