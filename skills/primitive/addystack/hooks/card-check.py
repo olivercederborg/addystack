@@ -33,7 +33,25 @@ its `eta` has no timer by then or pending task, since a watch can miss a re-run 
 between polls. Replayed on 2,284 `running` turns from Nov 19 to 26, 2026, on two machines,
 it sends back the turn before 10 of the 12 status asks that a missing wake caused. It reads
 T3's state database, since `t3 thread show` lists no pending task while a run is active,
-and passes outside T3 or when the database can't be read."""
+and passes outside T3 or when the database can't be read.
+
+It also sends back a reply the reader can't answer from what it shows (unanswerable): one
+that asks for an option letter, marked as **a**, `a`, or **`a`**, that no line or sentence
+it shows opens or labels (a line, a sentence, a `·` or `→` item, "Reply `a` and I'll …",
+"(**a**)"), or that points to steps or options in an earlier reply. A pick it reports as made
+("you picked `a`") and a quote ask nothing. Replayed on the last reply of each of 5,930 T3 runs from
+Nov 20 to 27, 2026, it sends back 102; most carry an open call by its letters alone ("still
+waits on your **a** or **b**") or point to an earlier reply's steps, and about 10 are
+one-letter code names in review findings or a call the reply calls moot. Known limits: a letter written plain ("say
+a or b") isn't read, nor any letter in a reply with a fence a list item may hold, one card's options also answer another call's letters, and a report
+that "the earlier setup steps failed" goes back. On Nov 26 and
+27, 2026 a coordinator re-asked open calls as "say **a** or **b**" and "following the 5
+steps in my last reply", and the user asked four times for the full question again
+(CardCheckUnanswerable replays them). It reads the text outside code fences and HTML
+comments, never the turn block, so it runs on a reply with no block or a malformed one, and
+one whose block defines a letter its visible text doesn't. A plain "a or b", an inline
+"**a** builds it, …", and "earlier" that points to no steps or options pass. When the push or
+wake check also holds, both reasons go back in one send-back."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
 
@@ -214,6 +232,88 @@ def wake_gap(turn, reply, thread, now):
             "the eta if it isn't measured")
 
 
+# An option letter as a reply marks one: **a**, `a`, or **`a`**. A plain "a or b" is prose.
+LETTER = re.compile(r"(?<![\w`])(?:\*\*`([a-e])`\*\*|\*\*([a-e])\*\*|`([a-e])`)(?![\w`])")
+# What may come before a letter that opens an option: a line's start past list and quote
+# markers, or a sentence's or table cell's start, with the option's own bold.
+OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:;|·→]\**[ \t]+)(?:\*\*)?")
+# What follows such a letter: the option's text, not "or b" or "and b".
+STATES = re.compile(r"(?:\*\*)?[ \t]*(?:\*?\([^()\n]*\)\*?[ \t]*)?(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:()*]")
+# A letter a pick verb opens, as in "Reply `a` and I'll approve it" or "Picking **a** posts the reply".
+PICKS = re.compile(r"(?:.*[\s(]|)(?:reply|say|pick|picking|answer|choose|choosing|option)[ \t]+(?:\*\*)?", re.I)
+# A letter in parentheses after what it does, as in "approve now (**a**)".
+LABEL = re.compile(r".*\w[^\n(]*\((?:\*\*)?")
+SHUT = re.compile(r"(?:\*\*)?\)")
+THEN = re.compile(r"(?:\*\*)?[ \t]+and[ \t]+(?:I|I'll|I’ll|we)\b")
+# A letter that follows a defined one in the same line, as in "**a** builds it, or **b** stops here".
+NEXT_ONE = re.compile(r".*(?:,|\bor|\band)[ \t]*(?:\*\*)?")
+# A line that asks for a pick: a letter only in backticks elsewhere is code, as in "returns `a`".
+ASKS = re.compile(r"\b(?:say|pick|answer|choose|reply|option|call|waits?|decide|next|open)\b", re.I)
+# A letter the reply reports as already picked, as in "you picked `a`" or "I sent your **a**": it asks nothing.
+PICKED = re.compile(r".*\b(?:picked|said|chose|took|taking|resolved as|sent your|went with|approved|accepted|answered)[ \t]+(?:\*\*)?", re.I)
+STEP = re.compile(r"[ \t>]*(?:\d{1,9}[.)]|[-*+](?![ \t]+\*\*`?[a-e]`?\*\*))[ \t]")  # a step, not an option
+QUOTED = re.compile(r"\"[^\"\n]*\s[^\"\n]*\"|“[^”\n]*\s[^”\n]*”|‘[^’\n]*\s[^’\n]*’"
+                    r"|(?<!\w)'[^'\n]*\s[^'\n]*'(?!\w)")  # a quote of words, not a quoted "**a**"
+
+
+def unquoted(text, keep):
+    """text with each quote of words, and each code span of words, replaced by keep(span)."""
+    text = re.sub(r"`[^`\n]+`", lambda span: keep(span.group(0)) if " " in span.group(0) else span.group(0), text)
+    return QUOTED.sub(lambda quote: keep(quote.group(0)), text)
+# Steps or options the reply says live in an earlier one, as in "the 5 steps in my last reply"
+# or "the earlier App steps". Not "earlier" alone: "I got b wrong earlier" points nowhere.
+EARLIER = re.compile(r"\b(?:steps?|options?|instructions?)\b[^.\n]{0,40}?\b(?:in|from|of)\s+(?:my|the|your|our)\s+"
+                     r"(?:last|earlier|previous|prior)\s+(?:reply|replies|message|card|turn|answer)\b"
+                     r"|\b(?:earlier|previous|prior)\s+(?:[\w'’-]+\s+){0,2}?(?:steps|options|instructions)\b"
+                     r"|\b(?:steps?|options?|instructions?)\b[^.\n]{0,40}?\b(?:I|we)\s+(?:sent|gave|wrote|listed|shared)"
+                     r"(?:\s+you)?\s+(?:earlier|before)\b"
+                     r"|\bsame as (?:before|earlier|last time)\b", re.I)
+
+
+def unanswerable(reply):
+    """Why the reader can't answer the reply from what it shows, or None: it asks for an
+    option letter its visible Next list doesn't define, or points to options or steps in an
+    earlier reply. Reads the text outside code fences and the turn block, never the block."""
+    import turn_block
+    lines = reply.splitlines()
+    marks, sure = turn_block.scan(lines)  # not sure: a fence a list item may hold, so letters go unread
+    shown = "\n".join(line for line, fenced in zip(lines, marks) if not fenced)
+    shown = re.sub(r"<!--.*?(?:-->|\Z)", "", shown, flags=re.S)  # the turn block, or any comment, shows nothing
+    asked, defined = [], set()
+    for line in shown.splitlines():
+        line = unquoted(line, lambda quote: '"' + "q" * (len(quote) - 2) + '"')  # text, not letters
+        previous = False  # whether the line's last letter was defined
+        for found in LETTER.finditer(line) if sure else ():
+            letter = next(group for group in found.groups() if group)
+            before = line[:found.start()]
+            if PICKED.fullmatch(before):
+                continue
+            if letter not in asked and not (found.group(3) and not ASKS.search(line)):
+                asked.append(letter)
+            states = STATES.match(line, found.end())
+            previous = bool(states and (OPENS.fullmatch(before) or PICKS.fullmatch(before)
+                                        or previous and NEXT_ONE.fullmatch(before))
+                            or PICKS.fullmatch(before) and THEN.match(line, found.end())
+                            or LABEL.fullmatch(before) and SHUT.match(line, found.end()))
+            if previous:
+                defined.add(letter)
+    reasons = []
+    if missing := [letter for letter in asked if letter not in defined]:
+        does = "it does" if len(missing) == 1 else "each does"
+        reasons.append(f"this reply asks for {' and '.join(f'`{letter}`' for letter in missing)}, but nothing it shows "
+                       f"says what {does}, so the reader can't answer. List each option the reply asks for in its Next "
+                       "options, with what it does")
+    visible = unquoted(shown, lambda quote: "").splitlines()
+    pointer = next((found for at, line in enumerate(visible) for found in [EARLIER.search(line)]
+                    if found and not (line.rstrip().endswith(":")
+                                      and STEP.match(next((after for after in visible[at + 1:] if after.strip()), "")))
+                    and (LETTER.search(line) or not found.group(0).lower().startswith("same as"))), None)
+    if pointer:
+        reasons.append(f"this reply points to \"{pointer.group(0)}\", which the reader may no longer see. Write those "
+                       "steps or options out in this reply")
+    return ". ".join(reason[0].upper() + reason[1:] if at else reason for at, reason in enumerate(reasons)) or None
+
+
 def sent_back(path):
     """Whether card-check already sent this turn's reply back: the transcript at path has a
     Stop hook_success record of card-check.py with output since the last Stop that ended a
@@ -243,9 +343,16 @@ def main():
             return
         import turn_block
         reply = event.get("last_assistant_message") or ""
+    except Exception:
+        return
+    try:
+        blind = unanswerable(reply)  # what the reader sees, so it runs with no block or a malformed one
+    except Exception:
+        blind = None
+    try:
         found = refused(turn_block.options(reply))
     except Exception:  # Malformed included: no block, or no options to read, nothing to check
-        return
+        found = []
     try:
         turn = turn_block.parse(reply)  # wake_gap reads state and eta, which options doesn't
     except turn_block.Malformed:
@@ -257,15 +364,20 @@ def main():
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None
     # A running block that parses carries no options, and one that doesn't gets no wake check, so at most
-    # one of these holds.
+    # one of these holds; an unanswerable reply joins either.
+    upper = lambda reason: reason[0].upper() + reason[1:]
+    reasons, steps = [upper(blind)] if blind else [], ["with what it asks for shown"] if blind else []
     if gap:
-        reason, step = gap[0].upper() + gap[1:], "with the wake set"
+        reasons.append(upper(gap))
+        steps.append("with the wake set")
     elif found:
-        reason = "; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '
-                           f"user picked it" for option in found) + f". Write it as {SHAPE}"
-        step = "with only that option reworded, or its other steps split into their own option"
-    else:
+        reasons.append("; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if '
+                                 f"the user picked it" for option in found) + f". Write it as {SHAPE}")
+        steps.append("with only that option reworded, or its other steps split into their own option")
+    if not reasons:
         return
+    reason = ". ".join(reasons)
+    step = ", and ".join(steps)
     # Claude Code continues a Stop through additionalContext, shown as "Stop hook feedback";
     # its docs keep "block" for errors.
     print(json.dumps({"hookSpecificOutput": {"hookEventName": "Stop", "additionalContext": (

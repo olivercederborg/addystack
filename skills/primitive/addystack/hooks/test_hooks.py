@@ -5331,6 +5331,131 @@ class CardCheck(unittest.TestCase):
         self.assertIn(f'option a, "{text}", is stop:push', json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
 
+class CardCheckUnanswerable(unittest.TestCase):
+    """card-check.py on a reply that asks for what it doesn't show: an option letter its visible
+    options don't define, or steps or options in an earlier reply."""
+
+    # A coordinator's re-asked call, Nov 27, 2026 at 11:30, cut down and names replaced: no option
+    # list defines a or b, and a's steps live in an earlier reply.
+    REASKED = ("⏳ **2 issues in progress, both in one worker thread. Your App call is the only thing blocking it.**\n\n"
+               "**In progress**\n1. **[DEV-12, The bot reviews ready PRs without a label](https://linear.app/acme/issue/DEV-12)**: "
+               "sandbox tests 1 to 4 pass. Test 7 passes after a bug fix; its last case is running now.\n"
+               "   - Tests 5 and 6 wait on your App call, **a** or **b**.\n\n"
+               "| Decide | The App's comment access, **a** or **b**. It blocks tests 5 and 6. |\n|---|---|\n\n---\n\n"
+               "Next: say **a** or **b** for the App's comment access. With **a**, follow the earlier App steps, "
+               "then say \"app done\".\n")
+    STEPS = ("1. Open the App's settings on GitHub.\n2. Under Permissions, set Issues to Read-only.\n"
+             "3. Under Subscribe to events, tick Issue comment and Pull request review comment.\n4. Save.\n")
+    REASKED_FIXED = REASKED.split("Next:")[0] + (
+        "**Next**\n\n- **`a` → add Issues read and both comment events**, then say \"app done\":\n\n" + STEPS +
+        "\n- `b` → add only the pull request review comment event\n")
+    # Its re-ask six minutes later, cut down: the Next list defines a and b, but a's steps are in
+    # the reply before. "Wrong earlier" and "With **b**," point nowhere and pass.
+    POINTED = ("🟡 **Review comments alone miss the Conversation tab. Also, I got option b wrong earlier.**\n\n"
+               "**Correction.** I said that with **b**, authors could resume a paused review with \"Re-request review\". "
+               "With **b**, the `@acme-reviewer review` mention works only on a code line.\n\n"
+               "| Pick | **a**: add Issues read plus both comment events. |\n|---|---|\n"
+               "| Why | Writing at the bottom of the Conversation tab is the normal way to talk to a reviewer. |\n\n---\n\n"
+               "Next:\n- **a** Add Issues read and both comment events, following the 5 steps in my last reply, "
+               "then say \"app done\".\n- **b** Add only the pull request review comment event.\n")
+    POINTED_FIXED = POINTED.replace("following the 5 steps in my last reply, then say \"app done\".",
+                                    "then say \"app done\":\n\n" + STEPS)
+    # Nov 26, 2026 at 12:02, cut down: a and b defined inline in a still-open line, with no Next list.
+    INLINE = ("✅ **The channel is `#decision-review`. The rule, DEV-40 and the plan all use it now.**\n\n---\n\n"
+              "🟡 Still open: **should the REVIEWERS draft use the approach that matched 6 of your 7 picks?** **a** builds "
+              "it, pins operations-api and authorization, and redraws #46. **b** builds it without the cap and pins all "
+              "7 of your picks.\n")
+    CARD = ("🟡 **Merge #12 now that review and verify-work are done?**\n\n---\n\n**Next**\n\n"
+            "- **`a` → merge #12** · *recommended*\n- `b` → no: hold it until the release\n\n")
+
+    def reason(self, reply, options=(("decision", "merge #12"), ("decision", "no: hold it")), active=False):
+        if options is not None:
+            reply += block({"state": "stop", "needs": [{"id": 1, "kind": "decide", "name": "the App's comment access"}],
+                            "options": [{"key": key, "class": cls, "text": text} for key, (cls, text) in zip("ab", options)]})
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "stop_hook_active": active})).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    def test_sends_back_the_real_re_asks_and_passes_them_written_out(self):
+        reason = self.reason(self.REASKED)
+        self.assertIn("This reply asks for `a` and `b`, but nothing it shows says what each does", reason)
+        self.assertIn('points to "earlier App steps"', reason)
+        self.assertIn("Send your whole reply again with what it asks for shown", reason)
+        self.assertIsNone(self.reason(self.REASKED, active=True))  # once per stop
+        reason = self.reason(self.POINTED)
+        self.assertIn('points to "steps in my last reply"', reason)
+        self.assertNotIn("This reply asks for", reason)
+        for fixed in (self.REASKED_FIXED, self.POINTED_FIXED):
+            with self.subTest(fixed=fixed):
+                self.assertIsNone(self.reason(fixed))
+
+    def test_passes_options_the_reply_shows(self):
+        for reply in (self.INLINE, self.CARD, "Either works. I'd keep a or b as they are, and the earlier fix stands.\n",
+                      self.CARD + "With **b**, #12 waits for the release.\n",
+                      # A letter in a code block is an example.
+                      self.CARD.replace("- `b` → no: hold it until the release\n", "") +
+                      "```text\nNext: say **b** to hold it\n```\n",
+                      # Shapes from 6,231 real replies (Nov 20–27, 2026) that each define their letters.
+                      "Next: `a` merge #12 · `b` leave it open.\n",
+                      "**Next**: `a`: tell me \"merged\". `b`: #12 stays a draft.\n",
+                      "Reply `a` and I'll approve it. Reply `b` and I'll post the comments only.\n",
+                      "- **a** Start a worker for the fix, or **b** ship without it.\n",
+                      "If you approve now (**a**), the push dismisses it; holding (**b**) keeps it.\n",
+                      "Option **a** removes the step. Option **b** keeps it.\n",
+                      "Next: **a**, read the issue first. **b**, stop here.\n",
+                      "**Pick**: 1. **Routes** → `a` the three main routes.\n",
+                      # A pick reported as made, and a quote, ask nothing.
+                      "You picked `a`, so I posted the draft.\n",
+                      'The reply said "say **a** or **b**" with no options.\n',
+                      # Review round 1: code, "and", a fence in a list item, and steps written out below.
+                      "The function returns `a` when the cache is empty.\n",
+                      "Next: **a** merges #12 and **b** keeps it open.\n",
+                      "1. Run:\n    ```text\n    Use `a` as a variable\n    ```\n\nDone.\n",
+                      "Follow the steps in my last reply:\n1. Open settings.\n2. Save.\n",
+                      # Review round 2: a statement, quoted option text, and a pick reported as made.
+                      "The tests pass; behavior is the same as before.\n",
+                      'Next:\n- **a**: "Approve the merge."\n- **b**: "Keep it open."\n',
+                      "You approved **a** yesterday. The fix is complete.\n",
+                      # Review round 3: steps after a blank line, and a quoted or code-formatted example.
+                      "Follow the steps in my last reply:\n\n1. Open settings.\n2. Save.\n",
+                      "The old reply said 'say **a** or **b**' with no options; the fix now includes both.\n",
+                      "The phrase `follow the earlier App steps` was removed from the prompt.\n",
+                      # verify-work: a badge between the letter and what it does.
+                      "Next:\n- **a** (recommended): approve #12.\n- **b**: hold it.\n",
+                      "Next:\n- **a** *(my pick)*: approve #12.\n- **b**: hold it.\n"):
+            with self.subTest(reply=reply):
+                self.assertIsNone(self.reason(reply, options=(("decision", "merge #12"),)))
+
+    def test_sends_back_a_standing_call_named_by_letter(self):
+        # Real shapes: an open call carried in later replies by its letters alone.
+        for reply in ("#12's approval still waits on your **a** or **b**.\n",
+                      "Still open: choose `a` or `b` from two replies back.\n",
+                      "Reply with “**a**” or “**b**” for the App call.\n",
+                      "Next: choose **a** (recommended) or **b** (alternative) for the App call.\n"):
+            with self.subTest(reply=reply):
+                self.assertIn("asks for `a` and `b`", self.reason(reply, options=None))
+
+    def test_sends_back_steps_and_options_left_in_an_earlier_reply(self):
+        for reply in ("Follow the 5 steps I sent you earlier, then say done.\n",
+                      "Next:\n- **a**: same as before.\n- **b**: same as before.\n",
+                      "Next:\n- **a** Follow the steps in my last reply:\n- **b** Hold off.\n"):
+            with self.subTest(reply=reply):
+                self.assertIn("which the reader may no longer see", self.reason(reply, options=None))
+
+    def test_reads_what_the_reader_sees_not_the_block(self):
+        # No turn block at all, and a block that defines b while the visible Next list doesn't.
+        self.assertIn("asks for `b`", self.reason("Merged #12. Still open: your revert call, `b`.\n", options=None))
+        self.assertIn("asks for `b`", self.reason(self.CARD.replace("- `b` → no: hold it until the release\n", "") +
+                                                  "Or say **b**.\n"))
+
+    def test_joins_a_refused_push_into_one_send_back(self):
+        push = "push #12 (this will dismiss the reviewer's approval)"
+        reason = self.reason("Push?\n\nSay **a** or **c**.\n", options=(("stop:push", push), ("decision", "no: hold it")))
+        self.assertIn("asks for `a` and `c`", reason)
+        self.assertIn(f'option a, "{push}", is stop:push', reason)
+        self.assertIn("with what it asks for shown, and with only that option reworded", reason)
+
+
 class CardCheckWakes(unittest.TestCase):
     """card-check.py on a `running` reply, against T3's record of what will wake its thread."""
     THREAD = "thread-coordinator"
