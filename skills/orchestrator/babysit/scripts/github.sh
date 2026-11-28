@@ -125,7 +125,7 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
             then (["check", .name, (.checkSuite.app.databaseId // "" | tostring),
                   (if .checkSuite.workflowRun then "\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)" else "" end),
                   (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")),
-                 (if .checkSuite.app.slug then ["app", (.checkSuite.app.databaseId | tostring), "\(.checkSuite.app.slug)[bot]"] | join("\t") else empty end)
+                 (if .checkSuite.app.slug then ["app", (.checkSuite.app.databaseId | tostring), .checkSuite.app.slug] | join("\t") else empty end)
             else ["status", .context, (.creator.login // ""), "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
       if grep -q 'Resource not accessible by integration' "$err"; then
         echo "github.sh required: this token can't read the checks' workflow runs; a GitHub App needs the Actions: read permission" >&2
@@ -134,7 +134,8 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     fi
     rm -f "$err"
     # Each app's id and its bot's login, from its check runs on the head: a commit status names
-    # the account that set it, never an app id, and an app sets statuses as its bot.
+    # the account that set it, never an app id. An app sets statuses as its bot, whose login in
+    # GraphQL is the app's slug, with no [bot] suffix.
     bots=$(printf '%s\n' "$checks" | awk -F'\t' '$1 == "app" { print $2 FS $3 }' | sort -u)
     checks=$(printf '%s\n' "$checks" | awk -F'\t' '$1 != "app"')
     # Each check counts by its newest run, by creation order, which a missing or equal start time

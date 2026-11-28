@@ -24,7 +24,8 @@ elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
     # The rollup GitHub returns, run through the script's own --jq. A scenario row is
     # [name, bucket, app id, order, workflow id, event, suite id, type] and may stop after any
     # field; a check from no workflow has none, and the suite id isn't read. A status's "app id"
-    # is the login of the account that set it. App 15368 is GitHub Actions, slug github-actions.
+    # is the login GraphQL gives the account that set it, which for an app's bot is its slug with
+    # no [bot] suffix. App 15368 is GitHub Actions, slug github-actions.
     run_state = {"pass": ("COMPLETED", "SUCCESS"), "fail": ("COMPLETED", "FAILURE"), "cancel": ("COMPLETED", "CANCELLED"),
                  "skipping": ("COMPLETED", "SKIPPED"), "pending": ("IN_PROGRESS", None)}
     status_state = {"pass": "SUCCESS", "fail": "FAILURE", "pending": "PENDING"}
@@ -121,7 +122,7 @@ class Required(unittest.TestCase):
         # commit status another account set, isn't that check.
         for rule in ({"required": ["ci\t15368"]}, {"classic": ["ci\t15368"]}):
             with self.subTest(rule):
-                other = [["ci", "pass", "999", 11], ["ci", "pass", "app-999[bot]", 0, "", "", 1, "status"],
+                other = [["ci", "pass", "999", 11], ["ci", "pass", "app-999", 0, "", "", 1, "status"],
                          ["ci", "pass", "", 0, "", "", 1, "status"]]
                 self.assertEqual(self.required(draft=False, checks=other, **rule), "ci\tnot reported\nrequired: not all passed\n")
                 mixed = [["ci", "fail", "15368", 10], ["ci", "pass", "999", 11]]
@@ -131,17 +132,17 @@ class Required(unittest.TestCase):
 
     def test_a_status_set_by_the_required_apps_bot_counts(self):
         # A required "Requested reviews" from GitHub Actions (15368) that a workflow posts as a commit
-        # status, set by github-actions[bot]. Another of that app's check runs on the head names its bot.
+        # status, set by its bot. Another of that app's check runs on the head names the bot.
         lint = ["Lint", "pass", "15368", 10, "CI", "pull_request", 1]
         for rule in ({"required": ["Requested reviews\t15368"]}, {"classic": ["Requested reviews\t15368"]}):
             with self.subTest(rule):
                 for bucket, state, verdict in (("pass", "pass", "all passed"), ("pending", "pending", "not all passed"),
                                                ("fail", "fail", "not all passed")):
-                    status = ["Requested reviews", bucket, "github-actions[bot]", 0, "", "", 1, "status"]
+                    status = ["Requested reviews", bucket, "github-actions", 0, "", "", 1, "status"]
                     self.assertEqual(self.required(draft=False, checks=[lint, status], **rule),
                                      f"Requested reviews\t{state}\nrequired: {verdict}\n")
         # No check run of the app's on the head names its bot, so its status can't be told apart.
-        status = ["Requested reviews", "pass", "github-actions[bot]", 0, "", "", 1, "status"]
+        status = ["Requested reviews", "pass", "github-actions", 0, "", "", 1, "status"]
         self.assertEqual(self.required(draft=False, required=["Requested reviews\t15368"], checks=[status]),
                          "Requested reviews\tnot reported\nrequired: not all passed\n")
 
@@ -149,10 +150,10 @@ class Required(unittest.TestCase):
         # develop's rule: check runs and a status, all from GitHub Actions; the worst counts per context.
         required = ["Lint\t15368", "Vitest\t15368", "Requested reviews\t15368"]
         runs = [["Lint", "pass", "15368", 10, "CI", "pull_request", 1], ["Vitest", "pass", "15368", 11, "Vitest", "pull_request", 2]]
-        passed = ["Requested reviews", "pass", "github-actions[bot]", 0, "", "", 1, "status"]
+        passed = ["Requested reviews", "pass", "github-actions", 0, "", "", 1, "status"]
         self.assertEqual(self.required(draft=False, required=required, checks=[*runs, passed]),
                          "Lint\tpass\nRequested reviews\tpass\nVitest\tpass\nrequired: all passed\n")
-        waiting = ["Requested reviews", "pending", "github-actions[bot]", 0, "", "", 1, "status"]
+        waiting = ["Requested reviews", "pending", "github-actions", 0, "", "", 1, "status"]
         self.assertEqual(self.required(draft=False, required=required, checks=[*runs, waiting]),
                          "Lint\tpass\nRequested reviews\tpending\nVitest\tpass\nrequired: not all passed\n")
         # A check run and a status of one name: the worst of the two.
