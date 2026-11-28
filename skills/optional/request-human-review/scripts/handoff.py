@@ -13,10 +13,10 @@ PR's author runs it with their go, and may name the reviewer:
     handoff.py N GATES.json [--reviewer LOGIN]... [--with-suggested] --disclosure LINE --send
 
 `--send` posts the comment, then requests. It never requests the PR's author. A handoff of
-the same decisions as the signed-in login's own last one posts no comment, and still requests
-whoever the pick needs, so a run that commented and then failed to request finishes on a
-retry. Someone else's handoff, such
-as the author's, never stands in for this login's own. A base without `.github/REVIEWERS`
+the same decisions as the signed-in login's own last one posts no comment unless someone
+holds an area they didn't before, and still requests whoever the pick needs, so a run that
+commented and then failed to request finishes on a retry. Someone else's handoff, such as
+the author's, never stands in for this login's own. A base without `.github/REVIEWERS`
 hands off nothing.
 
 The block, the comment's last lines; a field added later keeps v1, a renamed or removed one
@@ -136,15 +136,17 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         sorted(decision['key'] for decision in last['decisions'])
     named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
-    # An area newly kept by someone already asked is posted too, so the next run's `_held` has it.
-    moved = [reviewer for reviewer in kept if any(not reviewers.has([held.get(name, '')], reviewer['login'])
-                                                  for name in reviewer['domains'])]
+    # Who holds which area, against its own last handoff: any change is posted, so the next
+    # run's `_held` reads it, even when nobody new is asked.
+    def holds(records):
+        return {(reviewer['login'].lower(), name) for reviewer in records for name in reviewer['domains'] if name}
+    moved = holds(request + kept) - (holds(last['reviewers']) if same else set())
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:
         why = 'decisions changed' if last else 'first handoff'
     else:
-        why = 'new reviewer' if new else 'kept areas changed' if moved else 'nothing new'
+        why = 'new reviewer' if new else 'areas changed' if moved else 'nothing new'
     result = {'post': not same or bool(new) or bool(moved), 'why': why, 'head': facts['head'], 'decisions': placed,
               'request': request, 'suggested': suggested, 'uncovered': uncovered}
     block = {'pr': number, 'base': facts['base'], 'head': facts['head'], 'by': facts['viewer'],

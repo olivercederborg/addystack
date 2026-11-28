@@ -123,10 +123,25 @@ class Plan(unittest.TestCase):
         initial = handoff.read(self.plan(judged, facts)['comment'])
         # zoe's request ended; amy, still asked, now takes pay: that's posted, so it's remembered.
         second = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial]})
-        self.assertEqual((second['post'], second['why'], second['request']), (True, 'kept areas changed', []))
+        self.assertEqual((second['post'], second['why'], second['request']), (True, 'areas changed', []))
         third = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial, handoff.read(second['comment'])],
                                    'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
         self.assertEqual((third['post'], third['request']), (False, []))
+
+    def test_someone_already_named_who_now_holds_more_areas_is_posted(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
+        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
+        block = handoff.read(self.plan(judged, facts)['comment'])
+        # Both requests ended and bob is busier: amy, named before for pay, now takes ops too.
+        busy = {**known, 'bob': {'asks': 4, 'share': 0.0}}
+        second = self.plan(judged, {**facts, 'engaged': [], 'handoffs': [block], 'standing': busy})
+        self.assertEqual((second['post'], second['why']), (True, 'areas changed'))
+        third = self.plan(judged, {**facts, 'engaged': ['amy'], 'handoffs': [block, handoff.read(second['comment'])],
+                                   'standing': busy})
+        self.assertEqual(third['request'], [])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
