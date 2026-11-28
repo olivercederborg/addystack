@@ -37,6 +37,7 @@ SKILL_SUITES = {
     "skills/orchestrator/coordinator": [],
     "skills/primitive/correct": [],
     "skills/optional/request-human-review": [],
+    "skills/optional/review-decisions": [],
     "skills/primitive/open-pr": [],
     "skills/primitive/review-loop": ["skills/primitive/review-loop/references/review-lenses.md"],
     # github.sh in shared/scripts runs the tool's hooks/verdicts.py, as it has no copy beside it.
@@ -312,6 +313,12 @@ class Skills:
     async def request_human_review_tests(self, kit: skill_source("skills/optional/request-human-review")) -> None:
         """skills/optional/request-human-review/scripts/test_*.py"""
         await skill_tests(kit, "skills/optional/request-human-review")
+
+    @function
+    @check
+    async def review_decisions_tests(self, kit: skill_source("skills/optional/review-decisions")) -> None:
+        """skills/optional/review-decisions/scripts/test_*.py"""
+        await skill_tests(kit, "skills/optional/review-decisions")
 
     @function
     @check

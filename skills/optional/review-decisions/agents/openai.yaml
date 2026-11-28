@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review decisions"
+  short_description: "Review a PR's decisions that need a human, and post the review"
+  default_prompt: "Use $review-decisions to review the decisions on this PR that need a human."
+policy:
+  allow_implicit_invocation: false

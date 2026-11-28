@@ -21,6 +21,7 @@
     "request-human-review": "optional",
     "review-artifact": "optional",
     "review-code": "primitive",
+    "review-decisions": "optional",
     "review-loop": "primitive",
     "scope-grill": "primitive",
     "show-me-your-work": "primitive",
