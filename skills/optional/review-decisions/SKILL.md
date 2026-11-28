@@ -72,9 +72,10 @@ the reviewer.
      no spec settled). Read the Decisions table first, then the diff and the issue.
 - **The PR's artifacts**: the body's **Decisions** table (each row's alternative and
   assumption), and a linked review artifact, whose `/llms.md` you read.
-- **A current code review**: a submitted review at the head, by an App or by someone
-  other than the reviewer through `review-code` (its body or comments open with the agent
-  disclosure):
+- **A current code review**: a submitted review at the head, by an App or through
+  `review-code` (its body or comments open with the agent disclosure), the reviewer's own
+  included, and never one this skill posted (its summary ends with `<!-- review-decisions
+  -->`):
 
   ```sh
   gh api "repos/{owner}/{repo}/pulls/<PR>/reviews" --paginate \
@@ -143,7 +144,8 @@ Draft from the reviewer's calls, following the [comment style](references/commen
 - A **change** or **question** on a decision becomes an inline comment at its `code`
   line, or a reply when a thread on that decision exists (its `replyTo`).
 - The **summary** names each decision and its call, so the author knows what's settled:
-  `D1, D3: agreed. D2: see the comment.`
+  `D1, D3: agreed. D2: see the comment.` It ends with `<!-- review-decisions -->`, which
+  tells a later run this review isn't a code review.
 - Every body opens with the [agent disclosure](references/disclosure.md); with `--slack`,
   its form without a name.
 - The **verdict** is one event: **approve** when the reviewer agreed to every decision and
