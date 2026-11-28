@@ -53,13 +53,16 @@ the reviewer.
      gh api "repos/{owner}/{repo}/issues/<PR>/comments" --paginate --jq '.[]
        | select(.body | contains("<!-- addystack-handoff:v1\n"))
        | {by: .user.login, app: (.user.type == "Bot"), url: .html_url,
-          handoff: (.body | [match("<!-- addystack-handoff:v1\n([^\n]*)\n-->"; "g")] | last | .captures[0].string | fromjson)}'
+          handoff: (.body | [match("<!-- addystack-handoff:v1\n([^\n]*)\n-->"; "g")] | last | .captures[0].string
+            | try fromjson catch null)}
+       | select(.handoff != null)'
      ```
 
      Its `decisions` each hold `id` (`D<n>` or null), `gate`, `decision`, `ask` (the
      question the person answers), `why`, `code` (`path:line`), and `domain`. Its
      `reviewers` lists who was asked, each with the `domains` they cover, and `head` is
-     the commit it judged.
+     the commit it judged. A comment whose block doesn't parse is skipped, never the
+     whole scan.
   2. **The App's review**: the latest review by an App whose body lists **Needs a
      human**; each item there is a decision.
   3. **Neither**: find them yourself with `request-human-review`'s four gates (its **The
