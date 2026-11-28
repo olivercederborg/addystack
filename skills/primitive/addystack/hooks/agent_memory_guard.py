@@ -787,11 +787,11 @@ def settings():
 class Governor:
     """Every check-queue decision and side effect: units, the cap, the CPU gate, tick
     order, the hold limit, signals, QUEUE, and its log lines. Each tick it drops finished
-    units, resumes held ones oldest first, admits new units only when none wait, then
-    kills a unit held HOLD_SECONDS with the queue still full. A unit is written to QUEUE
-    before it's stopped, and only a unit first seen within NEW_UNIT_SECONDS of its start,
-    after the governor started or was re-enabled, is ever held. Memory and CPU rules in
-    tick() still run, and win."""
+    units, counts new test runs, resumes held ones oldest first, admits new units only when
+    none wait, then kills a unit held HOLD_SECONDS with the queue still full. A unit is
+    written to QUEUE before it's stopped, and only a unit first seen within NEW_UNIT_SECONDS
+    of its start, after the governor started or was re-enabled, is ever held. Memory and CPU
+    rules in tick() still run, and win."""
 
     def __init__(self, settings=settings, state=QUEUE, send=os.kill, current=identity,
                  record=record, notify=notify, wall=time.time):
@@ -885,31 +885,38 @@ class Governor:
                     self._resume(top, units, now, wall, "its new members couldn't be saved")
                     continue
                 signal_all(joined, signal.SIGSTOP, self.send, self.current)
-        # 3. Resume held units, oldest first, while there's room.
-        while self.held and self._room(config, now):
-            self._resume(next(iter(self.held)), units, now, wall, "a slot freed")
-        # 4. Admit new units only when none wait; hold the rest.
         new = [unit for top, unit in units.items() if top not in self.running and top not in self.held]
         tops = {unit.top: next(proc for proc in unit.members if proc.ident == unit.top) for unit in new}
-        for unit in sorted(new, key=lambda unit: tops[unit.top].start):
-            top = tops[unit.top]
+
+        def fresh(top):
             # A shell that runs setup, then execs its checker (`zsh -c "bun install && tsc"`)
             # keeps its start time, so an exec seen since the last tick also makes it new.
             execed = self.versions.get(top.ident, top.version) != top.version
-            fresh = (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS) or execed
-            runner = checker(top.argv) in TEST_RUNNERS
-            holdable = fresh and not runner and self._attended(unit.top, commands[unit.head], agents)
+            return (top.start >= self.started and wall - top.start <= NEW_UNIT_SECONDS) or execed
+
+        # 3. Count new test runs first: they're never held, so a check resumed or admitted
+        # in this scan must find them running.
+        for unit in [unit for unit in new if checker(tops[unit.top].argv) in TEST_RUNNERS]:
+            self._run(unit.top, unit.members, now, wall)
+            if fresh(tops[unit.top]):
+                self.last_admit = now  # a new run: the gate reads it before the next admission
+            new.remove(unit)
+        # 4. Resume held units, oldest first, while there's room.
+        while self.held and self._room(config, now):
+            self._resume(next(iter(self.held)), units, now, wall, "a slot freed")
+        # 5. Admit new units only when none wait; hold the rest.
+        for unit in sorted(new, key=lambda unit: tops[unit.top].start):
+            top = tops[unit.top]
+            holdable = fresh(top) and self._attended(unit.top, commands[unit.head], agents)
             if not holdable:
                 self._run(unit.top, unit.members, now, wall)  # already running: never stopped
-                if fresh and runner:
-                    self.last_admit = now  # a new run: the gate reads it before the next admission
             elif not self.held and self._room(config, now):
                 self._run(unit.top, unit.members, now, wall)
                 self.last_admit = now
             else:
                 self._hold(owners, unit, commands[unit.head], now, wall)
         self.versions = {proc.ident: proc.version for members in commands.values() for proc in members}
-        # 5. Kill a unit held too long while the queue is still full. One held only by the
+        # 6. Kill a unit held too long while the queue is still full. One held only by the
         # admission spacing gets its turn within GATE_WINDOW_SECONDS instead.
         busy = self._busy(now)
         full = busy >= config.maxChecks or (bool(self.running) and self._cores(now) >= config.maxCores)

@@ -987,6 +987,29 @@ class CheckQueue(unittest.TestCase):
             q.tick(runner(cpu=int(i * 1e9)), q.check(2, 1000))
         self.assertEqual(q.stopped(), {221})
 
+    def vitest(self, q, n, born):
+        return [proc(200 + 10 * n, 100, argv=("/bin/zsh", "-lc", "vitest")),
+                proc(201 + 10 * n, 200 + 10 * n, argv=("node", "/x/node_modules/vitest/vitest.mjs", "run"), start=born)]
+
+    def test_a_held_check_stays_held_when_a_test_run_starts_as_a_slot_frees(self):
+        # Cap 1: check 1 runs, check 2 waits. Check 1 exits in the scan a vitest run starts:
+        # the run takes the slot, so check 2 keeps waiting.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(2, 1000))
+        q.tick(q.check(2, 1000), self.vitest(q, 5, q.wall))
+        self.assertEqual(q.stopped(), {221})
+        self.assertEqual(q.governor._busy(q.now - .5), 1)
+
+    def test_a_check_that_started_just_before_a_test_run_waits_for_it(self):
+        # A tsc and a vitest run first seen in one scan, the tsc started first: the run is
+        # counted first, so the tsc waits for the CPU gate's spacing.
+        q = Queue(self, cap=4, cores=1)
+        q.tick()
+        born = q.wall
+        q.tick(self.vitest(q, 5, born - .1), q.check(2, born - .2))
+        self.assertEqual(q.stopped(), {221})
+
     def test_checker_names_the_check(self):
         self.assertEqual(guard.checker(["node", "/x/node_modules/vitest/vitest.mjs", "run"]), "vitest")
         self.assertEqual(guard.checker(["/x/.bin/tsc", "--noEmit"]), "tsc")
