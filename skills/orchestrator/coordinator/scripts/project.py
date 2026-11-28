@@ -50,6 +50,7 @@ import base64
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
@@ -735,6 +736,23 @@ def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> st
                       "if it isn't in your context. Fix the line's row in project.md, or the tick repeats it hourly."])
 
 
+def _write_page(name: str, text: str) -> Path:
+    """Writes status's page as `<name>.html` in a temp folder only this user can open, and
+    returns its path. The file is replaced whole, so a link planted at its path is never
+    followed."""
+    folder = Path(tempfile.gettempdir()) / f"addystack-status-{os.getuid()}"
+    folder.mkdir(mode=0o700, exist_ok=True)
+    seen = os.lstat(folder)
+    if not stat.S_ISDIR(seen.st_mode) or seen.st_uid != os.getuid() or seen.st_mode & 0o077:
+        raise ProjectError(f"{folder} isn't a folder only this user can open: remove it, then run status again")
+    handle, tmp = tempfile.mkstemp(dir=folder, prefix=".status.", suffix=".html")  # mode 0600
+    with os.fdopen(handle, "w") as f:
+        f.write(text)
+    page = folder / f"{name}.html"
+    os.replace(tmp, page)
+    return page
+
+
 def _write(path: Path, text: str) -> None:
     handle, tmp = tempfile.mkstemp(dir=path.parent, prefix=".project.md.")
     with os.fdopen(handle, "w") as f:
@@ -863,9 +881,7 @@ def main(argv: list[str]) -> int:
         if args.command == "status":
             data = status_data(lines, live=not args.no_live)
             if args.html:
-                page = Path(tempfile.gettempdir()) / "addystack-status" / f"{args.dir.resolve().name}.html"
-                page.parent.mkdir(exist_ok=True)
-                page.write_text(status_html(data))
+                page = _write_page(args.dir.resolve().name, status_html(data))
             if args.json:
                 print(json.dumps({**data, "html_path": str(page)} if args.html else data, ensure_ascii=False, indent=2))
             else:

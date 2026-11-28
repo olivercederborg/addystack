@@ -580,6 +580,20 @@ class Status(unittest.TestCase):
         self.assertEqual(self.status(), {"project": "bare", "goal": "Ship.", "queue": None, "queue_unread": None,
                                          "groups": [], "unread_rows": [], "decisions": [], "phases": []})
 
+    def test_the_page_goes_to_a_private_folder_and_never_through_a_planted_link(self):
+        tmp, project_md = self.root / "tmp", self.dir / "project.md"
+        folder = tmp / f"addystack-status-{os.getuid()}"
+        folder.mkdir(parents=True, mode=0o700)
+        (folder / "export.html").symlink_to(project_md)
+        before = project_md.read_text()
+        with unittest.mock.patch.object(project.tempfile, "gettempdir", return_value=str(tmp)):
+            page = project._write_page("export", "<p>page</p>")
+            self.assertEqual((page, page.is_symlink(), page.read_text()), (folder / "export.html", False, "<p>page</p>"))
+            self.assertEqual((project_md.read_text(), page.stat().st_mode & 0o777), (before, 0o600))
+            folder.chmod(0o755)
+            with self.assertRaisesRegex(project.ProjectError, "only this user can open"):
+                project._write_page("export", "<p>page</p>")
+
     def test_html_bakes_the_data_into_one_block_that_round_trips_and_no_text_escapes_it(self):
         hostile = "</script><script>alert(1)</script> <!-- <script> x"
         self.write(**{"the user's go": hostile, "CSV first.": "<img src=x onerror=alert(1)>"})
