@@ -155,10 +155,13 @@ class Pulls(unittest.TestCase):
                  ("acme/tools#1 https://github.com/o/r/pull/4", ("acme/tools#1", "o/r#4")),
                  ("#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
                  ("#5 (stack #6301) · `fix-#12`", ("acme/box#5",)),  # a note and a branch name no PR
-                 # Review round 1: a link by its destination, and one repo whatever its case.
                  ("[Review fixes](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
                  ("[#109](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
                  ("Acme/Box#20 acme/box#21", ("acme/box#20", "acme/box#21")),
+                 ("acme/tools#109 → #110 → #122; #20 → #21", ("acme/tools#109", "acme/tools#110", "acme/tools#122",
+                                                         "acme/box#20", "acme/box#21")),  # a chain keeps its repo up to ;
+                 ("#20 → #21 onto #19, #22 blocked by #21", ("acme/box#20", "acme/box#21", "acme/box#19", "acme/box#22")),
+                 ("acme/tools#7 · #8", ("acme/tools#7", "acme/box#8")),  # only an arrow continues a chain
                  ('[#109](https://github.com/acme/tools/pull/109 "tools PR")', ("acme/tools#109",)),  # a titled link
                  ("[#109](https://github.com/acme/tools/pull/109 (tools PR))", ("acme/tools#109",)),
                  ("`https://github.com/acme/tools/pull/109` · `#20`", ("acme/tools#109", "acme/box#20")),
@@ -168,7 +171,7 @@ class Pulls(unittest.TestCase):
                 self.assertEqual(project_md.pulls(text, "acme/box"), project_md.Pulls(refs, ()))
 
     def test_a_ref_with_no_repo_to_resolve_against_is_unread(self):
-        cases = [("tools #109 → #110 (#108 merged)", "acme/box", ("acme/box#110",), ("tools #109",)),
+        cases = [("tools #109 → #110 (#108 merged)", "acme/box", (), ("tools #109", "#110")),  # #110 continues tools
                  ("web #20–#22", "acme/box", (), ("web #20–#22",)),
                  ("tools#4", "acme/box", (), ("tools#4",)),  # its owner is a guess
                  ("#7 and box#8", "", (), ("#7", "box#8")),
@@ -193,10 +196,12 @@ class WorkerPrs(Fixture, unittest.TestCase):
         # The real call: another repo's stack as `tools #109`, beside the checkout's own `box #20`.
         result = self.project("worker", "review-quality", "--pr", "tools #109 → #110 → #122 (#108 merged 5adcaad);"
                               " box #20 → #21 → #27 (#28 merged)", code=1)
-        self.assertEqual(result.stderr, "--pr names 'tools #109', 'box #20' with no repo to resolve it against: write"
+        self.assertEqual(result.stderr, "--pr names 'tools #109', '#110', '#122', 'box #20', '#21', '#27' with no repo to"
+                         " resolve it against: write"
                          " each as owner/repo#N, or as #N for a PR in acme/box, and give each repo's stack its own Workers row\n")
         result = self.project("worker", "review-quality", "--pr", "acme/tools#1 acme/box#2", code=1)
-        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): give each repo's stack its own Workers row",
+        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): a bare #N is acme/box's, so write another repo's PR"
+                      " as owner/repo#N, and give each repo's stack its own Workers row",
                       result.stderr)
         self.assertEqual(self.text(), self.before)
 

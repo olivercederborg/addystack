@@ -215,8 +215,8 @@ def worker(lines: list[str], slug: str, *, origin: str = "", **columns: str | No
             raise ProjectError(f"--pr names {', '.join(map(repr, found.unread))} with no repo to resolve it"
                                f" against: {fix}, and give each repo's stack its own Workers row")
         if len(repos := list(dict.fromkeys(ref.split("#")[0] for ref in found.refs))) > 1:
-            raise ProjectError(f"--pr names PRs in {len(repos)} repos ({', '.join(repos)}): give each repo's"
-                               " stack its own Workers row")
+            raise ProjectError(f"--pr names PRs in {len(repos)} repos ({', '.join(repos)}): a bare #N is {origin}'s,"
+                               " so write another repo's PR as owner/repo#N, and give each repo's stack its own Workers row")
     for value in [slug, *(v for v in columns.values() if v is not None)]:
         if "\n" in value or not value.strip():
             raise ProjectError(f"a cell is one non-empty line: {value!r}")
