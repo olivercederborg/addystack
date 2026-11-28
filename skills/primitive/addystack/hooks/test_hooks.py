@@ -2585,25 +2585,34 @@ class MergeGate(unittest.TestCase):
 
     def test_a_pick_after_quiet_wakes_answers_the_card_on_screen(self):
         # R204: a wake that changes nothing for the user is its turn block alone, so their key
-        # answers the card above it, and only while each quiet block offers that card's options.
+        # answers the card above it, back past messages T3 says an agent sent, and only while
+        # each quiet block offers that card's options (Codex review of r204/quiet, round 1).
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]
         quiet = lambda options: claude_wrote(block({"state": "stop", "needs": [{"id": 1, "kind": "review",
                                                                                "name": "merge #12"}],
                                                      "options": options, "project": "suite-audit"}))
+        notice = self.WAKE.replace("r39", "r40")
+        folder = tempfile.mkdtemp(dir=self.dir)
+        self.t3_sent(folder, [(self.WAKE, "agent"), (notice, "agent"), ("hold on", "user"),
+                              ("Caveat: don't merge yet", "user"), ("fix it", "user"), ("a", "user")])
+        reason = lambda said: self.reason("gh pr merge 12", said=said, session_id=ReplyShapeContext.SESSION)
         self.scenario(prs={12: None})
         self.verify(12)
-        for said in [(self.card(merge), self.WAKE, quiet(merge), "a"),
-                     (self.card(merge), self.WAKE, quiet(merge), self.WAKE, quiet(merge), "a")]:
-            with self.subTest(wakes=len(said) // 2 - 1):
-                self.assertIsNone(self.reason("gh pr merge 12", said=said))
+        for name, said in {"one wake": (self.card(merge), self.WAKE, quiet(merge), "a"),
+                           "two wakes": (self.card(merge), self.WAKE, quiet(merge), notice, quiet(merge), "a"),
+                           "a notice mid-wake": (self.card(merge), self.WAKE, claude_wrote("Reading the result."),
+                                                 notice, quiet(merge), "a")}.items():
+            with self.subTest(case=name):
+                self.assertIsNone(reason(said))
         other = [{"key": "a", "class": "stop:merge", "text": "merge #12 and #13"}]
         for name, said in {"options the card doesn't show": (self.card(merge), self.WAKE, quiet(other), "a"),
                            "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
+                           "a typed message that reads as untyped": (self.card(merge), "Caveat: don't merge yet",
+                                                                     quiet(merge), "a"),
                            "no card above it": ("fix it", quiet(merge), "a")}.items():
             with self.subTest(case=name):
-                reason = self.reason("gh pr merge 12", said=said)
                 self.assertIn("picks nothing: no reply of yours came before it, or one with only its turn block "
-                              "offered options the card above it doesn't", reason)
+                              "offered options the card above it doesn't", reason(said))
 
     def test_an_agents_pick_after_a_wake_never_counts(self):
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]

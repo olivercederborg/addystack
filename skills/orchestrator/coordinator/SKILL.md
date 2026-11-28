@@ -185,12 +185,12 @@ Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>" 
 "<worker> <thread link>"`, and `--batch <kind>` (`post`, `merge:<stack>`) for a call
 with no ⚠️ row a [batch card](references/views.md#batch-card) can share. It orders what
 waited a day under the priority, its items, then stuck runs, calls, and Do items, oldest
-first. A reply that asks ends on the top item and its batch: the
+first. While it holds one, a reply with text ends on the top item and its batch: the
 [decision card](references/views.md#decision-card-example) the first time, then its
-question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
-keep the v1 export · export-v2`, and the needs that lead the turn block's. A wake that
-changes nothing the user must do or know is quiet: the turn block alone, the card on
-screen's or `running`, since a ⏳ line is for a finish, a failure, or an eta off by half.
+question, strip, and Next. `queue show` prints the strip and the needs that lead the
+turn block's. A wake that changes nothing the user must do or know is quiet, its turn
+block alone: the card on screen's, or `running` on an empty queue. A ⏳ line is for a
+finish, a failure, or an eta off by half.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"` per

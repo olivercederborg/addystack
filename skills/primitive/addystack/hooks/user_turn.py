@@ -55,18 +55,21 @@ def answered(found):
     result that arrived as the user typed. Those messages' own turn blocks never count. Any
     other message in between that got no reply, typed or not, gives None. A quiet wake's
     reply, its turn block alone (turn_block.quiet), shows the user nothing, so the reply is
-    the card on screen above it, back past prompts they didn't type, and only while each
-    quiet block offers that card's options: a key never picks an option they didn't see."""
+    the card on screen above it: back past messages T3 says another agent sent, and the
+    replies to them that show no card, none or a progress line with no block, and only
+    while each quiet block offers that card's options, so a key never picks an option they
+    didn't see. A message the user typed, even one that reads as untyped, ends the walk."""
     at = len(found) - 1
     while found[at].reply is None and at and found[at - 1].agent:
         at -= 1
     reply, quiet = found[at].reply, []
-    while turn_block.quiet(reply) and at and not found[at - 1].prompt:
-        quiet.append(reply)
+    shows_none = lambda text: text is None or turn_block.quiet(text) or not turn_block.CARRIER.search(text)
+    while turn_block.quiet(reply) or quiet and shows_none(reply):
+        if not (at and found[at - 1].agent):
+            return None  # the user typed what this reply answers, or nothing is above it
+        quiet += [reply] if turn_block.quiet(reply) else []
         at -= 1
         reply = found[at].reply
-    if turn_block.quiet(reply):  # a quiet reply to a typed prompt, or with nothing above it
-        return None
     if not quiet:
         return reply
     try:
