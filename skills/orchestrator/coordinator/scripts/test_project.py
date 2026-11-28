@@ -241,7 +241,7 @@ class PriorityLine(unittest.TestCase):
             folder.mkdir()
             (folder / "project.md").write_text(PROJECT.replace("| running (slot 1) | — | launched |",
                                                                "| running (slot 1) | — | launched |\n"
-                                                               "| docs | — | — | queued | slot | — |\n"
+                                                               "| docs | — | — | queued | Ana's fix | — |\n"
                                                                "| ana-fixes | — | #41 by ana | queued | slot | — |"))
             self.run_in(folder, "queue", "import", stdin='<!-- turn {"state":"done"} -->')
         for kind, name, source in [("decide", "keep the v1 export", "export-v2"),
@@ -279,16 +279,23 @@ class PriorityLine(unittest.TestCase):
         self.assertEqual((self.order(), self.run_in(self.other, "priority", "show").stdout), (["1", "2", "3"],
                                                                                                "no priority holds\n"))
 
-    def test_an_item_waiting_over_a_day_goes_first_too_so_none_starves(self):
+    def test_an_item_waiting_a_day_under_it_goes_next_so_none_starves(self):
         text = (self.other / "project.md").read_text()
-        (self.other / "project.md").write_text(re.sub(r"(\| 1 \| decide \| keep the v1 export \| export-v2 \| )[^|]+",
-                                                      r"\g<1>2020-01-01 09:00 ", text))
+        for name in ("keep the v1 export", "post the reply to Ana on #41", "approve #410 for Ben"):
+            text = re.sub(rf"(\| {re.escape(name)} \| \S+ \| )[^|]+", r"\g<1>2020-01-01 09:00 ", text)
+        (self.other / "project.md").write_text(text)
         self.run_in(self.heard, "priority", "set", "Ben first", "--match", "Ben")
-        self.assertEqual(self.order(), ["1", "3", "2"], "the aged item, then the priority's, then the rest")
+        self.assertEqual(self.order(), ["3", "1", "2"], "a queue already old when it's said still puts it first")
+        line = (self.root / "priority.md").read_text()
+        said = re.search(r"- (\S+ \S+) · ", line)[1]
+        (self.root / "priority.md").write_text(line.replace(f"- {said} · ", "- 2026-01-01 09:00 · ").replace(
+            re.search(r"until (\S+ \S+)", line)[1], "2999-01-01 00:00"))
+        text = re.sub(r"(\| keep the v1 export \| \S+ \| )[^|]+", r"\g<1>2999-01-01 09:00 ", text)
+        (self.other / "project.md").write_text(text)
+        self.assertEqual(self.order(), ["3", "2", "1"], "the priority's, then what waited a day under it, then the rest")
         self.run_in(self.heard, "priority", "set", "nothing here", "--match", "zebra")
         self.assertIn("names nothing here", self.run_in(self.other, "queue", "show").stdout)
-        self.assertEqual(self.order(), ["1", "2", "3"],
-                         "a priority that names nothing here leaves its order to age as before")
+        self.assertEqual(self.order(), ["1", "2", "3"], "a priority that names nothing here leaves the order as before")
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):
         self.run_in(self.heard, "priority", "set", "Ana first", "--match", "Ana", "--until", "2999-01-01")

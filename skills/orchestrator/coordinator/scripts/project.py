@@ -157,7 +157,8 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
         else:
             head = []
         note = priority_note(lines, line)
-        return "\n".join([*head, project_queue.show(project_queue.read(lines, _ahead(line, lines))), *([note] if note else [])])
+        shown = project_queue.show(project_queue.read(lines, _ahead(line, lines), held_since=_said(line)))
+        return "\n".join([*head, shown, *([note] if note else [])])
     except project_queue.QueueError as error:
         raise ProjectError(str(error))
 
@@ -167,7 +168,7 @@ def queue(lines: list[str], action: str, *, kind: str | None = None, name: str |
 # a teammate's PRs being "the most important right now", one of 31 priority messages in four
 # weeks, and both queues ran oldest first, so it had nothing to bind to.
 PRIORITY_FILE = "priority.md"  # in the orchestrate folder, beside every project folder
-PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d) · (\S+) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
+PRIORITY_LINE = re.compile(r"- (\d{4}-\d\d-\d\d \d\d:\d\d) · ([^·]+?) · until (\d{4}-\d\d-\d\d \d\d:\d\d) · "
                            r"match: (.+?) · \"(.*)\"\Z")
 PRIORITY_HEAD = """# Priority
 
@@ -226,15 +227,15 @@ def set_priority(root: Path, words: str, terms: list[str], heard_in: str, until:
 
 
 def _queued(lines: list[str]) -> list[tuple[str, str]]:
-    """Each queued Workers row as (slug, its cells joined), in table order: oldest first."""
-    return [(row.get("Worker", "?").split(" (")[0], " ".join(row.values())) for row in _workers(lines)[0]
-            if row.get(COLUMNS["state"], "").startswith("queued")]
+    """Each queued Workers row as (slug, the cells that say what it is), in table order,
+    oldest first: Waits on stays out, so a unit waiting on the priority's work isn't it."""
+    return [(row.get("Worker", "?").split(" (")[0],
+             " ".join(value for key, value in row.items() if key != COLUMNS["waits"]))
+            for row in _workers(lines)[0] if row.get(COLUMNS["state"], "").startswith("queued")]
 
 
-def start_order(lines: list[str], line: Priority | None) -> list[str]:
-    """The queued units in the order a freed slot starts them: those the priority line
-    matches, then the rest, each oldest first."""
-    return [slug for slug, text in sorted(_queued(lines), key=lambda each: not (line and line.matches(each[1])))]
+def _said(line: Priority | None) -> datetime | None:
+    return datetime.strptime(line.said, STAMP) if line else None
 
 
 def _ahead(line: Priority | None, lines: list[str]):
@@ -249,7 +250,7 @@ def priority_note(lines: list[str], line: Priority | None) -> str | None:
     until Listening's Priority records its time, that the coordinator should echo it once."""
     if line is None:
         return None
-    items = project_queue.read(lines, _ahead(line, lines)) or []
+    items = project_queue.read(lines, _ahead(line, lines), held_since=_said(line)) or []
     first = [f"{item.id} {item.name}" for item in items if line.matches(f"{item.name} {item.source}")]
     moved = [slug for slug, text in _queued(lines) if line.matches(text)]
     head = f'priority ({line.said[5:]} in {line.heard_in}, until {line.until[5:]}): "{line.words}"'
