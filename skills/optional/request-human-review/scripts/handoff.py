@@ -134,7 +134,8 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     last = facts['handoffs'][-1] if facts['handoffs'] else None
     same = last is not None and sorted(decision['key'] for decision in placed) == \
         sorted(decision['key'] for decision in last['decisions'])
-    named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
+    # Someone only kept before was never requested by a handoff, so requesting them now is new.
+    named = [reviewer['login'] for reviewer in last['reviewers'] if reviewer['role'] != 'kept'] if same else []
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
     # Who holds which area, against its own last handoff: any change is posted, so the next
     # run's `_held` reads it, even when nobody new is asked.

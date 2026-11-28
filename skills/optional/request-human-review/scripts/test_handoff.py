@@ -95,7 +95,7 @@ class Plan(unittest.TestCase):
         # amy, already asked, takes pay (0 + 2 reuse beats zoe's 3 - 2): only bob is requested.
         self.assertEqual(first['request'], [{'login': 'bob', 'role': 'P1', 'domains': ['ops']}])
         self.assertIn('- `amy` · already asked, keeps these areas · pay', first['comment'])
-        self.assertIn('asking: `bob`', first['comment'])
+        self.assertIn('asking: `bob`\n', first['comment'])
         # zoe is free now, but amy, still asked, keeps pay: nobody new is requested.
         again = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [handoff.read(first['comment'])],
                                    'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
@@ -138,10 +138,38 @@ class Plan(unittest.TestCase):
         # Both requests ended and bob is busier: amy, named before for pay, now takes ops too.
         busy = {**known, 'bob': {'asks': 4, 'share': 0.0}}
         second = self.plan(judged, {**facts, 'engaged': [], 'handoffs': [block], 'standing': busy})
-        self.assertEqual((second['post'], second['why']), (True, 'areas changed'))
+        self.assertEqual((second['post'], second['why']), (True, 'new reviewer'))
         third = self.plan(judged, {**facts, 'engaged': ['amy'], 'handoffs': [block, handoff.read(second['comment'])],
                                    'standing': busy})
         self.assertEqual(third['request'], [])
+
+    def test_requesting_someone_who_was_only_kept_before_is_posted(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
+        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, engaged=['amy'], changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
+        block = handoff.read(self.plan(judged, facts)['comment'])
+        # amy's request, made by the author, ended unreviewed; with bob and zoe busy amy now
+        # wins pay outright, and is newly requested.
+        busy = {**known, 'bob': {'asks': 4, 'share': 0.0}, 'zoe': {'asks': 4, 'share': 0.0}}
+        again = self.plan(judged, {**facts, 'engaged': ['bob'], 'handoffs': [block], 'standing': busy})
+        self.assertEqual((again['post'], again['why'], [r['login'] for r in again['request']]), (True, 'new reviewer', ['amy']))
+
+    def test_with_suggested_keeps_an_area_someone_already_asked_wins(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
+        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, engaged=['amy'], viewer='carol',
+                           changed=['packages/ops/a.ts', 'packages/pay/c.ts'])
+        first = self.plan(judged, facts, chosen=('bob',), with_suggested=True)
+        self.assertIn('asking: `bob` · reviewer chosen by the author\n', first['comment'])
+        self.assertIn({'login': 'amy', 'role': 'kept', 'domains': ['pay']}, handoff.read(first['comment'])['reviewers'])
+        # zoe is free later, but amy, still asked, keeps pay.
+        later = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [handoff.read(first['comment'])],
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}}, chosen=('bob',), with_suggested=True)
+        self.assertEqual(later['request'], [])
 
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
