@@ -43,6 +43,10 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   with the time it started waiting. The queue of cards reads this column.
 - **Last side effect**: the newest commit, push, or PR event seen, with its time, or for
   a report-only worker its thread's `itemCount`.
+- **Issue** (optional): the unit's issue links, one or more, as written, from any
+  tracker. Set it with `project.py <folder> worker <slug> --issue "<links>"` whenever a
+  link becomes known. A table from before the column gets it on first use, with an
+  empty cell on every other row. `status` shows it; the tick ignores it.
 
 The tick keeps what it last saw in `tick.json` beside `project.md`, and is its only writer.
 

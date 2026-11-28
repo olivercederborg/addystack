@@ -106,6 +106,8 @@ class Queue(unittest.TestCase):
         q.add(lines, "decide", "keep <pre> and <!-- x --> out if A < B", "R153 <t3-thread://v2/e/t> <details>", NOW)
         self.assertEqual(q.strip(q.read(lines)), "1 of 1 needs you · keep &lt;pre> and &lt;!-- x --> out if A < B · "
                                                  "R153 <t3-thread://v2/e/t> &lt;details>")
+        self.assertTrue(q.show(q.read(lines)).endswith("keep &lt;pre> and &lt;!-- x --> out if A < B · "
+                                                       "R153 <t3-thread://v2/e/t> &lt;details> · since 2026-11-18 14:05"))
 
     def test_a_need_it_prints_parses_whatever_the_name_holds(self):
         for name in ["discuss A --> B", "keep <!-- this --> out", "merge #12 if a > b"]:

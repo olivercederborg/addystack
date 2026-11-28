@@ -6,8 +6,9 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR init --project P --coordinator LINK --checkout PATH --mode M --goal G --proof P
   project.py DIR decide TEXT        add `- <date> · TEXT` under Decisions
   project.py DIR learn TEXT         add `- <date> · TEXT` under Learnings
-  project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L]
-                                    set a Workers row's columns, adding the row if it's new
+  project.py DIR worker SLUG [--thread T] [--pr B] [--state S] [--waits W] [--last L] [--issue I]
+                                    set a Workers row's columns, adding the row if it's new;
+                                    --issue adds the Issue column to a table without it
   project.py DIR listen KEY VALUE   set `- KEY: VALUE` under Listening
   project.py DIR queue add KIND NAME [--from F]
                                     queue an item that waits on the user (KIND: stuck,
@@ -31,6 +32,13 @@ of the file byte for byte and replaces the file atomically.
   project.py DIR tick [--send]      print what changed since the last tick that T3 doesn't
                                     report; --send messages it to the coordinator's thread
                                     and saves DIR/tick.json, while Heartbeat is `tick`
+  project.py DIR status [--json] [--html] [--no-live]
+                                    the project's overview (references/status.md), reading thread,
+                                    PR, and check state live: --json prints status_data's data;
+                                    --html writes it into a copy of scripts/status.html in the
+                                    temp folder and prints that file's path; both print the data
+                                    with the path as `html_path`; --no-live skips t3 and gh.
+                                    Takes at least one of --json and --html. Never writes DIR
 
 TEXT, VALUE, or A `-` reads standard input. A row's Worker cell is SLUG, or SLUG followed by ` (`
 and a label. State starts with one of STATES; detail may follow, as in
@@ -38,13 +46,16 @@ and a label. State starts with one of STATES; detail may follow, as in
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
 import time
+from dataclasses import asdict
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -55,7 +66,8 @@ import turn_block
 STATES = ("queued", "overdue", "unknown", "running", "waiting", "stuck", "done", "dropped",
           "replaced by <worker>", "absorbed into <worker>")
 STATE = re.compile(r"(queued|overdue|unknown|running|waiting|stuck|done|dropped)\b|(replaced by|absorbed into) \S")
-COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect"}
+COLUMNS = {"thread": "Thread", "pr": "Branch or PR", "state": "State", "waits": "Waits on", "last": "Last side effect",
+           "issue": "Issue"}  # Issue is optional: `worker --issue` adds it to a table without it
 
 SKELETON = """# ◆ {project}
 
@@ -212,6 +224,10 @@ def worker(lines: list[str], slug: str, **columns: str | None) -> None:
     if len(table) < 2:
         raise ProjectError("no Workers table")
     header = _cells(lines[table[0]])
+    if columns.get("issue") is not None and COLUMNS["issue"] not in header:  # a table from before the column
+        for i, ending in zip(table, [f" {COLUMNS['issue']} |", "---|", *["  |"] * (len(table) - 2)]):
+            lines[i] = lines[i].rstrip() + ending
+        header.append(COLUMNS["issue"])
     rows = [i for i in table[2:] if (first := _cells(lines[i])[0]) == slug or first.startswith(f"{slug} (")]
     if len(rows) > 1:
         raise ProjectError(f"{len(rows)} Workers rows match {slug!r}")
@@ -429,6 +445,38 @@ def view_pr(ref: str) -> list | None:
         return None
 
 
+def _pr(ref: str) -> dict | None:
+    """{title, state, isDraft} of `owner/repo#N` for status; None when unread. view_pr
+    stays [state, isDraft], since tick compares that value whole."""
+    repo, number = ref.split("#")
+    code, out = _run(["gh", "pr", "view", number, "-R", repo, "--json", "title,state,isDraft"])
+    if code:
+        _warn(f"status: `gh pr view {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
+    try:
+        pr = json.loads(out) if code == 0 else None
+        return {key: pr[key] for key in ("title", "state", "isDraft")} if pr else None
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
+def _checks(ref: str) -> dict[str, int] | None:
+    """The count of `owner/repo#N`'s checks per gh bucket (pass, fail, pending, skipping,
+    cancel), {} when it has none, None when unread. With --json, gh exits 0 while checks
+    are pending, and 1 with `no checks reported` when there are none."""
+    repo, number = ref.split("#")
+    code, out = _run(["gh", "pr", "checks", number, "-R", repo, "--json", "bucket"])
+    if code and "no checks reported" in out:
+        return {}
+    try:
+        counts: dict[str, int] = {}
+        for check in json.loads(out) if code == 0 else None:
+            counts[check["bucket"]] = counts.get(check["bucket"], 0) + 1
+        return counts
+    except (ValueError, KeyError, TypeError):
+        _warn(f"status: `gh pr checks {number} -R {repo}` exited {code}: {(out.strip().splitlines() or [''])[-1][:200]}")
+        return None
+
+
 def _header(lines: list[str], field: str) -> str:
     """A `Field: value` from the line under the title, up to the next ` · `."""
     line = next((text for text in lines if text.startswith("Coordinator:")), "")
@@ -447,17 +495,54 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
+PR_LINK = re.compile(r"\]\(<?(https?://github\.com/[\w.-]+/[\w.-]+/pull/\d+)>?[^)]*\)")  # a Markdown link to a PR, from its `](`
+
+
+CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)")  # a Markdown code span: a backtick run, closed by one as long
+
+
+def _unlabel(text: str) -> str:
+    """text with each Markdown link to a PR replaced by its URL. The label runs back from
+    the link's `](` to its matching `[`, as CommonMark reads it: brackets nest, a
+    backslash escapes one, and one inside a code span doesn't count."""
+    code = {i for span in CODE_SPAN.finditer(text) for i in range(*span.span())}
+    out, at = [], 0
+    for match in PR_LINK.finditer(text):
+        depth, start = 0, None
+        for i in range(match.start(), at - 1, -1):
+            escaped = (len(text[:i]) - len(text[:i].rstrip("\\"))) % 2
+            if text[i] in "[]" and not escaped and i not in code:
+                depth += 1 if text[i] == "]" else -1
+                if depth == 0:
+                    start = i
+                    break
+        if start is not None:
+            out += [text[at:start], match.group(1)]
+            at = match.end()
+    return "".join(out) + text[at:]
+
+
 def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
     """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
     against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
     it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
     if text.startswith("none"):
         return
-    text = project_md.ranges(text)
+    text = project_md.ranges(_unlabel(text))  # a link's label `[#7, …]` names its URL's PR, not #7 here
     owner = origin.split("/")[0] if origin else "?"
     for url_repo, url_n, repo, n, local in PR_REF.findall(text):
         repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
         refs.add(f"{repo}#{url_n or n or local}")
+
+
+def _checkout(lines: list[str]) -> Path | None:
+    """The Checkout field's directory: the path as written, or, when that isn't a
+    directory, without a trailing note such as ` (on `main`)`. None when it's empty."""
+    value = _header(lines, "Checkout")
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.is_dir() else Path(re.sub(r" \([^()]*\)$", "", value)).expanduser()
 
 
 def _origin(checkout: Path | None) -> str:
@@ -496,9 +581,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         _warn(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}")
         return None
     busy = hold and lead.get("status") in ACTIVE
-    place = _header(lines, "Checkout").split(" (")[0].strip()
-    checkout = Path(place).expanduser() if place else None
-    origin = _origin(checkout)
+    origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
     watched: set[str] = set()
     _pr_refs(_listened(lines, "Watches"), origin, watched)
@@ -571,12 +654,130 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
+def status_data(lines: list[str], *, live: bool = True) -> dict:
+    """The project's overview as JSON-ready data, read-only. Text stays as project.md holds
+    it, unescaped. Groups come in STATUS_ORDER, each Workers row a unit
+    with its worker, thread link, State, PRs, Issue, and Waits on. Live fields come from
+    `t3` and `gh`: a unit's `thread_status` and a resolved PR's `read`, `title`, `state`,
+    `draft`, and `checks`. With live=False they're absent and neither runs; the checkout's
+    origin is still read from git, since `#N` resolves against it."""
+    goal = _body(lines, "Goal")
+    data: dict = {"project": lines[0].removeprefix("# ◆").strip() if lines else None,
+                  "goal": goal[0] if goal else None, "queue": None, "queue_unread": None,
+                  "groups": [], "unread_rows": [], "decisions": _body(lines, "Decisions"),
+                  "phases": _body(lines, "Phases")}
+    try:
+        items = project_queue.read(lines)
+        data["queue"] = None if items is None else [asdict(item) for item in items]
+    except project_queue.QueueError as error:
+        data["queue_unread"] = str(error)
+    if "## Workers" in lines:
+        origin, reads = _origin(_checkout(lines)), {}
+        rows, odd = _workers(lines)
+        groups: dict[str, list[dict]] = {}
+        for row in rows:
+            match = STATE.match(row.get(COLUMNS["state"], ""))
+            group = (match.group(1) or "replaced/absorbed") if match else "other"
+            groups.setdefault(group, []).append(_unit(row, origin, live, reads))
+        data["groups"] = [{"state": name, "units": groups[name]}
+                          for name in sorted(groups, key=lambda name: STATUS_ORDER.index(name))]
+        data["unread_rows"] = [(_cells(line) or ["?"])[0] for line in odd]
+    return data
+
+
+STATUS_PAGE = Path(__file__).with_name("status.html")
+STATUS_DATA = '<script type="application/json" id="status-data">null</script>'  # draw(data)'s feed
+
+
+def status_html(data: dict) -> str:
+    """status.html with status_data's data baked into its status-data block, so the page
+    draws it with no network. The block holds the data's UTF-8 JSON in base64, as a JSON
+    string: no project.md text can end the block, even when html_render's `html` input
+    turns each `\\uXXXX` back into its character, and the page sets text through textContent."""
+    page = STATUS_PAGE.read_text()
+    if page.count(STATUS_DATA) != 1:
+        raise ValueError(f"{STATUS_PAGE} must hold the status-data block exactly once")
+    encoded = base64.b64encode(json.dumps(data, ensure_ascii=False).encode()).decode()
+    return page.replace(STATUS_DATA, STATUS_DATA.replace("null", f'"{encoded}"'))
+
+
+# status's state groups, in the order the user reads them: what needs a look, then work under
+# way, then work that ended; `other` holds a State a hand edit left outside STATES.
+STATUS_ORDER = ["stuck", "waiting", "overdue", "unknown", "running", "queued", "done", "dropped",
+                "replaced/absorbed", "other"]
+EMPTY = ("", "—", "-")  # a cell that holds nothing
+
+
+def _body(lines: list[str], name: str) -> list[str]:
+    """The non-blank lines of `## name`, or [] when it has none or isn't there."""
+    if f"## {name}" not in lines:
+        return []
+    start_at, end = _section(lines, name)
+    return [text for text in lines[start_at + 1:end] if text.strip()]
+
+
+def _unit(row: dict[str, str], origin: str, live: bool, reads: dict) -> dict:
+    """One Workers row as status_data's unit. `thread_status` is there only when the thread
+    was read: live, linked, on this machine's T3 or `unread`, and its row not FINAL."""
+    state = row.get(COLUMNS["state"], "")
+    link = LINK.search(row.get(COLUMNS["thread"], ""))
+    unit: dict = {"worker": row.get("Worker", "?"), "thread": link.group(0) if link else None, "state": state}
+    if live and link and not FINAL.match(state):
+        here = this_environment()
+        seen = show_thread(link.group(2)) if here and link.group(1) == here else None
+        unit["thread_status"] = (seen.get("status") or "unread") if seen else "unread"
+    refs: set[str] = set()
+    _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
+    unit["prs"] = [_pr_data(ref, origin, live, reads)
+                   for ref in sorted(refs, key=lambda ref: (ref.split("#")[0], int(ref.split("#")[1])))]
+    issue, waits = row.get(COLUMNS["issue"], ""), row.get(COLUMNS["waits"], "")
+    unit["issue"], unit["waits_on"] = (issue if issue not in EMPTY else None), (waits if waits not in EMPTY else None)
+    return unit
+
+
+def _pr_data(ref: str, origin: str, live: bool, reads: dict) -> dict:
+    """A PR as {ref, name, url}: url None when its repo isn't known, and name `#N` in the
+    checkout's repo, `owner/repo#N` in another. A live read of a resolved PR adds `read`,
+    and when it read, its title, state, draft, and checks: None when they didn't read."""
+    if ref.startswith("?"):
+        return {"ref": ref, "name": ref.lstrip("?/"), "url": None}
+    repo, number = ref.split("#")
+    pr: dict = {"ref": ref, "name": f"#{number}" if repo == origin else ref,
+                "url": f"https://github.com/{repo}/pull/{number}"}
+    if live:
+        if ref not in reads:  # a PR on several rows is read once, so every card shows the same read
+            pr_read = _pr(ref)
+            reads[ref] = (pr_read, None if pr_read is None else _checks(ref))
+        seen, checks = reads[ref]
+        pr["read"] = seen is not None
+        if seen is not None:
+            pr.update(title=seen["title"], state=seen["state"], draft=seen["isDraft"], checks=checks)
+    return pr
+
+
 def tick_message(lines: list[str], due: list[tuple[str, str]], path: Path) -> str:
     project = lines[0].removeprefix("# ◆").strip() if lines else "?"
     return "\n".join([f'<coordinator-tick project="{project}">', *(f"- {line}" for _, line in due),
                       "</coordinator-tick>",
                       f"Read {path} and handle each line with step 4 of the coordinator skill, loading it only "
                       "if it isn't in your context. Fix the line's row in project.md, or the tick repeats it hourly."])
+
+
+def _write_page(name: str, text: str) -> Path:
+    """Writes status's page as `<name>.html` in a temp folder only this user can open, and
+    returns its path. The file is replaced whole, so a link planted at its path is never
+    followed."""
+    folder = Path(tempfile.gettempdir()) / f"addystack-status-{os.getuid()}"
+    folder.mkdir(mode=0o700, exist_ok=True)
+    seen = os.lstat(folder)
+    if not stat.S_ISDIR(seen.st_mode) or seen.st_uid != os.getuid() or seen.st_mode & 0o077:
+        raise ProjectError(f"{folder} isn't a folder only this user can open: remove it, then run status again")
+    handle, tmp = tempfile.mkstemp(dir=folder, prefix=".status.", suffix=".html")  # mode 0600
+    with os.fdopen(handle, "w") as f:
+        f.write(text)
+    page = folder / f"{name}.html"
+    os.replace(tmp, page)
+    return page
 
 
 def _write(path: Path, text: str) -> None:
@@ -653,6 +854,10 @@ def main(argv: list[str]) -> int:
     starting.add_argument("--goal", required=True)
     starting.add_argument("--proof", required=True)
     commands.add_parser("tick", allow_abbrev=False).add_argument("--send", action="store_true")
+    showing = commands.add_parser("status", allow_abbrev=False)
+    showing.add_argument("--json", action="store_true")
+    showing.add_argument("--html", action="store_true")
+    showing.add_argument("--no-live", action="store_true")
     queued = commands.add_parser("queue", allow_abbrev=False).add_subparsers(dest="action", required=True)
     adding = queued.add_parser("add", allow_abbrev=False)
     adding.add_argument("kind", choices=project_queue.KINDS)
@@ -666,6 +871,8 @@ def main(argv: list[str]) -> int:
     importing.add_argument("--from", dest="sources", action="append", metavar="ID=WHO")
     importing.add_argument("--stuck", type=int, action="append", metavar="ID")
     args = parser.parse_args(argv)
+    if args.command == "status" and not (args.json or args.html):
+        showing.error("status takes --json, --html, or both")
     if args.command == "phase" and (args.goal is None) != (args.proof is None):
         ending.error("--goal needs --proof, and --park takes neither")
     path = args.dir / "project.md"
@@ -698,6 +905,15 @@ def main(argv: list[str]) -> int:
         lines = path.read_text().split("\n")
         if args.command == "tick":
             return _tick(args.dir, lines, args.send)
+        if args.command == "status":
+            data = status_data(lines, live=not args.no_live)
+            if args.html:
+                page = _write_page(args.dir.resolve().name, status_html(data))
+            if args.json:
+                print(json.dumps({**data, "html_path": str(page)} if args.html else data, ensure_ascii=False, indent=2))
+            else:
+                print(page)
+            return 0
         if args.command == "queue":
             answer = getattr(args, "answer", None)
             printed = queue(lines, args.action, kind=getattr(args, "kind", None), name=getattr(args, "name", None),

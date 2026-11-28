@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project status</title>
+<!-- The coordinator's status overview: `project.py DIR status --html` replaces the
+     status-data block's `null` with status_data's JSON in base64, as a JSON string, and
+     draw(data) renders it. With null left in, nothing draws, so another feeder can call
+     draw(data) itself. Every project.md text reaches the page through textContent. -->
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; font-family: var(--font-sans, system-ui, sans-serif); color: var(--foreground, CanvasText);
+         font-size: 14px; line-height: 1.45; }
+  #status { max-width: 100%; display: grid; gap: 20px; }
+  h1 { font-size: 18px; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  h2 { font-size: 13px; margin: 0 0 8px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+       color: var(--muted-foreground, GrayText); display: flex; align-items: center; gap: 6px; }
+  .goal { margin: 4px 0 0; color: var(--muted-foreground, GrayText); overflow-wrap: anywhere; }
+  .muted { color: var(--muted-foreground, GrayText); }
+  a { color: inherit; text-decoration: underline; text-decoration-color: var(--border, GrayText);
+      text-underline-offset: 2px; }
+  a:hover { text-decoration-color: currentColor; }
+  ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .box { border: 1px solid var(--border, GrayText); border-radius: var(--radius, 8px); padding: 12px 16px;
+         background: var(--card, transparent); min-width: 0; }
+  .box.top { border-color: var(--warning, orange); }
+  .note { border-radius: var(--radius, 8px); padding: 10px 16px; border: 1px solid; }
+  .note.warning { border-color: var(--warning, orange); }
+  .note.destructive { border-color: var(--destructive, red); }
+  .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; min-width: 0; }
+  .name { font-weight: 600; overflow-wrap: anywhere; }
+  .meta { margin-top: 6px; display: grid; gap: 4px; overflow-wrap: anywhere; }
+  .pill { font-size: 12px; border: 1px solid currentColor; border-radius: 999px; padding: 0 8px;
+          white-space: nowrap; }
+  .count { font-size: 12px; color: var(--muted-foreground, GrayText); font-weight: 400; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; display: inline-block; }
+  .tone-destructive { color: var(--destructive, red); }
+  .tone-warning { color: var(--warning, orange); }
+  .tone-info { color: var(--info, dodgerblue); }
+  .tone-success { color: var(--success, green); }
+  .tone-muted { color: var(--muted-foreground, GrayText); }
+  .pr { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+  .checks { font-size: 12px; display: inline-flex; gap: 8px; }
+  details { border-top: 1px solid var(--border, GrayText); padding-top: 10px; }
+  summary { cursor: pointer; font-weight: 600; }
+  details ul { margin-top: 8px; gap: 4px; }
+</style>
+</head>
+<body>
+<main id="status"></main>
+<script type="application/json" id="status-data">null</script>
+<script>
+"use strict";
+
+const TONE = { stuck: "destructive", waiting: "warning", overdue: "warning", unknown: "warning",
+               running: "info", queued: "muted", done: "success", dropped: "muted",
+               "replaced/absorbed": "muted", other: "warning" };
+const CHECKS = [["fail", "✗", "destructive"], ["pending", "◷", "warning"], ["pass", "✓", "success"],
+                ["skipping", "⏭", "muted"], ["cancel", "⊘", "muted"]];
+const SAFE = /^(https?:|t3-thread:)/i;  // the only link schemes a page shows as links
+
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag);
+  for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+
+function link(label, url) {
+  return SAFE.test(url) ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer" }, label) : label;
+}
+
+// project.md text as nodes: a Markdown link `[label](url)`, an autolink `<url>`, or a bare
+// URL becomes a link when its scheme is safe, a bare thread link labelled `thread`; the
+// rest stays text.
+function rich(text) {
+  const nodes = [], pattern = new RegExp([
+    String.raw`\[((?:\\.|\[[^\]]*\]|[^\]\\\[])*)\]\(<?((?:[^()\s<>]|\([^()\s]*\))+)>?[^)]*\)`,
+    String.raw`<((?:https?|t3-thread):[^>\s]+)>`,
+    String.raw`((?:https?|t3-thread):\/\/[^\s<>]*[^\s<>.,;:!?'")\]])`].join("|"), "g");
+  let at = 0;
+  for (const match of String(text).matchAll(pattern)) {
+    const bare = match[3] || match[4];
+    nodes.push(text.slice(at, match.index));
+    nodes.push(bare ? link(/^t3-thread:/i.test(bare) ? "thread" : bare, bare) : link(match[1].replace(/\\(.)/g, "$1"), match[2]));
+    at = match.index + match[0].length;
+  }
+  nodes.push(text.slice(at));
+  return nodes.filter((node) => node !== "");
+}
+
+function section(title, count, ...children) {
+  return el("section", {}, el("h2", {}, title, count === null ? null : el("span", { class: "count" }, count)),
+            ...children);
+}
+
+function needsYou(data) {
+  if (data.queue_unread !== null)
+    return section("Needs you", null, el("div", { class: "note destructive" },
+      el("strong", {}, "Unknown: "), "the Queue table can't be read. ", el("span", { class: "muted" }, data.queue_unread)));
+  if (data.queue === null)
+    return section("Needs you", null, el("div", { class: "note warning" },
+      el("strong", {}, "Unknown: "), "this project has no Queue yet, so what waits on you isn't recorded."));
+  if (!data.queue.length) return section("Needs you", 0, el("p", { class: "muted" }, "Nothing waits on you."));
+  return section("Needs you", data.queue.length, el("ul", {}, data.queue.map((item, index) =>
+    el("li", { class: index ? "box" : "box top" },
+      el("div", { class: "row" }, el("span", { class: `pill tone-${item.kind === "stuck" ? "destructive" : "warning"}` },
+        item.kind), el("span", { class: "name" }, rich(item.name))),
+      el("div", { class: "meta muted" }, el("div", {}, "from ", rich(item.source), ` · since ${item.since}`))))));
+}
+
+function pr(pull) {
+  if (pull.url === null) return el("div", { class: "pr" }, pull.name, el("span", { class: "muted" }, "repo unknown"));
+  if (!("read" in pull)) return el("div", { class: "pr" }, link(pull.name, pull.url));
+  if (!pull.read) return el("div", { class: "pr" }, link(pull.name, pull.url), el("span", { class: "muted" }, "unread"));
+  const state = String(pull.state).toLowerCase();
+  const tone = { open: "info", merged: "success", closed: "muted" }[state] || "muted";
+  let checks;
+  if (pull.checks === null) checks = el("span", { class: "muted" }, "checks unread");
+  else if (!Object.keys(pull.checks).length) checks = el("span", { class: "muted" }, "no checks");
+  else checks = el("span", { class: "checks" }, [...CHECKS, ...Object.keys(pull.checks)
+      .filter((bucket) => !CHECKS.some(([known]) => known === bucket)).map((bucket) => [bucket, "", "muted"])]
+    .filter(([bucket]) => pull.checks[bucket])
+    .map(([bucket, mark, color]) => el("span", { class: `tone-${color}`, title: bucket },
+      `${mark} ${pull.checks[bucket]} ${bucket}`.trim())));
+  return el("div", { class: "pr" }, link(`${pull.name}, ${pull.title}`, pull.url),
+    el("span", { class: `pill tone-${tone}` }, pull.draft ? `${state} draft` : state), checks);
+}
+
+// A Workers row as a card. Its State shows when it says more than the group's name, such as
+// `done: #12 MERGED` or `replaced by build-2`.
+function unit(worker, group) {
+  const head = el("div", { class: "row" },
+    el("span", { class: "name" }, worker.thread ? link(worker.worker, worker.thread) : worker.worker),
+    "thread_status" in worker ? el("span", { class: "pill tone-muted" }, `thread ${worker.thread_status}`) : null,
+    worker.state.trim() === group ? null : el("span", { class: "muted" }, rich(worker.state)));
+  const meta = el("div", { class: "meta" }, worker.prs.map(pr),
+    worker.issue === null ? null : el("div", {}, el("span", { class: "muted" }, "issue "), rich(worker.issue)),
+    worker.waits_on === null ? null : el("div", {}, el("span", { class: "muted" }, "waits on "), rich(worker.waits_on)));
+  return el("li", { class: "box" }, head, meta.childNodes.length ? meta : null);
+}
+
+function folded(title, lines) {
+  return el("details", {}, el("summary", {}, title, " ", el("span", { class: "count" }, lines.length)),
+    lines.length ? el("ul", {}, lines.map((line) => el("li", {}, rich(line.replace(/^- /, ""))))) :
+      el("p", { class: "muted" }, "none"));
+}
+
+function draw(data) {
+  const root = document.getElementById("status");
+  const parts = [el("header", {}, el("h1", {}, data.project === null ? "?" : data.project),
+                    data.goal === null ? null : el("p", { class: "goal" }, rich(data.goal))),
+                 needsYou(data)];
+  for (const group of data.groups) {
+    const dot = el("span", { class: `dot tone-${TONE[group.state] || "muted"}` });
+    parts.push(section([dot, group.state], group.units.length, el("ul", {}, group.units.map((worker) => unit(worker, group.state)))));
+  }
+  if (data.unread_rows.length)
+    parts.push(section("Unread rows", data.unread_rows.length, el("div", { class: "note warning" },
+      "These Workers rows don't match the table's header: ", data.unread_rows.join(", "))));
+  if (!data.groups.length && !data.unread_rows.length)
+    parts.push(section("Workers", 0, el("p", { class: "muted" }, "No workers yet.")));
+  parts.push(el("div", {}, folded("Decisions", data.decisions), folded("Phases", data.phases)));
+  root.replaceChildren(...parts);
+}
+
+const baked = JSON.parse(document.getElementById("status-data").textContent);
+if (baked !== null)
+  draw(JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(baked), (char) => char.charCodeAt(0)))));
+</script>
+</body>
+</html>
