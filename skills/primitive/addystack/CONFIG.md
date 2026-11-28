@@ -20,8 +20,8 @@ Your settings live in `~/.config/addystack/`, which you can keep in your dotfile
 Run `addystack build`. If you changed `hosts`, `hooks`, or `replies`, run
 `addystack install` instead, since those decide which hooks are installed.
 
-The build overwrites `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`, so keep your own
-instructions in the file `instructions` names. `addystack print-config` prints the merged config.
+The build overwrites `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, and, with `hosts.agents`
+on, `~/.agents/AGENTS.md`, so keep your own instructions in the file `instructions` names. `addystack print-config` prints the merged config.
 
 ## Policy
 

@@ -24,6 +24,7 @@ Private overrides, for tests and dry runs; each defaults to the value after it:
     ADDYSTACK_STATE      the state folder      ~/.local/state/addystack
     ADDYSTACK_CLAUDE_MD  Claude Code's file    CLAUDE.md in $CLAUDE_CONFIG_DIR, else ~/.claude
     ADDYSTACK_CODEX_MD   Codex's file          ~/.codex/AGENTS.md
+    ADDYSTACK_AGENTS_MD  the neutral file      ~/.agents/AGENTS.md
     ADDYSTACK_SKILLS_CLI update's skills CLI   npx -y skills
     ADDYSTACK_SCHEMA_URL init's schema URL     none until the kit's repo is public
     ADDYSTACK_LAUNCHCTL  the guard's launchctl launchctl on PATH
@@ -52,6 +53,7 @@ sys.path[:0] = [str(KIT / "lib"), str(KIT / "hooks")]
 import config  # noqa: E402
 import doctor as _doctor  # noqa: E402
 import reconcile  # noqa: E402
+import render  # noqa: E402
 import resolved  # noqa: E402
 import skill_layer  # noqa: E402
 import skills_cli  # noqa: E402
@@ -375,7 +377,11 @@ def init(args: argparse.Namespace) -> int:
 def _resolve() -> Optional[config.Resolved]:
     """The resolved config, or None after printing each issue to stderr."""
     try:
-        return config.resolve()
+        value = config.resolve()
+        issues = render.aliases(value)
+        if issues:
+            raise config.Invalid(issues)
+        return value
     except config.Invalid as invalid:
         print(f"addystack: {config.CONFIG} is invalid:", file=sys.stderr)
         for issue in invalid.issues:

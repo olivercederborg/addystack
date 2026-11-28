@@ -1422,6 +1422,20 @@ class StaleBuildCheck(unittest.TestCase):
         self.assertEqual(claude_md.read_text(), "# My own rules\n")
         self.assertEqual(self.principles.read_text(), self.built)
 
+    def test_leaves_a_hand_written_agents_file_to_install(self):
+        self.config.write_text('{ "hosts": { "agents": true } }')
+        agents_md = pathlib.Path(self.env["HOME"], ".agents/AGENTS.md")
+        agents_md.parent.mkdir(parents=True, exist_ok=True)
+        agents_md.write_text("# For Pi\n")
+        context = self.hook()
+        self.assertIn("~/.agents/AGENTS.md holds text addystack didn't build", context)
+        self.assertEqual(agents_md.read_text(), "# For Pi\n")
+
+    def test_names_the_agents_file_by_what_loads_it(self):
+        self.config.write_text('{ "hosts": { "agents": true } }')
+        context = self.hook()
+        self.assertIn("~/.agents/AGENTS.md (agents linked to it)", context)
+
     def test_restores_a_missing_resolved_json(self):
         """Without it, hooks fall back to the kit's defaults, such as gated planning."""
         (self.state / "resolved.json").unlink()

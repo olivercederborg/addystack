@@ -6,10 +6,12 @@ a shell command word, quoted when the kit's path needs it, with no conditionals.
 is a whole generated section: the repo policy table, the principles index without its
 excluded principles, the reply rules, taste, and the user's `global.md`. Claude Code's
 file imports the built parts with `@` lines, from ~/.local/state/addystack/; Codex's
-file has them inlined, since AGENTS.md has no imports.
+file and ~/.agents/AGENTS.md, a tool-neutral file other agents' own instruction files
+link to, have them inlined, since AGENTS.md has no imports.
 
 The sources, all in the kit's core/ but the user's: `global.md` holds the team's
-sections; `claude-code.md` and `codex.md` add each host's preamble and lines; each
+sections; `claude-code.md`, `codex.md`, and the tool-neutral `agents.md` add each host's preamble
+and lines; each
 Resolved `instructions` file follows, in layer order. Sections merge by `# ` heading in
 that order: a heading's bodies join under its first appearance, and new headings follow.
 A line that is only `@router.md` or `@principles.md` names a built part. `principles.md`
@@ -19,8 +21,8 @@ import line, without a taste file. A path renders as
 `~/…` when it's under $HOME. It renders no policy table or reply rules: the router runs
 `addystack policy` per checkout, and a SessionStart hook loads the reply rules.
 
-`ADDYSTACK_CLAUDE_MD` and `ADDYSTACK_CODEX_MD` override claude_md() and CODEX, for tests
-and dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
+`ADDYSTACK_CLAUDE_MD`, `ADDYSTACK_CODEX_MD`, and `ADDYSTACK_AGENTS_MD` override claude_md(),
+CODEX, and AGENTS, for tests and dry runs; resolved.STATE, which `ADDYSTACK_STATE` overrides, places the built parts.
 """
 from __future__ import annotations
 
@@ -35,6 +37,7 @@ import resolved as _resolved
 from config import Resolved
 
 CODEX = Path(os.environ.get("ADDYSTACK_CODEX_MD", "~/.codex/AGENTS.md"))
+AGENTS = Path(os.environ.get("ADDYSTACK_AGENTS_MD", "~/.agents/AGENTS.md"))
 
 
 def claude_md() -> Path:
@@ -168,6 +171,49 @@ def built_parts(resolved: Resolved, core: Path, values: Dict[str, str]) -> Dict[
     return parts
 
 
+def outputs(resolved: Resolved) -> Dict[str, Path]:
+    """Each enabled host's instruction file, by host."""
+    paths = {"claude": claude_md(), "codex": CODEX.expanduser(), "agents": AGENTS.expanduser()}
+    return {host: path for host, path in paths.items() if resolved["hosts"].get(host)}
+
+
+def _hops(path: str) -> List[str]:
+    """path, then each link it passes through to its file."""
+    hops = [path]
+    while os.path.islink(hops[-1]) and len(hops) < 40:
+        hops.append(os.path.join(os.path.dirname(hops[-1]), os.readlink(hops[-1])))
+    return hops
+
+
+def _same_entry(a: str, b: str) -> bool:
+    """Whether a and b name one folder entry, the one build replaces: the same folder,
+    however spelled (or the same resolved path, for one not made yet), and the same name, or one cased differently on a disk that treats
+    them as one. A hard link elsewhere is another entry, and build leaves it."""
+    folder_a, folder_b = os.path.dirname(a) or ".", os.path.dirname(b) or "."
+    both = os.path.isdir(folder_a) and os.path.isdir(folder_b)
+    if not (os.path.samefile(folder_a, folder_b) if both else os.path.realpath(folder_a) == os.path.realpath(folder_b)):
+        return False
+    name_a, name_b = os.path.basename(a), os.path.basename(b)
+    return name_a == name_b or (name_a.casefold() == name_b.casefold() and os.path.lexists(a)
+                                and os.path.lexists(b) and os.path.samestat(os.lstat(a), os.lstat(b)))
+
+
+def aliases(resolved: Resolved) -> List[config.Issue]:
+    """An issue for each instructions file that reaches a file build writes, itself or
+    through links, since build would overwrite the source with its own output, and for
+    two hosts that write one file, since each build would undo the other. A host file
+    that links to the source is fine: build replaces the link."""
+    built = [(host, str(path)) for host, path in outputs(resolved).items()]
+    issues = [config.Issue("instructions", f"{_home(Path(source))} is the file build writes for hosts.{host}; "
+                                           "keep your instructions in another file")
+              for source in resolved["instructions"]
+              for host in sorted({host for hop in _hops(source) for host, path in built if _same_entry(hop, path)})]
+    return issues + [config.Issue("hosts", f"hosts.{first} and hosts.{second} both write {_home(Path(path))}; "
+                                           "turn one off")
+                     for index, (first, path) in enumerate(built) for second, other in built[index + 1:]
+                     if _same_entry(path, other)]
+
+
 def instructions(resolved: Resolved) -> Dict[Path, str]:
     """Each file to write, by absolute path: the hosts' instruction files and the built
     parts the Claude file imports."""
@@ -181,16 +227,18 @@ def instructions(resolved: Resolved) -> Dict[Path, str]:
     def body(host: str) -> str:
         return _merge([_fill((core / name).read_text(), values) for name in ("global.md", host)] + mine)
 
-    if resolved["hosts"]["claude"]:
+    hosts = outputs(resolved)
+    if "claude" in hosts:
         def imported(name: str) -> str:
             return f"@{_home(state / name)}"
 
-        files[claude_md()] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
+        files[hosts["claude"]] = f"{_HEADER}\n{_expand(body('claude-code.md'), parts, imported)}"
         for name, text in parts.items():
             files[state / name] = _expand(text, parts, imported)
-    if resolved["hosts"]["codex"]:
-        def inlined(name: str) -> str:
-            return _expand(parts[name], parts, inlined).rstrip("\n")
+    def inlined(name: str) -> str:
+        return _expand(parts[name], parts, inlined).rstrip("\n")
 
-        files[CODEX.expanduser()] = f"{_HEADER}\n{_expand(body('codex.md'), parts, inlined)}"
+    for host, template in (("codex", "codex.md"), ("agents", "agents.md")):
+        if host in hosts:
+            files[hosts[host]] = f"{_HEADER}\n{_expand(body(template), parts, inlined)}"
     return files

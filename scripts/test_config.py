@@ -251,7 +251,7 @@ class Merge(Workspace):
         resolved = config.merge([self.kit({"hosts": {"machines": ["a"]}}),
                               Layer("user", self.dir, {"identity": {"name": "Sam"}, "hosts": {"machines": ["b"]}})], KIT)
         self.assertEqual(resolved["identity"], {"name": "Sam", "github": None})
-        self.assertEqual(resolved["hosts"], {"claude": True, "codex": True, "t3": False, "machines": ["b"]})
+        self.assertEqual(resolved["hosts"], {"claude": True, "codex": True, "agents": False, "t3": False, "machines": ["b"]})
 
     def test_repo_rules_concatenate_in_layer_order(self):
         rule = {"match": {"remote": "x"}, "trust": "gate"}

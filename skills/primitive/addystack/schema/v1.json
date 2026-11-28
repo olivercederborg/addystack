@@ -37,7 +37,7 @@
     "hosts": {
       "type": "object",
       "additionalProperties": false,
-      "default": { "claude": true, "codex": true, "t3": false, "machines": [] },
+      "default": { "claude": true, "codex": true, "agents": false, "t3": false, "machines": [] },
       "markdownDescription": "The agent hosts and machines you use. `build` writes an instruction file only for an enabled host.",
       "properties": {
         "claude": {
@@ -49,6 +49,11 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Build `~/.codex/AGENTS.md` for Codex."
+        },
+        "agents": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Build `~/.agents/AGENTS.md` from the kit's tool-neutral template, for agents addystack has no host for: link each one's own global instructions file to it, such as `~/.pi/agent/AGENTS.md`. It carries the instructions only; reply rules and hooks reach Claude Code and Codex alone."
         },
         "t3": {
           "type": "boolean",

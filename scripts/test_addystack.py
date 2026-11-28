@@ -113,6 +113,41 @@ class Build(Cli):
         self.assertIn("would write 5 files", result.stdout)
         self.assertFalse(self.state.exists() or self.claude.exists() or self.codex.exists())
 
+    def test_instructions_that_reach_a_built_file_fail_without_writing(self):
+        source = self.config.parent / "global.md"
+        self.codex.parent.mkdir()
+        source.rename(self.codex)
+        source.symlink_to(self.codex)
+        for command in (("build",), ("doctor",)):
+            with self.subTest(command=command):
+                result = self.run_cli(*command)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("is the file build writes for hosts.codex", result.stdout + result.stderr)
+        self.assertEqual(self.codex.read_text(), "# Actions\n\n- Sam's action.\n")
+
+    def test_a_hard_link_to_a_host_file_is_left_as_the_source(self):
+        source = self.config.parent / "global.md"
+        self.codex.parent.mkdir()
+        os.link(source, self.codex)
+        self.assertEqual(self.run_cli("build").returncode, 0)
+        self.assertEqual(source.read_text(), "# Actions\n\n- Sam's action.\n")
+
+    def test_two_hosts_writing_one_file_fail(self):
+        self.env["ADDYSTACK_AGENTS_MD"] = str(self.codex)
+        self.config.write_text(USER.replace('"instructions": "global.md"',
+                                            '"instructions": "global.md", "hosts": { "agents": true }'))
+        result = self.run_cli("build")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("hosts.codex and hosts.agents both write", result.stderr)
+
+    def test_a_host_file_linked_to_the_instructions_is_replaced(self):
+        source = self.config.parent / "global.md"
+        self.codex.parent.mkdir()
+        self.codex.symlink_to(source)
+        self.assertEqual(self.run_cli("build").returncode, 0)
+        self.assertFalse(self.codex.is_symlink())
+        self.assertEqual(source.read_text(), "# Actions\n\n- Sam's action.\n")
+
     def test_a_link_is_replaced_not_written_through(self):
         target = self.dir / "kit-built.md"
         target.write_text("the kit's file")

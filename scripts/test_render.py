@@ -27,7 +27,8 @@ class Render(unittest.TestCase):
         self.dir = pathlib.Path(folder.name).resolve()
         for name, text in [("addystack.jsonc", USER), ("global.md", GLOBAL), ("taste.md", "taste")]:
             (self.dir / name).write_text(text)
-        for module, name, path in [(resolved, "STATE", "state/resolved.json"), (render, "CODEX", "AGENTS.md")]:
+        for module, name, path in [(resolved, "STATE", "state/resolved.json"), (render, "CODEX", "AGENTS.md"),
+                                   (render, "AGENTS", "agents/AGENTS.md")]:
             self.addCleanup(setattr, module, name, getattr(module, name))
             setattr(module, name, self.dir / path)
         claude_md = unittest.mock.patch.dict(os.environ, {"ADDYSTACK_CLAUDE_MD": str(self.dir / "CLAUDE.md")})
@@ -121,6 +122,17 @@ class Render(unittest.TestCase):
         self.assertIn("The shell is zsh on macOS", codex)
         self.assertNotIn("Bash tool's timeout", codex)
         self.assertEqual(codex.count("- Sam's own action."), 1)
+
+    def test_the_agents_file_inlines_the_parts_from_the_neutral_template(self):
+        files = self.render(hosts={**self.resolved["hosts"], "agents": True})
+        agents = files[self.dir / "agents" / "AGENTS.md"]
+        self.assertNotRegex(agents, r"(?m)^@")
+        self.assertLess(agents.index("# Router"), agents.index("# Evidence and execution"))
+        self.assertIn("Quote globs and colon paths", agents)
+        self.assertNotIn("zsh", agents)
+        self.assertNotIn("Bash tool's timeout", agents)
+        self.assertEqual(agents.count("- Sam's own action."), 1)
+        self.assertNotIn(self.dir / "agents" / "AGENTS.md", self.render())
 
     def test_claudes_file_is_in_claude_config_dir_unless_addystack_claude_md_names_one(self):
         # Claude Code reads its user CLAUDE.md from its config folder.

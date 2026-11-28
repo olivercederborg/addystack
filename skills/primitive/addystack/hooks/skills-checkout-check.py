@@ -67,14 +67,19 @@ def checkout_warning():
             "skills that differ from main.")
 
 
-def _named(paths, render, hosts, removed):
-    """paths as home-relative names, each with what loads it: Codex inlines what Claude Code imports,
-    and a skill note loads with its skill in either."""
+_LOADED_BY = {"claude": "Claude Code", "codex": "Codex", "agents": "agents linked to it"}
+
+
+def _named(paths, render, hosts, removed, value):
+    """paths as home-relative names, each with what loads it: Codex and the agents file inline what
+    Claude Code imports, and a skill note loads with its skill in any of them."""
+    loaders = {path: _LOADED_BY[host] for host, path in render.outputs(value).items()}
+
     def kind(path):
         if path in removed:
             return "skill note, removed: stop following it"
         if path in hosts:
-            return "Codex" if path == render.CODEX.expanduser() else "Claude Code"
+            return loaders.get(path, "Claude Code")
         return "skill note"
     return ", ".join(f"{render._home(path)} ({kind(path)})" for path in paths)
 
@@ -98,14 +103,14 @@ def build_warning():
     recent = [path for path in [*hosts, *notes.built(value)]
               if path.is_file() and time.time() - path.stat().st_mtime < 30]
     if not stale:
-        return (f"⚠️ addystack rebuilt {_named(recent, render, hosts, ())} in the last 30 seconds, maybe after this session "
+        return (f"⚠️ addystack rebuilt {_named(recent, render, hosts, (), value)} in the last 30 seconds, maybe after this session "
                 "loaded them, so read the ones your host loads now and follow them where they differ."
                 if recent else "")
     # A host file addystack didn't build, such as a CLAUDE.md under another CLAUDE_CONFIG_DIR, is
     # install's to adopt; build would overwrite it.
     import reconcile
     try:
-        foreign = [render._home(path) for path in (render.claude_md(), render.CODEX.expanduser())
+        foreign = [render._home(path) for path in render.outputs(value).values()
                    if path in stale and reconcile._hand_written(path)]
     except ValueError as error:
         foreign = [str(error)]
@@ -131,7 +136,7 @@ def build_warning():
     # files are kept beside them, as `addystack init --force` keeps the config it replaces.
     kept = []
     try:
-        for path in (render.claude_md(), render.CODEX.expanduser()):
+        for path in render.outputs(value).values():
             if path in stale and path.is_file():
                 shutil.copyfile(path, path.with_name(f"{path.name}.bak"))
                 kept.append(render._home(path.with_name(f"{path.name}.bak")))
@@ -146,7 +151,7 @@ def build_warning():
     return " ".join(
         ([f"⚠️ addystack's built instructions are out of date, and `addystack build` failed ({failed}): run "
           "`addystack doctor`."] if failed else [])
-        + ([f"⚠️ addystack rebuilt {_named(rebuilt, render, hosts, [p for p in rebuilt if stale.get(p, '') is None])}, "
+        + ([f"⚠️ addystack rebuilt {_named(rebuilt, render, hosts, [p for p in rebuilt if stale.get(p, '') is None], value)}, "
           "which no longer matched the kit and the user's config. This session loaded the old text, so read the "
           "ones your host loads, and any note already read, now and follow them where they differ."
           + (f" The replaced text is in {', '.join(kept)}." if kept else "")]
