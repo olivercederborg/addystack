@@ -27,6 +27,10 @@ read, isn't JSONC, or fails the schema gives the checkout policy.unresolved, wit
 
 A rule's `remote` is searched in the origin URL, so it never matches a repo with no
 remotes, while its `path` glob still can. Git runs with LC_ALL=C and no network access.
+`check_queue()` reads the agent memory guard's check queue settings, and falls back to the
+kit's for that section alone, so a resolved.json built before the section existed keeps
+its policy.
+
 `ADDYSTACK_STATE` overrides the state folder that holds resolved.json, for tests and dry
 runs.
 """
@@ -79,6 +83,15 @@ class Replies:
     rules: Optional[Path]
     next: Next
     turnBlock: bool
+
+
+@dataclass(frozen=True)
+class CheckQueue:
+    """The agent memory guard's check queue: whether it runs, how many busy heavy checks
+    run at once, and the cores running checks may use before a new one waits."""
+    enabled: bool
+    maxChecks: int
+    maxCores: int
 
 
 _KIT = Path(__file__).resolve().parent.parent
@@ -286,6 +299,28 @@ def _replies(state: Dict[str, Any]) -> Replies:
     rules = _typed(data["rules"], str, type(None))
     return Replies(style=_one_of(data["style"], ReplyStyle), rules=Path(rules) if rules else None,
                    next=_one_of(data["next"], Next), turnBlock=_typed(data["turnBlock"], bool))
+
+
+def check_queue() -> CheckQueue:
+    """The check queue's settings. A resolved.json built before the section existed, or
+    with a bad value in it, gives the kit's defaults for this section alone; policy(),
+    replies(), and kit() still read the file."""
+    try:
+        return _check_queue(_state()["checkQueue"])
+    except (KeyError, TypeError, ValueError):
+        return _check_queue(_kit_defaults()["checkQueue"])
+
+
+def _check_queue(data: Any) -> CheckQueue:
+    return CheckQueue(enabled=_typed(data["enabled"], bool), maxChecks=_count(data["maxChecks"]),
+                      maxCores=_count(data["maxCores"]))
+
+
+def _count(value: Any) -> int:
+    """value, when it's an integer of at least 1 and not a boolean; ValueError otherwise."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"{value!r} isn't a count")
+    return value
 
 
 def kit() -> Path:

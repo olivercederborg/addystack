@@ -162,7 +162,7 @@ class Validate(unittest.TestCase):
     def test_types_consts_and_empty_matches(self):
         self.assertEqual(self.issues({"version": 2, "hosts": {"claude": 1}, "policy": {"repos": [{"match": {}}]}}), [
             Issue("version", "must be 1"),
-            Issue("hosts.claude", "expected boolean, got number"),
+            Issue("hosts.claude", "expected boolean, got integer"),
             Issue("policy.repos.0.match", "needs at least 1 key"),
         ])
 
@@ -326,6 +326,27 @@ class Resolve(Workspace):
         self.assertEqual(resolved["kit"], str(KIT))
         self.assertEqual(resolved["policy"]["defaults"]["pushVia"], "git")
         self.assertEqual(resolved["hooks"]["enable"], [])
+
+
+class IntegerKeys(unittest.TestCase):
+    """The validator's integer type and minimum keyword."""
+
+    def issues(self, queue):
+        return config.validate([Layer("user", KIT, {"checkQueue": queue})])
+
+    def test_an_integer_key_accepts_one_and_up(self):
+        self.assertEqual(self.issues({"maxChecks": 1, "maxCores": 64}), [])
+
+    def test_an_integer_key_rejects_zero_a_string_and_a_boolean(self):
+        self.assertEqual(self.issues({"maxChecks": 0}), [Issue("checkQueue.maxChecks", "0 is under the minimum 1")])
+        for bad, kind in (("4", "string"), (True, "boolean"), (2.5, "number"), (None, "null")):
+            with self.subTest(bad=bad):
+                self.assertEqual(self.issues({"maxCores": bad}),
+                                 [Issue("checkQueue.maxCores", f"expected integer, got {kind}")])
+
+    def test_check_queue_merges_with_its_defaults(self):
+        resolved = config.merge([DEFAULTS, Layer("user", KIT, {"checkQueue": {"maxChecks": 2}})], KIT)
+        self.assertEqual(resolved["checkQueue"], {"enabled": True, "maxChecks": 2, "maxCores": 10})
 
 
 if __name__ == "__main__":

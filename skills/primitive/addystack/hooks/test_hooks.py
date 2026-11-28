@@ -6404,5 +6404,170 @@ class Exchanges(unittest.TestCase):
         self.assertEqual(transcripts.exchanges("/nonexistent/x.jsonl"), [])
 
 
+class CheckQueueNotice(unittest.TestCase):
+    """agent-memory-guard-notice.py's queued note and queue-kill notice, by hook_event_name."""
+    HOOK = "agent-memory-guard-notice.py"
+
+    def setUp(self):
+        self.home = pathlib.Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.home)
+        self.logs = self.home / "Library" / "Logs"
+        self.logs.mkdir(parents=True)
+        self.state = self.home / "state"
+        self.state.mkdir()
+        self.env = {"HOME": str(self.home), "ADDYSTACK_STATE": str(self.state)}
+
+    def raw(self, payload):
+        return subprocess.run([str(HOOKS / self.HOOK)], input=json.dumps(payload), capture_output=True,
+                              text=True, check=True, env={**os.environ, **self.env}).stdout
+
+    def hold(self, count):
+        (self.state / "check-queue.json").write_text(json.dumps(
+            {"held": [{"unit": n, "members": [[n, n]]} for n in range(count)]}))
+
+    def log(self, *lines):
+        (self.logs / "agent-memory-guard.log").write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+    def kill(self, command="bun run typecheck", seconds_ago=1, **more):
+        return {"time": "t", "at": time.time() - seconds_ago, "agent_pid": os.getpid(),
+                "reason": "held 15 min while the machine's check queue stayed full (4 checks running)",
+                "command_sha256": hashlib.sha256(command.encode()).hexdigest(), "command": command,
+                "tool_call_ids": [], "rule": "queue", "unit": "node tsc", **more}
+
+    def test_queued_note_names_the_held_count_in_claude_and_codex(self):
+        self.hold(3)
+        for payload in ({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}},
+                        {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"},
+                         "session_id": "s", "turn_id": "t", "tool_use_id": "call_1"}):
+            with self.subTest(payload=sorted(payload)):
+                note = run_hook(self.HOOK, payload, env=self.env)
+                self.assertIn("3 checks are queued", note)
+                self.assertIn("up to 15 min", note)
+
+    def test_no_queued_note_when_nothing_is_held_or_the_queue_file_is_unreadable(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}
+        self.assertEqual(self.raw(payload), "")
+        self.hold(0)
+        self.assertEqual(self.raw(payload), "")
+        (self.state / "check-queue.json").write_text("{not json")
+        self.assertEqual(self.raw(payload), "")
+
+    def test_the_queued_note_makes_no_permission_decision(self):
+        self.hold(1)
+        out = json.loads(self.raw({"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}))
+        self.assertEqual(set(out), {"hookSpecificOutput"})
+        self.assertEqual(set(out["hookSpecificOutput"]), {"hookEventName", "additionalContext"})
+        self.assertIn("1 check is queued", out["hookSpecificOutput"]["additionalContext"])
+
+    def test_a_claude_queue_kill_is_told_on_the_next_bash_call(self):
+        # Claude Code moved the 15-minute call to the background at its timeout, and a
+        # background command's failure fires no hook, so the next call's PreToolUse tells it.
+        self.log(self.kill(seconds_ago=960))
+        payload = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}}
+        note = run_hook(self.HOOK, payload, env=self.env)
+        self.assertIn("killed the check in an earlier command in this session, `bun run typecheck`", note)
+        self.assertIn("run a narrower check", note)
+        self.assertNotIn("parallelism", note)
+        self.assertEqual(self.raw(payload), "")  # told once
+
+    def test_a_subagents_bash_call_leaves_the_main_agents_kill_untold(self):
+        self.log(self.kill(seconds_ago=960))
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "echo sub"}}
+        self.assertEqual(self.raw({**payload, "agent_id": "a5168f63857f33134"}), "")
+        self.assertIn("earlier command in this session", run_hook(self.HOOK, payload, env=self.env))
+
+    def test_the_next_bash_call_tells_only_this_agents_claude_kills(self):
+        payload = {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}
+        other = subprocess.Popen(["sleep", "5"])
+        try:
+            for kill in (self.kill(agent_pid=other.pid), self.kill(tool_call_ids=["call_1"]),
+                         self.kill(seconds_ago=7 * 3600)):
+                with self.subTest(kill={k: kill[k] for k in ("agent_pid", "tool_call_ids")}):
+                    self.log(kill)
+                    self.assertEqual(self.raw(payload), "")
+        finally:
+            other.kill()
+            other.wait()
+
+    def test_an_earlier_kill_and_the_queued_note_come_together(self):
+        self.hold(2)
+        self.log(self.kill(seconds_ago=960))
+        note = run_hook(self.HOOK, {"hook_event_name": "PreToolUse", "tool_input": {"command": "ls"}}, env=self.env)
+        self.assertLess(note.index("earlier command"), note.index("2 checks are queued"))
+
+    def test_a_memory_kill_keeps_todays_advice(self):
+        line = self.kill(reason="702 processes, over the per-command 600")
+        del line["rule"], line["unit"]
+        self.log(line)
+        note = run_hook(self.HOOK, {"tool_input": {"command": "bun run typecheck"}, "duration_ms": 3000}, env=self.env)
+        self.assertIn("so it wouldn't freeze the Mac", note)
+        self.assertIn("lower its parallelism", note)
+
+    def test_codex_notice_matches_by_tool_call_id(self):
+        # Codex reports a yielded command when a later poll sees it end: no duration_ms, and
+        # the kill can be minutes old.
+        self.log(self.kill(command="node tsc", seconds_ago=600, tool_call_ids=["call_7"], agent_pid=1))
+        out = json.loads(self.raw({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_use_id": "call_7",
+                                   "tool_input": {"command": "pnpm typecheck"}, "tool_response": "..."}))
+        self.assertEqual(out["hookSpecificOutput"]["hookEventName"], "PostToolUse")
+        self.assertIn("check queue stayed full", out["hookSpecificOutput"]["additionalContext"])
+
+    def test_codex_notice_ignores_another_tool_calls_kill(self):
+        self.log(self.kill(tool_call_ids=["call_7"]), self.kill(tool_call_ids=[]))
+        payload = {"hook_event_name": "PostToolUse", "tool_use_id": "call_8", "tool_input": {"command": "bun run typecheck"}}
+        self.assertEqual(self.raw(payload), "")
+        self.assertEqual(self.raw({**payload, "tool_use_id": ""}), "")
+
+    def test_each_codex_call_a_kill_ended_gets_the_notice_once(self):
+        self.log(self.kill(tool_call_ids=["call_a", "call_b"]))
+        for call in ("call_a", "call_b"):
+            payload = {"hook_event_name": "PostToolUse", "tool_use_id": call, "tool_input": {"command": "x"}}
+            with self.subTest(call=call):
+                self.assertIn("check queue", run_hook(self.HOOK, payload, env=self.env))
+                self.assertEqual(self.raw(payload), "")
+
+    def test_notice_reads_a_bounded_log_tail(self):
+        stops = [{"event": "stop", "time": "t", "at": time.time(), "unit": "node tsc", "command": "x" * 200}] * 1500
+        self.log(self.kill(tool_call_ids=["call_old"]), *stops, self.kill(tool_call_ids=["call_new"]))
+        self.assertGreater((self.logs / "agent-memory-guard.log").stat().st_size, 256 * 1024)
+        payload = {"hook_event_name": "PostToolUse", "tool_input": {"command": "x"}}
+        self.assertIn("check queue", run_hook(self.HOOK, {**payload, "tool_use_id": "call_new"}, env=self.env))
+        self.assertEqual(self.raw({**payload, "tool_use_id": "call_old"}), "")
+
+    def test_notice_reports_every_matching_kill_once(self):
+        # Memory kills: a queue kill can't fail a 5-second Claude call.
+        kills = [self.kill(seconds_ago=2, reason="702 processes, over the per-command 600"),
+                 self.kill(seconds_ago=1, reason="21.0 GB, over the per-command 20 GB")]
+        for kill in kills:
+            del kill["rule"]
+        self.log(*kills)
+        payload = {"hook_event_name": "PostToolUseFailure", "tool_input": {"command": "bun run typecheck"}, "duration_ms": 5000}
+        note = run_hook(self.HOOK, payload, env=self.env)
+        self.assertLess(note.index("702 processes"), note.index("21.0 GB"))
+        self.assertEqual(len((self.logs / "agent-memory-guard.reported").read_text().split()), 2)
+        self.assertEqual(self.raw(payload), "")
+
+    def test_every_kill_of_one_call_is_told(self):
+        memory = self.kill(tool_call_ids=["call_1"], reason="700 processes, over the per-command 600")
+        del memory["rule"]
+        self.log(self.kill(tool_call_ids=["call_1"], seconds_ago=2), memory)
+        payload = {"hook_event_name": "PostToolUse", "tool_use_id": "call_1"}
+        note = run_hook(self.HOOK, payload, env=self.env)
+        self.assertLess(note.index("check queue stayed full"), note.index("700 processes"))
+        self.assertEqual(self.raw(payload), "")  # both told, once
+
+    def test_every_guard_entry_shares_one_id_and_its_selection(self):
+        manifest = json.loads((HOOKS / "manifest.json").read_text())
+        entries = [(runtime, entry) for runtime, rows in manifest.items() for entry in rows
+                   if entry["command"].endswith("/agent-memory-guard-notice.py")]
+        self.assertEqual(sorted((runtime, entry["event"]) for runtime, entry in entries), [
+            ("claude", "PostToolUseFailure"), ("claude", "PreToolUse"), ("codex", "PostToolUse"), ("codex", "PreToolUse")])
+        self.assertEqual({(entry["id"], tuple(entry["tags"]), entry.get("requires"), tuple(entry.get("hosts", ())),
+                           entry["matcher"]) for _, entry in entries},
+                         {("agent-memory-guard-notice", ("machine",), None, ("darwin",), "Bash")})
+        # hookset.guard_wanted reads the first Claude entry with the id; the set above has one
+        # element, so any of them gives the same answer.
+
+
 if __name__ == "__main__":
     unittest.main()

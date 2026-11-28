@@ -64,5 +64,18 @@ class Annotations(unittest.TestCase):
                     self.assertIs(node.get("additionalProperties"), False)
 
 
+class CheckQueueFields(unittest.TestCase):
+    """The checkQueue keys agree everywhere they're listed."""
+
+    def test_schema_keys_match_resolved_and_config_fields(self):
+        sys.path.insert(0, str(KIT / "lib"))
+        import config
+        declared = set(SCHEMA["properties"]["checkQueue"]["properties"])
+        self.assertEqual(declared, {f.name for f in dataclasses.fields(resolved.CheckQueue)})
+        self.assertEqual(declared, set(config.CheckQueue.__annotations__))
+        self.assertEqual(SCHEMA["properties"]["checkQueue"]["default"],
+                         {key: node["default"] for key, node in SCHEMA["properties"]["checkQueue"]["properties"].items()})
+
+
 if __name__ == "__main__":
     unittest.main()

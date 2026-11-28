@@ -292,5 +292,32 @@ class MissingState(Fixture):
                 self.assertKitDefaults()
 
 
+class CheckQueueSettings(Fixture):
+    """resolved.check_queue() and its section-only fallback."""
+
+    def edit(self, change):
+        data = json.loads(self.state.read_text())
+        change(data)
+        self.state.write_text(json.dumps(data))
+
+    def test_check_queue_reads_the_built_section(self):
+        self.assertEqual(resolved.check_queue(), resolved.CheckQueue(True, 4, 10))
+        self.edit(lambda data: data["checkQueue"].update(enabled=False, maxChecks=2))
+        self.assertEqual(resolved.check_queue(), resolved.CheckQueue(False, 2, 10))
+
+    def test_a_resolved_json_without_check_queue_gives_its_defaults_and_keeps_policy(self):
+        self.edit(lambda data: data.pop("checkQueue"))
+        self.assertEqual(resolved.check_queue(), resolved.CheckQueue(True, 4, 10))
+        path = self.repo(origin="git@github.com:sam/skills.git")
+        self.assertEqual(self.fields(path, "planning", "trust"), ("autonomous", "merge-on-go", ()))
+
+    def test_a_bad_check_queue_value_gives_its_defaults_and_keeps_replies(self):
+        for bad in (0, "4", True, None, 2.5):
+            with self.subTest(bad=bad):
+                self.edit(lambda data: data["checkQueue"].update(maxChecks=bad))
+                self.assertEqual(resolved.check_queue(), resolved.CheckQueue(True, 4, 10))
+                self.assertEqual(resolved.replies().style, "reply-shape")
+
+
 if __name__ == "__main__":
     unittest.main()

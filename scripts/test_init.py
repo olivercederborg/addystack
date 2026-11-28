@@ -21,7 +21,8 @@ class Init(Home):
     def test_yes_writes_the_detected_defaults_and_the_installed_schema(self):
         self.assertIn("next: addystack install", self.ok("init", "--yes").stdout)
         self.assertEqual(self.parsed(), {"$schema": str(SCHEMA), "version": 1, "identity": {"name": "Sam"},
-                                         "hosts": {"claude": True, "codex": True, "t3": False}})
+                                         "hosts": {"claude": True, "codex": True, "t3": False},
+                                         "checkQueue": {"maxChecks": 4}})
         self.assertIn("ok    config: valid, layers defaults, user", self.ok("install").stdout)
 
     def test_a_host_not_on_path_is_written_disabled(self):

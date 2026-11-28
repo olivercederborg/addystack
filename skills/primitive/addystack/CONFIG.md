@@ -36,6 +36,17 @@ for checkouts matched by `path` or `remote`. The first value listed is the defau
 A repo can commit `.agents/addystack.jsonc` to make these stricter, never looser. To see
 why an agent stopped, run `addystack policy --repo <checkout> --explain`.
 
+## Check queue
+
+On macOS, the agent memory guard runs at most `checkQueue.maxChecks` busy heavy checks
+(tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest) at once across every agent, and holds
+a new one while running checks use `checkQueue.maxCores` cores or more. A held check waits,
+stopped, and resumes when a check finishes or goes idle (under 0.1 cores for 30 seconds);
+one that still waits after 15 minutes is killed, and the agent is told why. Test runs
+(vitest, jest) count but are never held, since a stop fails their timeouts, so they can
+pass the cap, and type checks and lints wait behind them. `"checkQueue": { "enabled": false }` turns it off. A change
+applies after `addystack build`, without restarting the guard.
+
 ## Notes
 
 To add a step to a core skill, write `notes/<skill>.md`, such as `notes/verify-work.md`

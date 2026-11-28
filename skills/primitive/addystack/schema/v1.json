@@ -185,6 +185,31 @@
           "markdownDescription": "Hooks to remove from the preset, by id."
         }
       }
+    },
+    "checkQueue": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "enabled": true, "maxChecks": 4, "maxCores": 10 },
+      "markdownDescription": "The agent memory guard's check queue, on macOS where the guard runs: how many busy heavy checks (tsc, tsgo, tsgolint, oxlint, eslint, jest, vitest) all agents' commands run at once. A new check other than a test run waits, stopped, until one finishes or goes idle, and is killed if it still waits after 15 minutes.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "`false` turns the queue off: held checks resume, and nothing waits."
+        },
+        "maxChecks": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 4,
+          "markdownDescription": "How many busy heavy checks run at once across every agent. A check idle for 30 seconds stops counting, and one that wakes counts again, so the count can pass this for a while. Test runs (vitest, jest) count but are never held, so they can pass it too. 4 suits an 18-core, 48 GB Mac."
+        },
+        "maxCores": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "markdownDescription": "A new check also waits while running checks used this many cores or more over the last 2 seconds. `sysctl -n hw.ncpu` prints your core count."
+        }
+      }
     }
   },
   "definitions": {
