@@ -458,7 +458,7 @@ class Abandoned:
     def __init__(self):
         # head -> (attended, wall time first seen in that state,
         #          last {ident: (cpu ns, reaped ns, parent ident)},
-        #          debt {ident: ns}, total ns, [(time, total)] oldest first)
+        #          debt, cpu_gained's own state, total ns, [(time, total)] oldest first)
         self.state = {}
 
     def busy(self, commands, agents, now, wall=None):
@@ -687,10 +687,9 @@ TEST_RUNNERS = {"vitest", "jest"}
 # A running unit that used under IDLE_CORES over the last IDLE_SECONDS, with every CPU read
 # in them answered and no process found late, stops counting toward maxChecks: a watcher the
 # argv tests misread as a check would otherwise hold a slot until it exits, and get queued
-# checks killed. An idle
-# dev server measured under 0.05 cores (ABANDONED_CORES above); the lightest check measured,
-# a package's tsc, averaged 0.72. One that wakes counts again; it's never stopped, so the
-# count can pass maxChecks for a while, and new units wait.
+# checks killed. An idle dev server measured under 0.05 cores (ABANDONED_CORES above); the
+# lightest check measured, a package's tsc, averaged 0.72. One that wakes counts again; it's
+# never stopped, so the count can pass maxChecks for a while, and new units wait.
 IDLE_SECONDS = 30
 IDLE_CORES = 0.1
 
