@@ -510,6 +510,13 @@ class Status(unittest.TestCase):
         self.assertEqual(json.loads(base64.b64decode(json.loads(block)).decode()), data)
         self.assertNotIn("html_path", self.status())
 
+    def test_a_pr_on_two_rows_is_read_once(self):
+        self.write(**{"| other#5 |": "| #12 |"})
+        units = self.units(self.status())
+        self.assertEqual(units["remote"]["prs"], units["build"]["prs"])
+        self.assertEqual(sorted(call["key"] for call in self.calls("gh")),
+                         ["acme/app#12", "acme/app#12", "acme/app#13", "acme/app#13"])  # a view and checks each
+
     def test_a_thread_on_another_machine_or_in_a_final_row_is_never_read(self):
         self.status()
         self.assertEqual([call[2] for call in self.calls("t3")], ["w1"])
@@ -549,7 +556,7 @@ class Status(unittest.TestCase):
             refs: set[str] = set()
             project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7)", "acme/app", refs)
             self.assertEqual(refs, {"other/repo#7"}, label)
-        for label in ("#7, Support [API [v2]]", r"#7, Fix [escape \] in key]"):
+        for label in ("#7, Support [API [v2]]", r"#7, Fix [escape \] in key]", "#7, Handle `[`", "#7, Keep `` ` `` and `]`"):
             refs = set()
             project._pr_refs(f"[{label}](https://github.com/other/repo/pull/7) and #8", "acme/app", refs)
             self.assertEqual(refs, {"other/repo#7", "acme/app#8"}, label)

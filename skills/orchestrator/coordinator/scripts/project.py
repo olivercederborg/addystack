@@ -498,16 +498,20 @@ def _listened(lines: list[str], key: str) -> str:
 PR_LINK = re.compile(r"\]\(<?(https?://github\.com/[\w.-]+/[\w.-]+/pull/\d+)>?[^)]*\)")  # a Markdown link to a PR, from its `](`
 
 
+CODE_SPAN = re.compile(r"(?<!`)(`+)(?!`).*?(?<!`)\1(?!`)")  # a Markdown code span: a backtick run, closed by one as long
+
+
 def _unlabel(text: str) -> str:
     """text with each Markdown link to a PR replaced by its URL. The label runs back from
-    the link's `](` to its matching `[`, as CommonMark reads it: brackets nest, and a
-    backslash escapes one."""
+    the link's `](` to its matching `[`, as CommonMark reads it: brackets nest, a
+    backslash escapes one, and one inside a code span doesn't count."""
+    code = {i for span in CODE_SPAN.finditer(text) for i in range(*span.span())}
     out, at = [], 0
     for match in PR_LINK.finditer(text):
         depth, start = 0, None
         for i in range(match.start(), at - 1, -1):
             escaped = (len(text[:i]) - len(text[:i].rstrip("\\"))) % 2
-            if text[i] in "[]" and not escaped:
+            if text[i] in "[]" and not escaped and i not in code:
                 depth += 1 if text[i] == "]" else -1
                 if depth == 0:
                     start = i
@@ -668,13 +672,13 @@ def status_data(lines: list[str], *, live: bool = True) -> dict:
     except project_queue.QueueError as error:
         data["queue_unread"] = str(error)
     if "## Workers" in lines:
-        origin = _origin(_checkout(lines))
+        origin, reads = _origin(_checkout(lines)), {}
         rows, odd = _workers(lines)
         groups: dict[str, list[dict]] = {}
         for row in rows:
             match = STATE.match(row.get(COLUMNS["state"], ""))
             group = (match.group(1) or "replaced/absorbed") if match else "other"
-            groups.setdefault(group, []).append(_unit(row, origin, live))
+            groups.setdefault(group, []).append(_unit(row, origin, live, reads))
         data["groups"] = [{"state": name, "units": groups[name]}
                           for name in sorted(groups, key=lambda name: STATUS_ORDER.index(name))]
         data["unread_rows"] = [(_cells(line) or ["?"])[0] for line in odd]
@@ -712,7 +716,7 @@ def _body(lines: list[str], name: str) -> list[str]:
     return [text for text in lines[start_at + 1:end] if text.strip()]
 
 
-def _unit(row: dict[str, str], origin: str, live: bool) -> dict:
+def _unit(row: dict[str, str], origin: str, live: bool, reads: dict) -> dict:
     """One Workers row as status_data's unit. `thread_status` is there only when the thread
     was read: live, linked, on this machine's T3 or `unread`, and its row not FINAL."""
     state = row.get(COLUMNS["state"], "")
@@ -724,14 +728,14 @@ def _unit(row: dict[str, str], origin: str, live: bool) -> dict:
         unit["thread_status"] = (seen.get("status") or "unread") if seen else "unread"
     refs: set[str] = set()
     _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
-    unit["prs"] = [_pr_data(ref, origin, live)
+    unit["prs"] = [_pr_data(ref, origin, live, reads)
                    for ref in sorted(refs, key=lambda ref: (ref.split("#")[0], int(ref.split("#")[1])))]
     issue, waits = row.get(COLUMNS["issue"], ""), row.get(COLUMNS["waits"], "")
     unit["issue"], unit["waits_on"] = (issue if issue not in EMPTY else None), (waits if waits not in EMPTY else None)
     return unit
 
 
-def _pr_data(ref: str, origin: str, live: bool) -> dict:
+def _pr_data(ref: str, origin: str, live: bool, reads: dict) -> dict:
     """A PR as {ref, name, url}: url None when its repo isn't known, and name `#N` in the
     checkout's repo, `owner/repo#N` in another. A live read of a resolved PR adds `read`,
     and when it read, its title, state, draft, and checks: None when they didn't read."""
@@ -741,10 +745,13 @@ def _pr_data(ref: str, origin: str, live: bool) -> dict:
     pr: dict = {"ref": ref, "name": f"#{number}" if repo == origin else ref,
                 "url": f"https://github.com/{repo}/pull/{number}"}
     if live:
-        seen = _pr(ref)
+        if ref not in reads:  # a PR on several rows is read once, so every card shows the same read
+            pr_read = _pr(ref)
+            reads[ref] = (pr_read, None if pr_read is None else _checks(ref))
+        seen, checks = reads[ref]
         pr["read"] = seen is not None
         if seen is not None:
-            pr.update(title=seen["title"], state=seen["state"], draft=seen["isDraft"], checks=_checks(ref))
+            pr.update(title=seen["title"], state=seen["state"], draft=seen["isDraft"], checks=checks)
     return pr
 
 
