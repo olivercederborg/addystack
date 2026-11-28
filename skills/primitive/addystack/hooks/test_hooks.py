@@ -514,6 +514,15 @@ class UnwatchGate(unittest.TestCase):
                         self.assertIsNotNone(reason)
         self.assertIsNotNone(self.reason(said=("unwatch acme/web#6226",)))
 
+    def test_a_github_chip_doesnt_name_a_pr_on_another_host(self):
+        # review-loop r1: owner/repo#N is a github.com PR, never the same path on another host.
+        url = "https://git.acme.dev/acme/app/pull/6226"
+        pathlib.Path(self.gh).write_text(json.dumps({"me": "author", "pr": {
+            "number": 6226, "url": url, "state": "OPEN", "isDraft": False, "author": {"login": "author"}}}))
+        chip = "unwatch {}\n\n{}".format(*pr_chip(6226, "https://github.com/acme/app/pull/6226"))
+        self.assertIsNotNone(self.reason(tool_input={"url": url}, said=(chip,)))
+        self.assertIsNone(self.reason(tool_input={"url": url}, said=(f"unwatch {url}",)))
+
     def test_a_refusal_or_another_request_is_denied(self):
         for prompt in ("don't unwatch it", "keep watching it", "merge it", "request a review",
                        # A question or complaint about the hand-back unwatch, which the go once read as a request.
