@@ -26,7 +26,7 @@ or never finished within --wait), or superseded (the head moved, or the PR moved
 base branch while the checks were waited on; nothing posted, since that push or retarget
 starts its own review). A needs-human review then hands off through handoff.py, a comment for
 whoever reviews and a request to the people REVIEWERS names: "handoff" is {"comment",
-"requested", "why"}. Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
+"requested", "why"}, or {"failed": why} when it couldn't hand off. Exit 0 posted, 3 superseded, 1 refused or failed. It refuses
 GATES.json for another PR, or for a diff the PR no longer has against its base. A posted
 review is recorded in POSTED.json beside REVIEW.json, so a retried run posts nothing it
 already posted, and one retried after a failed withdrawal finishes it. A new review that
@@ -259,8 +259,13 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                     github('dismiss', number, target, _write(scratch, 'dismissal.md', notice))
                 if action == 'needs-human':
                     # The review first, then the handoff to whoever reviews it: its comment, then the request.
-                    handed = handoff.plan(number, verdict, body.split('\n', 1)[0], no_second_opinion)
-                    outcome['handoff'] = {**handoff.send(number, handed, github), 'why': handed['why']}
+                    # The review stands either way, so a handoff that fails, such as a request GitHub
+                    # refuses, is named in the Outcome, as a thread it couldn't resolve is.
+                    try:
+                        handed = handoff.plan(number, verdict, body.split('\n', 1)[0], no_second_opinion)
+                        outcome['handoff'] = {**handoff.send(number, handed, github), 'why': handed['why']}
+                    except ValueError as failed:
+                        outcome['handoff'] = {'failed': str(failed)}
         finally:
             for leftover in folder.glob(f'{scratch.name}-*.json'):
                 leftover.unlink()

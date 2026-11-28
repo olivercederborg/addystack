@@ -206,6 +206,20 @@ class Post(unittest.TestCase):
         self.assertIn('- question: is the column nullable?', files['body.md'])
         self.assertEqual((dismissal[0], dismissal[1][:2]), ('dismiss', ['7', '41']))
 
+    def test_a_refused_request_is_named_in_the_outcome_and_the_review_stands(self):
+        self.gate('interface')
+        fake = Fake()
+        def refuse(command, *arguments):
+            if command == 'request':
+                raise ValueError('github.sh request failed: HTTP 422 Reviews may only be requested from collaborators')
+            return Fake.github(fake, command, *arguments)
+        with patch.object(fake, 'github', refuse):
+            outcome = self.post(fake)
+        self.assertEqual((outcome['outcome'], outcome['handoff']),
+                         ('needs-human', {'failed': 'github.sh request failed: HTTP 422 Reviews may only be requested '
+                                                    'from collaborators'}))
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'comment'])
+
     def test_a_held_finding_on_a_gated_pr_goes_back_to_the_author_and_asks_nobody(self):
         self.gate('one-way-door')
         fake = Fake()
