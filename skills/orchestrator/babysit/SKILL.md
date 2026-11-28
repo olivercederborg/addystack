@@ -34,7 +34,7 @@ Calls here: address-review's **Fix**, **Decline**, **Defer**, **No change**, plu
 ## Example turn (illustrative: match the shape, not the content)
 
 ````markdown
-🟡 **#212 maintained: a retried export publishes again.**
+🟡 **[#212, Publish retried exports](https://github.com/acme/app/pull/212) maintained: a retried export publishes again.**
 
 - **Review**: my reply declining @sam's per-retry log, below. Approval posts it.
 
