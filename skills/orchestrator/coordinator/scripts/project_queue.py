@@ -32,7 +32,7 @@ COUNTER = "Next id: "
 HEADER = ["#", "Kind", "Name", "From", "Since"]
 KINDS = ("stuck", "decide", "review", "do")
 RANK = {"stuck": 0, "decide": 1, "review": 1, "do": 2}
-AGED = timedelta(days=1)  # an item waiting this long under a priority line goes first too, so none starves
+AGED = timedelta(days=1)  # an item waiting this long under a priority line goes next, after its items
 CELL = re.compile(r"(?<!\\)\|")
 WORD = re.compile(r"[^\W\d_]{3}")  # turn_block.py's rule for a need's name
 

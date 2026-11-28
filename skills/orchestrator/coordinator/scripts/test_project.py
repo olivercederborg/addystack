@@ -281,11 +281,10 @@ class PriorityLine(unittest.TestCase):
 
     def test_an_item_waiting_a_day_under_it_goes_next_so_none_starves(self):
         text = (self.other / "project.md").read_text()
-        for name in ("keep the v1 export", "post the reply to Ana on #41", "approve #410 for Ben"):
-            text = re.sub(rf"(\| {re.escape(name)} \| \S+ \| )[^|]+", r"\g<1>2020-01-01 09:00 ", text)
+        text = re.sub(r"(\| post the reply to Ana on #41 \| \S+ \| )[^|]+", r"\g<1>2020-01-01 09:00 ", text)
         (self.other / "project.md").write_text(text)
         self.run_in(self.heard, "priority", "set", "Ben first", "--match", "Ben")
-        self.assertEqual(self.order(), ["3", "1", "2"], "a queue already old when it's said still puts it first")
+        self.assertEqual(self.order(), ["3", "1", "2"], "an old item ages only from when the priority was said")
         line = (self.root / "priority.md").read_text()
         said = re.search(r"- (\S+ \S+) · ", line)[1]
         (self.root / "priority.md").write_text(line.replace(f"- {said} · ", "- 2026-01-01 09:00 · ").replace(
