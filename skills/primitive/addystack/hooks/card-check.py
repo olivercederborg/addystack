@@ -33,7 +33,14 @@ its `eta` has no timer by then or pending task, since a watch can miss a re-run 
 between polls. Replayed on 2,284 `running` turns from Nov 19 to 26, 2026, on two machines,
 it sends back the turn before 10 of the 12 status asks that a missing wake caused. It reads
 T3's state database, since `t3 thread show` lists no pending task while a run is active,
-and passes outside T3 or when the database can't be read."""
+and passes outside T3 or when the database can't be read.
+
+A quiet wake's reply is its turn block alone (turn_block.quiet), which shows the user
+nothing, so the card on screen stays the last reply with text above its block. It goes back
+when its block is `stop` but its needs or options differ from that card's, since a key
+answers the card the user sees (user_turn.answered); and its wake check names the PRs that
+card names. On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed again a
+card the user already had."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
 
@@ -178,14 +185,16 @@ def known_thread(thread):
         db.close()
 
 
-def wake_gap(turn, reply, thread, now):
+def wake_gap(turn, reply, thread, now, screen=None):
     """Why a `running` turn's thread has nothing to wake it on what it waits for, or None
-    when it has, the turn isn't running, or an eta it can't read leaves only a watch."""
+    when it has, the turn isn't running, or an eta it can't read leaves only a watch. A
+    quiet reply's PRs are those screen, the card on screen, names."""
     if turn.state != "running":
         return None
     watched, ended, tasks, timer = wakes(thread)
     import project_md
-    said = project_md.ranges(reply[:reply.rfind("<!--")])  # a range `#20–#22` names each PR in it
+    shown = screen if screen is not None else reply
+    said = project_md.ranges(shown[:shown.rfind("<!--")])  # a range `#20–#22` names each PR in it
     named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
              for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(said)]
     # #N names any repo's #N; repo#N matches owner/repo by its last part.
@@ -212,6 +221,42 @@ def wake_gap(turn, reply, thread, now):
     return (f"this reply's eta is {turn.eta}, but only a PR watch will wake this thread, and a watch can miss a "
             "re-run that ends between its polls. Set a `once` `schedule_task` on this thread at the eta, or drop "
             "the eta if it isn't measured")
+
+
+def on_screen(path, reply):
+    """The last reply with text above its turn block in the transcript at path, before reply:
+    the card the user sees under a quiet one. None when there's none or it can't be read."""
+    import transcripts, turn_block
+    try:
+        said = [text for entry in transcripts.entries(path) if (text := transcripts.reply_text(entry))]
+    except (OSError, TypeError, UnicodeDecodeError):
+        return None
+    if said and said[-1].strip() == reply.strip():
+        said.pop()
+    for text in reversed(said):
+        try:
+            turn_block.located(text)
+        except turn_block.Malformed:
+            continue  # a mid-turn progress line, which carries no block
+        if not turn_block.quiet(text):
+            return text
+    return None
+
+
+def unlike(turn, card):
+    """Why a quiet `stop` block isn't the card on screen's, or None when it is."""
+    import turn_block
+    if card is None:
+        return "this reply is its turn block alone, and no card with text comes before it"
+    try:
+        shown = turn_block.parse(card)
+    except turn_block.Malformed:
+        shown = None
+    if shown is None or (shown.needs, shown.options) != (turn.needs, turn.options):
+        return ("this reply is its turn block alone, so the user sees the card above it, but its needs or options "
+                "differ from that card's, and a key answers the card on screen. Show the new card in full, or copy "
+                "that card's block exactly")
+    return None
 
 
 def sent_back(path):
@@ -251,14 +296,22 @@ def main():
     except turn_block.Malformed:
         turn = None  # as before options: a block parse rejects gets no wake check
     try:
+        import turn_block
+        screen = on_screen(event.get("transcript_path"), reply) if turn and turn_block.quiet(reply) else None
+        mismatch = unlike(turn, screen) if turn and turn.state == "stop" and turn_block.quiet(reply) else None
+    except Exception:
+        screen = mismatch = None
+    try:
         import t3_child
-        gap = wake_gap(turn, reply, os.environ.get("T3CODE_THREAD_ID", ""), time.time()) \
+        gap = wake_gap(turn, reply, os.environ.get("T3CODE_THREAD_ID", ""), time.time(), screen) \
             if turn and t3_child.in_t3() else None
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None
-    # A running block that parses carries no options, and one that doesn't gets no wake check, so at most
-    # one of these holds.
-    if gap:
+    # A running block that parses carries no options, and one that doesn't gets no wake check, so the wake
+    # check and the push check never both hold; a quiet card that isn't the one on screen goes back first.
+    if mismatch:
+        reason, step = mismatch[0].upper() + mismatch[1:], "as the card or as its block"
+    elif gap:
         reason, step = gap[0].upper() + gap[1:], "with the wake set"
     elif found:
         reason = "; ".join(f'option {option.key}, "{option.text}", is stop:push, but push-gate would refuse it if the '

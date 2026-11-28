@@ -2583,6 +2583,28 @@ class MergeGate(unittest.TestCase):
         self.assertIn("picks nothing: the gate can't be sure your reply's turn block was hidden",
                       reason("gh pr merge 12", (self.card(merge, "<title>\n\n"), "a")))
 
+    def test_a_pick_after_quiet_wakes_answers_the_card_on_screen(self):
+        # R204: a wake that changes nothing for the user is its turn block alone, so their key
+        # answers the card above it, and only while each quiet block offers that card's options.
+        merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]
+        quiet = lambda options: claude_wrote(block({"state": "stop", "needs": [{"id": 1, "kind": "review",
+                                                                               "name": "merge #12"}],
+                                                     "options": options, "project": "suite-audit"}))
+        self.scenario(prs={12: None})
+        self.verify(12)
+        for said in [(self.card(merge), self.WAKE, quiet(merge), "a"),
+                     (self.card(merge), self.WAKE, quiet(merge), self.WAKE, quiet(merge), "a")]:
+            with self.subTest(wakes=len(said) // 2 - 1):
+                self.assertIsNone(self.reason("gh pr merge 12", said=said))
+        other = [{"key": "a", "class": "stop:merge", "text": "merge #12 and #13"}]
+        for name, said in {"options the card doesn't show": (self.card(merge), self.WAKE, quiet(other), "a"),
+                           "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
+                           "no card above it": ("fix it", quiet(merge), "a")}.items():
+            with self.subTest(case=name):
+                reason = self.reason("gh pr merge 12", said=said)
+                self.assertIn("picks nothing: no reply of yours came before it, or one with only its turn block "
+                              "offered options the card above it doesn't", reason)
+
     def test_an_agents_pick_after_a_wake_never_counts(self):
         merge = [{"key": "a", "class": "stop:merge", "text": "merge #12"}]
         self.scenario(prs={12: None})
@@ -5346,6 +5368,38 @@ class CardCheck(unittest.TestCase):
         self.assertIn(f'option a, "{text}", is stop:push', json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
 
+class CardCheckQuiet(unittest.TestCase):
+    """card-check.py on a quiet wake's reply, its turn block alone, against the card on screen."""
+    CARD = {"state": "stop", "needs": [{"id": 4, "kind": "review", "name": "post the reply to Ana on #41"}],
+            "options": [{"key": "a", "class": "stop:post", "text": "post the reply"},
+                        {"key": "b", "class": "decision", "text": "no: hold it"}]}
+
+    def run_hook(self, reply, *earlier):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = pathlib.Path(folder.name) / "s.jsonl"
+        path.write_text("".join(json.dumps(entry) + "\n" for entry in [*earlier, claude_wrote(reply)]))
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, input=json.dumps(
+            {"hook_event_name": "Stop", "last_assistant_message": reply, "transcript_path": str(path)}),
+            env={k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}).stdout
+        return json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else None
+
+    def test_a_quiet_card_must_be_the_card_on_screen(self):
+        card = claude_wrote("🟡 **Post the reply to Ana on #41?**\n\n" + block(self.CARD))
+        progress = claude_wrote("Reading the worker's result.")  # a mid-turn line has no block
+        wake = claude_said("Update on pull request #41: checks passed")
+        self.assertIsNone(self.run_hook(block(self.CARD), card, wake, progress))
+        self.assertIsNone(self.run_hook(block(self.CARD), card, wake, claude_wrote(block(self.CARD)), wake))
+        other = {**self.CARD, "options": [{"key": "a", "class": "stop:post", "text": "post the reply and approve #41"}]}
+        moved = {**self.CARD, "needs": [{"id": 5, "kind": "review", "name": "approve #41"}]}
+        for name, reply, earlier in [("other options", block(other), (card, wake)),
+                                     ("another need", block(moved), (card, wake)),
+                                     ("no card above it", block(self.CARD), (wake,))]:
+            with self.subTest(name):
+                self.assertIn("this reply is its turn block alone", self.run_hook(reply, *earlier).lower())
+        self.assertIsNone(self.run_hook("🟡 **Post it?**\n\n" + block(other), card, wake), "a card with text is new")
+
+
 class CardCheckWakes(unittest.TestCase):
     """card-check.py on a `running` reply, against T3's record of what will wake its thread."""
     THREAD = "thread-coordinator"
@@ -5461,6 +5515,24 @@ class CardCheckWakes(unittest.TestCase):
 
     WATCHED = ("dynamic_tool", "completed", "completed", {"repository": "o/r", "number": 6153},
                "mcp__t3-code__watch_pull_request", {"content": "{\"wasWatching\": false}"})
+
+    def test_a_quiet_running_reply_names_the_prs_its_card_on_screen_names(self):
+        # R204: a quiet reply names no PR itself, so its wake check reads the ⏳ line above it.
+        db = self.db(links=[{**self.WATCH, "watch": None, "snapshot": {"state": "open"}}], items=[self.WATCHED],
+                     tasks=[{"taskId": "b1", "kind": "command"}])
+        folder = pathlib.Path(tempfile.mkdtemp(dir=self.dir))
+        path = folder / "s.jsonl"
+        quiet = block({"state": "running", "elapsed": "4 min"})
+        path.write_text("".join(json.dumps(entry) + "\n" for entry in [
+            claude_wrote("⏳ CI is running on #6153.\n\n" + block({"state": "running", "elapsed": "3 min"})),
+            claude_said("Update on pull request #6153: a check passed"), claude_wrote(quiet)]))
+        env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
+               "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
+        out = subprocess.run([str(HOOKS / "card-check.py")], capture_output=True, text=True, check=True, env=env,
+                             input=json.dumps({"hook_event_name": "Stop", "last_assistant_message": quiet,
+                                               "transcript_path": str(path)})).stdout
+        self.assertIn("names #6153, which this thread watched and never unwatched",
+                      json.loads(out)["hookSpecificOutput"]["additionalContext"])
 
     def test_sends_back_a_named_pr_whose_watch_t3_ended(self):
         # Nov 26, 2026, 12:27: "#6153's browser tests are re-running", while #6253's later watch still ran.

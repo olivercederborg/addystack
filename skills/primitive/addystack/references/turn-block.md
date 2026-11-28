@@ -34,7 +34,7 @@ The shared fields and their limits are prefrontal-turns' base, the spec Prefront
 
 - **`state`**: `stop` ends on Next, `done` on Done, and `running` on a ⏳ line while CI, a
   child, or a watch runs, or is the block alone where a skill makes that a quiet watch
-  wake's whole reply.
+  wake's whole reply; a `stop` block alone copies the card on screen's, which a key then answers.
   - `stop` carries at least one option or need.
   - `done` carries neither: both are empty lists.
   - `running` carries no options and always `elapsed` (1-40 characters, not blank, such

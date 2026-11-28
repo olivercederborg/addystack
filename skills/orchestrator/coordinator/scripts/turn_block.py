@@ -344,6 +344,15 @@ def before_block(reply):
     return text[:block.start()]
 
 
+def quiet(reply):
+    """Whether the reply is its turn block alone, as a quiet wake's is: the user sees none of
+    it, so the card on screen is still the reply above it."""
+    try:
+        return not before_block(reply).strip()
+    except Malformed:
+        return False
+
+
 def located(reply):
     """(lines_ended(reply), the BLOCK match of its one turn block); raises Malformed."""
     if not isinstance(reply, str):
