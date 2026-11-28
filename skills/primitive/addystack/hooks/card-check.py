@@ -41,7 +41,7 @@ nothing, so the card on screen stays the card above it. It goes back when its bl
 (user_turn.answered, which the gates read a key with); and its wake check counts every
 watch T3 ended, since a block names no PR. Of 544 quiet `running` turns in a replay of
 Nov 23-27, 2026, 101 had named a PR in their own text that the card on screen didn't.
-On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed
+From Sep 30 to Nov 27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed
 again a card the user already had."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
