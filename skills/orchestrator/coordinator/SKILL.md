@@ -193,8 +193,8 @@ keep the v1 export · export-v2`, and the needs that lead the turn block's.
 
 **Answer, then next.** When the user answers, send the answer as above, quoting their
 words, and run `queue done <id> --answer "<the pick> · the user: '<their words>'"` per
-item. In the same reply, show the next item with no recap. With the queue empty, the reply is one
-line: a ⏳ line while any worker runs, else a **Done** line.
+item. In the same reply, show the next item with no recap. With the queue empty, the
+reply is one line: a ⏳ line while any worker runs, else a **Done** line.
 
 **Done when:** every answer is sent and off the queue, and the reply ends on the queue's
 top item or the one-line status.
