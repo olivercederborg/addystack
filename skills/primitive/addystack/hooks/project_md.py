@@ -23,7 +23,6 @@ def ranges(text):
         f"#{n}" for n in range(int(m[1]), int(m[2]) + 1)) if 0 < int(m[2]) - int(m[1]) <= 20 else m[0], text)
 
 
-# `web #20` or `acme/web #20–#22`, but not a joining word, as in `#20 and #21` or `PR #12`
 # A word before " #N" that names no repo, as in "merge after #36", "stack #3", or "#20 and #21".
 # merge_go.py reads the same list, so a prompt and a Workers cell agree on what names a repo.
 NOT_REPO = (r"(?:after|before|until|till|once|when|then|than|later|maybe|but|except|excluding|unless|not"
@@ -45,6 +44,14 @@ class Pulls(NamedTuple):
 
 
 ARROW = re.compile(r"\s*(?:→|->|=>|⟶)\s*")  # what joins a stack's PRs in a cell
+# A range, `#20–#22` or `acme/tools#20–#22`, up to 20 apart: its PRs read as a chain, so all keep one repo
+RANGE = re.compile(r"(?<![\w/#])((?:[\w.-]+/[\w.-]+)?)#(\d+)\s*[–-]\s*#?(\d+)\b")
+
+
+def chained(text):
+    """text with each range written out as an arrow chain: `acme/tools#20 → #21 → #22`."""
+    return RANGE.sub(lambda m: " → ".join([f"{m[1]}#{m[2]}"] + [f"#{n}" for n in range(int(m[2]) + 1, int(m[3]) + 1)])
+                     if 0 < int(m[3]) - int(m[2]) <= 20 else m[0], text)
 
 
 def pulls(text, origin):
@@ -63,7 +70,7 @@ def pulls(text, origin):
     refs, unread = [], []
     for part in text.split(";"):
         words = iter(word[0] for word in UNREAD.finditer(part))
-        marked = ranges(UNREAD.sub("\0", part))  # each unread word a NUL, so the order holds
+        marked = chained(UNREAD.sub("\0", part))  # each unread word a NUL, so the order holds
         chain, end = None, 0  # the repo a bare #N an arrow joins continues: "owner/tools#109 → #110"
         for found in re.finditer(rf"\0|{PR_REF.pattern}", marked):
             if not ARROW.fullmatch(marked[end:found.start()]):

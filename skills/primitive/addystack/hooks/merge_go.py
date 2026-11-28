@@ -13,16 +13,15 @@ release, try it out, handle it), and talk about merging don't match, though a re
 step NOT_REPO misses before a "#N" reads as a repo (REPO_REF). MergeGo in test_hooks.py
 holds the real prompts this was built from, each with its source: every one merge-gate
 denied for want of a go, and the nearest misses."""
-import os, re, sys
+import re
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from project_md import NOT_REPO  # the words that name no repo, shared with Workers cells
 
 # A repo's name before " #N", as in "dotfiles #36", but no word a sentence puts there:
 # "merge after #36" waits, "merge #55, skip #36" refuses, "merge #55 and fix #36" adds a
 # step, and "PR #36", "stack #3", or "merge 5 #36" names no repo. No list holds every such
 # word, so merge-gate.py holds a go that names a repo to the PRs it names (REPO_NAMED).
 # push-gate.py reads the same names, so a push step ("restack #6091") names no repo either.
-from project_md import NOT_REPO  # noqa: E402  the words that name no repo, shared with Workers cells
 REPO = rf"(?!{NOT_REPO}\s)(?:[\w.-]+/[\w.-]+|[\w.-]*[a-z][\w.-]*)"  # owner/12306 or 1password, not 55
 REPO_REF = re.compile(rf"(?<![^\s(,&-])({REPO})\s+(?=#\d)", re.I)  # the repo word of "dotfiles #36"
 # Whether a text names a PR with its repo: "dotfiles #36", dotfiles#36, sam/12306#36, or

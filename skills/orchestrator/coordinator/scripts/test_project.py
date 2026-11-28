@@ -162,6 +162,8 @@ class Pulls(unittest.TestCase):
                                                          "acme/box#20", "acme/box#21")),  # a chain keeps its repo up to ;
                  ("#20 → #21 onto #19, #22 blocked by #21", ("acme/box#20", "acme/box#21", "acme/box#19", "acme/box#22")),
                  ("acme/tools#7 · #8", ("acme/tools#7", "acme/box#8")),  # only an arrow continues a chain
+                 ("acme/tools#20–#22", ("acme/tools#20", "acme/tools#21", "acme/tools#22")),  # a range keeps its repo
+                 ("acme/tools#109 → #110–#112", ("acme/tools#109", "acme/tools#110", "acme/tools#111", "acme/tools#112")),
                  ('[#109](https://github.com/acme/tools/pull/109 "tools PR")', ("acme/tools#109",)),  # a titled link
                  ("[#109](https://github.com/acme/tools/pull/109 (tools PR))", ("acme/tools#109",)),
                  ("`https://github.com/acme/tools/pull/109` · `#20`", ("acme/tools#109", "acme/box#20")),
@@ -200,8 +202,8 @@ class WorkerPrs(Fixture, unittest.TestCase):
                          " resolve it against: write"
                          " each as owner/repo#N, or as #N for a PR in acme/box, and give each repo's stack its own Workers row\n")
         result = self.project("worker", "review-quality", "--pr", "acme/tools#1 acme/box#2", code=1)
-        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): a bare #N is acme/box's, so write another repo's PR"
-                      " as owner/repo#N, and give each repo's stack its own Workers row",
+        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): write another repo's PR as owner/repo#N, which an"
+                      " arrow carries on (owner/repo#N → #M), and give each repo's stack its own Workers row",
                       result.stderr)
         self.assertEqual(self.text(), self.before)
 
