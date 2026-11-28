@@ -34,9 +34,9 @@ the reviewer.
     the reviewer presses **Post** under the block, the host posts the drafts as the
     reviewer, through the GitHub account they connected to it. That press is their go,
     and a typed "go" is not, so point them to the button.
-  - A message saying commits were pushed voids every earlier block: read the delta as in
-    step 1's last bullet, then show every draft again, written at the new head, with a
-    new block. A message saying the PR moved to another base branch does the same.
+  - A message saying commits were pushed, or that the PR's base moved, voids every
+    earlier block: redo the PR's own diff as in step 1's last bullet, then show every
+    draft again, written at the new head and merge base, with a new block.
 
 ## 1. Load the PR
 
@@ -81,7 +81,11 @@ the reviewer.
     --jq '.[] | select(.commit_id == "<head>") | {id, user: .user.login, app: (.user.type == "Bot"), state, body}'
   ```
 
-  An App's review counts only when its code review ran whole: a **Second opinion** item
+  A review at the head covers the PR's own diff only when it was judged at the same merge
+  base: a handoff's `base` tells which; a review alone doesn't, so when the base may have
+  moved since (step 1's last bullet), its coverage is unknown and the decisions come from
+  source 3 on the current diff as well. An App's review counts only when its code review
+  ran whole: a **Second opinion** item
   (in its **Needs a human** list, or a handoff decision with no `code`) says the other
   provider's pass didn't run, so the code still lacks a review. Treat it as no review, and
   never as a decision to walk.
@@ -89,12 +93,13 @@ the reviewer.
   With none, offer these before step 2, and go on only on `C`:
   - `A` stop here and run `review-code` on the PR first (recommended).
   - `C` skip it and review the decisions anyway.
-- **The PR's own diff** is its merge base with the base branch, and its head: `git
-  merge-base <base SHA> <head>`. A retarget, or a base branch that took in part of a stack,
-  moves the merge base with the same head and base name. When the decisions were judged at
-  another own diff (the handoff's `base` and `head`, or the App's review's commit), read the
-  delta between the two, find the decisions in it as in source 3, and mark each decision it
-  touched.
+- **The PR's own diff** is its merge base with the base branch, and its head: `git fetch
+  origin <base SHA> <head>`, then `git merge-base <base SHA> <head>`. Fetch every commit
+  you compare, the handoff's too, and stop and say so when one can't be fetched. A
+  retarget, or a base branch that took in part of a stack, moves the merge base with the
+  same head and base name. When the decisions were judged at another own diff (the
+  handoff's `base` and `head`), read the delta between the two, find the decisions in it as
+  in source 3, walk each new or changed one, and mark each decision it touched.
 
 **Done when:** the head, every decision with its `code`, the artifacts, and the code
 review's state are known.
@@ -150,8 +155,9 @@ Write the drafts in a `mktemp -d` folder:
 
 - **By hand**: the verdict, `summary.md`, and `drafts.json` in `github.sh`'s shape, one
   `{"path", "line", "side", "body_file"}` per comment.
-- **`--slack`**: the JSON `scripts/drafts.py` documents, with the verdict and the head the
-  drafts were written at, then `scripts/drafts.py check <file>`. Fix what it names.
+- **`--slack`**: the JSON `scripts/drafts.py` documents, with the verdict, and the head
+  and merge base the drafts were written at, then `scripts/drafts.py check <file>`. Fix
+  what it names.
 
 Run `scripts/github.sh anchors <PR> <list>` on the comments as a JSON list
 (`drafts.json`, or the `--slack` file's `comments`). A comment outside the diff can't
@@ -171,9 +177,10 @@ ends with their block.
 
 By hand only; with `--slack` the run ends at step 4.
 
-- Re-check the PR's own diff: `gh pr view <PR> --json headRefOid,baseRefOid`, then its
-  merge base as in step 1. When the head or the merge base differs from the one the drafts
-  were shown at, read the delta, redo the drafts it touches, and show them again.
+- Re-check the PR's own diff: `gh pr view <PR> --json headRefOid,baseRefOid`, then fetch
+  and compute its merge base as in step 1. When the head or the merge base differs from the
+  one the drafts were shown at, find the decisions in the delta, walk each new or changed
+  one as in step 3, redo the drafts, and post only after the reviewer agrees to them again.
 - After the reviewer's explicit go on the drafts as shown, post its verdict's event only:
   - **comment**: when it has comments or a summary, `scripts/github.sh review <PR> <head>
     drafts.json COMMENT summary.md`, with `drafts.json` holding `[]` for a summary alone;

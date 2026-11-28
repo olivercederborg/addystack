@@ -15,7 +15,7 @@ HEAD = '0123456789abcdef0123456789abcdef01234567'
 
 
 def review(**changes):
-    data = {'pr': 12, 'head': HEAD, 'verdict': 'comment', 'summary': 'D2 needs a change; D1 and D3 look right.',
+    data = {'pr': 12, 'head': HEAD, 'merge_base': 'b' * 40, 'verdict': 'comment', 'summary': 'D2 needs a change; D1 and D3 look right.',
             'comments': [{'path': 'src/totals.ts', 'line': 40, 'side': 'RIGHT', 'start_line': 36,
                           'body': 'D2: keep totals internal until a caller needs them.'},
                          {'path': 'db/schema.sql', 'line': 8, 'side': 'LEFT', 'body': 'Why drop this column?'}],
@@ -45,6 +45,11 @@ class Render(unittest.TestCase):
     def test_a_pushback_can_be_a_summary_alone_and_never_reads_as_an_approval(self):
         pushback = review(summary='D1: please change this decision.', comments=[], replies=[])
         self.assertEqual(drafts.read(drafts.render(pushback))['verdict'], 'comment')
+
+    def test_the_merge_base_is_required(self):
+        missing = review(); del missing['merge_base']
+        self.assertIn('merge_base is not a full commit SHA', drafts.problems(missing))
+        self.assertIn('merge_base is not a full commit SHA', drafts.problems(review(merge_base='main')))
 
     def test_the_verdict_is_required_and_a_comment_says_something(self):
         self.assertIn("verdict is not 'approve' or 'comment'", drafts.problems(review(verdict=None)))

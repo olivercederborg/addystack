@@ -5,7 +5,8 @@ whoever posts it decides whose review it becomes.
 
     <!-- review-decisions:drafts v1 {json} -->
 
-    {"pr": 12, "head": "<the 40-hex commit the drafts were written at>", "verdict": "approve" | "comment",
+    {"pr": 12, "head": "<the 40-hex commit the drafts were written at>",
+     "merge_base": "<the 40-hex merge base of the PR's base branch and head then>", "verdict": "approve" | "comment",
      "summary": "the review's body",
      "comments": [{"path", "line": > 0, "side": "RIGHT" | "LEFT", "start_line"?: <= line, "body"}],
      "replies": [{"in_reply_to": <the thread's review comment id>, "body"}]}
@@ -14,7 +15,8 @@ The verdict is the one event a poster sends. "approve" has no comments and no re
 summary, which may be empty, is the approval's body. "comment" has a summary, comments or
 replies, and may be a summary alone, as when a pushback's line is outside the diff.
 `<` and `>` in the JSON are escaped as \\u003c and \\u003e, so no body can close the comment.
-A field added later keeps v1; a renamed or removed one is v2. A reader takes the last block in
+Head and merge base are the PR's own diff the reviewer agreed to; a poster posts only while
+the PR still has both. A field added later keeps v1; a renamed or removed one is v2. A reader takes the last block in
 a message, and nothing when that block is another version or malformed.
 
     drafts.py check FILE   print FILE's drafts as their block; exit 1 naming each problem
@@ -43,6 +45,8 @@ def problems(drafts) -> list[str]:
         found.append('pr is not a PR number')
     if not isinstance(drafts.get('head'), str) or not SHA.fullmatch(drafts['head']):
         found.append('head is not a full commit SHA')
+    if not isinstance(drafts.get('merge_base'), str) or not SHA.fullmatch(drafts['merge_base']):
+        found.append('merge_base is not a full commit SHA')
     if not isinstance(drafts.get('summary'), str):
         found.append('summary is not a string')
     verdict = drafts.get('verdict')
