@@ -253,32 +253,6 @@ would pass a view's six rows.
 The fold lists each PR's idiom sources: the `idiom:` lines `scripts/github.sh target N`
 prints for its Done, or "none recorded" for a Done that predates them.
 
-## Batch card
-
-The calls `queue show` puts on one card: several of one batch, each without a ⚠️ row,
-waiting at once. Its headline asks once, and each item is a numbered bold line naming
-its target, then its draft in full, so a yes needs no fold. `a` takes all; "a except 2"
-or an edit by number changes one, and each item leaves the queue with that answer. A
-merge batch is a stack's ship gate, its option the plain request.
-
-````markdown
-🟡 **Post the three review replies on Ana's PRs?**
-
-1. **[#41, Retries reuse their receipt](https://github.com/acme/app/pull/41)**: answer the question
-   > The retry keeps the first receipt's id, so the client never sees a second one.
-2. **[#42, Receipts return their upload id](https://github.com/acme/app/pull/42)**: re-request the review
-3. **[#43, Exports page their rows](https://github.com/acme/app/pull/43)**: approve it
-
----
-
-**Next**
-
-- **`a` → post all three** · *recommended*
-- `b` → post 1 and 2 only
-
-<!-- turn {"state":"stop","needs":[{"id":7,"kind":"review","name":"answer on #41"},{"id":8,"kind":"review","name":"re-request on #42"},{"id":9,"kind":"review","name":"approve #43"}],"options":[{"key":"a","class":"stop:post","text":"post all three"},{"key":"b","class":"stop:post","text":"post 1 and 2 only"}]} -->
-````
-
 ## Choosing between shapes
 
 One bold line per option, the pick first with ★, each followed by the same snippet
@@ -319,6 +293,32 @@ hook in its own logger was the other option.
 - `b` → no, keep it as is and show group 2
 
 <!-- turn {"state":"stop","needs":[{"id":1,"kind":"decide","name":"shared callback runner"}],"options":[{"key":"a","class":"decision","text":"yes, switch it and show group 2"},{"key":"b","class":"decision","text":"no, keep it as is and show group 2"}]} -->
+````
+
+## Batch card
+
+The calls `queue show` puts on one card: several of one batch, each without a ⚠️ row,
+waiting at once. Its headline asks once, and each item is a numbered bold line naming
+its target, then its draft in full, so a yes needs no fold. `a` takes all; "a except 2"
+or an edit by number changes one, and each item leaves the queue with that answer. A
+merge batch is a stack's ship gate, its option the plain request.
+
+````markdown
+🟡 **Post the three review replies on Ana's PRs?**
+
+1. **[#41, Retries reuse their receipt](https://github.com/acme/app/pull/41)**: answer the question
+   > The retry keeps the first receipt's id, so the client never sees a second one.
+2. **[#42, Receipts return their upload id](https://github.com/acme/app/pull/42)**: re-request the review
+3. **[#43, Exports page their rows](https://github.com/acme/app/pull/43)**: approve it
+
+---
+
+**Next**
+
+- **`a` → post all three** · *recommended*
+- `b` → post 1 and 2 only
+
+<!-- turn {"state":"stop","needs":[{"id":7,"kind":"review","name":"answer on #41"},{"id":8,"kind":"review","name":"re-request on #42"},{"id":9,"kind":"review","name":"approve #43"}],"options":[{"key":"a","class":"stop:post","text":"post all three"},{"key":"b","class":"stop:post","text":"post 1 and 2 only"}]} -->
 ````
 
 ## Reply kinds
