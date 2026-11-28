@@ -151,7 +151,13 @@ class Facts(unittest.TestCase):
         answers = {
             'contents': None,
             'requested_reviewers': 'alice\n',
-            'reviews': 'carol\nbob\n',
+            'reviews': '\n'.join(json.dumps(review) for review in (
+                {'type': 'User', 'login': 'carol', 'state': 'APPROVED', 'commit_id': HEAD},
+                {'type': 'User', 'login': 'bob', 'state': 'COMMENTED', 'commit_id': HEAD},
+                # A review of an earlier head, one dismissed at this head, and an App's: none counts.
+                {'type': 'User', 'login': 'dave', 'state': 'APPROVED', 'commit_id': BASE},
+                {'type': 'User', 'login': 'erin', 'state': 'DISMISSED', 'commit_id': HEAD},
+                {'type': 'Bot', 'login': 'reviewer-app[bot]', 'state': 'COMMENTED', 'commit_id': HEAD})),
             'pulls?state=open': 'alice\nalice\nbob\n',
             'comments': '\n'.join(json.dumps({'login': login, 'body': body}) for login, body in
                                   (('carol', block), ('reviewer-app[bot]', block), ('reviewer-app[bot]', unreadable))),

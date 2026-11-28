@@ -216,7 +216,7 @@ def _lines(output: str) -> list:
 def _facts(number: int) -> dict:
     """Every read a plan needs: {'viewer', 'author', 'body', 'base', 'head', 'rules': list | None,
     'changed': [path], 'load': {login: open requests}, 'engaged': [login], 'handoffs': [block]},
-    where engaged is each person requested or with a submitted review, and handoffs are the
+    where engaged is each person requested or with a standing review of the head, and handoffs are the
     viewer's own, oldest first."""
     repo = 'repos/{owner}/{repo}'
     viewer = github('viewer').strip()
@@ -225,8 +225,12 @@ def _facts(number: int) -> dict:
     text = _gh('api', f'{repo}/contents/{reviewers.PATH}?ref={pr["base"]["sha"]}',
                '-H', 'Accept: application/vnd.github.raw', missing_ok=True)
     requested = _lines(_gh('api', f'{repo}/pulls/{number}/requested_reviewers', '--jq', '.users[].login'))
-    reviewed = _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/reviews?per_page=100', '--jq',
-                          '.[] | select(.user.type == "User" and .state != "PENDING") | .user.login'))
+    # Only a person's review of this head counts: a push can dismiss an earlier one, and a decision
+    # pushed since needs their eyes again.
+    reviews = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/reviews?per_page=100', '--jq',
+                                         '.[] | {type: .user.type, login: .user.login, state, commit_id} | tojson')))
+    reviewed = [review['login'] for review in reviews if review['type'] == 'User' and review['commit_id'] == pr['head']['sha']
+                and review['state'] not in ('PENDING', 'DISMISSED')]
     load = {}
     for login in _lines(_gh('api', '--paginate', f'{repo}/pulls?state=open&per_page=100',
                             '--jq', '.[].requested_reviewers[].login')):
