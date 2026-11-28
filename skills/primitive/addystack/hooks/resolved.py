@@ -87,8 +87,8 @@ class Replies:
 
 @dataclass(frozen=True)
 class CheckQueue:
-    """The agent memory guard's check queue: whether it runs, how many heavy checks run
-    at once, and the cores running checks may use before a new one waits."""
+    """The agent memory guard's check queue: whether it runs, how many busy heavy checks
+    run at once, and the cores running checks may use before a new one waits."""
     enabled: bool
     maxChecks: int
     maxCores: int

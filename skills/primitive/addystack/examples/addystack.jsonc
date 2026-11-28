@@ -22,6 +22,6 @@
   "instructions": null,
   "hooks": { "preset": "recommended", "enable": [], "disable": [] },
 
-  // macOS: how many heavy checks (tsc, eslint, vitest…) all agents run at once.
+  // macOS: how many busy heavy checks (tsc, eslint, vitest…) all agents run at once.
   "checkQueue": { "enabled": true, "maxChecks": 4, "maxCores": 10 }
 }
