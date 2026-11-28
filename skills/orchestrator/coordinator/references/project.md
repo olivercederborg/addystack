@@ -15,8 +15,8 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   added by `phase`.
 - **Queue**: what waits on the user, stuck runs first, then calls, then Do items, oldest
   first within each: a row per real call, stuck run, or Do, with the id its turn-block
-  need carries, never reused, and `Next id:` above the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
-  who asked it, and the answer under Decisions. A phase end carries it over. A project
+  need carries, never reused, and `Next id:` above the table. `queue add` and `queue done`
+  are its only writers, and `done` adds the item, who asked it, and the answer under Decisions. A phase end carries it over. A project
   from before the queue starts it with `queue import`, given a turn block naming every
   item still open, with `--from <id>=<worker>` and `--stuck <id>` for what a block can't
   say, and `queue add` refuses it until then.
