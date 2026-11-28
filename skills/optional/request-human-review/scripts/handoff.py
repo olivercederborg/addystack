@@ -107,7 +107,7 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         def covers(login):
             return [name for name in listed if reviewers.has(reviewers.names(facts['rules'], name)[:2], login)]
         uncovered = [name for name in listed if not any(name in covers(login) for login in chosen)]
-        # Someone already requested, or who already reviewed, isn't asked again.
+        # Someone already requested, or whose review of this head stands, isn't asked again.
         request = [{'login': login, 'role': 'chosen', 'domains': covers(login)} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
         if with_suggested:
