@@ -38,8 +38,9 @@ and passes outside T3 or when the database can't be read.
 A quiet wake's reply is its turn block alone (turn_block.quiet), which shows the user
 nothing, so the card on screen stays the last reply with text above its block. It goes back
 when its block is `stop` but its needs or options differ from that card's, since a key
-answers the card the user sees (user_turn.answered); and its wake check names the PRs that
-card names. On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed again a
+answers the card the user sees (user_turn.answered); and its wake check counts every watch
+T3 ended, since a block names no PR. Of 544 quiet `running` turns in a replay of Nov 23-27,
+101 had named a PR in their own text that the card on screen didn't. On Nov 23-27, 2026, 1,674 of 6,910 unprompted replies in ◆ threads showed again a
 card the user already had."""
 import json, os, pathlib, re, sys, time
 from datetime import datetime
@@ -185,18 +186,20 @@ def known_thread(thread):
         db.close()
 
 
-def wake_gap(turn, reply, thread, now, screen=None):
+def wake_gap(turn, reply, thread, now):
     """Why a `running` turn's thread has nothing to wake it on what it waits for, or None
     when it has, the turn isn't running, or an eta it can't read leaves only a watch. A
-    quiet reply's PRs are those screen, the card on screen, names."""
+    quiet reply, its block alone, names every PR whose watch T3 ended."""
     if turn.state != "running":
         return None
     watched, ended, tasks, timer = wakes(thread)
     import project_md
-    shown = screen if screen is not None else reply
-    said = project_md.ranges(shown[:shown.rfind("<!--")])  # a range `#20–#22` names each PR in it
+    import turn_block
+    said = project_md.ranges(reply[:reply.rfind("<!--")])  # a range `#20–#22` names each PR in it
     named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
              for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(said)]
+    if turn_block.quiet(reply):
+        named = [(None, number) for _, number in ended]
     # #N names any repo's #N; repo#N matches owner/repo by its last part.
     hit = sorted({pr for pr in ended for repo, number in named if number == pr[1] and (
         repo is None or repo == pr[0] or "/" not in repo and pr[0].endswith("/" + repo))})
@@ -296,14 +299,13 @@ def main():
     except turn_block.Malformed:
         turn = None  # as before options: a block parse rejects gets no wake check
     try:
-        import turn_block
-        screen = on_screen(event.get("transcript_path"), reply) if turn and turn_block.quiet(reply) else None
-        mismatch = unlike(turn, screen) if turn and turn.state == "stop" and turn_block.quiet(reply) else None
+        quiet_card = turn and turn.state == "stop" and turn_block.quiet(reply)
+        mismatch = unlike(turn, on_screen(event.get("transcript_path"), reply)) if quiet_card else None
     except Exception:
-        screen = mismatch = None
+        mismatch = None
     try:
         import t3_child
-        gap = wake_gap(turn, reply, os.environ.get("T3CODE_THREAD_ID", ""), time.time(), screen) \
+        gap = wake_gap(turn, reply, os.environ.get("T3CODE_THREAD_ID", ""), time.time()) \
             if turn and t3_child.in_t3() else None
     except Exception:  # T3's database unread: a T3 outage never holds a turn
         gap = None

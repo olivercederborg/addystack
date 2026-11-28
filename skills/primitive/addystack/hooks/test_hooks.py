@@ -5516,15 +5516,15 @@ class CardCheckWakes(unittest.TestCase):
     WATCHED = ("dynamic_tool", "completed", "completed", {"repository": "o/r", "number": 6153},
                "mcp__t3-code__watch_pull_request", {"content": "{\"wasWatching\": false}"})
 
-    def test_a_quiet_running_reply_names_the_prs_its_card_on_screen_names(self):
-        # R204: a quiet reply names no PR itself, so its wake check reads the ⏳ line above it.
+    def test_a_quiet_running_reply_counts_every_watch_t3_ended(self):
+        # R204: a quiet reply names no PR, so every open PR whose watch T3 ended counts.
         db = self.db(links=[{**self.WATCH, "watch": None, "snapshot": {"state": "open"}}], items=[self.WATCHED],
                      tasks=[{"taskId": "b1", "kind": "command"}])
         folder = pathlib.Path(tempfile.mkdtemp(dir=self.dir))
         path = folder / "s.jsonl"
         quiet = block({"state": "running", "elapsed": "4 min"})
         path.write_text("".join(json.dumps(entry) + "\n" for entry in [
-            claude_wrote("⏳ CI is running on #6153.\n\n" + block({"state": "running", "elapsed": "3 min"})),
+            claude_wrote("⏳ Waiting on the reviewers.\n\n" + block({"state": "running", "elapsed": "3 min"})),
             claude_said("Update on pull request #6153: a check passed"), claude_wrote(quiet)]))
         env = {**{k: v for k, v in os.environ.items() if not k.startswith("T3CODE_")}, "T3_STATE_DB": db,
                "T3CODE_THREAD_ID": self.THREAD, "ADDYSTACK_ORCHESTRATE": str(self.dir / "orchestrate")}
