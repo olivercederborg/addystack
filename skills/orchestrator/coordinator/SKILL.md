@@ -152,9 +152,8 @@ inputs or one of Parallel by default's three reasons.
   [tick](references/tick.md) timer then checks the project every 10 minutes, and
   messages this thread only with news T3 doesn't send. Its message opens
   `<coordinator-tick>`: handle each line as this step says and fix its row, or the line
-  repeats hourly. When you set `tick`, run
-  `project.py <folder> tick` once to see the timer runs. A wait for a time, such as
-  a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
+  repeats hourly. When you set `tick`, run `project.py <folder> tick` once. A wait for
+  a time, such as a rate-limit reset, gets a `once` `schedule_task` then, and an `eta`.
 - **A duty tick**, a `duty <name>` row's result, or the user starting, changing, or
   stopping a recurring check: follow [duties](references/duties.md).
 
@@ -183,9 +182,9 @@ no probe settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>"
---from "<worker> <thread link>"`. It orders them stuck runs, then calls, then Do items,
-oldest first, after the priority's. While it holds one, every reply here, ⏳ statuses
-and quiet wakes included, ends on the top item: the
+--from "<worker> <thread link>"`. It orders what waited a day under the priority, its
+items, then stuck runs, calls, and Do items, oldest first. While it holds one, every
+reply here, ⏳ statuses and quiet wakes included, ends on the top item: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip, such as `1 of 3 need you ·
 keep the v1 export · export-v2`, and the need that leads the turn block's `needs`.

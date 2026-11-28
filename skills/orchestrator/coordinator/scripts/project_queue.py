@@ -87,9 +87,10 @@ def _item(row: str) -> Item:
 def read(lines: list[str], ahead: Callable[[Item], bool] | None = None,
          now: datetime | None = None, held_since: datetime | None = None) -> list[Item] | None:
     """The open items in the order the user gets them, or None when project.md has no
-    Queue section yet. ahead, the user's priority line, set at held_since, puts each item
-    that has waited over AGED under it first, then the items it matches, then the rest,
-    each part in the usual order. Raises QueueError on a table it can't read."""
+    Queue section yet. ahead, the user's priority line, set at held_since, puts first each
+    item that has waited over AGED under it, longest-waiting first, then the items it
+    matches, then the rest, those two in the usual order. Raises QueueError on a table it
+    can't read."""
     bounds = _bounds(lines)
     if bounds is None:
         return None
