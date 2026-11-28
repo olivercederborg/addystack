@@ -33,8 +33,10 @@ elif a.startswith("api graphql --paginate") and "statusCheckRollup" in a:
         name, bucket = c[0], c[1]
         app, order, workflow, event, suite, kind = (list(c[2:]) + ["", 1, "", "", 1, "check"][len(c) - 2:])[:6]
         if kind == "status":
-            return {"__typename": "StatusContext", "context": name, "state": status_state[bucket],
-                    "creator": {"login": app} if app else None}
+            # A "user:" prefix makes the creator a person; any other login is a bot.
+            creator = ({"__typename": "User", "login": app.removeprefix("user:")} if app.startswith("user:")
+                       else {"__typename": "Bot", "login": app}) if app else None
+            return {"__typename": "StatusContext", "context": name, "state": status_state[bucket], "creator": creator}
         status, conclusion = run_state[bucket]
         return {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "databaseId": order,
                 "checkSuite": {"app": {"databaseId": app, "slug": {"15368": "github-actions"}.get(str(app), f"app-{app}")} if app else None,
@@ -141,6 +143,11 @@ class Required(unittest.TestCase):
                     status = ["Requested reviews", bucket, "github-actions", 0, "", "", 1, "status"]
                     self.assertEqual(self.required(draft=False, checks=[lint, status], **rule),
                                      f"Requested reviews\t{state}\nrequired: {verdict}\n")
+        # A person whose login is the app's id or its slug isn't the app's bot.
+        for login in ("user:15368", "user:github-actions"):
+            status = ["Requested reviews", "pass", login, 0, "", "", 1, "status"]
+            self.assertEqual(self.required(draft=False, required=["Requested reviews\t15368"], checks=[lint, status]),
+                             "Requested reviews\tnot reported\nrequired: not all passed\n")
         # No check run of the app's on the head names its bot, so its status can't be told apart.
         status = ["Requested reviews", "pass", "github-actions", 0, "", "", 1, "status"]
         self.assertEqual(self.required(draft=False, required=["Requested reviews\t15368"], checks=[status]),

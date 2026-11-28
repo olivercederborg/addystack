@@ -115,7 +115,7 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     if ! checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{app{databaseId slug} workflowRun{event workflow{id}}}} ... on StatusContext{context state creator{login}}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{app{databaseId slug} workflowRun{event workflow{id}}}} ... on StatusContext{context state creator{__typename login}}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
@@ -125,7 +125,7 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
                   (if .checkSuite.workflowRun then "\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)" else "" end),
                   (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")),
                  (if .checkSuite.app.slug then ["app", (.checkSuite.app.databaseId | tostring), .checkSuite.app.slug] | join("\t") else empty end)
-            else ["status", .context, (.creator.login // ""), "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
+            else ["status", .context, (if .creator.__typename == "Bot" then "bot:" + .creator.login else "" end), "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
       if grep -q 'Resource not accessible by integration' "$err"; then
         echo "github.sh required: this token can't read the checks' workflow runs; a GitHub App needs the Actions: read permission" >&2
       else cat "$err" >&2; fi
@@ -134,7 +134,8 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     rm -f "$err"
     # Each app's id and its bot's login, from its check runs on the head: a commit status names
     # the account that set it, never an app id. An app sets statuses as its bot, whose login in
-    # GraphQL is the app's slug, with no [bot] suffix.
+    # GraphQL is the app's slug, with no [bot] suffix. Only a Bot creator counts, marked "bot:",
+    # so a person, whose login may be any text such as an app id or slug, never stands in for one.
     bots=$(printf '%s\n' "$checks" | awk -F'\t' '$1 == "app" { print $2 FS $3 }' | sort -u)
     checks=$(printf '%s\n' "$checks" | awk -F'\t' '$1 != "app"')
     # Each check counts by its newest run, by creation order, which a missing or equal start time
@@ -157,7 +158,7 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
       [ -n "$context" ] || continue
       bot=$(printf '%s\n' "$bots" | awk -F'\t' -v app="$app" 'app != "" && $1 == app { print $2; exit }')
       state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" -v app="$app" -v bot="$bot" \
-        '$1 == name && (app == "" || $2 == app || (bot != "" && $2 == bot)) { seen[$3] = 1 }
+        '$1 == name && (app == "" || $2 == app || (bot != "" && $2 == "bot:" bot)) { seen[$3] = 1 }
         END { split("fail cancel pending skipping pass", order, " ")
               for (i = 1; i <= 5; i++) if (order[i] in seen) { print order[i]; exit }
               print "not reported" }')
