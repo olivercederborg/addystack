@@ -87,8 +87,8 @@ pushing the stack and opening its draft PRs in step 5, and nothing past that.
     and ask for the user's read as a **Decide** before `architect`.
 - **Trust**: the repo policy's `trust` (`draft`, `merge-on-go`, or `gate`; see
   [workflow.md](references/workflow.md)), which says where autopilot ends.
-- **Base**: start the first layer with `scripts/stack.sh start <branch>`, which fetches
-  and branches from `origin/<default>`.
+- **Base**: `scripts/stack.sh start <branch>` starts the first layer from
+  `origin/<default>`; branch names carry the issue key.
 - **Log**: start or reuse the run's decision log with `show-me-your-work`, save a plan
   that lives in an issue or this conversation to the scratch folder, and log its
   decisions with `scripts/log.sh import <log> <plan or brief file>`. A build call a
