@@ -1323,6 +1323,21 @@ class CheckQueue(unittest.TestCase):
         self.assertFalse(q.governor._idle(211, q.now - .5))
         self.assertEqual(q.stopped(), {221})
 
+    def test_a_unit_whose_short_lived_workers_use_little_frees_its_slot(self):
+        # A 0.01 CPU s worker every 10 s is 0.001 cores: idle, though its processes change.
+        q = Queue(self, cap=1)
+        q.tick(q.check(1), q.check(2))
+        reaped = 0
+        for tick in range(1, 121):
+            if tick % 20 == 1 and tick > 1:
+                reaped += int(10e6)
+            members = q.check(1, 1000, reaped=reaped)
+            if tick % 20 == 0:
+                members += [proc(3000 + tick, 211, argv=("node", "worker.js"), start=q.wall - .1, cpu=int(10e6))]
+            q.tick(members, q.check(2, 1000))
+        self.assertTrue(q.governor._idle(211, q.now - .5))
+        self.assertEqual(q.stopped(), set())
+
     def test_a_late_scan_divides_by_the_idle_window(self):
         # 3.5 CPU s across a 40 s gap is 0.0875 cores over the gap, but over the last 30 s
         # it may be 0.117: read it as busy.

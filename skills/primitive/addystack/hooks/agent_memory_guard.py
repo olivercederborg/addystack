@@ -56,11 +56,10 @@ Known limits:
   option, so one after an option's own argument, as in `node --require x.cjs tsc`, isn't
   queued. A watcher is told only by its first argument or a watch flag, so `vitest
   --config v.ts watch` counts as a check and holds a slot until it idles for 30 seconds.
-- A check counts as idle only after 30 seconds with the same processes, so one that starts
-  a short-lived worker every few seconds keeps its slot, as before idle release. A worker
-  one scan missed and the next found again leaves a CPU debt on its parent (cpu_gained,
-  shared with the abandoned-command rule since v0.1.0) that hides later reaped CPU, so a
-  busy check can read idle and one more check may run.
+- A worker launchd reaps, never one of its command's processes, such as one whose parent
+  exited in the same half second, leaves the CPU it had counted as a debt no process
+  repays (cpu_gained), which hides that ancestor's later reaped CPU, so a busy check can
+  read idle and the busy rule count low.
 - An orphan of an Apple binary (sleep, yes, zsh) whose command exited within one
   half-second tick escapes, since macOS hides those binaries' environment; the ulimit
   backstop caps how many there can be. Work an agent hands to launchd or XPC, or starts
@@ -511,8 +510,8 @@ def cpu_gained(members, last, debt, began):
     CPU repays, however late, so the total never counts it twice. A member a scan missed
     that comes back cancels its debt and goes on from its old reading. A member not in
     `last` counts all its CPU when it started after `began` (epoch seconds), else from now.
-    `last` and `debt` are this function's own state: pass back what it returned. Returns
-    (ns, the new last, the new debt)."""
+    `last` maps each member read to its reading; `debt` is this function's own state: pass
+    back what both returned. Returns (ns, the new last, the new debt)."""
     here = {proc.ident for proc in members}
     last = dict(last)
     # vanished ident -> (creditor ident, ns owed, its last reading)
@@ -671,8 +670,9 @@ UNIT_IDLE_TICKS = 2  # a running unit missing this many scans in a row has finis
 # "TIMEOUT after 3290ms"). tsc and the linters run no timers, so they stay holdable.
 TEST_RUNNERS = {"vitest", "jest"}
 # A running unit that used under IDLE_CORES over the last IDLE_SECONDS, with every CPU read
-# in them answered and the same processes throughout, stops counting toward maxChecks: a watcher the argv tests misread as a
-# check would otherwise hold a slot until it exits, and get queued checks killed. An idle
+# in them answered and no process found late, stops counting toward maxChecks: a watcher the
+# argv tests misread as a check would otherwise hold a slot until it exits, and get queued
+# checks killed. An idle
 # dev server measured under 0.05 cores (ABANDONED_CORES above); the lightest check measured,
 # a package's tsc, averaged 0.72. One that wakes counts again; it's never stopped, so the
 # count can pass maxChecks for a while, and new units wait.
@@ -932,10 +932,12 @@ class Governor:
                 continue
             last, debt, began, marks, unread = self.cpu.get(top) or ({}, {}, wall, [], None)
             members = units[top].members
-            # A reading is incomplete when a read failed, or when a member joined or left:
-            # one found late or missed for a scan has CPU no delta counts, so either could
-            # pass for idle. An idle watcher's processes stay the same.
-            if any(proc.cpu is None for proc in members) or {proc.ident for proc in members} != set(last):
+            # A reading is incomplete when a read failed, or when a member that started before
+            # tracking began is first seen now: its CPU until now was never counted. A member
+            # that started since counts whole, one that left is covered by its debt, and one
+            # a scan missed comes back to its old reading (cpu_gained).
+            if any(proc.cpu is None or (proc.ident not in last and proc.start <= began)
+                   for proc in members):
                 unread = now
             gained, last, debt = cpu_gained(members, last, debt, began)
             total = (marks[-1][1] if marks else 0) + gained
@@ -952,8 +954,8 @@ class Governor:
     def _idle(self, top, now):
         """Whether the unit, tracked at least IDLE_SECONDS, used under IDLE_CORES since its
         newest mark that old, over IDLE_SECONDS, so a late scan reads high, never low, and
-        had no incomplete reading since then: no failed read, missed scan, or member that
-        joined or left."""
+        had no incomplete reading since then: no failed read, missed scan, or member found
+        late."""
         if top not in self.cpu:
             return False
         _, _, _, marks, unread = self.cpu[top]
