@@ -101,6 +101,33 @@ class Plan(unittest.TestCase):
                                    'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
         self.assertEqual((again['post'], again['request']), (False, []))
 
+    def test_areas_the_authors_pick_wins_too_are_kept_on_their_record(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @amy\n## pay\n/packages/pay/ @zoe\n')
+        known = {'amy': {'asks': 0, 'share': 0.0}, 'zoe': {'asks': 2, 'share': 0.0}}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, changed=['packages/ops/a.ts', 'packages/pay/c.ts'], viewer='carol')
+        first = self.plan(judged, facts, chosen=('amy',), with_suggested=True)
+        self.assertEqual(handoff.read(first['comment'])['reviewers'], [{'login': 'amy', 'role': 'chosen', 'domains': ['ops', 'pay']}])
+        again = self.plan(judged, {**facts, 'engaged': ['amy'], 'handoffs': [handoff.read(first['comment'])],
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+        self.assertEqual(again['request'], [])
+
+    def test_a_re_review_posts_when_someone_already_asked_newly_keeps_an_area(self):
+        rules = reviewers.parse('## ops\n/packages/ops/ @bob\n## pay\n/packages/pay/ @zoe\n## else\n/packages/else/ @amy\n')
+        known = {login: {'asks': asks, 'share': 0.0} for login, asks in (('amy', 0), ('bob', 0), ('zoe', 2))}
+        judged = verdict(decision('D1', 'packages/ops/a.ts:1'), decision('D2', 'packages/ops/b.ts:1'),
+                         decision('D3', 'packages/pay/c.ts:1'))
+        facts = self.facts(rules=rules, standing=known, changed=['packages/ops/a.ts', 'packages/pay/c.ts'],
+                           engaged=['amy', 'bob', 'zoe'])
+        initial = handoff.read(self.plan(judged, facts)['comment'])
+        # zoe's request ended; amy, still asked, now takes pay: that's posted, so it's remembered.
+        second = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial]})
+        self.assertEqual((second['post'], second['why'], second['request']), (True, 'kept areas changed', []))
+        third = self.plan(judged, {**facts, 'engaged': ['amy', 'bob'], 'handoffs': [initial, handoff.read(second['comment'])],
+                                   'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}})
+        self.assertEqual((third['post'], third['request']), (False, []))
+
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
         changed = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),

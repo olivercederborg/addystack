@@ -247,6 +247,13 @@ class Score(unittest.TestCase):
         picked = reviewers.pick(rules, both, 'someone', [], standing(dict.fromkeys(self.ASKS, 0), rules=rules), WEIGHTS, {})
         self.assertEqual([(r['login'], r['domains']) for r in picked], [('ann', ['bookkeeping']), ('lee', ['transactions'])])
 
+    def test_an_area_held_by_someone_still_asked_isnt_taken_by_a_winner_who_owns_it(self):
+        rules = reviewers.parse('## ops\n/ops/ @bob\n## pay\n/pay/ @zoe\n## ship\n/ship/ @amy\n## other\n/other/ @derek\n')
+        known = standing({'bob': 2, 'zoe': 2}, rules=rules)
+        placed = [{'domain': 'ops'}] * 3 + [{'domain': 'pay'}] * 2 + [{'domain': 'ship'}]
+        picked = reviewers.pick(rules, placed, 'carol', ['amy', 'derek'], known, WEIGHTS, {'ship': 'derek'})
+        self.assertFalse(any('ship' in r['domains'] for r in picked), picked)
+
     def test_whom_an_earlier_handoff_picked_keeps_the_domain_while_they_are_asked(self):
         self.assertEqual(Pick.pick(Pick(), 'billing', engaged=['carol'], held={'billing': 'carol'}), [])
         self.assertEqual(Pick.pick(Pick(), 'billing', held={'billing': 'carol'}), [('alice', 'P1', ['billing'])])

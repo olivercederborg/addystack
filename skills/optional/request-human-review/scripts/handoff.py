@@ -121,6 +121,10 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
                    if not reviewers.has(engaged, login)]
         if with_suggested:
             extra = reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['standing'], weights, held)
+            # Areas the author's pick wins too join their record, so a later handoff keeps them.
+            for reviewer in request:
+                reviewer['domains'] += [name for winner in extra if reviewers.has([reviewer['login']], winner['login'])
+                                        for name in winner['domains'] if name not in reviewer['domains']]
             request += [reviewer for reviewer in extra if not reviewers.has([*engaged, *chosen], reviewer['login'])]
             kept = [{**reviewer, 'role': 'kept'} for reviewer in extra if reviewers.has(engaged, reviewer['login'])]
         else:
@@ -132,13 +136,16 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         sorted(decision['key'] for decision in last['decisions'])
     named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
+    # An area newly kept by someone already asked is posted too, so the next run's `_held` has it.
+    moved = [reviewer for reviewer in kept if any(not reviewers.has([held.get(name, '')], reviewer['login'])
+                                                  for name in reviewer['domains'])]
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:
         why = 'decisions changed' if last else 'first handoff'
     else:
-        why = 'new reviewer' if new else 'nothing new'
-    result = {'post': not same or bool(new), 'why': why, 'head': facts['head'], 'decisions': placed,
+        why = 'new reviewer' if new else 'kept areas changed' if moved else 'nothing new'
+    result = {'post': not same or bool(new) or bool(moved), 'why': why, 'head': facts['head'], 'decisions': placed,
               'request': request, 'suggested': suggested, 'uncovered': uncovered}
     block = {'pr': number, 'base': facts['base'], 'head': facts['head'], 'by': facts['viewer'],
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,

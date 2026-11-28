@@ -180,10 +180,13 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
     for index, name in enumerate(order):
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
         priority = names(rules, name)[:3] if name else []
+        # An earlier handoff's winner still asked keeps the area before anyone picked now takes it.
+        if has(engaged, held.get(name, '')):
+            continue
         if covering := [reviewer for reviewer in picked if has(priority[:2], reviewer['login'])]:
             covering[0]['domains'].append(name)
             continue
-        if any(has(priority[:2], login) for login in asked) or has(engaged, held.get(name, '')):
+        if any(has(priority[:2], login) for login in asked):
             continue
         if not listed(name) and asked:
             continue
