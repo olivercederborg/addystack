@@ -13,7 +13,7 @@ The lines above the first domain hold the pick's settings, one `name: value` eac
     priority: 3 2 1          points for a domain's P1, P2 and P3; nobody else gets any
     open ask: 1              minus this for each review request they haven't started
     share: 10                minus this times their share of recent reviews
-    reuse: 2                 plus this, in a PR's secondary areas, for someone already asked
+    reuse: 1                 plus this, in a PR's secondary areas, for someone already asked
     share since: 2026-12-01  review shares count from this date, at most 14 days back
 
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
