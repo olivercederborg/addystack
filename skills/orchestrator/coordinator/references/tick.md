@@ -36,7 +36,8 @@ Each finding except a PR change repeats hourly while it holds, so fixing the row
 Watches stops it.
 While the coordinator's own thread runs, the tick still times its workers but sends
 nothing and leaves PRs for later, so its turn settles first. `tick.json` beside
-`project.md` holds what it last saw; a failed send leaves it unchanged, so the next tick
+`project.md` holds what it last saw, and when it last read each thread and PR (the
+status page dates its card by the oldest); a failed send leaves it unchanged, so the next tick
 sends again. A thread or PR it can't read is named on stderr, in the timer's log, with the time
 and the CLI's reason. A copy of a project whose coordinator is on another machine's
 environment is skipped: T3 here can't read that thread, and that machine's timer ticks it.

@@ -621,7 +621,7 @@ class Status(unittest.TestCase):
             block = text.split(opener)[1].split("</script>")[0]
             self.assertEqual(json.loads(base64.b64decode(json.loads(block)).decode()), data)
             self.assertNotRegex(text, r"(?i)alert\(1\)|<b>|<img|<(script|link)[^>]+src=|https?://|innerHTML")
-        self.assertIn("function draw(data)", page)
+        self.assertIn("function draw(data, root", page)
 
 if __name__ == "__main__":
     unittest.main()

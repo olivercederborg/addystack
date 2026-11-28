@@ -147,6 +147,7 @@ class Resolved(TypedDict):
     judgment: Dict[str, Any]
     instructions: List[str]
     hooks: Dict[str, Any]
+    coordinator: Dict[str, Any]
 
 
 _KIT = Path(__file__).resolve().parent.parent
@@ -465,6 +466,7 @@ def merge(layers: List[Layer], kit: Path) -> Resolved:
             "replies": replies,
             "judgment": judgment,
             "hooks": {key: value for key, value in data.get("hooks", {}).items() if key == "preset"},
+            "coordinator": data.get("coordinator", {}),
         })
         policy = data.get("policy", {})
         defaults = _deep_merge(defaults, _fields(policy.get("defaults", {}), layer.dir))
@@ -489,6 +491,7 @@ def merge(layers: List[Layer], kit: Path) -> Resolved:
         "judgment": plain["judgment"],
         "instructions": instructions,
         "hooks": {**plain["hooks"], **hooks},
+        "coordinator": plain["coordinator"],
     }
 
 

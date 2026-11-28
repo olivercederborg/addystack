@@ -253,6 +253,11 @@ class Merge(Workspace):
         self.assertEqual(resolved["identity"], {"name": "Sam", "github": None})
         self.assertEqual(resolved["hosts"], {"claude": True, "codex": True, "t3": False, "machines": ["b"]})
 
+    def test_the_coordinator_section_defaults_off_and_a_user_turns_it_on(self):
+        self.assertEqual(self.merge()["coordinator"], {"statusPage": False})
+        on = self.merge(Layer("user", self.dir, {"coordinator": {"statusPage": True}}))
+        self.assertEqual(on["coordinator"], {"statusPage": True})
+
     def test_repo_rules_concatenate_in_layer_order(self):
         rule = {"match": {"remote": "x"}, "trust": "gate"}
         resolved = config.merge([self.kit({"policy": {"defaults": LOOSE, "repos": [rule]}}),

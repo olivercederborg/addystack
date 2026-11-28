@@ -13,7 +13,9 @@ it (reconcile.agent()), or a file holding verify-work's copy's text; the install
 (hookset.drift), and with the codex host enabled, `codex app-server` loads, trusts, and
 enables each kit hook in its hooks.json (_codex_skips); on macOS, while its hook is
 selected, the agent memory guard's plist matches the kit's and is loaded, and a new agent
-shell gets a process limit of 3,000 or less (guard.problems); and the tools the policy needs, `gh` and `gh stack` when the defaults or
+shell gets a process limit of 3,000 or less (guard.problems); on macOS, while
+`coordinator.statusPage` is on, the status page's plist matches the kit's, is loaded, and
+answers at its URL as the status server (status_page.problems); and the tools the policy needs, `gh` and `gh stack` when the defaults or
 a repo rule push through gh stack, are present.
 
 A check skipped because the config didn't resolve reports `skipped: …`, with ok True,
@@ -39,6 +41,7 @@ import render
 import resolved as _resolved
 import skill_layer
 import skills_cli
+import status_page
 from config import Resolved
 
 _SKIPPED = "skipped: the config didn't resolve"
@@ -289,6 +292,21 @@ def _guard(value: Optional[Resolved]) -> Check:
     return Check("memory guard", True, f"loaded, and agent shells capped at {limit:,} processes", None)
 
 
+def _status_page(value: Optional[Resolved]) -> Check:
+    if value is None:
+        return Check("status page", True, _SKIPPED, None)
+    if not status_page.wanted(value):
+        return Check("status page", True, "not needed: coordinator.statusPage is off on this machine", None)
+    lines = status_page.problems(value)
+    if not lines:
+        return Check("status page", True, f"answering at {status_page.url()}", None)
+    fix = "addystack install"
+    if status_page.plist_text(value) is None:
+        kit = skills_cli.add_source(skills_cli.locked()) or "<the addystack repo>"
+        fix = f"npx skills add {kit} -g -y --skill coordinator, then addystack install"
+    return Check("status page", False, "; ".join(lines), fix)
+
+
 def _policy_tools(value: Optional[Resolved]) -> Check:
     if value is None:
         return Check("policy tools", True, _SKIPPED, None)
@@ -309,4 +327,4 @@ def run(resolved: Optional[Resolved]) -> List[Check]:
     """Every check. With resolved None, the config didn't resolve, so the config check
     fails with its issues and the checks that need a resolved config are skipped."""
     return [_config(resolved), _fresh(resolved), _notes(resolved), _hosts(resolved), _skill_links(resolved),
-            _agent(resolved), _hooks(resolved), _guard(resolved), _policy_tools(resolved)]
+            _agent(resolved), _hooks(resolved), _guard(resolved), _status_page(resolved), _policy_tools(resolved)]

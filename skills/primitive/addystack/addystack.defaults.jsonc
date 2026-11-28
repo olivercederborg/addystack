@@ -21,5 +21,6 @@
   "replies": { "style": "own", "rules": null, "next": "off", "turnBlock": false },
   "judgment": { "principles": { "preset": "addystack", "exclude": [] }, "taste": null },
   "instructions": null,
-  "hooks": { "preset": "recommended", "enable": [], "disable": [] }
+  "hooks": { "preset": "recommended", "enable": [], "disable": [] },
+  "coordinator": { "statusPage": false }
 }

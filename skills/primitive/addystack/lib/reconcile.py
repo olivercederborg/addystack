@@ -50,6 +50,11 @@ agent memory guard's launchd plist and starts it, appends the agent-shell proces
 .zshenv when a new agent shell has none, and records the guard in the ledger as
 `"guard": true`; once deselected, it stops only a guard the ledger records (guard.py).
 
+Status page: on macOS, while `coordinator.statusPage` is on, install writes the coordinator
+status page's launchd plist and starts it, and records it in the ledger as `"statusPage":
+true`; once it's off, it stops only an agent the ledger records (status_page.py). Its
+stops, restarts, and starts run in the guard's order.
+
 Commands: the hooks in COMMANDS send a Claude Code command, so while hookset selects any of
 them for Claude Code, install links that command in Claude's commands/ folder to the kit's
 copy, as it links the agent, and once none is selected, removes a link to the kit's copy, or
@@ -72,6 +77,7 @@ import render
 import resolved as _resolved
 import skill_layer
 import skills_cli
+import status_page
 from config import Resolved
 
 LEDGER = _resolved.STATE.parent / "installed.json"
@@ -100,13 +106,14 @@ class Change:
     """One change run() makes, or plan() would make; with left, a path it reports but
     won't touch."""
     kind: Literal["hooks", "adopt-instructions", "agent", "command", "skill-link", "renamed-skill", "guard",
-                  "shell-limit"]
+                  "shell-limit", "status-page"]
     target: Path
     detail: str
     left: bool = False
     # For a command: what install links target to, or None to remove the link. For a
     # renamed skill: its new folder, which a link of its new name points at. For the
-    # guard: its plist to start the agent from, or None to stop it and remove the plist.
+    # guard or the status page: its plist to start the agent from, or None to stop it and
+    # remove the plist.
     source: Optional[Path] = None
 
 
@@ -123,6 +130,10 @@ def run(resolved: Resolved) -> List[Change]:
             guard.stop(change.target)
         elif change.kind == "guard" and change.target in writes:
             guard.unload()
+        elif change.kind == "status-page" and not change.source:
+            status_page.AGENT.stop()
+        elif change.kind == "status-page" and change.target in writes:
+            status_page.AGENT.unload()
     for path, text in writes.items():
         _write(path, text)
     for change in changes:
@@ -137,6 +148,8 @@ def run(resolved: Resolved) -> List[Change]:
             os.unlink(change.target)
         elif change.kind == "guard" and change.source:
             guard.start(change.source)
+        elif change.kind == "status-page" and change.source:
+            status_page.AGENT.start()
     return changes
 
 
@@ -154,14 +167,16 @@ def plan(resolved: Resolved) -> Tuple[List[Change], Dict[Path, str]]:
         if pairs:
             recorded[runtime] = pairs
     ledger_data = _read_json(LEDGER.expanduser())
-    owned = isinstance(ledger_data, dict) and ledger_data.get("guard") is True
-    guard_changes, owned = guard.plan(resolved, writes, owned)
-    wanted = {"version": 1, "hooks": recorded, **({"guard": True} if owned else {})}
+    ledger_keys = ledger_data if isinstance(ledger_data, dict) else {}
+    guard_changes, guard_owned = guard.plan(resolved, writes, ledger_keys.get("guard") is True)
+    page_changes, page_owned = status_page.plan(resolved, writes, ledger_keys.get("statusPage") is True)
+    wanted = {"version": 1, "hooks": recorded, **({"guard": True} if guard_owned else {}),
+              **({"statusPage": True} if page_owned else {})}
     if ledger_data != wanted:
         writes[LEDGER.expanduser()] = json.dumps(wanted, indent=2) + "\n"
     agent = _agent(resolved)
     machine = [Change(kind, target, detail, source=target if start else None)
-               for kind, target, detail, start in guard_changes]
+               for kind, target, detail, start in guard_changes + page_changes]
     return changes + ([agent] if agent else []) + _commands(resolved) + _renamed_skills(resolved) + _skill_links(resolved) + machine, writes
 
 

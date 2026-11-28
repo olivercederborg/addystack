@@ -621,7 +621,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         # dates only a new count or the first look.
         since = before["since"] if before.get("items") == items and "since" in before else (
             _when(now_seen.get("updatedAt")) or now)
-        threads[thread] = {"status": status, "runs": runs, "items": items, "asked": asked, "since": since}
+        threads[thread] = {"status": status, "runs": runs, "items": items, "asked": asked, "since": since, "at": now}
         held = before.get("status") == status and before.get("runs") == runs  # the same for a whole tick
         if status not in ACTIVE and held:
             found.append((f"ended:{thread}:{runs}", f"{slug}: its thread stopped ({status}) while its row says {row_state}"))
@@ -635,11 +635,13 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
                                       "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
-    events = []
+    events, read_at = [], dict(state.get("prsAt", {}))
     for ref in sorted(refs):
         known = state.get("prs", {}).get(ref)
         prs[ref] = view(ref) or known
-        if prs[ref] is known:
+        if prs[ref] is not known:
+            read_at[ref] = now
+        else:
             _warn(f"tick: can't read PR {ref}")
         if ref in watched and prs[ref] and prs[ref][0] != "OPEN":  # a watch left on a finished PR
             found.append((f"watch:{ref}", f"{ref}: {prs[ref][0].lower()}, and still under Watches"))
@@ -651,7 +653,109 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
     kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
-    return due, {"threads": threads, "prs": kept, "sent": sent}
+    return due, {"threads": threads, "prs": kept, "prsAt": {ref: at for ref, at in read_at.items() if ref in kept},
+                 "sent": sent}
+
+
+STALE = 1200  # seconds: tick data older than this reads stale, as _tick's timer warning does
+
+
+def snapshot(folder: Path) -> dict:
+    """One project's card for the live status page (status_server.py), from folder/project.md
+    and folder/tick.json alone: status_data(live=False), with each unit's `thread_status`
+    and each PR's `state` and `draft` filled from what the tick last saw, where it holds
+    them, and asOf.tick when the oldest of those was read. Never raises: a project.md it
+    can't read or parse gives an `unknown` card with the reason, and a tick.json it can't,
+    a card with no tick data (asOf.tick None).
+
+        Card = {folder, state: "ok", data: status_data, phase: "active" | "parked" | "closed"
+                  | "unknown", asOf: {project: mtime, tick: time | None}, tickOn: bool}
+             | {folder, state: "unknown", error: str, asOf: {project: mtime | None, tick: mtime | None}}
+
+    phase is parked by _parked, closed only once `## Result` is written and no row is live,
+    and unknown otherwise when the Goal can't be read. tickOn: Heartbeat is `tick` and the
+    coordinator's link names this machine."""
+    as_of = {"project": _mtime(folder / "project.md"), "tick": _mtime(folder / "tick.json")}
+    try:
+        lines = (folder / "project.md").read_text().split("\n")
+        data = status_data(lines, live=False)
+        try:
+            threads, prs, prs_at = _seen(folder / "tick.json")
+        except (OSError, ValueError):  # the project still shows, with no tick data
+            (threads, prs, prs_at), as_of["tick"] = ({}, {}, {}), None
+        # When the tick last read each state shown: one it kept from an earlier look, as it
+        # does for a failed read or a PR while the coordinator runs, keeps that look's time.
+        # A look from before the tick kept times is undated, and so is one the tick should
+        # hold but doesn't, such as a live row's thread whose first read failed: either way
+        # the card has no tick data.
+        read, here = [], this_environment()
+        for unit in (unit for group in data["groups"] for unit in group["units"]):
+            link = LINK.search(unit["thread"] or "")
+            seen = threads.get(link.group(2)) if link and not FINAL.match(unit["state"]) else None
+            if isinstance(seen, dict) and seen.get("status"):
+                unit["thread_status"] = seen["status"]
+                read.append(seen.get("at"))
+            elif link and THREAD_ROW.match(unit["state"]) and link.group(1) == here:
+                read.append(None)
+            for pr in unit["prs"]:
+                state = prs.get(pr["ref"])
+                if isinstance(state, list) and len(state) == 2:
+                    pr["state"], pr["draft"] = state
+                    read.append(prs_at.get(pr["ref"]))
+                elif PR_ROW.match(unit["state"]) and pr["url"] is not None:
+                    read.append(None)
+        # A read time that isn't a number is undated too, so odd tick data can't hide the card.
+        read = [at if isinstance(at, (int, float)) and not isinstance(at, bool) else None for at in read]
+        if read:
+            as_of["tick"] = None if None in read else min(read)
+        lead = LINK.search(_header(lines, "Coordinator"))
+        ticking = ("## Listening" in lines and _listened(lines, "Heartbeat") == "tick" and lead is not None
+                   and lead.group(1) == here)
+        return {"folder": folder.name, "state": "ok", "data": data, "phase": _phase(lines, data), "asOf": as_of,
+                "tickOn": ticking}
+    except Exception as error:  # whatever a file holds, the page gets a card that says so
+        return {"folder": folder.name, "state": "unknown", "error": str(error) or type(error).__name__, "asOf": as_of}
+
+
+def _mtime(path: Path) -> float | None:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return None
+
+
+def _seen(path: Path) -> tuple[dict, dict, dict]:
+    """The threads, PRs, and PR read times tick.json holds, each {} without a tick.json.
+    Raises ValueError when it holds something else."""
+    try:
+        state = json.loads(path.read_text())
+    except FileNotFoundError:
+        return {}, {}, {}
+    found = [state.get(key, {}) if isinstance(state, dict) else None for key in ("threads", "prs", "prsAt")]
+    if not all(isinstance(part, dict) for part in found):
+        raise ValueError(f"{path} doesn't hold the tick's threads and prs")
+    return found[0], found[1], found[2]
+
+
+def _phase(lines: list[str], data: dict) -> str:
+    """snapshot's phase. Closed needs a `## Result` with text and a Workers table it can read,
+    present, whose rows are all FINAL; a Result beside a live or unread row, an empty Result, or a
+    Workers table it can't read is unknown, since the project may be closing or only
+    recording an interim result. A parked Goal is parked unless such a Result says otherwise."""
+    if "## Goal" not in lines or data["goal"] is None:
+        return "unknown"
+    headings = [i for i, text in enumerate(lines) if text == "## Result" or text.startswith("## Result (")]
+    if not headings:
+        return "parked" if _parked(lines) else "active"
+    written = all(any(text.strip() for text in lines[i + 1:_end(lines, i)]) for i in headings)
+    table = [] if "## Workers" not in lines else [
+        text for text in lines[slice(*_section(lines, "Workers"))] if text.startswith("|")]
+    unread = len(table) < 2 or COLUMNS["state"] not in _cells(table[0]) or not re.match(r"\|\s*:?-", table[1])
+    live = unread or data["unread_rows"] or any(not FINAL.match(unit["state"])
+                                                for group in data["groups"] for unit in group["units"])
+    if _parked(lines):
+        return "unknown" if live else "parked"
+    return "closed" if written and not live else "unknown"
 
 
 def status_data(lines: list[str], *, live: bool = True) -> dict:

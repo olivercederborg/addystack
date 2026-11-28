@@ -185,6 +185,19 @@
           "markdownDescription": "Hooks to remove from the preset, by id."
         }
       }
+    },
+    "coordinator": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "statusPage": false },
+      "markdownDescription": "The coordinator skill's machine setup.",
+      "properties": {
+        "statusPage": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "On macOS, keep a local status page of every coordinator project running at `http://localhost:47130/`, which the coordinator opens as a tab in T3 Code. Run `addystack install` after changing it."
+        }
+      }
     }
   },
   "definitions": {

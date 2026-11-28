@@ -13,13 +13,14 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
   `Proof:`.
 - **Phases**: one line per finished phase, `- <date> · <NN-slug>: <result> · <archive>`,
   added by `phase`.
-- **Queue**: what waits on the user, as step 5 orders it: a row per real call, stuck
-  run, or Do, with the id its turn-block need carries, never reused, and `Next id:` above
-  the table. `queue add` and `queue done` are its only writers, and `done` adds the item,
-  who asked it, and the answer under Decisions. A phase end carries it over. A project
-  from before the queue starts it with `queue import`, given a turn block naming every
-  item still open, with `--from <id>=<worker>` and `--stuck <id>` for what a block can't
-  say, and `queue add` refuses it until then.
+- **Queue**: what waits on the user, stuck runs first, then calls, then Do items, oldest
+  first within each: a row per real call, stuck run, or Do, with the id its turn-block
+  need carries, never reused, and `Next id:` above the table. `queue add` and `queue done`
+  are its only writers, and `done` adds the item, who asked it, and the answer under
+  Decisions. A phase end carries it over. A project from before the queue starts it with
+  `queue import`, given a turn block naming every item still open, with `--from
+  <id>=<worker>` and `--stuck <id>` for what a block can't say, and `queue add` refuses it
+  until then.
 - **Decisions**: `<worker> asked <question> → <answer> · <source>`, the source being
   "the user: '<their words>'", the plan, standing rule <n>, or what the probe showed.
 - **Learnings**: `<worker>: <lesson a sibling worker should know>`.

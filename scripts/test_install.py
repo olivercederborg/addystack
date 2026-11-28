@@ -2,10 +2,11 @@
 hooks into each host's settings and keeps every other hook, removes only hooks it
 installed earlier, moves hand-written CLAUDE.md and AGENTS.md text into global.md before
 the first build, and --dry-run writes nothing; and plan check 9's local part, a fresh
-user's install, init --yes, build, and doctor."""
+user's install, init --yes, build, and doctor. On macOS it also sets up the agent memory
+guard and, while coordinator.statusPage is on, the coordinator status page."""
 from __future__ import annotations
 
-import hashlib, json, os, pathlib, shutil, stat, sys, unittest
+import hashlib, http.client, json, os, pathlib, plistlib, shutil, socket, stat, subprocess, sys, time, unittest, unittest.mock
 from pathlib import Path
 
 from addystack_home import BIN, KIT, SKILLS, Home
@@ -744,6 +745,25 @@ class Guard(Home):
         self.assertIn("agent_memory_guard.py", self.plist.read_text())
         self.assertTrue(self.starts(before)[-1].startswith("bootstrap"))
 
+    def test_start_and_stop_act_on_the_plist_they_are_given(self):
+        import guard
+        custom = self.home / "custom.plist"
+        custom.write_text("custom")
+        self.plist.parent.mkdir(parents=True, exist_ok=True)
+        self.plist.write_text("default")
+        with unittest.mock.patch.dict(os.environ, self.env):
+            guard.start(custom)
+            self.assertIn(f"bootstrap gui/{os.getuid()} {custom}", self.calls())
+            guard.stop(custom)
+        self.assertEqual((custom.exists(), self.plist.exists()), (False, True))
+
+    def test_doctor_names_a_missing_plist_even_when_the_guard_script_is_missing_too(self):
+        import guard
+        with unittest.mock.patch.dict(os.environ, self.env), \
+                unittest.mock.patch.object(guard.hookset, "guard_wanted", return_value=True):
+            lines = guard.problems({"kit": str(self.home / "no-kit")}, 3000)
+        self.assertEqual(lines, [f"{self.plist} is missing"])
+
     def test_a_changed_guard_script_restarts_it_and_doctor_flags_the_old_one(self):
         # The guard reads its script once and loops, so an update that changes the script has
         # to change the plist, or the old code keeps running while doctor says ok.
@@ -983,6 +1003,188 @@ class Guard(Home):
         self.assertEqual({k: v for k, v in self.snapshot().items() if k != self.launchctl_log},
                          {k: v for k, v in before.items() if k != self.launchctl_log})
         self.assertFalse(self.starts())
+
+
+@unittest.skipUnless(sys.platform == "darwin", "the status page is macOS-only")
+class StatusPage(Home):
+    """While coordinator.statusPage is on, macOS install writes the status page's launchd
+    plist, starts it, and records it in the ledger; once it's off, install stops only an
+    agent it recorded. launchctl is Home's stub, and a real status_server.py answers on a
+    free port, as launchd would run it, so doctor's probe has a server to find."""
+
+    def setUp(self):
+        super().setUp()
+        self.plist = self.home / "Library/LaunchAgents/addystack.coordinator-status.plist"
+        self.loaded = self.home / "launchctl.loaded"
+        with socket.socket() as probe:
+            probe.bind(("127.0.0.1", 0))
+            self.port = probe.getsockname()[1]
+        self.env["ADDYSTACK_STATUS_PORT"] = str(self.port)
+        self.url = f"http://localhost:{self.port}/"
+
+    def page(self, on=True):
+        self.write(self.config, json.dumps({"coordinator": {"statusPage": on}}))
+
+    def serve(self):
+        """status_server.py on the free port, over an empty orchestrate folder."""
+        server = SKILLS["coordinator"] / "scripts" / "status_server.py"
+        process = subprocess.Popen([sys.executable, str(server), "--port", str(self.port), "--root",
+                                    str(self.home / "orchestrate")], stderr=subprocess.DEVNULL)
+        self.addCleanup(process.wait)
+        self.addCleanup(process.kill)
+        for _ in range(100):
+            connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+            try:
+                connection.request("GET", "/overview.json", headers={"Host": f"localhost:{self.port}"})
+                connection.getresponse().read()
+                return
+            except ConnectionRefusedError:
+                time.sleep(0.05)
+            finally:
+                connection.close()
+        self.fail("status_server.py didn't answer")
+
+    def doctor_line(self, out):
+        return next(line for line in out.splitlines() if "status page:" in line)
+
+    def calls(self):
+        return self.launchctl_log.read_text().splitlines() if self.launchctl_log.exists() else []
+
+    def test_off_by_default_nothing_is_set_up_and_status_page_prints_nothing(self):
+        out = self.ok("install").stdout
+        self.assertNotIn("(status-page)", out)
+        self.assertIn("ok    status page: not needed: coordinator.statusPage is off on this machine", out)
+        self.assertFalse(self.plist.exists())
+        self.assertEqual(self.calls(), [])
+        printed = self.ok("status-page")
+        self.assertEqual((printed.stdout, printed.stderr), ("", ""))
+
+    def test_the_agent_keeps_the_t3_data_folder_install_ran_with(self):
+        self.page()
+        self.serve()
+        self.env["T3CODE_HOME"] = str(self.home / "t3-elsewhere")
+        self.cli("install")
+        environment = plistlib.loads(self.plist.read_bytes())["EnvironmentVariables"]
+        self.assertEqual(environment["T3CODE_HOME"], str(self.home / "t3-elsewhere"))
+
+    def test_on_writes_and_starts_it_and_records_it_then_a_second_install_changes_nothing(self):
+        self.page()
+        self.serve()
+        out = self.ok("install").stdout
+        self.assertIn(f"changed {self.plist} (status-page)\n  writes the coordinator status page's launchd plist and "
+                      "starts it", out)
+        plist = plistlib.loads(self.plist.read_bytes())
+        server = self.home / ".claude/skills/coordinator/scripts/status_server.py"
+        self.assertEqual(plist["ProgramArguments"], ["/usr/bin/python3", str(server), "--port", str(self.port)])
+        self.assertEqual((plist["Label"], plist["KeepAlive"], plist["RunAtLoad"]),
+                         ("addystack.coordinator-status", True, True))
+        self.assertIn(f"bootstrap gui/{os.getuid()} {self.plist}", self.calls())
+        self.assertTrue(self.loaded.exists())
+        self.assertIs(self.json(self.state / "installed.json").get("statusPage"), True)
+        self.assertIn(f"ok    status page: answering at {self.url}", out)
+        self.assertEqual(self.ok("status-page").stdout, f"{self.url}\n")
+        before = len(self.calls())
+        again = self.ok("install").stdout
+        self.assertNotIn("(status-page)", again)
+        self.assertFalse([call for call in self.calls()[before:] if call.startswith(("bootstrap", "bootout"))])
+
+    def test_an_updated_server_source_restarts_it_and_doctor_flags_the_old_one(self):
+        # The server imports project.py once and keeps serving, so an update that changes
+        # any source it runs has to change the plist, or the old code keeps answering.
+        skill = self.home / ".claude/skills/coordinator"
+        skill.unlink()
+        shutil.copytree(SKILLS["coordinator"], skill)  # as an npx install copies it
+        self.page()
+        self.serve()
+        self.ok("install")
+        (skill / "scripts" / "test_project.py").write_text("# a test isn't a source it runs\n")
+        self.assertNotIn("(status-page)", self.ok("install").stdout)
+        with (skill / "scripts" / "project.py").open("a") as source:
+            source.write("# updated\n")
+        self.assertIn("differs from the kit's", self.doctor_line(self.cli("doctor").stdout))
+        before = len(self.calls())
+        self.assertIn("updates the coordinator status page's launchd plist and starts it", self.ok("install").stdout)
+        starts = [call for call in self.calls()[before:] if call.startswith(("bootstrap", "bootout"))]
+        self.assertEqual([call.split()[0] for call in starts], ["bootout", "bootout", "bootstrap"])
+
+    def test_another_program_on_the_port_fails_doctor(self):
+        self.page()
+        other = subprocess.Popen([sys.executable, "-m", "http.server", str(self.port), "--bind", "127.0.0.1"],
+                                 cwd=self.home, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for _ in range(100):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", self.port)) == 0:
+                    break
+            time.sleep(0.05)
+        line = self.doctor_line(self.cli("install").stdout)
+        self.assertTrue(line.startswith(f"FAIL  status page: {self.url} answers, but not as the status page (Server: "
+                                        "SimpleHTTP"), line)
+
+    def test_a_status_server_answering_an_error_fails_doctor(self):
+        self.page()
+        failing = self.home / "failing.py"
+        failing.write_text(
+            "import sys\nfrom http.server import BaseHTTPRequestHandler, HTTPServer\n"
+            "class Handler(BaseHTTPRequestHandler):\n"
+            "    def version_string(self): return 'addystack-coordinator-status'\n"
+            "    def do_GET(self): self.send_response(503); self.end_headers()\n"
+            "HTTPServer(('127.0.0.1', int(sys.argv[1])), Handler).serve_forever()\n")
+        other = subprocess.Popen([sys.executable, str(failing), str(self.port)], stderr=subprocess.DEVNULL)
+        self.addCleanup(other.wait)
+        self.addCleanup(other.kill)
+        for _ in range(100):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", self.port)) == 0:
+                    break
+            time.sleep(0.05)
+        line = self.doctor_line(self.cli("install").stdout)
+        self.assertTrue(line.startswith(f"FAIL  status page: the status page answers 503 at {self.url}"), line)
+        self.assertEqual(self.cli("status-page").stdout, "")
+
+    def test_off_stops_and_removes_the_agent_install_started_and_doctor_passes(self):
+        self.page()
+        self.serve()
+        self.ok("install")
+        self.page(False)
+        out = self.ok("install").stdout
+        self.assertIn(f"changed {self.plist} (status-page)\n  stops the coordinator status page and removes its plist: "
+                      "coordinator.statusPage is off on this machine", out)
+        self.assertFalse(self.plist.exists())
+        self.assertFalse(self.loaded.exists())
+        self.assertNotIn("statusPage", self.json(self.state / "installed.json"))
+        self.assertIn("ok    status page: not needed", out)
+        self.assertEqual(self.ok("status-page").stdout, "")
+
+    def test_off_leaves_an_agent_set_up_by_hand(self):
+        self.write(self.plist, "<plist/>")
+        self.loaded.touch()
+        self.page(False)
+        out = self.ok("install").stdout
+        self.assertNotIn("(status-page)", out)
+        self.assertTrue(self.plist.exists())
+        self.assertTrue(self.loaded.exists())
+
+    def test_nothing_answering_fails_doctor_and_status_page(self):
+        self.page()
+        result = self.cli("install")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"FAIL  status page: nothing answers at {self.url}", result.stdout)
+        printed = self.cli("status-page")
+        self.assertEqual((printed.returncode, printed.stdout), (1, ""))
+        self.assertIn("the status page isn't answering: nothing answers at", printed.stderr)
+
+    def test_without_the_coordinator_skill_nothing_is_written_and_doctor_names_the_install(self):
+        for folder in (".claude/skills", ".agents/skills"):
+            (self.home / folder / "coordinator").unlink()
+        self.page()
+        result = self.cli("install")
+        self.assertNotIn("(status-page)", result.stdout)
+        self.assertFalse(self.plist.exists())
+        self.assertIn("FAIL  status page: no enabled host's skill folder has coordinator/scripts/status_server.py",
+                      result.stdout)
+        self.assertIn("--skill coordinator, then addystack install", result.stdout)
 
 
 if __name__ == "__main__":
