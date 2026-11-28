@@ -2581,12 +2581,14 @@ class MergeGate(unittest.TestCase):
         notice = self.WAKE.replace("r39", "r40")
         folder = tempfile.mkdtemp(dir=self.dir)
         self.t3_sent(folder, [(self.WAKE, "agent"), (notice, "agent"), ("hold on", "user"),
-                              ("Caveat: don't merge yet", "user"), ("fix it", "user"), ("a", "user")])
+                              ("Caveat: don't merge yet", "user"), ("fix it", "user"), ("a", "user"), ("Option A", "user")])
         reason = lambda said: self.reason("gh pr merge 12", said=said, session_id=ReplyShapeContext.SESSION)
         self.scenario(prs={12: None})
         self.verify(12)
         for name, said in {"one wake": (self.card(merge), self.WAKE, quiet(merge), "a"),
                            "two wakes": (self.card(merge), self.WAKE, quiet(merge), notice, quiet(merge), "a"),
+                           # #144's "Option A" is a key, so it answers the card on screen past a quiet wake too.
+                           "Option A after a wake": (self.card(merge), self.WAKE, quiet(merge), "Option A"),
                            "a notice mid-wake": (self.card(merge), self.WAKE, claude_wrote("Reading the result."),
                                                  notice, quiet(merge), "a"),
                            "a mid-wake line naming the marker": (self.card(merge), self.WAKE,
