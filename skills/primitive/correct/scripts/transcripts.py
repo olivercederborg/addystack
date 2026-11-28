@@ -241,6 +241,15 @@ def agent_sent(senders, seen, text):
     return creators[min(seen[text], len(creators) - 1)] == "agent"
 
 
+def parsed(line):
+    """A transcript line's entry, or None for one it can't parse, which counts as a prompt
+    the user didn't type."""
+    try:
+        return json.loads(line)
+    except (ValueError, RecursionError):  # Python 3.9 recurses on deep nesting
+        return None
+
+
 class Exchange(NamedTuple):
     reply: Optional[str]  # the last assistant text since the prompt before; None if there's none
     prompt: str  # as prompts() gives it
@@ -263,8 +272,9 @@ def exchanges(path, strict=False):
     are no prompt, so the prompt after them answers the reply before them. An exchange's agent is True only for a prompt whose text T3 says
     only other agents sent, so neither a copy whose sender pairing is in doubt, a typed
     message whose text reads as "", such as one starting "Caveat:", nor one that only
-    looks like a wake is one. Its ended is True when a Stop record follows its reply, so
-    that reply ended a turn rather than a prompt landing mid-turn."""
+    looks like a wake is one. Its ended is True when a turn ended or was interrupted after
+    its reply (stops), so the user read that reply as the turn's, rather than a prompt
+    landing mid-turn; a Stop a hook continued doesn't end one."""
     out, seen, reply, command, ended = [], {}, None, False, False
     try:
         found = SESSION_ID.search(pathlib.Path(path).stem)
@@ -272,31 +282,29 @@ def exchanges(path, strict=False):
             raise ValueError(f"no session id in {path}")
         senders = t3_child.senders(found.group(0), strict) if found else {}
         with open(path) as transcript:
-            for line in transcript:
-                try:
-                    entry = json.loads(line)
-                except (ValueError, RecursionError):  # Python 3.9 recurses on deep nesting
-                    entry = None  # a line it can't parse counts as a prompt the user didn't type
-                text = prompt_text(entry)
-                if text is None:
-                    said = reply_text(entry)
-                    reply, command, ended = (said, False, False) if said else (reply, command, ended or (
-                        isinstance(entry, dict) and entry.get("type") == "system"
-                        and entry.get("subtype") == "stop_hook_summary"))
-                    continue
-                sent = "\n".join(texts(text_parts(entry))).strip()
-                if note := SENDER_NOTE.match(sent):
-                    sent = sent[note.end():]
-                # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
-                if command and sent.startswith("<local-command-stdout>"):
-                    (reply, *_, ended), command = out.pop(), False
-                    continue
-                command = sent.startswith("<command-name>")
-                sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
-                # Only a text the user never sent is surely another agent's, however T3's copies pair.
-                out.append(Exchange(reply, "" if sent_by_agent else text,
-                                    sent_by_agent and "user" not in senders[sent], ended))
-                reply, ended = None, False
+            entries = [parsed(line) for line in transcript]
+        ends = stops(entries)
+        for at, entry in enumerate(entries):
+            text = prompt_text(entry)
+            if text is None:
+                said = reply_text(entry)
+                reply, command, ended = (said, False, False) if said else (
+                    reply, command, ended or ends.get(at) in ("ended", "interrupted"))
+                continue
+            ended = ended or ends.get(at) in ("ended", "interrupted")
+            sent = "\n".join(texts(text_parts(entry))).strip()
+            if note := SENDER_NOTE.match(sent):
+                sent = sent[note.end():]
+            # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
+            if command and sent.startswith("<local-command-stdout>"):
+                (reply, *_, ended), command = out.pop(), False
+                continue
+            command = sent.startswith("<command-name>")
+            sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
+            # Only a text the user never sent is surely another agent's, however T3's copies pair.
+            out.append(Exchange(reply, "" if sent_by_agent else text,
+                                sent_by_agent and "user" not in senders[sent], ended))
+            reply, ended = None, False
     except (OSError, TypeError, UnicodeDecodeError, RecursionError):  # partway too, so an earlier go doesn't stand
         return []
     return out

@@ -2601,6 +2601,17 @@ class MergeGate(unittest.TestCase):
             with self.subTest(case=shown):
                 hidden = claude_wrote(shown + quiet(merge)["message"]["content"][0]["text"])
                 self.assertIsNotNone(reason((self.card(merge), self.WAKE, hidden, "a")))
+        # Codex review of r204/quiet, round 3: a Stop a hook continued ends no turn, and an interrupted
+        # turn's last line is one the user read.
+        stop = {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "c1"}
+        go_on = {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop",
+                                                      "toolUseID": "c1"}}
+        self.assertIsNone(reason((self.card(merge), self.WAKE, claude_wrote("Reading the result."), stop, go_on,
+                                  notice, quiet(merge), "a")), "a continued Stop")
+        interrupt = {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "toolu_1", "content": "[Request interrupted by user for tool use]"}]}}
+        self.assertIsNotNone(reason((self.card(merge), self.WAKE, claude_wrote("Updated decision:\n\n- a → keep #12 open"),
+                                     interrupt, notice, quiet(merge), "a")), "an interrupted turn")
         for name, said in {"options the card doesn't show": (self.card(merge), self.WAKE, quiet(other), "a"),
                            "a quiet reply to a typed message": (self.card(merge), "hold on", quiet(merge), "a"),
                            "a typed message that reads as untyped": (self.card(merge), "Caveat: don't merge yet",
@@ -6450,7 +6461,7 @@ class Exchanges(unittest.TestCase):
         # Interrupted before any text, and its interrupt marker is a prompt the user didn't type.
         self.assertEqual(self.read(claude_wrote(self.FINAL), claude_said("fix the header"), self.TOOL,
                                    claude_said("[Request interrupted by user]"), claude_said("a")),
-                         [transcripts.Exchange(self.FINAL, "fix the header"), transcripts.Exchange(None, ""),
+                         [transcripts.Exchange(self.FINAL, "fix the header"), transcripts.Exchange(None, "", ended=True),
                           transcripts.Exchange(None, "a")])
         self.assertEqual(self.read(claude_wrote("  \n"), claude_wrote({"type": "text", "text": 1}), claude_said("a")),
                          [transcripts.Exchange(None, "a")])
