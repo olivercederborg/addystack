@@ -25,8 +25,8 @@
     {"id": "merge-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/merge-gate.py", "timeout": 60},
     {"id": "ready-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/ready-gate.py", "timeout": 60},
     {"id": "push-gate", "tags": ["safety"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/push-gate.py", "timeout": 60},
-    {"id": "stack-gate", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/stack-gate.py", "timeout": 30},
     {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]},
-    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]}
+    {"id": "agent-memory-guard-notice", "tags": ["machine"], "event": "PostToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/agent-memory-guard-notice.py", "timeout": 10, "hosts": ["darwin"]},
+    {"id": "stack-gate", "tags": ["workflow"], "event": "PreToolUse", "matcher": "Bash", "command": "{{kit}}/hooks/stack-gate.py", "timeout": 30}
   ]
 }
