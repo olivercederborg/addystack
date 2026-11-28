@@ -159,9 +159,10 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
 
 
 def _held(handoffs: list, engaged: list) -> dict:
-    """{domain: login}: whom its own earlier handoffs picked for each domain, the latest winning,
-    while that person is still requested or has reviewed. So a re-review leaves a domain with
-    the person picked for it, even one REVIEWERS doesn't list there, instead of asking another."""
+    """{domain: login}: whom its own earlier handoffs picked for each domain, the latest
+    winning, while that person is still requested or their review of this head stands. So a
+    re-review leaves a domain with the person picked for it, even one REVIEWERS doesn't list
+    there, instead of asking another."""
     held = {}
     for block in handoffs:
         for reviewer in block.get('reviewers', []):

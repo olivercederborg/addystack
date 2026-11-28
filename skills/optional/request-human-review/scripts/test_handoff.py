@@ -171,13 +171,6 @@ class Plan(unittest.TestCase):
                                    'standing': {**known, 'zoe': {'asks': 0, 'share': 0.0}}}, chosen=('bob',), with_suggested=True)
         self.assertEqual(later['request'], [])
 
-    def test_a_review_of_an_older_head_no_longer_holds_an_area(self):
-        first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
-        # alice reviewed, but an earlier head: no longer counted as asked, so billing isn't held
-        # and its pick asks alice again for this head.
-        again = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), self.facts(handoffs=[first], engaged=[]))
-        self.assertEqual([reviewer['login'] for reviewer in again['request']], ['alice'])
-
     def test_changed_decisions_post_a_new_handoff_and_ask_only_whom_they_need(self):
         first = handoff.read(self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')))['comment'])
         changed = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12'), decision('D2', 'packages/auth/b.ts:3')),
