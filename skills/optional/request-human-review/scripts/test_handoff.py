@@ -175,16 +175,16 @@ class Plan(unittest.TestCase):
     def test_people_who_are_away_are_skipped_and_named_with_why(self):
         drafted = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), self.facts(standing=standing(away={'alice'})))
         self.assertEqual(drafted['request'], [{'login': 'bob', 'role': 'P2', 'domains': ['billing']}])
-        self.assertIn('- Away, so not asked: `alice` (no activity since 17 Nov)', drafted['comment'])
+        self.assertIn('- Not asked: `alice` (no activity since 17 Nov)', drafted['comment'])
         self.assertEqual(handoff.read(drafted['comment'])['away'], [{'login': 'alice', 'reason': 'no activity since 17 Nov'}])
         nobody = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(standing=standing(away={'alice', 'bob', 'dave'})))
         self.assertEqual((nobody['why'], nobody['request']), ('nobody to ask', []))
-        self.assertIn("- Nobody available: everyone REVIEWERS names but the PR's author is away.", nobody['comment'])
+        self.assertIn("- Nobody available: everyone REVIEWERS names but the PR's author is away or had their request", nobody['comment'])
         # The author's own pick is requested, so it isn't listed as away and not asked.
         chosen = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                            self.facts(viewer='carol', standing=standing(away={'alice'})), chosen=('alice',))
-        self.assertNotIn('Away, so not asked', chosen['comment'])
+        self.assertNotIn('Not asked', chosen['comment'])
         # The PR's author is never listed as away, even when they are.
         own = self.plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')),
                         self.facts(author='dave', standing=standing(away={'dave'})))
@@ -297,6 +297,35 @@ class Facts(unittest.TestCase):
                          ('carol', None, None, ['alice', 'bob']))
         self.assertEqual(len(facts['handoffs']), 1, "the author's handoff doesn't stand in for the App's own")
 
+
+    def test_someone_whose_request_was_removed_is_left_out_until_requested_again(self):
+        events = [{'event': 'review_requested', 'login': 'alice'}, {'event': 'review_requested', 'login': 'Bob'},
+                  {'event': 'review_request_removed', 'login': 'bob'},
+                  {'event': 'review_request_removed', 'login': 'dave'}, {'event': 'review_requested', 'login': 'dave'}]
+        self.assertEqual(handoff._removed(events), {'bob'})
+        self.assertEqual(handoff._removed([]), set())
+        reviewers_file = 'priority: 3 2 1\nopen ask: 1\nshare: 10\nreuse: 2\nshare since: 2026-12-01\n## billing\n/packages/billing/ @alice @bob\n## auth\n/packages/auth/ @dave\n'
+        answers = {
+            'contents': reviewers_file,
+            'requested_reviewers': 'dave\n',
+            'reviews': '',
+            'timeline': '\n'.join(json.dumps(event) for event in events),
+            'comments': '',
+            'files': 'packages/billing/a.ts\n',
+            'pulls/7': json.dumps({'user': {'login': 'carol'}, 'body': None, 'base': {'sha': BASE}, 'head': {'sha': HEAD}})}
+        def gh(*arguments, missing_ok=False):
+            path = next(argument for argument in arguments if argument.startswith('repos/'))
+            return next(answer for name, answer in answers.items() if name in path.split('/', 3)[-1])
+        fresh = lambda logins, *rest: {login.lower(): {'asks': 0, 'share': 0.0, 'away': None} for login in logins}
+        with patch.object(handoff, '_gh', gh), patch.object(handoff, 'github', lambda command: 'reviewer-app[bot]\n'), \
+                patch.object(handoff.standing, 'read', fresh):
+            facts = handoff._facts(7)
+        # bob's request was removed: left out, with why. dave was removed, then requested again: back in.
+        self.assertEqual({login: entry['away'] for login, entry in facts['standing'].items()},
+                         {'alice': None, 'bob': 'request removed from this PR', 'dave': None})
+        drafted = Plan().plan(verdict(decision('D1', 'packages/billing/rpc.ts:12')), {**facts, 'engaged': []})
+        self.assertEqual([reviewer['login'] for reviewer in drafted['request']], ['alice'])
+        self.assertIn('- Not asked: `bob` (request removed from this PR)', drafted['comment'])
 
 if __name__ == '__main__':
     unittest.main()

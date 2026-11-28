@@ -231,12 +231,13 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
               + (f' · {", ".join(name for name in reviewer["domains"] if name)}' if any(reviewer['domains']) else '')
               for reviewer in block['reviewers']]
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
-    lines += ['- Away, so not asked: ' + ', '.join(f'`{person["login"]}` ({person["reason"]})'
+    lines += ['- Not asked: ' + ', '.join(f'`{person["login"]}` ({person["reason"]})'
                                                   for person in block['away'])] if block.get('away') else []
     # Anyone free can take any area, so nobody is asked only when nobody but the author is free.
     if not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
-                     "- Nobody available: everyone REVIEWERS names but the PR's author is away. Ask someone by hand."
+                     "- Nobody available: everyone REVIEWERS names but the PR's author is away or had their request"
+                     " removed. Ask someone by hand."
                      if block.get('away') else
                      "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.
@@ -258,11 +259,26 @@ def _lines(output: str) -> list:
     return [line for line in output.splitlines() if line.strip()]
 
 
+REMOVED = 'request removed from this PR'
+
+
+def _removed(events: list) -> set:
+    """The logins, lower-cased, whose latest review-request event on the PR is a removal: someone
+    took their request off, so they're left out until anyone requests them again. A request that
+    failed leaves no event, and a submitted review shows as `reviewed`, so neither counts."""
+    latest = {}
+    for event in events:
+        if event.get('login'):
+            latest[event['login'].lower()] = event['event']
+    return {login for login, event in latest.items() if event == 'review_request_removed'}
+
+
 def _facts(number: int) -> dict:
     """Every read a plan needs: {'viewer', 'author', 'body', 'base', 'head', 'rules': list | None,
     'settings', 'standing': {login: standing}, 'changed': [path], 'engaged': [login],
     'handoffs': [block]}, where engaged is each person requested or with a standing review of the head,
-    standing covers everyone REVIEWERS names, and handoffs are the viewer's own, oldest first."""
+    standing covers everyone REVIEWERS names (away also when their request was removed from this
+    PR), and handoffs are the viewer's own, oldest first."""
     repo = 'repos/{owner}/{repo}'
     viewer = github('viewer').strip()
     pr = json.loads(_gh('api', f'{repo}/pulls/{number}'))
@@ -281,6 +297,13 @@ def _facts(number: int) -> dict:
         rules, settings = reviewers.parse(text), reviewers.settings(text)
         everyone = reviewers.unique(name for rule in rules for name in rule['names'])
         people = standing.read(everyone, settings['share_since'], dt.datetime.now(dt.timezone.utc), _gh)
+        # Someone whose request was taken off this PR is left out of its pick, as if away.
+        events = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/issues/{number}/timeline?per_page=100', '--jq',
+                                            '.[] | select(.event == "review_requested" or .event == "review_request_removed")'
+                                            ' | {event, login: .requested_reviewer.login} | tojson')))
+        for login in _removed(list(events)):
+            if login in people and not people[login]['away']:
+                people[login]['away'] = REMOVED
     comments = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/issues/{number}/comments?per_page=100',
                                           '--jq', '.[] | {login: .user.login, body} | tojson')))
     return {'viewer': viewer, 'author': author, 'body': pr['body'] or '', 'base': pr['base']['sha'],

@@ -137,16 +137,17 @@ without a new request, and anyone already asked or picked gets the `reuse` point
 person reviewing several areas is slightly preferred to asking another, though an owner of
 the area wins a tie. Nobody away is asked: a public Busy status on GitHub (the App can't see
 one shown only to the organization), or no PR, review, comment or authored commit in the
-last 3 working days. The comment names each person skipped and why, or says nobody could be
-asked. A domain with nobody listed gives nobody points, and someone already requested, who
-has reviewed this head, or who is picked for another domain covers it. Someone already
-requested, or whose review of this head stands, covers the domains they're P1 or P2 of, and
-whomever its own earlier handoff picked for a domain keeps it while they're requested or
-their review of this head stands. A re-review with the same decisions as its own last
-handoff posts no new one, unless it asks someone new or someone now holds an area they
-didn't. A base without REVIEWERS hands off nothing, and one without the settings stops the
-handoff with the missing line named, and a handoff that fails is named in the Outcome, as a
-thread it couldn't resolve is. End with its Outcome line.
+last 3 working days. Nor is someone whose review request was removed from the PR, until
+anyone requests them again. The comment names each person skipped and why, or says nobody
+could be asked. A domain with nobody listed gives nobody points, and someone already
+requested, who has reviewed this head, or who is picked for another domain covers it.
+Someone already requested, or whose review of this head stands, covers the domains they're
+P1 or P2 of, and whomever its own earlier handoff picked for a domain keeps it while they're
+requested or their review of this head stands. A re-review with the same decisions as its
+own last handoff posts no new one, unless it asks someone new or someone now holds an area
+they didn't. A base without REVIEWERS hands off nothing, and one without the settings stops
+the handoff with the missing line named, and a handoff that fails is named in the Outcome,
+as a thread it couldn't resolve is. End with its Outcome line.
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a
