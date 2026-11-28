@@ -199,19 +199,20 @@ def stops(found):
     Stop's stop_hook_summary record when a hook continued the turn there (a CONTINUED record
     for that Stop's toolUseID), "ended" at one that ended the turn and at a Codex reply whose
     phase is final_answer, which Codex writes only to end a turn, and "interrupted" at the
-    record of a turn the user interrupted, which ends it without a Stop."""
-    continued = {part.get("toolUseID") for entry in found if isinstance(entry, dict)
-                 and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED}
-    out = {}
+    record of a turn the user interrupted, which ends it without a Stop. found may be any
+    iterable, read once, so a caller can stream a long transcript through it."""
+    continued, summaries, out = set(), {}, {}
     for at, entry in enumerate(found):
+        if isinstance(entry, dict) and isinstance(part := entry.get("attachment"), dict) and part.get("type") in CONTINUED:
+            continued.add(part.get("toolUseID"))
         if isinstance(entry, dict) and entry.get("type") == "system" and entry.get("subtype") == "stop_hook_summary":
-            out[at] = "continued" if entry.get("toolUseID") in continued else "ended"
+            summaries[at] = entry.get("toolUseID")
         elif isinstance(entry, dict) and entry.get("type") == "response_item" and isinstance(
                 payload := entry.get("payload"), dict) and payload.get("phase") == "final_answer" and reply_text(entry):
             out[at] = "ended"
         elif any(text.startswith(INTERRUPTED) for text in said(text_parts(entry) or [])):
             out[at] = "interrupted"
-    return out
+    return {**out, **{at: "continued" if tool in continued else "ended" for at, tool in summaries.items()}}
 
 
 def entry_text(entry):
@@ -284,30 +285,30 @@ def exchanges(path, strict=False):
         if strict and not found:
             raise ValueError(f"no session id in {path}")
         senders = t3_child.senders(found.group(0), strict) if found else {}
+        with open(path) as transcript:  # two streamed passes: where turns end, then the exchanges
+            ends = stops(parsed(line) for line in transcript)
         with open(path) as transcript:
-            entries = [parsed(line) for line in transcript]
-        ends = stops(entries)
-        for at, entry in enumerate(entries):
-            text = prompt_text(entry)
-            if text is None:
-                said = reply_text(entry)
-                reply, command, ended = (said, False, ends.get(at) == "ended") if said else (
-                    reply, command, ended or ends.get(at) in ("ended", "interrupted"))
-                continue
-            ended = ended or ends.get(at) in ("ended", "interrupted")
-            sent = "\n".join(texts(text_parts(entry))).strip()
-            if note := SENDER_NOTE.match(sent):
-                sent = sent[note.end():]
-            # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
-            if command and sent.startswith("<local-command-stdout>"):
-                (reply, *_, ended), command = out.pop(), False
-                continue
-            command = sent.startswith("<command-name>")
-            sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
-            # Only a text the user never sent is surely another agent's, however T3's copies pair.
-            out.append(Exchange(reply, "" if sent_by_agent else text,
-                                sent_by_agent and "user" not in senders[sent], ended))
-            reply, ended = None, False
+            for at, entry in enumerate(parsed(line) for line in transcript):
+                text = prompt_text(entry)
+                if text is None:
+                    said = reply_text(entry)
+                    reply, command, ended = (said, False, ends.get(at) == "ended") if said else (
+                        reply, command, ended or ends.get(at) in ("ended", "interrupted"))
+                    continue
+                ended = ended or ends.get(at) in ("ended", "interrupted")
+                sent = "\n".join(texts(text_parts(entry))).strip()
+                if note := SENDER_NOTE.match(sent):
+                    sent = sent[note.end():]
+                # A command Claude Code ran itself, such as /compact: the next prompt answers the reply before it.
+                if command and sent.startswith("<local-command-stdout>"):
+                    (reply, *_, ended), command = out.pop(), False
+                    continue
+                command = sent.startswith("<command-name>")
+                sent_by_agent = bool(senders) and bool(sent) and agent_sent(senders, seen, sent)
+                # Only a text the user never sent is surely another agent's, however T3's copies pair.
+                out.append(Exchange(reply, "" if sent_by_agent else text,
+                                    sent_by_agent and "user" not in senders[sent], ended))
+                reply, ended = None, False
     except (OSError, TypeError, UnicodeDecodeError, RecursionError):  # partway too, so an earlier go doesn't stand
         return []
     return out

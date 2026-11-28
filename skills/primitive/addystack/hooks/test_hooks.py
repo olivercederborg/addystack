@@ -6443,6 +6443,17 @@ class Exchanges(unittest.TestCase):
     FINAL = "Fixed.\n\n" + block({"state": "stop", "needs": [], "options": [
         {"key": "a", "class": "routine", "text": "run verify-work on #87"}]})
     TOOL = {"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}]}}
+
+    def test_stops_reads_a_stream_once_as_it_reads_a_list(self):
+        # Blast radius of #156 (R206, risk 3): exchanges held a 471 MB transcript's entries to find its
+        # turn ends (709 MB peak), so it streams the transcript through stops instead.
+        found = [claude_wrote(self.FINAL), {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s1"},
+                 claude_wrote("again"), {"type": "system", "subtype": "stop_hook_summary", "toolUseID": "s2"},
+                 {"type": "attachment", "attachment": {"type": "hook_additional_context", "hookEvent": "Stop",
+                                                       "toolUseID": "s2"}},
+                 claude_said("[Request interrupted by user]"), codex_wrote("Done."), codex_wrote("so", phase="commentary")]
+        self.assertEqual(transcripts.stops(iter(found)), transcripts.stops(found))
+        self.assertEqual(transcripts.stops(found), {1: "ended", 3: "continued", 5: "interrupted", 6: "ended"})
     RESULT = {"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}}
 
     def read(self, *lines, strict=False, name="transcript"):
