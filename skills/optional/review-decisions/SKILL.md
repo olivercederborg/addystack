@@ -36,7 +36,7 @@ the reviewer.
     and a typed "go" is not, so point them to the button.
   - A message saying commits were pushed voids every earlier block: read the delta as in
     step 1's last bullet, then show every draft again, written at the new head, with a
-    new block.
+    new block. A message saying the PR moved to another base branch does the same.
 
 ## 1. Load the PR
 
@@ -164,8 +164,10 @@ ends with their block.
 
 By hand only; with `--slack` the run ends at step 4.
 
-- Re-check the head (`scripts/github.sh head <PR>`). When it moved, read the delta, redo
-  the drafts it touches, and show them again.
+- Re-check the head and the base (`gh pr view <PR> --json headRefOid,baseRefName`). A
+  moved head, or a PR moved to another base branch, which can change its diff with the same
+  head, means reading the PR's diff again, redoing the drafts it touches, and showing them
+  again.
 - After the reviewer's explicit go on the drafts as shown:
   - the review, when it has comments or a summary: `scripts/github.sh review <PR> <head>
     drafts.json COMMENT summary.md`, with `drafts.json` holding `[]` for a summary alone,
