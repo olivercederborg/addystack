@@ -207,20 +207,13 @@ class Priority:
         return f"- {self.said} · {self.heard_in} · until {self.until} · match: {', '.join(self.terms)} · \"{self.words}\""
 
 
-SPAN = re.compile(r"(?<![\w/#])#(\d+)\s*[–-]\s*#?(\d+)\b")  # a range `#20–#22`, of any length
 SPAN_MAX = 1000  # PRs a range may name, so a typo like #1–#99999 stays one range
-
-
-def _spans(text: str) -> str:
-    """text with each range written out, as project_md.ranges does past its 20-PR bound."""
-    return SPAN.sub(lambda m: " ".join(f"#{n}" for n in range(int(m[1]), int(m[2]) + 1))
-                    if 0 < int(m[2]) - int(m[1]) <= SPAN_MAX else m[0], text)
 
 
 def _prs(text: str) -> list[str]:
     """Each PR text names, as `#N` and, when it names its repo, as `repo#N` too, lowercase."""
     found = []
-    for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(_spans(text)):
+    for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(project_md.ranges(text, SPAN_MAX)):
         number, name = url_n or n or local, (url_repo or repo).split("/")[-1].lower()
         found += [f"#{number}", *([f"{name}#{number}"] if name else [])]
     return found
