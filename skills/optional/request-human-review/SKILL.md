@@ -128,11 +128,12 @@ review request. It reads `.github/REVIEWERS` at the PR's base: each decision's d
 the one its code is in, or the PR's main change's when its file is in no domain, such as an
 ADR. It asks the P1 of the domain with the most decisions, and another person only for a
 domain the first isn't P1 or P2 of; a domain with nobody listed goes to whoever the file
-names with the fewest open requests, unless someone is already requested, has reviewed this head,
-or is picked for another domain. Someone already requested, or whose review of this head stands, covers the
-domains they're P1 or P2 of. A re-review with the same decisions as its own last
-handoff posts no new one. A base without REVIEWERS hands off nothing. End with its Outcome
-line.
+names with the fewest open requests, unless someone is already requested, has reviewed
+this head, or is picked for another domain. Someone already requested, or whose review of
+this head stands, covers the domains they're P1 or P2 of. A re-review with the same
+decisions as its own last handoff posts no new one. A base without REVIEWERS hands off
+nothing, and a handoff that fails is named in the Outcome, as a thread it couldn't resolve
+is. End with its Outcome line.
 
 **Author**: report each gated decision with its gate and code, and
 `scripts/gates.py decide GATES.json`'s line: what an unattended reviewer will do. Add a
