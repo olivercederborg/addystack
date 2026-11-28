@@ -5,11 +5,14 @@ whoever posts it decides whose review it becomes.
 
     <!-- review-decisions:drafts v1 {json} -->
 
-    {"pr": 12, "head": "<the 40-hex commit the drafts were written at>", "summary": "the review's body",
+    {"pr": 12, "head": "<the 40-hex commit the drafts were written at>", "verdict": "approve" | "comment",
+     "summary": "the review's body",
      "comments": [{"path", "line": > 0, "side": "RIGHT" | "LEFT", "start_line"?: <= line, "body"}],
      "replies": [{"in_reply_to": <the thread's review comment id>, "body"}]}
 
-No comments and no replies is an approval, with the summary as its body, which may be empty.
+The verdict is the one event a poster sends. "approve" has no comments and no replies, and its
+summary, which may be empty, is the approval's body. "comment" has a summary, comments or
+replies, and may be a summary alone, as when a pushback's line is outside the diff.
 `<` and `>` in the JSON are escaped as \\u003c and \\u003e, so no body can close the comment.
 A field added later keeps v1; a renamed or removed one is v2. A reader takes the last block in
 a message, and nothing when that block is another version or malformed.
@@ -28,6 +31,7 @@ BLOCK = re.compile(rf'<!-- {MARK} v(\d+)\s(.*?)\s*-->', re.S)
 START = f'<!-- {MARK} v'
 SHA = re.compile(r'[0-9a-f]{40}')
 SIDES = ('RIGHT', 'LEFT')
+VERDICTS = ('approve', 'comment')
 
 
 def problems(drafts) -> list[str]:
@@ -41,6 +45,9 @@ def problems(drafts) -> list[str]:
         found.append('head is not a full commit SHA')
     if not isinstance(drafts.get('summary'), str):
         found.append('summary is not a string')
+    verdict = drafts.get('verdict')
+    if verdict not in VERDICTS:
+        found.append("verdict is not 'approve' or 'comment'")
     for field, label, check in (('comments', 'comment', _comment), ('replies', 'reply', _reply)):
         entries = drafts.get(field)
         if not isinstance(entries, list):
@@ -49,6 +56,11 @@ def problems(drafts) -> list[str]:
         for index, entry in enumerate(entries, 1):
             found += [f'{label} {index}: {problem}' for problem in
                       (check(entry) if isinstance(entry, dict) else ['is not an object'])]
+    said = drafts.get('comments') or drafts.get('replies')
+    if verdict == 'approve' and said:
+        found.append('an approve verdict has comments or replies; their verdict is comment')
+    if verdict == 'comment' and not said and not str(drafts.get('summary') or '').strip():
+        found.append('a comment verdict says nothing: no summary, comments or replies')
     return found
 
 

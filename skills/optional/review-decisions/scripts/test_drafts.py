@@ -15,7 +15,7 @@ HEAD = '0123456789abcdef0123456789abcdef01234567'
 
 
 def review(**changes):
-    data = {'pr': 12, 'head': HEAD, 'summary': 'D2 needs a change; D1 and D3 look right.',
+    data = {'pr': 12, 'head': HEAD, 'verdict': 'comment', 'summary': 'D2 needs a change; D1 and D3 look right.',
             'comments': [{'path': 'src/totals.ts', 'line': 40, 'side': 'RIGHT', 'start_line': 36,
                           'body': 'D2: keep totals internal until a caller needs them.'},
                          {'path': 'db/schema.sql', 'line': 8, 'side': 'LEFT', 'body': 'Why drop this column?'}],
@@ -36,9 +36,22 @@ class Render(unittest.TestCase):
         self.assertTrue(text.endswith('} -->'))
         self.assertEqual(drafts.read(text), review())
 
-    def test_no_comments_and_no_replies_is_an_approval(self):
-        approval = review(summary='', comments=[], replies=[])
+    def test_an_approval_has_no_comments_and_no_replies(self):
+        approval = review(verdict='approve', summary='', comments=[], replies=[])
         self.assertEqual(drafts.read(drafts.render(approval)), approval)
+        self.assertIn('an approve verdict has comments or replies; their verdict is comment',
+                      drafts.problems(review(verdict='approve', replies=[])))
+
+    def test_a_pushback_can_be_a_summary_alone_and_never_reads_as_an_approval(self):
+        pushback = review(summary='D1: please change this decision.', comments=[], replies=[])
+        self.assertEqual(drafts.read(drafts.render(pushback))['verdict'], 'comment')
+
+    def test_the_verdict_is_required_and_a_comment_says_something(self):
+        self.assertIn("verdict is not 'approve' or 'comment'", drafts.problems(review(verdict=None)))
+        missing = review(); del missing['verdict']
+        self.assertIn("verdict is not 'approve' or 'comment'", drafts.problems(missing))
+        self.assertIn('a comment verdict says nothing: no summary, comments or replies',
+                      drafts.problems(review(summary=' ', comments=[], replies=[])))
 
     def test_angle_brackets_are_escaped_so_no_body_closes_the_comment(self):
         tricky = review(summary='a --> b <!-- c', comments=[], replies=[{'in_reply_to': 7, 'body': '<details>x</details> -->'}])

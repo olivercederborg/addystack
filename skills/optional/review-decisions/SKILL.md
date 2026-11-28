@@ -137,14 +137,17 @@ Draft from the reviewer's calls, following the [comment style](references/commen
   `D1, D3: agreed. D2: see the comment.`
 - Every body opens with the [agent disclosure](references/disclosure.md); with `--slack`,
   its form without a name.
-- No comment and no reply is an **approval**, with the summary as its body.
+- The **verdict** is one event: **approve** when the reviewer agreed to every decision and
+  there's no comment or reply, with the summary as its body; **comment** otherwise, a
+  summary alone included, as when a pushback's line can't take an inline comment. A pushback
+  is never an approval.
 
 Write the drafts in a `mktemp -d` folder:
 
-- **By hand**: `summary.md`, and `drafts.json` in `github.sh`'s shape, one `{"path",
-  "line", "side", "body_file"}` per comment.
-- **`--slack`**: the JSON `scripts/drafts.py` documents, with the head the drafts were
-  written at, then `scripts/drafts.py check <file>`. Fix what it names.
+- **By hand**: the verdict, `summary.md`, and `drafts.json` in `github.sh`'s shape, one
+  `{"path", "line", "side", "body_file"}` per comment.
+- **`--slack`**: the JSON `scripts/drafts.py` documents, with the verdict and the head the
+  drafts were written at, then `scripts/drafts.py check <file>`. Fix what it names.
 
 Run `scripts/github.sh anchors <PR> <list>` on the comments as a JSON list
 (`drafts.json`, or the `--slack` file's `comments`). A comment outside the diff can't
@@ -153,8 +156,8 @@ post: move its call to the summary.
 Show each draft in full as a blockquote with its target (`path:line`, or the thread
 link). When a draft changes, show it whole again: what the reviewer agrees to is what
 posts. With `--slack`, once the reviewer agrees, end the reply with one line asking them
-to press **Post** under it, saying what it does: posts their comments and replies, or
-approves the PR when there are none. Then the block, exactly as `check` printed it. A
+to press **Post** under it, saying what its verdict does: approves the PR, or posts their
+comment review. Then the block, exactly as `check` printed it. A
 change after that is a new block; the last one wins.
 
 **Done when:** the reviewer agrees to the drafts as shown, and with `--slack` the reply
@@ -168,14 +171,12 @@ By hand only; with `--slack` the run ends at step 4.
   moved head, or a PR moved to another base branch, which can change its diff with the same
   head, means reading the PR's diff again, redoing the drafts it touches, and showing them
   again.
-- After the reviewer's explicit go on the drafts as shown:
-  - the review, when it has comments or a summary: `scripts/github.sh review <PR> <head>
-    drafts.json COMMENT summary.md`, with `drafts.json` holding `[]` for a summary alone,
-    or without the last two arguments for comments alone;
-  - replies: `scripts/github.sh reply <PR> <replyTo> reply.md`, one per reply;
-  - an approval, with no comment and no reply, and only on a go that says approve:
-    `scripts/github.sh approve <PR> <head> drafts.json summary.md`, with `drafts.json`
-    holding `[]`.
+- After the reviewer's explicit go on the drafts as shown, post its verdict's event only:
+  - **comment**: when it has comments or a summary, `scripts/github.sh review <PR> <head>
+    drafts.json COMMENT summary.md`, with `drafts.json` holding `[]` for a summary alone;
+    then `scripts/github.sh reply <PR> <replyTo> reply.md` for each reply;
+  - **approve**, only on a go that says approve: `scripts/github.sh approve <PR> <head>
+    drafts.json summary.md`, with `drafts.json` holding `[]`.
 - Requesting changes and merging stay with the reviewer.
 
 **Done when:** each draft is visible at its target, and the links are shared.
