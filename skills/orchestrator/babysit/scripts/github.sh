@@ -116,42 +116,50 @@ query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(ow
     if ! checks=$(gh api graphql --paginate -f owner="${slug%/*}" -f repo="${slug#*/}" -F number="$1" -f query='
 query($owner:String!,$repo:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){
   commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100, after:$endCursor){pageInfo{hasNextPage endCursor}
-    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{app{databaseId} workflowRun{event workflow{id}}}} ... on StatusContext{context state}}}}}}}}}}' \
+    nodes{__typename ... on CheckRun{name status conclusion databaseId checkSuite{app{databaseId slug} workflowRun{event workflow{id}}}} ... on StatusContext{context state creator{__typename login}}}}}}}}}}}' \
         --jq 'def bucket: if . == "SUCCESS" then "pass" elif . == "SKIPPED" or . == "NEUTRAL" then "skipping"
           elif . == "ERROR" or . == "FAILURE" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" then "fail"
           elif . == "CANCELLED" then "cancel" else "pending" end;
           .data.repository.pullRequest.commits.nodes[0].commit.statusCheckRollup.contexts.nodes[]?
           | if .__typename == "CheckRun"
-            then ["check", .name, (.checkSuite.app.databaseId // "" | tostring),
+            then (["check", .name, (.checkSuite.app.databaseId // "" | tostring),
                   (if .checkSuite.workflowRun then "\(.checkSuite.workflowRun.workflow.id)/\(.checkSuite.workflowRun.event)" else "" end),
-                  (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")
-            else ["status", .context, "", "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
+                  (.databaseId | tostring), ((if .status == "COMPLETED" then .conclusion else .status end) | bucket)] | join("\t")),
+                 (if .checkSuite.app.slug then ["app", (.checkSuite.app.databaseId | tostring), .checkSuite.app.slug] | join("\t") else empty end)
+            else ["status", .context, (if .creator.__typename == "Bot" then "bot:" + .creator.login else "" end), "", "0", (.state | bucket)] | join("\t") end' 2>"$err"); then
       if grep -q 'Resource not accessible by integration' "$err"; then
         echo "github.sh required: this token can't read the checks' workflow runs; a GitHub App needs the Actions: read permission" >&2
       else cat "$err" >&2; fi
       rm -f "$err"; exit 1
     fi
     rm -f "$err"
+    # Each app's id and its bot's login, from its check runs on the head: a commit status names
+    # the account that set it, never an app id. An app sets statuses as its bot, whose login in
+    # GraphQL is the app's slug, with no [bot] suffix. Only a Bot creator counts, marked "bot:",
+    # so a person, whose login may be any text such as an app id or slug, never stands in for one.
+    bots=$(printf '%s\n' "$checks" | awk -F'\t' '$1 == "app" { print $2 FS $3 }' | sort -u)
+    checks=$(printf '%s\n' "$checks" | awk -F'\t' '$1 != "app"')
     # Each check counts by its newest run, by creation order, which a missing or equal start time
     # can't settle. Runs of one check share a type, a name, an app, and a workflow and event, as
     # gh pr checks groups them (aggregate.go's eliminateDuplicates), so an older pass never hides
     # a re-run that is pending or failed. Workflows count by id: two workflows may share a name.
-    # Rows are type, name, app id, workflow and event, creation order and bucket; checks keep
-    # name, app id and bucket.
+    # Rows are type, name, app id (for a status, "bot:" and its Bot creator's login, else empty),
+    # workflow and event, creation order and bucket; checks keep name, app id or bot, and bucket.
     checks=$(printf '%s\n' "$checks" | awk -F'\t' 'NF { key = $1 FS $2 FS $3 FS $4
       if (!(key in at) || $5 + 0 > at[key]) { at[key] = $5 + 0; row[key] = $2 FS $3 FS $6 } }
       END { for (key in row) print row[key] }')
     # Checks of one name from two workflows or apps, or a check and a status, all count,
     # so the worst of them does. The required contexts count, or every reported check when the
     # base requires none; one that failed, was cancelled, or is running shows CI ran. A context
-    # that must come from one app counts only that app's checks: a commit status doesn't say
-    # which app set it, so it never counts there.
+    # that must come from one app counts only that app's checks, and the statuses its bot set.
+    # A status counts there only when one of the app's check runs on the head names its bot.
     pending=0 ran=0
     counted=${contexts:-$(printf '%s\n' "$checks" | cut -f1 | sort -u)}
     while IFS=$'\t' read -r context app; do
       [ -n "$context" ] || continue
-      state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" -v app="$app" \
-        '$1 == name && (app == "" || $2 == app) { seen[$3] = 1 }
+      bot=$(printf '%s\n' "$bots" | awk -F'\t' -v app="$app" 'app != "" && $1 == app { print $2; exit }')
+      state=$(printf '%s\n' "$checks" | awk -F'\t' -v name="$context" -v app="$app" -v bot="$bot" \
+        '$1 == name && (app == "" || $2 == app || (bot != "" && $2 == "bot:" bot)) { seen[$3] = 1 }
         END { split("fail cancel pending skipping pass", order, " ")
               for (i = 1; i <= 5; i++) if (order[i] in seen) { print order[i]; exit }
               print "not reported" }')
