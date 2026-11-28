@@ -196,7 +196,9 @@ diff, and `check-body.mjs` passes on the body.
 - **Submit with the stacking tool** the repo uses or the user's rules name (for example
   `gh stack submit --auto`, which opens a draft for every layer without a PR, so the
   approval must cover each one; `--auto` skips the editor, which an agent can't answer).
-  When there's neither, use `git push` and `gh pr create --title … --body-file …`. If the
+  A layer built outside the stack's checkout, such as in another worktree, joins with
+  `gh stack link <base branch or PR> <branch>`, which needs no local stack. When there's
+  no stacking tool, use `git push` and `gh pr create --title … --body-file …`. If the
   stacking tool fails, fix what it reports and rerun it; don't switch to `git push` or
   `gh pr create`.
   Set the body, and sync updates, with `gh pr edit N --title … --body-file …`.
