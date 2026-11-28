@@ -92,7 +92,8 @@ the reviewer.
   never as a decision to walk.
 
   With none, offer these before step 2, and go on only on `C`:
-  - `A` stop here and run `review-code` on the PR first (recommended).
+  - `A` stop here and run `review-code` on the PR first (recommended). With `--slack`,
+    `A` ends the run with a reply saying to run `review-code` by hand, since it posts.
   - `C` skip it and review the decisions anyway.
 - **The PR's own diff** is its merge base with the base branch, and its head: `git fetch
   origin <base SHA> <head>`, then `git merge-base <base SHA> <head>`. Fetch every commit
