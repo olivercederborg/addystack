@@ -35,6 +35,11 @@ the next on a parked project with `start` ([phases](phases.md) says when). Its s
 - **Thread**: the worker thread's `link`, verbatim, as T3 returns it
   (`<t3-thread://…>`), the link every card for that worker carries. Add the `taskId`
   beside it for `task_status` and `task_cancel`.
+- **Branch or PR**: one repo's stack. `#N`, and `repo#N` for the checkout's own repo,
+  resolve against the checkout's origin; write another repo's PR as `owner/repo#N`, and
+  give each repo's stack its own row. A `#N` or a range an arrow joins to a ref carries on
+  its repo, as `owner/tools#109 → #110–#112`. A note in parentheses and a backticked branch name
+  no PR. `worker --pr` refuses a ref it can't resolve, such as `web #20`, and PRs of two repos.
 - **State**: `queued`, `overdue` (launched, not started by the startup deadline),
   `unknown` (its status read failed), `running`, `waiting` (on a call), `stuck`, `done`,
   `replaced by <worker>`, `absorbed into <worker>`, or `dropped` (after two retries,

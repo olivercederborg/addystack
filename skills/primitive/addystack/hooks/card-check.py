@@ -203,7 +203,7 @@ def wake_gap(turn, reply, thread, now):
         return None
     watched, ended, tasks, timer = wakes(thread)
     import project_md
-    said = project_md.ranges(reply[:reply.rfind("<!--")])  # a range `#20–#22` names each PR in it
+    said = project_md.chained(reply[:reply.rfind("<!--")])  # a range `#20–#22` names each PR in it
     named = [((url_repo or repo).lower(), int(url_n or n)) if url_repo or repo else (None, int(local))
              for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(said)]
     # #N names any repo's #N; repo#N matches owner/repo by its last part.

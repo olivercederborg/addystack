@@ -3,6 +3,7 @@ decisions, a Result section, notes under the Workers table, and a learning that 
 into the Listening heading. Each edit changes only its own lines.
 Run: python3 -m unittest discover -s coordinator/scripts"""
 import pathlib, subprocess, sys, tempfile, unittest
+import project_md
 from datetime import date
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "project.py"
@@ -144,6 +145,83 @@ class Project(Fixture, unittest.TestCase):
         self.assertIn("Follow-ups: none\n\n## Queue\n\nNext id: 1\n\n| # | Kind | Name | From | Since |\n"
                       "|---|---|---|---|---|\n\n## Decisions", text)
         self.assertEqual(self.project("queue", "show").stdout, "Nothing waits on the user.\n")
+
+
+class Pulls(unittest.TestCase):
+    """project_md.pulls, the one reader of a Branch or PR cell, on cells coordinators wrote."""
+    def test_refs_resolve_against_the_origin(self):
+        cases = [("#20 → #21 → #27", ("acme/box#20", "acme/box#21", "acme/box#27")),
+                 ("box#3, #3, acme/box#3", ("acme/box#3",)),  # the origin's own repo name, once
+                 ("acme/tools#1 https://github.com/o/r/pull/4", ("acme/tools#1", "o/r#4")),
+                 ("#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
+                 ("#5 (stack #6301) · `fix-#12`", ("acme/box#5",)),  # a note and a branch name no PR
+                 ("[Review fixes](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
+                 ("[#109](https://github.com/acme/tools/pull/109)", ("acme/tools#109",)),
+                 ("Acme/Box#20 acme/box#21", ("acme/box#20", "acme/box#21")),
+                 ("acme/tools#109 → #110 → #122; #20 → #21", ("acme/tools#109", "acme/tools#110", "acme/tools#122",
+                                                         "acme/box#20", "acme/box#21")),  # a chain keeps its repo up to ;
+                 ("#20 → #21 onto #19, #22 blocked by #21", ("acme/box#20", "acme/box#21", "acme/box#19", "acme/box#22")),
+                 ("acme/tools#7 · #8", ("acme/tools#7", "acme/box#8")),  # only an arrow continues a chain
+                 ("acme/tools#20–#22", ("acme/tools#20", "acme/tools#21", "acme/tools#22")),  # a range keeps its repo
+                 ("box#20–#22", ("acme/box#20", "acme/box#21", "acme/box#22")),
+                 ("acme/tools#109 → #110–#112", ("acme/tools#109", "acme/tools#110", "acme/tools#111", "acme/tools#112")),
+                 ('[#109](https://github.com/acme/tools/pull/109 "tools PR")', ("acme/tools#109",)),  # a titled link
+                 ("[#109](https://github.com/acme/tools/pull/109 (tools PR))", ("acme/tools#109",)),
+                 ("`https://github.com/acme/tools/pull/109` · `#20`", ("acme/tools#109", "acme/box#20")),
+                 ("#20 and #21, PR #22", ("acme/box#20", "acme/box#21", "acme/box#22"))]
+        for text, refs in cases:
+            with self.subTest(text):
+                self.assertEqual(project_md.pulls(text, "acme/box"), project_md.Pulls(refs, ()))
+
+    def test_a_ref_with_no_repo_to_resolve_against_is_unread(self):
+        cases = [("tools #109 → #110 (#108 merged)", "acme/box", (), ("tools #109", "#110")),  # #110 continues tools
+                 ("web #20–#22", "acme/box", (), ("web #20–#22",)),
+                 ("tools#20–#22", "acme/box", (), ("tools#20", "#21", "#22")),
+                 ("tools#4", "acme/box", (), ("tools#4",)),  # its owner is a guess
+                 ("#7 and box#8", "", (), ("#7", "box#8")),
+                 ("acme/box#20;tools #109", "acme/box", ("acme/box#20",), ("tools #109",)),  # no space after ;
+                 ("acme/tools #109", "acme/box", (), ("acme/tools #109",))]
+        for text, origin, refs, unread in cases:
+            with self.subTest(text):
+                self.assertEqual(project_md.pulls(text, origin), project_md.Pulls(refs, unread))
+
+
+class WorkerPrs(Fixture, unittest.TestCase):
+    """`worker --pr` against a checkout whose origin is acme/box."""
+    def setUp(self):
+        super().setUp()
+        checkout = self.dir / "box"
+        subprocess.run(["git", "init", "-q", str(checkout)], check=True)
+        subprocess.run(["git", "-C", str(checkout), "remote", "add", "origin", "git@github.com:acme/box.git"], check=True)
+        (self.dir / "project.md").write_text(PROJECT.replace("Checkout: ~/skills", f"Checkout: {checkout} (on `main`)"))
+        self.before = self.text()
+
+    def test_two_repos_stacks_in_one_cell_are_refused_with_the_fix(self):
+        # The real call: another repo's stack as `tools #109`, beside the checkout's own `box #20`.
+        result = self.project("worker", "review-quality", "--pr", "tools #109 → #110 → #122 (#108 merged 5adcaad);"
+                              " box #20 → #21 → #27 (#28 merged)", code=1)
+        self.assertEqual(result.stderr, "--pr names 'tools #109', '#110', '#122', 'box #20', '#21', '#27' with no repo to"
+                         " resolve it against: write"
+                         " each as owner/repo#N, or as #N for a PR in acme/box, and give each repo's stack its own Workers row\n")
+        result = self.project("worker", "review-quality", "--pr", "acme/tools#1 acme/box#2", code=1)
+        self.assertIn("names PRs in 2 repos (acme/tools, acme/box): write another repo's PR as owner/repo#N, which an"
+                      " arrow carries on (owner/repo#N → #M), and give each repo's stack its own Workers row",
+                      result.stderr)
+        self.assertEqual(self.text(), self.before)
+
+    def test_one_repos_stack_per_row_is_written(self):
+        self.project("worker", "review-quality", "--pr", "acme/tools#109 → acme/tools#110 → acme/tools#122")
+        self.project("worker", "box", "--state", "running", "--pr", "#20 → #21 → #27 (#28 merged) · `fix-#12`")
+        self.assertIn("| acme/tools#109 → acme/tools#110 → acme/tools#122 | running (slot 1) |", self.text())
+        self.assertIn("| box | — | #20 → #21 → #27 (#28 merged) · `fix-#12` | running |", self.text())
+
+    def test_without_an_origin_a_bare_number_is_refused_and_other_columns_still_write(self):
+        (self.dir / "project.md").write_text(PROJECT)  # Checkout: ~/skills, no such checkout
+        self.assertIn("the checkout has no GitHub origin, so write each PR as owner/repo#N",
+                      self.project("worker", "review-quality", "--pr", "#12", code=1).stderr)
+        self.project("worker", "review-quality", "--pr", "acme/skills#12")
+        (self.dir / "project.md").write_text(self.text().replace("acme/skills#12", "web #12"))  # an old hand edit
+        self.project("worker", "review-quality", "--last", "pushed abc")
 
 
 class Queue(Fixture, unittest.TestCase):

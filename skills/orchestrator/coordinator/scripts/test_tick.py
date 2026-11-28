@@ -209,6 +209,15 @@ class Tick(unittest.TestCase):
         self.tick("--send")
         self.assertIn("- skills#246: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", self.sent()[0]["message"])
 
+    def test_a_running_rows_ref_for_another_repo_is_flagged_not_guessed(self):
+        self.write_project(rows={"`export` · #12": "`export` · #12; tools #9 → tools#10 (#8 merged)"})
+        self.tick("--send")
+        message = self.sent()[0]["message"]
+        self.assertIn("- tools #9: the tick can't tell its repo from the checkout's origin, so write it as owner/repo#N\n", message)
+        self.assertIn("- tools#10: the tick can't tell its repo", message)
+        calls = [json.loads(line)["key"] for line in (self.fake / "gh-calls.jsonl").read_text().splitlines()]
+        self.assertEqual(sorted(set(calls)), ["acme/app#12", "acme/app#7"], "no PR is read under a guessed repo")
+
     def test_a_failed_read_keeps_the_stall_clock(self):
         self.tick("--send")
         self.age(3060)
@@ -333,6 +342,16 @@ class Tick(unittest.TestCase):
         result = self.tick()
         self.assertIn("the tick timer hasn't run in 20 minutes", result.stdout)
         self.assertIn("- remote: its thread is on another machine", result.stdout)
+
+    def test_a_pr_saved_in_mixed_case_keeps_its_news(self):
+        self.write_project(rows={"- Watches: #12 (build), acme/app#7 (the user)": "- Watches: none"})
+        self.tick("--send")
+        state = self.state()
+        state["prs"] = {key.replace("acme/app", "Acme/App"): value for key, value in state["prs"].items()}
+        (self.dir / "tick.json").write_text(json.dumps(state))
+        self.prs["acme/app#12"]["state"] = "MERGED"
+        self.tick("--send")
+        self.assertIn("- acme/app#12: merged\n", self.sent()[0]["message"], "a tick.json from before lowercase refs")
 
     def test_failed_reads_are_named_on_stderr(self):
         del self.prs["acme/app#12"]

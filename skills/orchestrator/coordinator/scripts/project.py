@@ -200,10 +200,24 @@ def learn(lines: list[str], text: str) -> None:
     _insert(lines, "Learnings", _dated(text))
 
 
-def worker(lines: list[str], slug: str, **columns: str | None) -> None:
+def worker(lines: list[str], slug: str, *, origin: str = "", **columns: str | None) -> None:
+    """Writes the named columns of slug's Workers row, adding the row when it's new. A
+    Branch or PR value names PRs of one repo, each resolved against origin, the checkout's
+    `owner/repo` (project_md.pulls)."""
     state = columns.get("state")
     if state is not None and not STATE.match(state):
         raise ProjectError(f"state {state!r} doesn't start with one of: {', '.join(STATES)}")
+    if columns.get("pr") is not None:
+        found = project_md.pulls(columns["pr"], origin)
+        if found.unread:
+            fix = (f"write each as owner/repo#N, or as #N for a PR in {origin}" if origin else
+                   "the checkout has no GitHub origin, so write each PR as owner/repo#N")
+            raise ProjectError(f"--pr names {', '.join(map(repr, found.unread))} with no repo to resolve it"
+                               f" against: {fix}, and give each repo's stack its own Workers row")
+        if len(repos := list(dict.fromkeys(ref.split("#")[0] for ref in found.refs))) > 1:
+            raise ProjectError(f"--pr names PRs in {len(repos)} repos ({', '.join(repos)}): write another repo's PR as"
+                               " owner/repo#N, which an arrow carries on (owner/repo#N → #M), and give each repo's"
+                               " stack its own Workers row")
     for value in [slug, *(v for v in columns.values() if v is not None)]:
         if "\n" in value or not value.strip():
             raise ProjectError(f"a cell is one non-empty line: {value!r}")
@@ -374,7 +388,7 @@ def _archive(folder: Path, snapshot: bytes, slug: str) -> str:
 # hourly took no action on 91% of its turns.
 ACTIVE = {"preparing", "queued", "starting", "running", "waiting"}  # T3's run statuses still under way
 PR_ROW = re.compile(r"(running|overdue|unknown|waiting|stuck)\b")  # a row whose PR is still open work
-LINK, PR_REF, THREAD_ROW = project_md.LINK, project_md.PR_REF, project_md.THREAD_ROW
+LINK, THREAD_ROW = project_md.LINK, project_md.THREAD_ROW
 REMOTE = re.compile(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?$")
 STALL = 3600  # seconds with no new thread item before a running worker counts as stalled
 REPEAT = 3600  # a finding still true this long after it was sent is sent again
@@ -447,17 +461,10 @@ def _listened(lines: list[str], key: str) -> str:
                  if lines[i].startswith(f"- {key}:")), "")
 
 
-def _pr_refs(text: str, origin: str, refs: set[str]) -> None:
-    """Adds each PR the text names to refs as `owner/repo#N`: `#N` and `repo#N` resolve
-    against the checkout's origin, `owner/repo`, and a range `#20–#22` names each PR in
-    it. Without an origin, `#N` becomes `?#N` and `repo#N` `?/repo#N`, which tick reports. A `none` Watches value names none."""
-    if text.startswith("none"):
-        return
-    text = project_md.ranges(text)
-    owner = origin.split("/")[0] if origin else "?"
-    for url_repo, url_n, repo, n, local in PR_REF.findall(text):
-        repo = url_repo or (repo if not repo or "/" in repo else f"{owner}/{repo}") or origin or "?"
-        refs.add(f"{repo}#{url_n or n or local}")
+def _checkout(lines: list[str]) -> Path | None:
+    """The path in the Checkout header, before any ` (on `branch`)` note."""
+    place = _header(lines, "Checkout").split(" (")[0].strip()
+    return Path(place).expanduser() if place else None
 
 
 def _origin(checkout: Path | None) -> str:
@@ -496,13 +503,11 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
         _warn(f"tick: can't read the coordinator's thread, or it's archived: {_header(lines, 'Coordinator')}")
         return None
     busy = hold and lead.get("status") in ACTIVE
-    place = _header(lines, "Checkout").split(" (")[0].strip()
-    checkout = Path(place).expanduser() if place else None
-    origin = _origin(checkout)
+    origin = _origin(_checkout(lines))
     seen, threads, prs, found = state.get("threads", {}), {}, {}, []
-    watched: set[str] = set()
-    _pr_refs(_listened(lines, "Watches"), origin, watched)
-    refs = set(watched)
+    watches = _listened(lines, "Watches")
+    named = [project_md.pulls("" if watches.startswith("none") else watches, origin)]
+    watched = set(named[0].refs)
     rows, odd = _workers(lines)
     for line in odd:
         if any(re.match(r"(running|overdue|unknown|waiting)\b", cell) for cell in _cells(line)):  # a cell that opens with a state
@@ -512,7 +517,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     for row in rows:
         slug, row_state = row.get("Worker", "?"), row.get(COLUMNS["state"], "")
         if PR_ROW.match(row_state):
-            _pr_refs(row.get(COLUMNS["pr"], ""), origin, refs)
+            named.append(project_md.pulls(row.get(COLUMNS["pr"], ""), origin))
         link = LINK.search(row.get(COLUMNS["thread"], ""))
         if not THREAD_ROW.match(row_state):
             continue
@@ -546,15 +551,16 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
             found.append((f"asked:{thread}:{asked}", f"{slug}: its thread waits on {asked} question(s) its row doesn't show"))
         elif status == "running" and now - since >= STALL:
             found.append((f"stalled:{thread}:{items}", f"{slug}: no new thread item in {int((now - since) // 60)} min"))
-    for ref in sorted(ref for ref in refs if ref.startswith("?")):
-        refs.discard(ref)
-        found.append((f"owner:{ref}", f"{ref.lstrip('?/')}: the tick can't tell its repo from the checkout's origin, so "
-                                      "write it as owner/repo#N"))
+    refs = {ref for pulls in named for ref in pulls.refs}
+    for piece in sorted({piece for pulls in named for piece in pulls.unread}):
+        found.append((f"owner:{piece}", f"{piece}: the tick can't tell its repo from the checkout's origin, so "
+                                        "write it as owner/repo#N"))
     if busy:
         return [], {**state, "threads": threads}
     events = []
+    saved = {ref.lower(): known for ref, known in state.get("prs", {}).items()}  # refs are lowercase since pulls()
     for ref in sorted(refs):
-        known = state.get("prs", {}).get(ref)
+        known = saved.get(ref)
         prs[ref] = view(ref) or known
         if prs[ref] is known:
             _warn(f"tick: can't read PR {ref}")
@@ -567,7 +573,7 @@ def tick(lines: list[str], state: dict, now: float, show=show_thread, view=view_
     sent = {key: at for key, at in state.get("sent", {}).items() if key in {k for k, _ in found}}
     due = [(key, line) for key, line in found if now - sent.get(key, 0) >= REPEAT] + events
     sent.update({key: now for key, _ in due if not key.startswith("pr:")})
-    kept = {**state.get("prs", {}), **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
+    kept = {**saved, **{k: v for k, v in prs.items() if v}}  # a PR that leaves and returns isn't new
     return due, {"threads": threads, "prs": kept, "sent": sent}
 
 
@@ -715,7 +721,8 @@ def main(argv: list[str]) -> int:
         elif args.command == "start":
             start(lines, args.goal, args.proof)
         elif args.command == "worker":
-            worker(lines, args.slug, **{key: getattr(args, key) for key in COLUMNS})
+            worker(lines, args.slug, origin=_origin(_checkout(lines)) if args.pr is not None else "",
+                   **{key: getattr(args, key) for key in COLUMNS})
         else:
             listen(lines, args.key, sys.stdin.read() if args.value == "-" else args.value)
         _write(path, "\n".join(lines))
