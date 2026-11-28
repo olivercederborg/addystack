@@ -120,9 +120,9 @@ review at once, since it may have posted before the watch, and again on each wak
   Go on to the merge line, as the repo's trust allows.
 - **Changes requested**: handle its threads as any reviewer's, then push.
 - **Needs a human**: its latest review is a comment, with no active request for changes,
-  whose body in `scripts/github.sh feedback <N>` carries **Needs a human**. That's the App's handoff: a person approves in its place.
-  Report the decisions it names to the user, and don't request a reviewer; that stays a
-  stop. Then wait until each person it requested has reviewed (`gh pr view <N> --json
+  whose body in `scripts/github.sh feedback <N>` carries **Needs a human**. That's the
+  App's handoff: a person approves in its place. Report the decisions it names to the
+  user, and don't request a reviewer; that stays a stop. Then wait until each person it requested has reviewed (`gh pr view <N> --json
   reviewRequests` lists none) and each one's `scripts/github.sh reviewed <N> <login>` has
   an `active` approval whose `commit_id` is the head. That leads to the merge line as the
   App's approval would. merge-gate denies a merge while a request is pending or nobody
