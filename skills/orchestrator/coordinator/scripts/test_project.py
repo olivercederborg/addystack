@@ -345,7 +345,8 @@ class PriorityLine(unittest.TestCase):
                                 ("alice/api#41", "Merge bob/api#41", False), ("alice/api#41", "Merge alice/api#41", True),
                                 ("alice/api#41", "https://github.com/bob/api/pull/41", False),
                                 ("https://github.com/alice/api/pull/41", "Merge alice/api#41", True),
-                                ("api#41", "Merge bob/api#41", True)]:
+                                ("api#41", "Merge bob/api#41", True), ("alice/api#41", "Merge api#41", True),
+                                ("https://github.com/acme/skills/pull/105", "Re-review skills#105", True)]:
             self.assertEqual(line(term).matches(text), hit, (term, text))
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):

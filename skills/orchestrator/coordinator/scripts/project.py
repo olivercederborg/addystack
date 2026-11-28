@@ -192,11 +192,13 @@ class Priority:
 
     def matches(self, text: str) -> bool:
         """Whether a term is in text. A term or text that names PRs, as a range `#20–#22`,
-        a URL, `repo#N`, or `#N`, names each PR as `#N`, and with its repo as `repo#N`. A
-        term that is only PRs, `#N`, `repo#N`, or a range of any length, matches any of
-        them; any other term matches as written."""
+        a URL, `owner/repo#N`, `repo#N`, or `#N`, names each PR as `#N`, and with what it
+        names of its repo as `repo#N` and `owner/repo#N`. A term that is only PRs matches
+        any of them in its fullest form; an owner rules out only text that names another
+        owner, so `alice/api#41` takes `api#41` but not `bob/api#41`. Any other term
+        matches as written."""
         named = _prs(text)
-        if any(refs and any(ref in named for ref in refs) for refs in map(_only_prs, self.terms)):
+        if any(refs and any(_names(named, ref) for ref in refs) for refs in map(_only_prs, self.terms)):
             return True
         text = f"{text} {' '.join(named)}"
         return any(re.search(("(?<!\\w)" if term[0].isalnum() else "") + re.escape(term)
@@ -219,6 +221,13 @@ def _prs(text: str) -> list[str]:
         found += [f"#{number}", *([f"{named.split('/')[-1]}#{number}"] if named else []),
                   *([f"{named}#{number}"] if "/" in named else [])]
     return found
+
+
+def _names(named: list[str], ref: str) -> bool:
+    """Whether named, as _prs gives it, holds ref; an `owner/repo#N` ref also takes a
+    `repo#N` that came with no owner."""
+    repo = ref.partition("/")[2]
+    return ref in named or bool(repo) and repo in named and not any(n.endswith(f"/{repo}") for n in named)
 
 
 def _only_prs(term: str) -> list[str]:
