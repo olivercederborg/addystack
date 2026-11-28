@@ -13,10 +13,10 @@ PR's author runs it with their go, and may name the reviewer:
     handoff.py N GATES.json [--reviewer LOGIN]... [--with-suggested] --disclosure LINE --send
 
 `--send` posts the comment, then requests. It never requests the PR's author. A handoff of
-the same decisions as the signed-in login's own last one posts no comment, and still requests
-whoever the pick needs, so a run that commented and then failed to request finishes on a
-retry. Someone else's handoff, such
-as the author's, never stands in for this login's own. A base without `.github/REVIEWERS`
+the same decisions as the signed-in login's own last one posts no comment unless someone
+holds an area they didn't before, and still requests whoever the pick needs, so a run that
+commented and then failed to request finishes on a retry. Someone else's handoff, such as
+the author's, never stands in for this login's own. A base without `.github/REVIEWERS`
 hands off nothing.
 
 The block, the comment's last lines; a field added later keeps v1, a renamed or removed one
@@ -31,6 +31,7 @@ is v2, and a reader takes the last block it trusts:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 from pathlib import Path
 import re
@@ -41,12 +42,15 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gates  # noqa: E402
 import reviewers  # noqa: E402
+import standing  # noqa: E402
 
 GITHUB = Path(__file__).resolve().parent / 'github.sh'
 MARK, VERSION = 'addystack-handoff', 1
 SECOND_OPINION = 'second-opinion'
 BLOCK = re.compile(rf'<!-- {MARK}:v(\d+)\n(.*?)\n-->', re.S)
-ROLES = {'P1': 'P1', 'P2': 'P2', 'fallback': 'fewest open requests', 'chosen': 'chosen by the author'}
+ROLES = {'P1': 'P1', 'P2': 'P2', 'P3': 'P3', 'fallback': 'no priority here, least loaded',
+         'kept': 'already asked, keeps these areas',
+         'chosen': 'chosen by the author'}
 
 
 def _error(output: str) -> str:
@@ -99,7 +103,11 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
                           'ask': 'Review the whole PR in its place: is anything here wrong or risky?'})
     placed = reviewers.place(facts['rules'], decisions, facts['changed'])
     author, engaged = facts['author'], facts['engaged']
-    suggested = reviewers.pick(facts['rules'], placed, author, engaged, facts['load'])
+    weights, held = facts['settings']['weights'], _held(facts['handoffs'], engaged)
+    # A winner already asked isn't requested again, but the block keeps their areas for `_held`.
+    winners = reviewers.pick(facts['rules'], placed, author, engaged, facts['standing'], weights, held)
+    kept = [{**reviewer, 'role': 'kept'} for reviewer in winners if reviewers.has(engaged, reviewer['login'])]
+    suggested = [reviewer for reviewer in winners if not reviewers.has(engaged, reviewer['login'])]
     uncovered = []
     if chosen:
         # The pick's own coverage: the listed domains where it is a P1 or P2.
@@ -112,28 +120,55 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
         request = [{'login': login, 'role': 'chosen', 'domains': covers(login)} for login in reviewers.unique(chosen)
                    if not reviewers.has(engaged, login)]
         if with_suggested:
-            request += reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['load'])
+            extra = reviewers.pick(facts['rules'], placed, author, [*engaged, *chosen], facts['standing'], weights, held)
+            # Areas the author's pick wins too join their record, so a later handoff keeps them.
+            for reviewer in request:
+                reviewer['domains'] += [name for winner in extra if reviewers.has([reviewer['login']], winner['login'])
+                                        for name in winner['domains'] if name not in reviewer['domains']]
+            request += [reviewer for reviewer in extra if not reviewers.has([*engaged, *chosen], reviewer['login'])]
+            kept = [{**reviewer, 'role': 'kept'} for reviewer in extra if reviewers.has(engaged, reviewer['login'])]
+        else:
+            kept = []
     else:
         request = list(suggested)
     last = facts['handoffs'][-1] if facts['handoffs'] else None
     same = last is not None and sorted(decision['key'] for decision in placed) == \
         sorted(decision['key'] for decision in last['decisions'])
-    named = [reviewer['login'] for reviewer in last['reviewers']] if same else []
+    # Someone only kept before was never requested by a handoff, so requesting them now is new.
+    named = [reviewer['login'] for reviewer in last['reviewers'] if reviewer['role'] != 'kept'] if same else []
     new = [reviewer for reviewer in request if not reviewers.has(named, reviewer['login'])]
+    # Who holds which area, against its own last handoff: any change is posted, so the next
+    # run's `_held` reads it, even when nobody new is asked.
+    def holds(records):
+        return {(reviewer['login'].lower(), name) for reviewer in records for name in reviewer['domains'] if name}
+    moved = holds(request + kept) - (holds(last['reviewers']) if same else set())
     if not request and not engaged:
         why = 'nobody to ask'
     elif not same:
         why = 'decisions changed' if last else 'first handoff'
     else:
-        why = 'new reviewer' if new else 'nothing new'
-    result = {'post': not same or bool(new), 'why': why, 'head': facts['head'], 'decisions': placed,
+        why = 'new reviewer' if new else 'areas changed' if moved else 'nothing new'
+    result = {'post': not same or bool(new) or bool(moved), 'why': why, 'head': facts['head'], 'decisions': placed,
               'request': request, 'suggested': suggested, 'uncovered': uncovered}
     block = {'pr': number, 'base': facts['base'], 'head': facts['head'], 'by': facts['viewer'],
              'chosen_by': 'author' if chosen else 'rule', 'second_opinion': no_second_opinion,
              'decisions': [{field: decision.get(field) for field in
                             ('key', 'id', 'gate', 'decision', 'ask', 'why', 'code', 'domain')} for decision in placed],
-             'reviewers': request, 'engaged': engaged}
+             'reviewers': request + kept, 'engaged': engaged}
     return {**result, 'comment': _render(disclosure, block, facts['rules'])}
+
+
+def _held(handoffs: list, engaged: list) -> dict:
+    """{domain: login}: whom its own earlier handoffs picked for each domain, the latest
+    winning, while that person is still requested or their review of this head stands. So a
+    re-review leaves a domain with the person picked for it, even one REVIEWERS doesn't list
+    there, instead of asking another."""
+    held = {}
+    for block in handoffs:
+        for reviewer in block.get('reviewers', []):
+            if reviewers.has(engaged, reviewer['login']):
+                held.update({name: reviewer['login'] for name in reviewer.get('domains', []) if name})
+    return held
 
 
 def send(number: int, plan: dict, github=github) -> dict:
@@ -163,7 +198,8 @@ def read(body: str) -> dict | None:
 
 def _render(disclosure: str, block: dict, rules: list) -> str:
     """The comment: a header line for people, each decision in full for the reviewing agent, the block."""
-    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in block['reviewers']) or \
+    requested = [reviewer for reviewer in block['reviewers'] if reviewer['role'] != 'kept']
+    asked = ', '.join(f'`{reviewer["login"]}`' for reviewer in requested) or \
         ('nobody new' if block['engaged'] else 'nobody')
     count = len(block['decisions'])
     lines = [disclosure,
@@ -190,7 +226,7 @@ def _render(disclosure: str, block: dict, rules: list) -> str:
               + (f' · {", ".join(name for name in reviewer["domains"] if name)}' if any(reviewer['domains']) else '')
               for reviewer in block['reviewers']]
     lines += [f'- Already asked: {", ".join(f"`{login}`" for login in block["engaged"])}'] if block['engaged'] else []
-    if not block['reviewers']:
+    if not requested:
         lines.append('- Nobody new: the people already asked cover these decisions' if block['engaged'] else
                      "- Nobody to ask: REVIEWERS names no one here but the PR's author. Ask someone by hand.")
     # Escaped, so no text in the JSON can close the HTML comment.
@@ -214,9 +250,9 @@ def _lines(output: str) -> list:
 
 def _facts(number: int) -> dict:
     """Every read a plan needs: {'viewer', 'author', 'body', 'base', 'head', 'rules': list | None,
-    'changed': [path], 'load': {login: open requests}, 'engaged': [login], 'handoffs': [block]},
-    where engaged is each person requested or with a standing review of the head, and handoffs are the
-    viewer's own, oldest first."""
+    'settings', 'standing': {login: standing}, 'changed': [path], 'engaged': [login],
+    'handoffs': [block]}, where engaged is each person requested or with a standing review of the head,
+    standing covers everyone REVIEWERS names, and handoffs are the viewer's own, oldest first."""
     repo = 'repos/{owner}/{repo}'
     viewer = github('viewer').strip()
     pr = json.loads(_gh('api', f'{repo}/pulls/{number}'))
@@ -230,16 +266,17 @@ def _facts(number: int) -> dict:
                                          '.[] | {type: .user.type, login: .user.login, state, commit_id} | tojson')))
     reviewed = [review['login'] for review in reviews if review['type'] == 'User' and review['commit_id'] == pr['head']['sha']
                 and review['state'] not in ('PENDING', 'DISMISSED')]
-    load = {}
-    for login in _lines(_gh('api', '--paginate', f'{repo}/pulls?state=open&per_page=100',
-                            '--jq', '.[].requested_reviewers[].login')):
-        load[login] = load.get(login, 0) + 1
+    rules = settings = people = None
+    if text is not None:
+        rules, settings = reviewers.parse(text), reviewers.settings(text)
+        everyone = reviewers.unique(name for rule in rules for name in rule['names'])
+        people = standing.read(everyone, settings['share_since'], dt.datetime.now(dt.timezone.utc), _gh)
     comments = map(json.loads, _lines(_gh('api', '--paginate', f'{repo}/issues/{number}/comments?per_page=100',
                                           '--jq', '.[] | {login: .user.login, body} | tojson')))
     return {'viewer': viewer, 'author': author, 'body': pr['body'] or '', 'base': pr['base']['sha'],
-            'head': pr['head']['sha'], 'rules': None if text is None else reviewers.parse(text),
+            'head': pr['head']['sha'], 'rules': rules, 'settings': settings, 'standing': people,
             'changed': _lines(_gh('api', '--paginate', f'{repo}/pulls/{number}/files?per_page=100', '--jq', '.[].filename')),
-            'load': load, 'engaged': [login for login in dict.fromkeys(requested + reviewed)
+            'engaged': [login for login in dict.fromkeys(requested + reviewed)
                                       if login.lower() != author.lower()],
             'handoffs': [block for block in (read(comment['body']) for comment in comments
                                              if comment['login'] == viewer) if block]}

@@ -121,6 +121,8 @@ def doors(verdict: dict, base: str, cwd: str = '.') -> list:
     return [f'{entry["area"]} at {entry["code"]} is a one-way door by {source}: it needs a one-way-door '
             'decision at that code' for entry in verdict['sensitive']
             if items & {entry['area'], entry['area'].replace('-', ' ')} and entry['code'] not in covered]
+
+
 def current(verdict: dict, pr_body: str, base: str, head: str, number: int | None = None) -> list:
     """Every problem with acting on a loaded verdict now: check's, then, once those pass, a PR
     whose diff against its current base isn't the one judged from the verdict's base, as after

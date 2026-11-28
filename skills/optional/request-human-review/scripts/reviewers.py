@@ -8,12 +8,22 @@ matches a path wins. `## <domain> · pinned` names the domain `<domain>`. The `u
 lists patterns that belong to no domain, such as an ADR, which belongs to the PR's main
 change instead. A domain may list nobody.
 
+The lines above the first domain hold the pick's settings, one `name: value` each:
+
+    priority: 3 2 1          points for a domain's P1, P2 and P3; nobody else gets any
+    open ask: 1              minus this for each review request they haven't started
+    share: 10                minus this times their share of recent reviews
+    reuse: 1                 plus this, in a PR's secondary areas, for someone already asked
+    share since: 2026-12-01  review shares count from this date, at most 14 days back
+
     rule     = {'pattern': '/packages/billing/', 'domain': 'billing', 'names': ['alice', 'bob'], 'match': fullmatch}
-    placed   = {**decision, 'domain': 'billing' | None}            None: no domain, the fallback
-    reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'fallback', 'domains': ['billing']}
+    placed   = {**decision, 'domain': 'billing' | None}            None: no domain
+    standing = {'asks': 1, 'share': 0.25}                          per login, lower-cased, from standing.py
+    reviewer = {'login': 'alice', 'role': 'P1' | 'P2' | 'P3' | 'fallback', 'domains': ['billing']}
 """
 from __future__ import annotations
 
+import datetime as dt
 import re
 
 PATH = '.github/REVIEWERS'
@@ -45,6 +55,44 @@ def parse(text: str) -> list:
     if problems:
         raise ValueError('REVIEWERS: ' + '; '.join(problems))
     return rules
+
+
+def settings(text: str) -> dict:
+    """The pick's settings from the lines above the first domain:
+    {'weights': {'P1', 'P2', 'P3', 'open ask', 'share'}, 'share_since': date}, refused with each
+    line it can't read and each setting it lacks named."""
+    found, problems = {}, []
+    for number, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if line.startswith('## '):
+            break
+        if not line or line.startswith('#'):
+            continue
+        name, colon, value = (part.strip() for part in line.partition(':'))
+        try:
+            if not colon or name not in SETTINGS:
+                raise ValueError
+            found[name] = SETTINGS[name](value)
+        except ValueError:
+            problems.append(f'line {number}: {line}')
+    problems += [f'no `{name}:` line above the first domain' for name in SETTINGS if name not in found]
+    if problems:
+        raise ValueError('REVIEWERS settings: ' + '; '.join(problems))
+    first, second, third = found['priority']
+    return {'weights': {'P1': first, 'P2': second, 'P3': third, 'open ask': found['open ask'], 'share': found['share'],
+                        'reuse': found['reuse']},
+            'share_since': found['share since']}
+
+
+def _priority(value: str) -> tuple:
+    points = tuple(float(point) for point in value.split())
+    if len(points) != 3:
+        raise ValueError
+    return points
+
+
+SETTINGS = {'priority': _priority, 'open ask': float, 'share': float, 'reuse': float,
+            'share since': dt.date.fromisoformat}
 
 
 def _matcher(pattern: str):
@@ -104,37 +152,62 @@ def has(logins, login: str) -> bool:
     return login.lower() in {other.lower() for other in logins}
 
 
-def pick(rules: list, placed: list, author: str, engaged: list, load: dict) -> list:
-    """The reviewers to request, from domains with the most decisions to the fewest. A domain
-    an engaged or already picked login covers, as its P1 or P2, adds nobody; otherwise its
-    P1, or its P2 when the P1 is the author. A domain that is None or lists nobody but the
-    author is covered by anyone engaged or picked, and otherwise takes the fallback: everyone
-    the file names but the author, with the fewest open requests in `load`, then by name."""
-    load = {login.lower(): count for login, count in load.items()}
+def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, weights: dict,
+         held: dict) -> list:
+    """Each area's winner, as reviewer records; one already engaged needs no new request, which
+    the caller leaves out. The PR's main area comes first: the one with the most decisions
+    among those listing a P1 or P2 (or with the most decisions when none does); then the rest,
+    from most decisions to fewest. An area adds nobody when an engaged or already picked login is
+    its P1 or P2, or when `held`, from earlier handoffs, names an engaged login for it. Otherwise
+    the highest score takes it: `weights` points for the area's P1, P2 or P3, less `open ask` per
+    open ask and `share` times their share in standing (measuring it from the lowest share would
+    move everyone alike and change no pick); ties go to fewer open asks, then by name, except
+    that in a secondary area one of its owners wins a tie first. For the
+    main area that's among everyone the file names but the author and anyone engaged. For a
+    secondary area someone engaged may win too, without a new request, and anyone engaged or
+    picked gets `reuse` on top, so one person reviewing several areas is slightly preferred to
+    asking another. An area that is None or lists nobody but the author gives nobody points,
+    and anyone engaged or picked covers it."""
     counts = {}
     for decision in placed:
         counts[decision['domain']] = counts.get(decision['domain'], 0) + 1
-    # Domains with a P1 or P2 to ask first, so a person picked for one can cover a domain with nobody.
+    # Areas with a P1 or P2 to ask first, so a person picked for one can cover an area with nobody.
     def listed(name):
         return bool(name) and any(login.lower() != author.lower() for login in names(rules, name)[:2])
     order = sorted(counts, key=lambda name: (not listed(name), -counts[name], name or ''))
+    free = [login for login in unique(n for rule in rules for n in rule['names']) if login.lower() != author.lower()]
     picked = []
-    for name in order:
+    for index, name in enumerate(order):
         asked = list(engaged) + [reviewer['login'] for reviewer in picked]
-        priority = names(rules, name)[:2] if name else []
-        if covering := [reviewer for reviewer in picked if has(priority, reviewer['login'])]:
+        priority = names(rules, name)[:3] if name else []
+        # An earlier handoff's winner still asked keeps the area before anyone picked now takes it.
+        if has(engaged, held.get(name, '')):
+            continue
+        if covering := [reviewer for reviewer in picked if has(priority[:2], reviewer['login'])]:
             covering[0]['domains'].append(name)
             continue
-        if any(has(priority, login) for login in asked):
+        if any(has(priority[:2], login) for login in asked):
             continue
-        if candidates := [login for login in priority if login.lower() != author.lower()]:
-            role = 'P1' if candidates[0] == priority[0] else 'P2'
-            picked.append({'login': candidates[0], 'role': role, 'domains': [name]})
+        if not listed(name) and asked:
             continue
-        if asked:
+        main = index == 0
+        candidates = [login for login in free if not (main and has(engaged, login))]
+        if not candidates:
             continue
-        pool = [login for login in unique(n for rule in rules for n in rule['names']) if login.lower() != author.lower()]
-        if pool:
-            login = min(pool, key=lambda login: (load.get(login.lower(), 0), login.lower()))
-            picked.append({'login': login, 'role': 'fallback', 'domains': [name] if name else []})
+        def rank(login):
+            return next((f'P{index + 1}' for index, other in enumerate(priority) if other.lower() == login.lower()), None)
+        def score(login):
+            known = standing[login.lower()]
+            # In the main area nobody asked is a candidate, so only secondary areas see this.
+            reused = weights['reuse'] * has(asked, login)
+            # Rounded, so two equal scores tie and the tie rule decides, not float noise in the shares.
+            return round(weights.get(rank(login), 0) - weights['open ask'] * known['asks']
+                         - weights['share'] * known['share'] + reused, 9)
+        # In a secondary area an owner wins a tie against someone reused, before open asks and name.
+        login = min(candidates, key=lambda login: (-score(login), not main and rank(login) is None,
+                                                   standing[login.lower()]['asks'], login.lower()))
+        if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
+            earlier['domains'] += [name] if name else []
+        else:
+            picked.append({'login': login, 'role': rank(login) or 'fallback', 'domains': [name] if name else []})
     return picked
