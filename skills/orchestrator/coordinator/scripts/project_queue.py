@@ -15,7 +15,7 @@ line above the table holds the next one. Kind is `stuck`, a run the coordinator 
 stuck, or a turn-block kind, `decide`, `review`, or `do`. Name is the turn block's need
 name: 1-80 characters with a word of 3+ letters. From is the worker, with its thread
 link, or `coordinator`. The user gets stuck runs first, then calls (decide and review),
-then Do items, oldest first within each, as the coordinator skill's step 5 orders them."""
+then Do items, oldest first within each."""
 from __future__ import annotations
 
 import json
