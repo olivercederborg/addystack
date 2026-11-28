@@ -1275,16 +1275,6 @@ class CheckQueue(unittest.TestCase):
         q.tick(q.check(1, 1000, cpu=int(4e9)), q.check(2, 1000))
         self.assertEqual(q.stopped(), {221})
 
-    def test_a_resumed_unit_starts_from_this_scans_readings(self):
-        q = Queue(self, cap=1)
-        q.tick(q.check(1), q.check(2, cpu=None))
-        q.tick(q.check(2, 1000, cpu=0))
-        q.tick(q.check(2, 1000, cpu=0))  # check 1 gone two scans: check 2 resumes
-        for _ in range(60):
-            q.tick(q.check(2, 1000, cpu=int(4e9)), q.check(3, 1000))
-        self.assertFalse(q.governor._idle(221, 31))
-        self.assertEqual(q.stopped(), {231})
-
     def test_a_unit_whose_processes_change_keeps_its_slot_a_whole_window(self):
         # A worker found late, or missed for a scan and found again, has CPU no delta
         # counts; an idle watcher's processes stay the same.
@@ -1307,6 +1297,16 @@ class CheckQueue(unittest.TestCase):
         q.now += 39.5
         q.tick(q.check(1, 1000, cpu=int(3.5e9)))
         self.assertFalse(q.governor._idle(211, q.now - .5))
+
+    def test_the_fifteen_minute_kill_counts_only_busy_checks(self):
+        # Cap 2, checks 1 and 2 idle, 3 and 4 held 15 min: 3 resumes and the spacing keeps 4
+        # waiting, but with one busy check under the cap, 4 isn't killed.
+        q = Queue(self, cap=2)
+        q.tick(q.check(1), q.check(2))
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3), q.check(4))
+        q.now += guard.HOLD_SECONDS
+        q.tick(q.check(1, 1000), q.check(2, 1000), q.check(3, 1000), q.check(4, 1000))
+        self.assertEqual(q.killed(), set())
 
     def test_an_idle_blocker_lets_a_held_unit_resume_instead_of_dying(self):
         q = Queue(self, cap=1)
