@@ -17,7 +17,8 @@ preview annotation reads as the comment the user wrote on it: a quote link carri
 its `comment` parameter, and the context T3 appends after the message in a `comment:`
 field, a `Comment:` line, or a citation's `comment`. The rest of that context, such as
 terminal output, page elements, diffs, a PR chip's description, and a captured window's
-data, is dropped.
+data, is dropped. A PR chip's label reads as the PR it links, owner/repo#N, so a gate holds
+a go on a chip ("merge <chip>") to that PR.
 
 A reply is the assistant's text: Claude Code's `"type": "assistant"` entries with `text`
 parts, one entry per part, and Codex's `response_item` messages with `role: "assistant"`
