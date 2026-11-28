@@ -182,10 +182,10 @@ settles; only those reach the user.
 
 **The queue**: each real call, stuck run, and Do the user owes goes into project.md's
 Queue as it arises, with `scripts/project.py <folder> queue add <kind> "<name>" --from
-"<worker> <thread link>"`, and `--batch <kind>` (`post`, `merge:<stack>`) for a call
-with no ⚠️ row a [batch card](references/views.md#batch-card) can share. It orders what
-waited a day under the priority, its items, then stuck runs, calls, and Do items, oldest
-first. While it holds one, a reply with text ends on the top item and its batch: the
+"<worker> <thread link>"`, and `--batch <kind>` (`post`, `merge:<stack>`, `follow-ups`)
+for a call with no ⚠️ row a [batch card](references/views.md#batch-card) can share. It
+orders what waited a day under the priority, its items, then stuck runs, calls, and Do
+items, oldest first. While it holds one, a reply with text ends on the top item and its batch: the
 [decision card](references/views.md#decision-card-example) the first time, then its
 question, strip, and Next. `queue show` prints the strip and the needs that lead the
 turn block's. A wake that changes nothing the user must do or know is quiet, its turn
