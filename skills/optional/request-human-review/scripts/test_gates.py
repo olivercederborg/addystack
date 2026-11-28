@@ -30,7 +30,7 @@ def verdict(*decisions, sensitive=()):
 
 def decision(id_, gate=None, code='a.ts:1'):
     return {'id': id_, 'decision': f'{id_ or "found"} call', 'code': code, 'gate': gate,
-            'why': 'adds a column' if gate else 'follows export.ts:9'}
+            'why': 'adds a column' if gate else 'follows export.ts:9', **({'ask': 'Keep the column?'} if gate else {})}
 
 
 class Load(unittest.TestCase):
@@ -51,7 +51,8 @@ class Load(unittest.TestCase):
         bad['head'] = 'abc'
         with self.assertRaises(ValueError) as raised:
             gates.load(self.write(bad))
-        for named in ('head is not a full commit SHA', "D1: gate 'risky'", 'D1: decision is empty', "'payments'"):
+        for named in ('head is not a full commit SHA', "D1: gate 'risky'", 'D1: decision is empty', 'D1: ask is empty',
+                      "'payments'"):
             self.assertIn(named, str(raised.exception))
 
 
@@ -60,6 +61,22 @@ class Check(unittest.TestCase):
         self.assertEqual(gates.check(verdict(decision('D1', 'interface'), decision('D2')), BODY, HEAD), [])
         self.assertEqual(gates.check(verdict(decision('D1', 'interface'), decision(None)), BODY, BASE),
                          [f'the verdict judged {HEAD}, but the head is {BASE}', 'D2 from the Decisions table has no entry'])
+
+    def test_current_adds_a_changed_diff_only_once_the_verdict_matches_the_pr(self):
+        judged = verdict(decision('D1', 'interface'), decision('D2'))
+        with patch.object(gates, 'same_diff', lambda judged_base, base, head: False):
+            self.assertEqual(gates.current(judged, BODY, BASE, HEAD),
+                             [f"the PR's diff against its base is not the one the gates judged from {BASE}; review it again"])
+            self.assertEqual(gates.current(judged, BODY, BASE, BASE), [f'the verdict judged {HEAD}, but the head is {BASE}'])
+        with patch.object(gates, 'same_diff', lambda judged_base, base, head: True), \
+                patch.object(gates, 'one_way_doors', lambda base, cwd='.': None):
+            self.assertEqual(gates.current(judged, BODY, BASE, HEAD), [])
+        # Once the verdict matches the PR, the repository's one-way doors at the base apply too.
+        sensitive = verdict(decision('D1', 'interface'), decision('D2'), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'}])
+        with patch.object(gates, 'same_diff', lambda judged_base, base, head: True), \
+                patch.object(gates, 'one_way_doors', lambda base, cwd='.': ('.github/pull_request_template.md:4', 'money movement')):
+            self.assertEqual(len(gates.current(sensitive, BODY, BASE, HEAD)), 1)
+            self.assertIn('money-movement at pay.ts:3 is a one-way door', gates.current(sensitive, BODY, BASE, HEAD)[0])
 
     def test_a_pr_without_a_table_needs_only_what_the_diff_shows(self):
         self.assertEqual(gates.check(verdict(), '**Decisions.** N/A', HEAD), [])

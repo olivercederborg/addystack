@@ -8,7 +8,7 @@ import subprocess
 import pathlib
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 HERE = pathlib.Path(__file__).resolve().parent
 loader = SourceFileLoader('post_review', str(HERE / 'post-review.py'))
@@ -68,7 +68,8 @@ class Post(unittest.TestCase):
         (self.folder / 'GATES.json').write_text(json.dumps({
             'pr': 7, 'base': BASE, 'head': HEAD, 'sensitive': [],
             'decisions': [{'id': 'D1', 'decision': 'Add a totals column', 'code': 'db/schema.ts:12', 'gate': gate,
-                           'why': 'a schema change' if gate else 'follows db/schema.ts:4'}]}))
+                           'why': 'a schema change' if gate else 'follows db/schema.ts:4',
+                           **({'ask': 'Ship the totals column?'} if gate else {})}]}))
 
     def post(self, fake, *findings, head=HEAD, wait=0, second_opinion=None, base=BASE, diffs=None, retry=False, bases=None):
         review = {'pr': 7, 'head': HEAD, 'gates': 'GATES.json', 'body': 'BODY.md', 'findings': list(findings),
@@ -85,7 +86,17 @@ class Post(unittest.TestCase):
         def pr(number, fields=''):
             name, oid = bases.pop(0) if len(bases) > 1 else bases[0]
             return {'body': BODY, 'headRefOid': head, 'baseRefName': name, 'baseRefOid': oid}
+        def facts(number):
+            # GitHub as the handoff reads it: the fake's own earlier handoffs and requests count.
+            writes = [(command, arguments, files) for command, arguments, files in fake.writes]
+            return {'viewer': fake.viewer, 'author': 'carol', 'body': BODY, 'base': base, 'head': head,
+                    'rules': post_review.handoff.reviewers.parse('## db\n/db/ @alice @bob\n'),
+                    'changed': ['db/schema.ts', 'README.md'], 'load': {},
+                    'engaged': [login for command, arguments, _ in writes if command == 'request' for login in arguments[1:]],
+                    'handoffs': [post_review.handoff.read(files['handoff.md']) for command, _, files in writes
+                                 if command == 'comment']}
         with patch.object(post_review, 'github', fake.github), \
+                patch.object(post_review.handoff, '_facts', facts), \
                 patch.object(post_review.gates, 'same_diff',
                              lambda judged, against, commit: diffs.get(against, 'same') == diffs.get(judged, 'same')), \
                 patch.object(post_review, 'pr', pr):
@@ -187,19 +198,49 @@ class Post(unittest.TestCase):
         question = {'call': 'question', 'holds': False, 'title': 'is the column nullable?'}
         outcome = self.post(fake, question)
         self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['D1']))
-        (command, arguments, files), dismissal = fake.writes
+        (command, arguments, files), dismissal, handoff, request = fake.writes
         self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
+        self.assertEqual((handoff[0], request[0]), ('comment', 'request'), 'the handoff follows the review')
         self.assertIn('**Needs a human.**', files['body.md'])
         self.assertIn('- **D1** · architectural or interface decision: Add a totals column', files['body.md'])
         self.assertIn('- question: is the column nullable?', files['body.md'])
         self.assertEqual((dismissal[0], dismissal[1][:2]), ('dismiss', ['7', '41']))
+
+    def test_a_refused_request_is_named_in_the_outcome_and_the_review_stands(self):
+        self.gate('interface')
+        fake = Fake()
+        def refuse(command, *arguments):
+            if command == 'request':
+                raise ValueError('github.sh request failed: HTTP 422 Reviews may only be requested from collaborators')
+            return Fake.github(fake, command, *arguments)
+        with patch.object(fake, 'github', refuse):
+            outcome = self.post(fake)
+        self.assertEqual((outcome['outcome'], outcome['handoff']),
+                         ('needs-human', {'failed': 'github.sh request failed: HTTP 422 Reviews may only be requested '
+                                                    'from collaborators'}))
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'comment'])
+        timing_out = Fake()
+        def stall(command, *arguments):
+            if command == 'request':
+                raise subprocess.TimeoutExpired('gh', 300)
+            return Fake.github(timing_out, command, *arguments)
+        with patch.object(timing_out, 'github', stall):
+            self.assertIn('timed out', self.post(timing_out)['handoff']['failed'])
+
+    def test_a_held_finding_on_a_gated_pr_goes_back_to_the_author_and_asks_nobody(self):
+        self.gate('one-way-door')
+        fake = Fake()
+        bug = {'call': 'blocking', 'holds': True, 'title': 'totals drop refunds'}
+        self.assertEqual(self.post(fake, bug)['outcome'], 'changes-requested')
+        self.assertEqual([command for command, _, _ in fake.writes], ['review'])
 
     def test_a_gate_withdraws_the_apps_earlier_approval_and_a_failed_dismissal_posts_nothing(self):
         self.gate('product')
         fake = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': BASE})
         self.assertEqual(self.post(fake)['outcome'], 'needs-human')
         self.assertEqual([(command, arguments[:2]) for command, arguments, _ in fake.writes],
-                         [('dismiss', ['7', '40']), ('review', ['7', HEAD])])
+                         [('dismiss', ['7', '40']), ('review', ['7', HEAD]), ('comment', ['7', ANY]),
+                          ('request', ['7', 'alice'])])
         denied = Fake(active={'id': 40, 'state': 'APPROVED', 'commit_id': BASE})
         def refuse(command, *arguments):
             if command == 'dismiss':
@@ -240,7 +281,7 @@ class Post(unittest.TestCase):
             self.post(fake)
         outcome = self.post(fake, retry=True)
         self.assertEqual(outcome['outcome'], 'needs-human')
-        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'dismiss'])
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'dismiss', 'comment', 'request'])
 
     def test_a_retry_leaves_a_newer_request_for_changes_and_posts_changed_evidence_again(self):
         self.gate('interface')
@@ -255,10 +296,11 @@ class Post(unittest.TestCase):
         # whether it reuses its post or, with changed findings, posts again.
         fake.active = {'id': 42, 'state': 'CHANGES_REQUESTED', 'commit_id': HEAD}
         self.post(fake, retry=True)
-        self.assertEqual([command for command, _, _ in fake.writes], ['review'])
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'comment', 'request'])
         (self.folder / 'note.md').write_text('Nit: name it total_amount_cents.')
         self.post(fake, {'holds': False, 'draft': {'path': 'a.ts', 'line': 1, 'body_file': 'note.md'}}, retry=True)
-        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'review'])
+        # The same decisions, with the reviewer already asked: no second handoff.
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'comment', 'request', 'review'])
         # What it would post changed, as a check that went from pending to failed does: it posts again.
         self.gate(None)
         checks = Fake(required='ci\tpending\nrequired: not all passed\n')
@@ -281,7 +323,7 @@ class Post(unittest.TestCase):
             self.post(fake, finding)
         (self.folder / 'note.md').write_text('Nit: the column holds cents; name it total_cents.')
         self.post(fake, finding, retry=True)
-        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'review', 'dismiss'])
+        self.assertEqual([command for command, _, _ in fake.writes], ['review', 'review', 'dismiss', 'comment', 'request'])
 
     def test_a_failed_post_keeps_the_request_for_changes_and_a_push_mid_read_posts_nothing(self):
         self.gate('interface')
@@ -331,8 +373,10 @@ class Post(unittest.TestCase):
                 fake = Fake(required=lambda: self.fail("a review that can't approve never reads its checks"))
                 outcome = self.post(fake, second_opinion=second)
                 self.assertEqual((outcome['outcome'], outcome['gated']), ('needs-human', ['second opinion']))
-                (command, arguments, files), = fake.writes
+                (command, arguments, files), handoff, request = fake.writes
                 self.assertEqual((command, arguments[3]), ('review', 'COMMENT'))
+                self.assertIn(f'"second_opinion": "{why}"', handoff[2]['handoff.md'])
+                self.assertEqual(request[1], ['7', 'alice'], 'the main change\'s P1 reviews in its place')
                 self.assertIn(f"- **Second opinion** · the other provider's review didn't run ({why})", files['body.md'])
 
     def test_a_diff_that_needs_no_second_opinion_is_approved_as_before(self):
