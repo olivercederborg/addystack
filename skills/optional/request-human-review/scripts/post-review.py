@@ -122,17 +122,13 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
     head = review['head']
     if current['headRefOid'] != head:
         return {'outcome': 'superseded', 'head': current['headRefOid']}
-    problems = gates.check(verdict, current['body'], head, number)
-    if problems:
-        raise ValueError('; '.join(problems))
     # A PR moved to another base can change its diff with the same head: the gates judged the
-    # diff from the verdict's base, so that diff must still be the PR's, here and again whenever
-    # the base changes while the checks are waited on.
+    # diff from the verdict's base, so that diff must still be the PR's, and the repository's
+    # one-way doors at the base it merges into apply, here and again whenever the base changes
+    # while the checks are waited on.
     judged = current['baseRefOid']
-    if not gates.same_diff(verdict['base'], judged, head):
-        raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
-    # The repository's one-way doors at the base the PR merges into, here and after it moves.
-    if problems := gates.doors(verdict, judged):
+    problems = gates.current(verdict, current['body'], judged, head, number)
+    if problems:
         raise ValueError('; '.join(problems))
     findings = review['findings']
     # review-code's rule: a blocking call always holds. A finding that doesn't say true or false

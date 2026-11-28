@@ -85,11 +85,9 @@ def plan(number: int, verdict: dict, disclosure: str, no_second_opinion: str | N
     facts = _facts(number)
     if reviewers.has(chosen, facts['author']):
         raise ValueError(f"{facts['author']} wrote the PR, so can't review it")
-    problems = gates.check(verdict, facts['body'], facts['head'], number)
+    problems = gates.current(verdict, facts['body'], facts['base'], facts['head'], number)
     if problems:
         raise ValueError('; '.join(problems))
-    if not gates.same_diff(verdict['base'], facts['base'], facts['head']):
-        raise ValueError("the PR's diff against its base is not the one the gates judged; review it again")
     if facts['rules'] is None:
         return {'post': False, 'why': f'no {reviewers.PATH} at the base', 'head': facts['head'], 'decisions': [],
                 'request': [], 'suggested': [], 'uncovered': [], 'comment': ''}

@@ -32,7 +32,8 @@ class Plan(unittest.TestCase):
 
     def plan(self, judged, facts=None, same_diff=True, **options):
         with patch.object(handoff, '_facts', lambda number: facts or self.facts()), \
-                patch.object(handoff.gates, 'same_diff', lambda judged_base, base, head: same_diff):
+                patch.object(handoff.gates, 'same_diff', lambda judged_base, base, head: same_diff), \
+                patch.object(handoff.gates, 'one_way_doors', lambda base, cwd='.': None):
             return handoff.plan(7, judged, DISCLOSURE, **options)
 
     def test_a_first_handoff_asks_the_p1_and_gives_the_agent_every_decision_in_full(self):
