@@ -700,6 +700,24 @@ class CpuGained(unittest.TestCase):
             [parent(0), worker(0)], [parent(0), worker(10)], [parent(0)], [parent(0), worker(11)],
             [parent(11)], [parent(15)]), int(15e9))
 
+    def test_cpu_reaped_while_a_worker_is_missed_counts(self):
+        # While a scan misses the 10 s worker, its parent reaps another worker's 3 s; the
+        # missed worker's debt must not keep those 3 s when it comes back.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(3)], [parent(3), worker(11)],
+            [parent(14)]), int(14e9))
+
+    def test_a_worker_whose_debt_was_repaid_while_missed_goes_on_from_its_reading(self):
+        # The parent reaps 10 s of others while the pre-tracking worker is missed, which
+        # repays its whole debt; it comes back at 20 s and must not count from now.
+        parent = lambda reaped: proc(211, 210, cpu=0, reaped=int(reaped * 1e9), start=1)
+        worker = lambda cpu: proc(212, 211, cpu=int(cpu * 1e9), start=1)
+        self.assertEqual(self.run_calls(
+            [parent(0), worker(0)], [parent(0), worker(10)], [parent(10)], [parent(10), worker(20)],
+            began=5.0), int(30e9))
+
 
 class KillLog(unittest.TestCase):
     def test_a_call_that_joins_during_the_kill_is_logged(self):
