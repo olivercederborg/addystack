@@ -340,7 +340,12 @@ class PriorityLine(unittest.TestCase):
                                 ("beta#41", "https://github.com/acme/beta/pull/41", True),
                                 ("review #41", "merge #41", False), ("review #41", "review #41 now", True),
                                 ("#5602", "Review #5581–#5618 together", True),
-                                ("#5581–#5618", "post on #5602", True), ("#41", "Merge acme/alpha#41", True)]:
+                                ("#5581–#5618", "post on #5602", True), ("#41", "Merge acme/alpha#41", True),
+                                # Blast radius of #154 (R206, risk 6): a term's owner counts too.
+                                ("alice/api#41", "Merge bob/api#41", False), ("alice/api#41", "Merge alice/api#41", True),
+                                ("alice/api#41", "https://github.com/bob/api/pull/41", False),
+                                ("https://github.com/alice/api/pull/41", "Merge alice/api#41", True),
+                                ("api#41", "Merge bob/api#41", True)]:
             self.assertEqual(line(term).matches(text), hit, (term, text))
 
     def test_it_ends_at_its_time_and_refuses_what_it_cant_hold(self):

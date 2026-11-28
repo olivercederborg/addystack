@@ -211,20 +211,24 @@ SPAN_MAX = 1000  # PRs a range may name, so a typo like #1–#99999 stays one ra
 
 
 def _prs(text: str) -> list[str]:
-    """Each PR text names, as `#N` and, when it names its repo, as `repo#N` too, lowercase."""
+    """Each PR text names, as `#N`, and as `repo#N` and `owner/repo#N` when it names them,
+    lowercase."""
     found = []
     for url_repo, url_n, repo, n, local in project_md.PR_REF.findall(project_md.ranges(text, SPAN_MAX)):
-        number, name = url_n or n or local, (url_repo or repo).split("/")[-1].lower()
-        found += [f"#{number}", *([f"{name}#{number}"] if name else [])]
+        number, named = url_n or n or local, (url_repo or repo).lower()
+        found += [f"#{number}", *([f"{named.split('/')[-1]}#{number}"] if named else []),
+                  *([f"{named}#{number}"] if "/" in named else [])]
     return found
 
 
 def _only_prs(term: str) -> list[str]:
-    """The PRs a term names when it's nothing else, a repo's as `repo#N`, else []."""
+    """The PRs a term names when it's nothing else, each in the fullest form it gives
+    (`owner/repo#N`, else `repo#N`, else `#N`), else []."""
     if not re.fullmatch(r"(?:\S+#\d+|#\d+\s*[–-]\s*#?\d+|https?://\S+/pull/\d+)", term.strip()):
         return []
     found = _prs(term)
-    return [ref for ref in found if "#" in ref and not ref.startswith("#")] or found
+    return ([ref for ref in found if "/" in ref] or [ref for ref in found if not ref.startswith("#")]
+            or found)
 
 
 def priority(root: Path, now: datetime | None = None) -> Priority | None:
