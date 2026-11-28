@@ -167,18 +167,21 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
     """Each kind of evidence `base...head` needs, with the reasons, in KINDS order; a kind
     with no reason is left out."""
     files = [path for path in _git(cwd, "diff", "--name-only", "-z", f"{base}...{head}").split("\0") if path]
+    # A file the change only deletes introduces no pattern and has no code left to mutate.
+    kept = set(_git(cwd, "diff", "--name-only", "--diff-filter=d", "-z", f"{base}...{head}").split("\0"))
     reasons: dict[str, list[str]] = {kind: [] for kind in KINDS}
     for path in files:
         name, is_test = PurePosixPath(path).name, bool(TEST_FILE.search(path))
+        mutable = not is_test and path in kept
         if not is_test and UI_FILE.search(path):
             reasons["ui"].append(f"{path}: UI file")
         elif not is_test and path.endswith(".swift") and (ui := UI_SWIFT.search(_content(cwd, base, head, path))):
             reasons["ui"].append(f"{path}: imports {ui.group(1)}")
         if not is_test and SCHEMA_FILE.search(path):
             reasons["contract"].append(f"{path}: API schema")
-        if not is_test and CODE_FILE.search(path) and (word := next((w for w in _words(path) if w in RISKY_WORDS), None)):
+        if mutable and CODE_FILE.search(path) and (word := next((w for w in _words(path) if w in RISKY_WORDS), None)):
             reasons["mutants"].append(f"{path}: {word} path")
-        elif not is_test and (path.endswith(".sql") or name == "schema.prisma"):
+        elif mutable and (path.endswith(".sql") or name == "schema.prisma"):
             reasons["mutants"].append(f"{path}: {'SQL' if path.endswith('.sql') else 'Prisma schema'}")
         if TOOLCHAIN_FILE.search(path):
             reasons["toolchain"].append(f"{path}: dev toolchain config")
@@ -186,9 +189,8 @@ def classify(cwd: Path, base: str, head: str) -> dict[str, list[str]]:
             reasons["deploy"].append(f"{path}: deploy config")
         elif WORKFLOW.match(path) and DEPLOYS.search(name + _content(cwd, base, head, path)):
             reasons["deploy"].append(f"{path}: deploy workflow")
-    # A file the change only deletes introduces no pattern.
-    kept = _git(cwd, "diff", "--name-only", "--diff-filter=d", "-z", f"{base}...{head}").split("\0")
-    reasons["idiom"] = [f"{path}: code" for path in kept if CODE_FILE.search(path) and not TEST_FILE.search(path)]
+    reasons["idiom"] = [f"{path}: code" for path in files
+                        if path in kept and CODE_FILE.search(path) and not TEST_FILE.search(path)]
     code = [path for path in files if EXPORTING_FILE.search(path) and not TEST_FILE.search(path)]
     if code:
         patch = _git(cwd, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "-U0", f"{base}...{head}", "--", *code)

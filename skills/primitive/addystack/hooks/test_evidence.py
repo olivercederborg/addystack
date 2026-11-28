@@ -128,6 +128,21 @@ class Classify(Repo):
     def test_deleting_a_file_still_counts(self):
         self.assertEqual(self.classify({"src/api.ts": None}), {"contract": ["src/api.ts: changes or removes `export function list() {}`"]})
 
+    def test_deleting_a_file_needs_every_kind_but_mutants(self):
+        """Deleted code can't be mutated, but a deleted screen, schema, or config still
+        changes what users, callers, or builds get."""
+        risky = {"src/money.ts": "x\n", "db/001_users.sql": "x\n", "prisma/schema.prisma": "x\n"}
+        self.base = self.change(risky, "Add the risky files")
+        self.assertEqual(self.classify({path: "y\n" for path in risky}), {"mutants": [
+            "db/001_users.sql: SQL", "prisma/schema.prisma: Prisma schema", "src/money.ts: money path"]})
+        self.base = self.git("rev-parse", "HEAD").strip()
+        self.assertEqual(self.classify(dict.fromkeys(risky)), {})
+        rest = ["src/App.tsx", "api/openapi.yaml", "vite.config.ts", "fly.toml"]
+        self.base = self.change(dict.fromkeys(rest, "x\n"), "Add the rest")
+        self.assertEqual(self.classify(dict.fromkeys(rest)), {
+            "ui": ["src/App.tsx: UI file"], "contract": ["api/openapi.yaml: API schema"],
+            "deploy": ["fly.toml: deploy config"], "toolchain": ["vite.config.ts: dev toolchain config"]})
+
     def test_a_member_inside_a_multi_line_exported_type_is_contract(self):
         self.base = self.change({"src/user.ts": "export interface User {\n  id: string\n  displayName: string\n}\n\n"
                                                 "export type Status =\n  | 'active'\n  | 'gone'\n\n"
