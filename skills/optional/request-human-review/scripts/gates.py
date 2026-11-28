@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """request-human-review's gate verdict: which of a PR's decisions need a human, and what an
-unattended reviewer does with the PR. The rule lives here once; post-review.py acts on it.
+unattended reviewer does with the PR. The rule lives here once; an App's unattended review acts on it.
 
 GATES.json, written by the agent from the whole PR (base...head), never a re-review's delta:
 
@@ -35,8 +35,7 @@ GATES = {'one-way-door': 'one-way door', 'pattern': 'new or changed pattern',
          'interface': 'architectural or interface decision', 'product': 'important product decision'}
 AREAS = ('money-movement', 'auth', 'tenancy', 'concurrency', 'dependencies')
 # What an unattended reviewer does, from the most to the least blocking.
-ACTIONS = ('request-changes', 'needs-human', 'not-approved', 'wait', 'approve')
-REQUIRED = ('passed', 'pending', 'failed')
+ACTIONS = ('request-changes', 'needs-human', 'approve')
 # Whether the review's read-only pass by the other provider ran: not-needed is review-code's
 # skip for a diff that changes no behavior; missing is any other reason it didn't run.
 SECOND_OPINION = ('ran', 'not-needed', 'missing')
@@ -161,19 +160,17 @@ def gated(verdict: dict) -> list:
     return [decision for decision in verdict['decisions'] if decision['gate']]
 
 
-def decide(verdict: dict, holds: bool, required: str, second_opinion: str) -> str:
+def decide(verdict: dict, holds: bool, second_opinion: str) -> str:
     """The unattended reviewer's action. A finding that holds the approval requests changes; a
-    gate, or a review whose second opinion didn't run, needs a human; otherwise the PR's
-    required checks on its head decide."""
-    if required not in REQUIRED:
-        raise ValueError(f'required is one of {", ".join(REQUIRED)}')
+    gate, or a review whose second opinion didn't run, needs a human; otherwise it approves.
+    Required checks play no part: the repository's rules hold the merge until they pass."""
     if second_opinion not in SECOND_OPINION:
         raise ValueError(f'second_opinion is one of {", ".join(SECOND_OPINION)}')
     if holds:
         return 'request-changes'
     if gated(verdict) or second_opinion == 'missing':
         return 'needs-human'
-    return {'passed': 'approve', 'pending': 'wait', 'failed': 'not-approved'}[required]
+    return 'approve'
 
 
 def line(decision: dict) -> str:
@@ -207,10 +204,10 @@ def main(arguments):
         return 0
     if len(arguments) == 2 and arguments[0] == 'decide':
         verdict = load(arguments[1])
-        action = decide(verdict, holds=False, required='passed', second_opinion='ran')
+        action = decide(verdict, holds=False, second_opinion='ran')
         print('needs a human: ' + ', '.join(decision['id'] or decision['decision'] for decision in gated(verdict))
               if action == 'needs-human' else 'no gate: an unattended reviewer approves once nothing holds it, '
-              'its second opinion ran or the PR changes no behavior, and the required checks pass on this head')
+              'and its second opinion ran or the PR changes no behavior')
         return 0
     print(__doc__, file=sys.stderr)
     return 2

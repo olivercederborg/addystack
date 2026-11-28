@@ -85,28 +85,23 @@ class Check(unittest.TestCase):
 class Decide(unittest.TestCase):
     def test_a_held_finding_requests_changes_whatever_else_holds(self):
         for gated in (verdict(), verdict(decision('D1', 'one-way-door'))):
-            for required in gates.REQUIRED:
-                self.assertEqual(gates.decide(gated, True, required, 'ran'), 'request-changes')
+            self.assertEqual(gates.decide(gated, True, 'ran'), 'request-changes')
 
-    def test_a_gate_needs_a_human_whatever_the_checks(self):
-        for required in gates.REQUIRED:
-            self.assertEqual(gates.decide(verdict(decision('D1', 'product'), decision('D2')), False, required, 'ran'),
-                             'needs-human')
+    def test_a_gate_needs_a_human(self):
+        self.assertEqual(gates.decide(verdict(decision('D1', 'product'), decision('D2')), False, 'ran'), 'needs-human')
 
-    def test_with_no_gate_the_required_checks_on_the_head_decide(self):
+    def test_with_no_gate_or_held_finding_it_approves(self):
         clear = verdict(decision('D2'), sensitive=[{'area': 'auth', 'code': 'auth.ts:1'}])
-        self.assertEqual([gates.decide(clear, False, required, 'ran') for required in gates.REQUIRED],
-                         ['approve', 'wait', 'not-approved'])
+        self.assertEqual(gates.decide(clear, False, 'ran'), 'approve')
 
     def test_a_missing_second_opinion_never_approves_and_a_diff_without_behavior_is_unaffected(self):
         clear = verdict(decision('D2'))
-        self.assertEqual(gates.decide(clear, False, 'passed', 'ran'), 'approve')
-        self.assertEqual(gates.decide(clear, False, 'passed', 'not-needed'), 'approve')
-        for required in gates.REQUIRED:
-            self.assertEqual(gates.decide(clear, False, required, 'missing'), 'needs-human')
-        self.assertEqual(gates.decide(clear, True, 'passed', 'missing'), 'request-changes')
+        self.assertEqual(gates.decide(clear, False, 'ran'), 'approve')
+        self.assertEqual(gates.decide(clear, False, 'not-needed'), 'approve')
+        self.assertEqual(gates.decide(clear, False, 'missing'), 'needs-human')
+        self.assertEqual(gates.decide(clear, True, 'missing'), 'request-changes')
         with self.assertRaises(ValueError):
-            gates.decide(clear, False, 'passed', 'skipped')
+            gates.decide(clear, False, 'skipped')
         text = gates.section(clear, 'Codex is not signed in')
         self.assertIn('**Needs a human.** A person approves this PR:', text)
         self.assertIn("- **Second opinion** · the other provider's review didn't run (Codex is not signed in)", text)
@@ -153,14 +148,14 @@ class OneWayDoors(unittest.TestCase):
                           'a one-way-door decision at that code'])
         gated = verdict(decision(None, 'one-way-door', 'pay.ts:3'), sensitive=paying['sensitive'])
         self.assertEqual(self.problems(gated, {}), [])
-        self.assertEqual(gates.decide(gated, False, 'passed', 'ran'), 'needs-human')
+        self.assertEqual(gates.decide(gated, False, 'ran'), 'needs-human')
 
     def test_a_repo_without_such_a_list_keeps_sensitive_areas_for_blast_radius_only(self):
         paying = verdict(decision(None), sensitive=[{'area': 'money-movement', 'code': 'pay.ts:3'},
                                                     {'area': 'auth', 'code': 'auth.ts:1'}])
         for files in ({}, {'.github/pull_request_template.md': '## Risk\n\nSay what could break.\n'}):
             self.assertEqual(self.problems(paying, files), [])
-        self.assertEqual(gates.decide(paying, False, 'passed', 'ran'), 'approve')
+        self.assertEqual(gates.decide(paying, False, 'ran'), 'approve')
         # A list that names other kinds leaves these areas alone.
         self.assertEqual(self.problems(paying, {'docs/pull_request_template.md': 'One-way doors include sent emails.\n'}),
                          [])
