@@ -39,10 +39,10 @@ It also sends back a reply the reader can't answer from what it shows (unanswera
 that asks for an option letter, marked as **a**, `a`, or **`a`**, that no line or sentence
 it shows opens or labels (a line, a sentence, a `·` or `→` item, "Reply `a` and I'll …",
 "(**a**)"), or that points to steps or options in an earlier reply. A pick it reports as made
-("you picked `a`") and a quote ask nothing. Replayed on 6,242 T3 replies from Nov 20 to 27,
-2026, it sends back 72, and about 57 of those carry an open call by its letters alone
-("still waits on your **a** or **b**") or point to an earlier reply's steps; the rest are
-mostly one-letter code names in review findings. Known limits: a letter written plain ("say
+("you picked `a`") and a quote ask nothing. Replayed on the last reply of each of 5,930 T3 runs from
+Nov 20 to 27, 2026, it sends back 102; most carry an open call by its letters alone ("still
+waits on your **a** or **b**") or point to an earlier reply's steps, and about 10 are
+one-letter code names in review findings or a call the reply calls moot. Known limits: a letter written plain ("say
 a or b") isn't read, nor any letter in a reply with a fence a list item may hold, one card's options also answer another call's letters, and a report
 that "the earlier setup steps failed" goes back. On Nov 26 and
 27, 2026 a coordinator re-asked open calls as "say **a** or **b**" and "following the 5
@@ -238,7 +238,7 @@ LETTER = re.compile(r"(?<![\w`])(?:\*\*`([a-e])`\*\*|\*\*([a-e])\*\*|`([a-e])`)(
 # markers, or a sentence's or table cell's start, with the option's own bold.
 OPENS = re.compile(r"(?:[ \t>]*(?:(?:[-*+]|\d{1,9}[.)])[ \t]+)?|.*[.?!:;|·→]\**[ \t]+)(?:\*\*)?")
 # What follows such a letter: the option's text, not "or b" or "and b".
-STATES = re.compile(r"(?:\*\*)?[ \t]*(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:()*]")
+STATES = re.compile(r"(?:\*\*)?[ \t]*(?:\*?\([^()\n]*\)\*?[ \t]*)?(?:[→:·,—–-]+[ \t]*)?(?!(?:or|and|nor)\b)[^\s.,;:()*]")
 # A letter a pick verb opens, as in "Reply `a` and I'll approve it" or "Picking **a** posts the reply".
 PICKS = re.compile(r"(?:.*[\s(]|)(?:reply|say|pick|picking|answer|choose|choosing|option)[ \t]+(?:\*\*)?", re.I)
 # A letter in parentheses after what it does, as in "approve now (**a**)".
