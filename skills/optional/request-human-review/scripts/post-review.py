@@ -260,7 +260,7 @@ def post(number: int, review_path: Path, wait_seconds: int, now=time.monotonic, 
                     try:
                         handed = handoff.plan(number, verdict, body.split('\n', 1)[0], no_second_opinion)
                         outcome['handoff'] = {**handoff.send(number, handed, github), 'why': handed['why']}
-                    except ValueError as failed:
+                    except (ValueError, subprocess.SubprocessError) as failed:
                         outcome['handoff'] = {'failed': str(failed)}
         finally:
             for leftover in folder.glob(f'{scratch.name}-*.json'):

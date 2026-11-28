@@ -219,6 +219,13 @@ class Post(unittest.TestCase):
                          ('needs-human', {'failed': 'github.sh request failed: HTTP 422 Reviews may only be requested '
                                                     'from collaborators'}))
         self.assertEqual([command for command, _, _ in fake.writes], ['review', 'comment'])
+        timing_out = Fake()
+        def stall(command, *arguments):
+            if command == 'request':
+                raise subprocess.TimeoutExpired('gh', 300)
+            return Fake.github(timing_out, command, *arguments)
+        with patch.object(timing_out, 'github', stall):
+            self.assertIn('timed out', self.post(timing_out)['handoff']['failed'])
 
     def test_a_held_finding_on_a_gated_pr_goes_back_to_the_author_and_asks_nobody(self):
         self.gate('one-way-door')
