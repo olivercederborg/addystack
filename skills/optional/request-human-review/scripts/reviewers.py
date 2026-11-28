@@ -185,8 +185,9 @@ def pick(rules: list, placed: list, author: str, engaged: list, standing: dict, 
             return next((f'P{index + 1}' for index, other in enumerate(priority) if other.lower() == login.lower()), None)
         def score(login):
             known = standing[login.lower()]
-            return (weights.get(rank(login), 0) - weights['open ask'] * known['asks']
-                    - weights['share'] * known['share'])
+            # Rounded, so two equal scores tie and the tie rule decides, not float noise in the shares.
+            return round(weights.get(rank(login), 0) - weights['open ask'] * known['asks']
+                         - weights['share'] * known['share'], 9)
         login = min(everyone, key=lambda login: (-score(login), standing[login.lower()]['asks'], login.lower()))
         if earlier := next((reviewer for reviewer in picked if reviewer['login'] == login), None):
             earlier['domains'] += [name] if name else []
