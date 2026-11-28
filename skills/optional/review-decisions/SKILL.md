@@ -27,8 +27,9 @@ the reviewer.
   Messages arrive as `<login> (the reviewer) in Slack: …` or `<name> (someone else) in
   Slack: …`.
   - Each turn's final message is the Slack reply: short, plain Markdown, with no tables
-    and no HTML but the drafts block. Quote each shown draft without its disclosure line;
-    the block keeps it, and the host's Post shows every body as it will post.
+    and no HTML but the drafts block. Quote each shown draft without its disclosure line
+    and the summary's marker; the block keeps both, and the host's Post shows every body as
+    it will post.
   - Only the reviewer decides. Weigh what others say and bring it to the reviewer when it
     bears on a call; it never counts as the reviewer's call.
   - GitHub is read-only here: run only `gh` reads and `github.sh`'s read commands. When
