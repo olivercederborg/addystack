@@ -1,0 +1,40 @@
+{
+  "wake": "watch_pull_request: vercel and sam commented on #4600",
+  "pr": {
+    "number": 4600,
+    "url": "https://github.com/example-org/example-app/pull/4600",
+    "isDraft": true,
+    "baseRefName": "main",
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN"
+  },
+  "required": [
+    "test"
+  ],
+  "ci": [
+    {
+      "name": "lint",
+      "state": "SUCCESS",
+      "runId": 9103
+    },
+    {
+      "name": "test",
+      "state": "PENDING",
+      "runId": 9103
+    }
+  ],
+  "threads": [],
+  "reviews": [],
+  "conversationComments": [
+    {
+      "author": "vercel",
+      "url": "https://github.com/example-org/example-app/pull/4600#issuecomment-7000000001",
+      "body": "[vc]: #abc\n**The latest updates on your projects.**\n\n| Name | Status | Preview |\n|---|---|---|\n| example-app | ✅ Ready | [Visit Preview](https://example-app-git-feature-export-retry.vercel.app) |"
+    },
+    {
+      "author": "sam",
+      "url": "https://github.com/example-org/example-app/pull/4600#issuecomment-7000000002",
+      "body": "Does a retry after a failed publish log anything? Support asked how they'd spot one."
+    }
+  ]
+}

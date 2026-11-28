@@ -1,0 +1,35 @@
+{
+ "number": 4617,
+ "url": "https://github.com/example-org/example-app/pull/4617",
+ "author": "robin-dev",
+ "base": "develop",
+ "title": "Add refund rows to the top-up export",
+ "linkedIssue": {
+  "id": "EX-63",
+  "body": "The top-up export should list the company's refunds as negative rows beside its top-ups, so the export nets out."
+ },
+ "reviews": [],
+ "ci": [
+  {
+   "name": "test",
+   "required": true,
+   "state": "SUCCESS"
+  }
+ ],
+ "existingComments": [
+  {
+   "id": 9301,
+   "author": "chatgpt-codex-connector[bot]",
+   "path": "src/export.ts",
+   "line": 6,
+   "body": "**P1** Refund rows leak across companies. Passing `kinds` to `listTransactions` takes the refund path, which skips the company filter, so Acme's export also lists Globex's refunds."
+  },
+  {
+   "id": 9302,
+   "author": "chatgpt-codex-connector[bot]",
+   "path": "src/export.ts",
+   "line": 6,
+   "body": "**P2** Loading refunds too raises the rows `exportRows` reads per export. For a company with many refunds the export could get slow; consider paginating."
+  }
+ ]
+}

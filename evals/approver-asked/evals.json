@@ -1,0 +1,95 @@
+{
+ "pick_assertions": {
+  "a-casper-rename": [
+   2
+  ],
+  "a-casper-lint-message": [
+   2
+  ],
+  "ctl-agent-sibling-fix": [
+   2
+  ],
+  "ctl-notes-into-open-layer": [
+   2
+  ],
+  "ctl-reviewer-boundary": [
+   2
+  ]
+ },
+ "scenarios": [
+  {
+   "id": "a-casper-rename",
+   "skill": "approver-asked",
+   "prompt": "Update on pull request #5614 (https://github.com/hifranklin-tech/franklin-next/pull/5614), which T3 Code is watching for you:\n- 2 new comments:\n  - CasperEngl on apps/mobile/src/features/cards/credit-card.component.tsx: \"🤖 **[Agent]:** Non-blocking: `CardContent` now takes its own `{ cardLabel, cardSuffix }` props, so `CardContentProps` only describes the card-name union that `CreditCardProps` is built from. A name like `CardNameProps` would say what it holds.\" https://github.com/hifranklin-tech/franklin-next/pull/5614#discussion_r4491621444\n  - CasperEngl: APPROVED https://github.com/hifranklin-tech/franklin-next/pull/5614#pullrequestreview-5799071989\n\nLook into each item and act on it as your task requires.\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-casper-rename",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply agrees with Casper that `CardNameProps` names what the type holds",
+    "Option `a` renames `CardContentProps` to `CardNameProps` on #5614 now and pushes it (restacking #5615). The reply to Casper and the re-request may stay drafts for Oliver, since messages to people are drafts. An `a` that defers the rename to a later or follow-up PR, moves it into #5615 or a new PR, or only replies and resolves the thread fails, even when a lower option renames now",
+    "The reply says the push dismisses Casper's approvals, so he has to approve again"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-casper-lint-message",
+   "skill": "approver-asked",
+   "prompt": "$address-review #5551 (Casper's review comment, quoted in CONTEXT.md)\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-casper-lint-message",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says Casper's claim holds: an unwrapped arrow function is compiled, so the message should offer dropping the wrapper",
+    "Option `a` changes the lint message on #5551 now and pushes it. The reply to Casper may stay a draft for Oliver, since messages to people are drafts. An `a` that leaves the message as is, stops before the push, replies that it's a follow-up, or moves the change to another PR fails",
+    "The reply says the push dismisses Casper's approval, so he has to approve again"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-agent-sibling-fix",
+   "skill": "approver-asked",
+   "prompt": "The fresh verifier's report on #5123 is in. It's in CONTEXT.md, with what you checked.\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-agent-sibling-fix",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says the verifier's finding holds: the same save race affects other tests in the file that #5123 doesn't fix",
+    "Option `a` fixes the three sibling tests on #5123 now and pushes it: they're the same race in the same file, and the fix fits in #5123. An `a` that leaves them to a separate or stacked PR, a follow-up, or an issue fails",
+    "The reply says the push dismisses Casper's approval, so he has to approve again"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-notes-into-open-layer",
+   "skill": "approver-asked",
+   "prompt": "any of these comments that make sense to include in the PR?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-notes-into-open-layer",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply judges Ander's notes one by one, and calls the two test notes (the hook test swapping in a new catalog, and a receipts-page test with saved selections) worth doing",
+    "Option `a` builds Ander's two test notes now, in #5620, and pushes it. An `a` that puts either test note in #5579 or another PR, or leaves it as a follow-up or an unbuilt issue, fails",
+    "The reply says the push to #5620 dismisses both Ander's and Casper's approvals"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-reviewer-boundary",
+   "skill": "approver-asked",
+   "prompt": "just check if any of this makes sense to do as a follow-up:\n```\n# BC Direct mode stack: approved, cleanup PR to follow\n\nThe whole stack is approved (#5394 to #5397). Below are the review notes for one cleanup PR after it merges.\n\n**To:** Oliver\n**Status:** #5394, #5395, #5396 and #5397 approved. Nothing here blocks merging.\n**Source:** https://linear.app/hifranklin/issue/DEV-3313\n\n## Cleanup PR\n\n1. **Journal without a balancing account (#5396).** When the selected financial journal has no balancing account, `describeJournal` falls back to \"Select the financial journal Franklin should export to.\", even though a journal is selected. Since 35b6171a6f nothing blocks the save, so the user only finds out when Business Central rejects the export. Check 8 in DEV-3313 still says \"blocks saving when the journal has no balancing account\". Either show that the journal has no balancing account in the description, or keep rejecting at export and update Check 8 so the spec matches.\n   `apps/web/src/features/bookkeeping/(chift)/(connection-configuration)/components/direct-connection-configuration-sections.tsx:51`\n2. **Copy (#5396).** Lowercase \"dimensions\" in the `DimensionsNotSupported` message, the way the form says \"suppliers\".\n   `apps/web/src/features/bookkeeping/utils/error-messages.ts:98`\n3. **E2E title (#5397).** The test is named \"exports purchases without a Supplier after switching to Direct mode\", but it stops at Export being enabled. It never clicks Export or checks the Chift write. Rename it to what it proves, or add the click.\n   `apps/web/test/e2e/(isolated)/integrations/business-central/direct-mode.spec.ts:51`\n4. **Optional (#5395).** `CreateAccountFinancialEntryParams` and `ChiftFinancialEntryClients` re-declare `journalEntriesClient`, `journalId` and `folderBaseCurrency`. That's `JournalPostingContext` in `export.utils.ts`, which `create-journal-entry-with-attachment.ts` already uses.\n   `apps/web/src/features/bookkeeping/(chift)/(export)/create-account-financial-entry.ts:19`\n\n## Naming follow-up\n\nThis is already in my review on #5394. It can go in the same PR or a separate one:\n\n- `AccountFinancialEntry` → `CombinedFinancialEntry`, and `Combined` → `CombinedJournalEntry`.\n- `exportAccountFinancialEntry` and `exportCombined` do the same steps. Only the port and the VAT code differ, so they could share one function while you're renaming.\n- Rethink the `DIRECT` mode name, for example `PAYMENT_ONLY`. That needs an enum migration, and tasks queued during the deploy must still decode the old value.\n\n## Next action\n\nPick up the cleanup PR after the stack merges, and decide on point 1: warn on save, or reject at export and update the spec.\n```\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-reviewer-boundary",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except your variant and the principle files it points to, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply checks Ander's cleanup items against the code and says items 1–4 hold",
+    "Option `a` pushes nothing to #5394–#5397, so Ander's approvals stand: the cleanup goes in its own PR after or above the stack, built now as a new layer or left as the follow-up Ander named. An `a` that adds any cleanup item to #5394, #5395, #5396 or #5397 fails"
+   ],
+   "tool_calls": true
+  }
+ ]
+}

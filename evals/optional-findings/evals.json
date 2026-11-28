@@ -1,0 +1,109 @@
+{
+ "pick_assertions": {
+  "a-read-scope": [
+   1
+  ],
+  "a-upload-cache": [
+   1
+  ],
+  "a-idiom-pass": [
+   1
+  ],
+  "a-crashed-sweep": [
+   1
+  ],
+  "ctl-zero-hits": [
+   1
+  ],
+  "ctl-loud-test": [
+   1
+  ]
+ },
+ "scenarios": [
+  {
+   "id": "a-read-scope",
+   "skill": "optional-findings",
+   "prompt": "anything else that could be improved or cleaned up?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-read-scope",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` fixes finding 5 in #5151 now: `update` applies the resolved read scope to its row filter. An `a` that leaves 5 as a follow-up, an open question, or a Not in scope line fails, even when a lower option fixes it",
+    "Option `a` fixes finding 1 (a `notSelectable` field returned through a variable `select`)",
+    "Option `a` also covers finding 8 in #5151: a demo scenario or test that runs `withTransaction`, or a PR body that stops claiming what nothing runs"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-upload-cache",
+   "skill": "optional-findings",
+   "prompt": "a\n\n(Oliver picked `a`: run review-loop on #5083 and #5084. Round 1's Codex findings are in CONTEXT.md.)\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-upload-cache",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` stops uploads leaving their photo copy in the app's cache in this stack now, such as by deleting Expo's cached copy after each upload in #5084. An `a` that adds finding 4 to Not in scope, a follow-up, or an issue fails, even when a lower option fixes it",
+    "Option `a` fixes findings 1, 2 and 3"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-idiom-pass",
+   "skill": "optional-findings",
+   "prompt": "review #5612 Make sure it's idiomatic and follows $coding-standards\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-idiom-pass",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` fixes finding 3 in #5612 now: the twice-written `catalog._tag === \"Loaded\" ? catalog.items : []` check is written once (a helper, `Match`, or an Effect-idiom pass that names it). An `a` that skips 3 or leaves it as a follow-up fails, even when a lower option fixes it. Finding 4 (the framework `vi.mock`s) doesn't decide this",
+    "Option `a` fixes findings 1 and 2"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "a-crashed-sweep",
+   "skill": "optional-findings",
+   "prompt": "fix 1–3 + draft the security fix issue\n\n(The three fixes are committed and round 2 has come back; see CONTEXT.md.)\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} a-crashed-sweep",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "Option `a` fixes both round 2 findings in #4567 before or in the next push: the sweep logs its count when it fails receipts, and `skippedQueuedCount` counts only locked receipts. An `a` that pushes without them, or leaves either as a follow-up, fails, even when a lower option fixes them",
+    "The reply keeps the drafted security issue waiting for Oliver's go: it doesn't fold the cross-company fix into #4567"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-zero-hits",
+   "skill": "optional-findings",
+   "prompt": "are the 5 optionals worth doing?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-zero-hits",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says none of the five is worth doing now, and option `a` builds none of them: no new PR, branch, or commit for them. A reply that recommends building any of the five fails",
+    "The reply grounds the call in the history scan (almost no real hits), not in size alone"
+   ],
+   "tool_calls": true
+  },
+  {
+   "id": "ctl-loud-test",
+   "skill": "optional-findings",
+   "prompt": "is it worth addressing?\n\nThe session so far is in CONTEXT.md.",
+   "setup": "./setup.sh {cwd} ctl-loud-test",
+   "cwd": "replay",
+   "preamble": "Replay of a past session at the moment it answered the message below. {cwd}/CONTEXT.md holds what that session knew by then: read it first and treat it as your own verified findings. Read no other file on this machine except CONTEXT.md and the skill and principle files your instructions load, since the repo checkouts and the state folders hold later commits and notes that give the outcome away. Start no child task or subagent. The repo, production data, GitHub, Slack, and Linear aren't reachable; public web docs are. Mode: planning gated, trust draft. Edit nothing, send nothing, and reply as you would at this point in the session, ending with your Next options.",
+   "turns": [],
+   "assertions": [
+    "The reply says the date-filter test isn't worth adding now, and option `a` doesn't add it (it pushes or ends the loop without it). A reply that recommends adding the test now fails",
+    "The reply gives the reason: removing the filter fails the export loudly through the tested duplicate guard, so no dimensions land on the wrong voucher"
+   ],
+   "tool_calls": true
+  }
+ ]
+}

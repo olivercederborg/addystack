@@ -1,0 +1,216 @@
+{
+  "scenarios": [
+    {
+      "id": "fee-rows",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4610",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/fee-rows",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and pushes succeed.",
+      "turns": [
+        "reword the second draft so it reads \"we should probably …\" instead",
+        "a"
+      ],
+      "assertions": [
+        "Turn 1 opens with a verdict headline with a marker (no callouts), lists findings as one-line items, shows every draft once below a **Review** note, and puts evidence and the Dropped line in the fold",
+        "A read-only Codex pass on `gpt-6.1-terra` with max reasoning effort runs alongside the review as a T3 child task (`delegate_task`), and its findings are verified before they are kept",
+        "Finds the fee row keyed on currency instead of fee (Blocker)",
+        "Finds that cursor is ignored, and names the undefined cursor format instead of assuming one",
+        "The toPagination point is dropped as already raised by cubic",
+        "One answer settles the review: `a` takes every recommended call and posts the drafts",
+        "Drafts render as blockquotes, each with a path:line target",
+        "No card unless a fix changes the flow or design; no expected-vs-got table",
+        "Posting builds one review with event COMMENT and no body, and does not approve the PR",
+        "Every blocking or non-blocking draft opens by stating what happens; only a draft prefixed `Question:` asks a question",
+        "Each draft offers its fix and any test as a suggestion (such as \"would fix it\" or \"could cover it\"), with no imperative addressed to the author",
+        "No draft says \"lock it in\", \"lock this in\", \"If it's on purpose, ignore this\", or \"If that's not intended\"",
+        "Each draft's prose outside code blocks, before any `<details>` fold, is at most 40 words",
+        "Finding lines show each finding's call (blocking, non-blocking, question) and no severity word (Blocker, Cleanup, Optional)",
+        "The checks in the fold say what the grounding pass on the drafts ran",
+        "After the reword turn, the reply shows the whole revised second draft, and the final `a` posts that revised wording, not the first one (#5137)"
+      ]
+    },
+    {
+      "id": "held-defect",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4612",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/held-defect",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
+      "turns": [
+        "make the file-name finding non-blocking",
+        "a"
+      ],
+      "assertions": [
+        "Finds that the file name keeps only the year and month of the end date (`to.slice(0, 7)`), so 2026-01-01 to 2026-01-15 downloads as `acme-2026-01-01-2026-01.csv`, and verifies it by running or tracing `fileName`",
+        "After the finding is made non-blocking, the verdict still holds the approval, and no `Next` option approves the PR",
+        "The file-name draft, prefixed `Non-blocking:`, says the approval waits on its fix and offers no later PR for it",
+        "The final `a` posts the drafts as one review that doesn't approve the PR, and starts a PR watch for the author's push"
+      ]
+    },
+    {
+      "id": "bot-defect",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4613",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/bot-defect",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
+      "turns": [
+        "a"
+      ],
+      "assertions": [
+        "Verifies CodeRabbit's file-name point (`to.slice(0, 7)`) by running or tracing `fileName`, and the finding's line names CodeRabbit as having raised it",
+        "That finding holds the approval: the verdict doesn't approve, and no `Next` option approves the PR (R51 M3 #4967, M4 #5369)",
+        "No draft repeats CodeRabbit's file-name point as a new comment",
+        "The final `a` doesn't approve the PR"
+      ]
+    },
+    {
+      "id": "exposure",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4614",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/exposure",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network, except for the Codex reviewer. Pretend posts and watches succeed.",
+      "turns": [],
+      "assertions": [
+        "Finds that the PR shows the supplier picker to Export V2 companies with a supplier catalog, whose export goes through `exportV2`, which drops the chosen supplier",
+        "Reports a read-only replica query and its result of 14 companies on Export V2 with a supplier catalog as evidence for the finding (R51 C3 #4897)",
+        "Calls that finding blocking or a non-blocking defect, not a question, and no `Next` option approves the PR"
+      ]
+    },
+    {
+      "id": "dismissed-ci",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4611",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/dismissed-ci",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `approved`, posted no comments, the user approved it, and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head, which dismissed the user's approval.",
+      "turns": [],
+      "assertions": [
+        "Re-reviews the delta from the commit tagged `approved` to the head, and finds it changes no behavior",
+        "Names the failing required `lint` check, and that it fails in `src/legacy.ts`, which the PR doesn't touch",
+        "`a` approves the head; the lint failure doesn't hold the approval",
+        "Posts no comment about lint and doesn't request changes",
+        "Keeps the PR watch running instead of stopping it on the dismissal"
+      ]
+    },
+    {
+      "id": "noop-wake",
+      "skill": "review-code",
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4610\n\nPR watch wake: vercel[bot] edited its deployment comment on #4610.",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/noop-wake",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. Earlier in this thread you reviewed this PR at its current head, the user approved your two drafts, you posted them as one review (they're in the JSON), and you started a PR watch. This run starts at that watch waking.",
+      "turns": [],
+      "assertions": [
+        "Doesn't re-review the PR or write to GitHub",
+        "The final reply is the `running` turn block alone: no ⏳ line, no headline, and no status report on the PR"
+      ]
+    },
+    {
+      "id": "rereview-4615",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4615\n\nPR watch wake: robin-dev pushed a new commit to #4615 and replied on your comment.",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/rereview-4615",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `reviewed`, the user approved your one blocking draft, you posted it (it's in the JSON), and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head and replied on your comment.",
+      "turns": [],
+      "assertions": [
+        "Finds that when no receipt has an account, pressing the lone \"No account\" button still loses focus: `accountOptions` returns `[]`, so `onPick` returns `focus: null` instead of `account-none-button`, and it ran or traced `onPick` or `filterView` with receipts that have no account (R51 M5 #5405). The `=== tool calls ===` section shows it.",
+        "Doesn't mark the earlier comment plain fixed with no open case: it's partly fixed, or the empty-state case is a new finding, and that case holds the approval, so no `Next` option approves the PR",
+        "Keeps no finding other than the empty-state focus loss, unless it shows a reproduced consequence for it"
+      ]
+    },
+    {
+      "id": "rereview-4618",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4618\n\nPR watch wake: robin-dev pushed a new commit to #4618 and replied on your comment.",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/rereview-4618",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed. Earlier in this thread you reviewed this PR at the commit tagged `reviewed`, the user approved your one blocking draft, you posted it (it's in the JSON), and you started a PR watch. This run starts at that watch waking: robin-dev pushed the current head and replied on your comment.",
+      "turns": [],
+      "assertions": [
+        "Marks the earlier comment fixed after it ran or traced `onPick` on a list with accounts. The `=== tool calls ===` section shows it.",
+        "Keeps no new blocking, non-blocking, or question finding, and shows no draft",
+        "The verdict approves the head, and the recommended `a` is the option that approves it"
+      ]
+    },
+    {
+      "id": "codex-4616",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4616",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/codex-4616",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head: its findings are the chatgpt-codex-connector comments in the JSON, so don't start another. Pretend posts, approvals, and watches succeed.",
+      "turns": [],
+      "assertions": [
+        "Keeps the Codex finding that CI replays a cached typecheck pass (Turbo's remote cache is on through `TURBO_TOKEN` in `ci.yml`, and `turbo.json`'s typecheck `inputs` omit `tsconfig.base.json`), and doesn't drop or downgrade it on the premise that CI never restores `.cache/` or that the task has no outputs (R51 H5 #4744)",
+        "Read `turbo.json` and `.github/workflows/ci.yml` before judging the Codex finding. The `=== tool calls ===` section shows it.",
+        "No `Next` option approves the PR"
+      ]
+    },
+    {
+      "id": "codex-4617",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4617",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/codex-4617",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head: its findings are the chatgpt-codex-connector comments in the JSON, so don't start another. Pretend posts, approvals, and watches succeed.",
+      "turns": [],
+      "assertions": [
+        "Drops Codex's cross-company refund claim after reading `listTransactions`' company filter or running `exportRows` for two companies (R51 F1-F8). The `=== tool calls ===` section shows it.",
+        "Neither Codex claim holds the approval or becomes a draft",
+        "The verdict approves the head, and the recommended `a` is the option that approves it"
+      ]
+    },
+    {
+      "id": "documented-contract",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4619",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/documented-contract",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed.",
+      "turns": [],
+      "assertions": [
+        "Raises the 500 that one missing file now causes for the whole listing as a finding or question, though the PR's Risk section documents it, and names the web listing (`listReceiptsForWeb`), which skips and reports the missing file (#5637)",
+        "Keeps the one-at-a-time signing as a non-blocking finding that names the web listing's parallel signing, or drops it with the check that rules it out, never as speculative or unlikely alone (#5637)",
+        "The verdict doesn't recommend approving with no comments (#5637)"
+      ]
+    },
+    {
+      "id": "later-milestone",
+      "skill": "review-code",
+      "tool_calls": true,
+      "prompt": "/review-code https://github.com/example-org/example-app/pull/4620",
+      "setup": "./setup.sh {cwd}/..",
+      "cwd": "review-code/later-milestone",
+      "preamble": "No autonomy this session. The JSON file in this repo is the GitHub fetch result. Use no gh and no network. The other provider's pass already ran on this head and reported no findings, so don't start another. Pretend posts, approvals, and watches succeed.",
+      "turns": [],
+      "assertions": [
+        "Finds that `formatAmount` assumes two minor digits, so a JPY or BHD amount would print wrong (1234 JPY as `12.34 JPY`), and verifies it by running or tracing `formatAmount`",
+        "Calls that finding a question, not blocking, non-blocking, or a defect, and cites the PR's EUR-only test or EX-70's milestone note as the narrower intent",
+        "The question doesn't hold the approval: the verdict approves, and the recommended `a` is the option that approves the PR"
+      ]
+    }
+  ],
+  "triggers": {
+    "review-code": {
+      "should": [
+        "review https://github.com/example-org/example-app/pull/4610",
+        "can you review Robin's PR",
+        "re-review the PR now that Robin pushed fixes"
+      ],
+      "should_not": [
+        "handle the comments on my PR",
+        "review my own changes since develop",
+        "summarize what this PR does"
+      ]
+    }
+  }
+}

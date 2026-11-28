@@ -1,0 +1,11 @@
+{
+  "name": "example-app",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.4.0",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --incremental --tsBuildInfoFile .cache/tsbuildinfo.json",
+    "test": "node --test"
+  },
+  "devDependencies": { "turbo": "2.5.0", "typescript": "5.9.2" }
+}

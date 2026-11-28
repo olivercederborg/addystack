@@ -1,0 +1,13 @@
+✅ **People who've compared them agree with your "either". Gemini 3.8 Flash TTS and Eleven v4 are the two most natural Japanese voices available, close to tied, with Gemini slightly ahead with native listeners.** No source evaluates pitch accent for learners, so a native-speaker check is still the only real accent test.
+
+**What others found**
+
+- **Native-speaker leaderboard:** the most trustworthy source is [Voice Arena's Japanese board](https://voicearena.com/tts-leaderboard/japanese). Raters must [pass a native-language test](https://voicearena.com/tts-methodology), compare blind pairs of the same sentence, and every sentence is written by native speakers. Gemini 3.8 Flash TTS is #1 at 1188 ± 18 and Eleven v4 is #2 at 1154 ± 19. Their rank ranges overlap (1–2 vs 1–4), so they're nearly tied. Everyone else is far behind: gpt-4o-mini-tts 959, Cartesia Sonic-3.5 952, Azure 767.
+- **The "Eleven v4 is #1 in Japanese" headlines are misleading.** They cite [Artificial Analysis's general board](https://artificialanalysis.ai/text-to-speech/leaderboard) (v4 1326 vs Gemini 1275), which is mostly English. [One comparison](https://ai.cbagames.jp/2026/10/09/gemini-tts-vs-eleven-v4/) says so itself: it doesn't mean "#1 in Japanese".
+- **Japanese reviewers are split.** [GMO's engineering blog](https://tech.gmogshd.com/ai-tts-comparison/) found ElevenLabs "closest to a human voice", and Gemini more like a voice actor, with tone drifting between chunks. That review predates both current models. Others call it "roughly equal, and Gemini is much cheaper". A [58-clip test on Qiita](https://qiita.com/Takuya__/items/45a3c0b0da5c17f0b3bc) found Gemini 3.8 Flash read 東海林 and 生物 correctly, while Flash-Lite misread them.
+- **The accent label on a voice matters, and supports our Tokyo-only pick.** A [pitch measurement on Zenn](https://zenn.dev/acntechjp/articles/zenn-gemini-tts-kansai-accent) found a Gemini 3.8 Tokyo voice used Tokyo-style accent 96% of the time (52 of 54). "Osaka" voices used Kansai accent about 70% of the time. For learners, never use a regionally labelled voice.
+- **Recurring complaints:** odd intonation on proper nouns and hard-to-read names, for both providers. Nobody reported systematic pitch-accent errors in standard sentences, and I found no r/LearnJapanese threads with an opinion.
+
+**What it means for ikasu**
+
+The independent evidence matches your blind test: naturalness is a near tie, so it can't settle decision 12 alone. The deciding factors stay the ones from the plan: Gemini can make proper slow-speech versions, it costs about half as much per minute, and the voices we picked passed your blind test.

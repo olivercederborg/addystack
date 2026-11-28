@@ -1,0 +1,4 @@
+{"number": 4613, "url": "https://github.com/example-org/example-app/pull/4613", "author": "robin-dev", "base": "develop", "title": "Download top-up exports as CSV",
+ "linkedIssue": {"id": "EX-45", "body": "Bookkeepers can download a top-up export for a date range as a CSV file."},
+ "ci": [{"name": "test", "required": true, "state": "SUCCESS"}],
+ "existingComments": [{"author": "coderabbitai[bot]", "path": "src/export.ts", "line": 8, "body": "⚠️ Potential issue: `to.slice(0, 7)` keeps only the year and month of the end date, so the file name loses the day the export ends on."}]}

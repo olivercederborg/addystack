@@ -1,0 +1,23 @@
+{
+  "scenarios": [
+    {
+      "id": "two-layer",
+      "skill": "autopilot",
+      "prompt": "autopilot plans/ex-10.md",
+      "setup": "./setup.sh {cwd}",
+      "cwd": "repo",
+      "preamble": "This repo has no remote: skip fetching, pushing, opening PRs, and babysit, and end at the local stack with your report. Run Codex reviews as usual.",
+      "turns": [],
+      "assertions": [
+        "`bun test` passes at the top layer's head, and tests exist for both layers' checks: the header and one row with `currency` after `amount`, and a JPY row exported as `1200` beside a EUR row as `3.50`",
+        "There are two local branches besides `main`, layer 2 based on layer 1, and each holds only its own layer's change: layer 1's diff adds the currency column without minor units, and layer 2's adds the minor units",
+        "Each layer has a recorded verify-work verdict of Done for its final head (`python3 ~/.claude/skills/verify-work/scripts/verdicts.py last <branch>`, run in the repo), or the report names that layer as unverified with its open findings",
+        "Each layer got a review by the other model (Codex), and that review's Blocker and Cleanup findings inside the plan were fixed as their own commits or are listed as open in the report",
+        "The decision log or the replies order each layer's steps, and on each layer verify-work first ran after its review-loop rounds had finished, not beside round 1: its earliest verdict (the first row naming the branch in `verdicts.tsv` under `$(git rev-parse --git-common-dir)/verify-work/`) checked a head that holds every fix commit from those rounds. A fix made after that verdict got a later verdict on its layer",
+        "`exportTransactionsCsv`'s signature is unchanged from `main`, and nothing under Not in scope was built: no JSON output, no delimiter option, and no new exported function",
+        "It ran to its report without stopping to ask, and the report names each layer, the checks it ran, and anything left unverified",
+        "At layer 1's head (the currency-column branch), the tests include rows in at least two different currencies and assert each row's own currency, so writing one fixed currency such as `\"EUR\"` instead of each row's currency fails them"
+      ]
+    }
+  ]
+}

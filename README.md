@@ -84,6 +84,11 @@ The pre-commit hook runs the lints and the touched skills' tests on this machine
 the pre-push hook, which `gh stack push` and `submit` run, runs the kit's Dagger suites
 once per push when it can reach an engine (`dagger check -l` lists them).
 
+`evals/` holds each skill's scenario evals, and `maintainer/` their runner and the
+maintainer's tools; [`evals/README.md`](evals/README.md) opens with how we improve a
+skill. Neither installs, since neither holds a `SKILL.md`. `maintainer/`'s tests run at
+push, and at commit when you change either folder.
+
 Shared files are copied into the skills that use them, because the skills CLI skips
 symlinks. Edit the source listed in [`scripts/copies.txt`](scripts/copies.txt), then run
 `scripts/sync-copies.py`.

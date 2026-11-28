@@ -1,0 +1,15 @@
+{
+  "pr": {
+    "number": 4600,
+    "url": "https://github.com/example-org/example-app/pull/4600",
+    "isDraft": false,
+    "baseRefName": "main",
+    "mergeable": "MERGEABLE",
+    "mergeStateStatus": "CLEAN"
+  },
+  "required": [],
+  "ci": [],
+  "threads": [],
+  "reviews": [],
+  "conversationComments": []
+}
