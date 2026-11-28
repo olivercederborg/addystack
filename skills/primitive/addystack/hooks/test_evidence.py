@@ -83,6 +83,7 @@ class Classify(Repo):
             "README.md": "# app\n\nMore.\n",
             "src/api.ts": "export function list() {}\nexport function count() {}\n",  # a new export only
             "src/App.test.tsx": "x\n", "src/__tests__/auth.ts": "x\n", "tests/payments.py": "x\n",
+            "tests/seed.sql": "x\n", "tests/fixtures/schema.prisma": "x\n",
             "AppTests/LoginTests.swift": "import SwiftUI\n", "src/tokens.css.ts": "x\n",
             "Sources/Model.swift": "import Foundation\n", ".github/workflows/ci.yml": "steps: [test]\n",
             "scripts/env.sh": "export A=1\n",
